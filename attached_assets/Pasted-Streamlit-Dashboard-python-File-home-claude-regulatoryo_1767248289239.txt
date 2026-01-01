@@ -1,0 +1,367 @@
+Streamlit Dashboard
+python# File: /home/claude/regulatoryos/app.py
+
+import streamlit as st
+from core.company_config import CompanyConfiguration
+from core.grkb import GlobalRegulatoryKnowledgeBase
+from core.data_layer import UnifiedDataLayer
+from agents.psur_agent import PSURAgent
+
+st.set_page_config(page_title="RegulatoryOS MVP", layout="wide")
+
+# Title
+st.title("🤖 RegulatoryOS")
+st.subheader("Intelligent Agent Framework for Medical Device Compliance")
+
+# Sidebar: Company Selection
+st.sidebar.header("Company Configuration")
+
+demo_company = st.sidebar.selectbox(
+    "Select Demo Company",
+    ["Demo Company A (Fertility Devices)", "Demo Company B (Surgical Instruments)", "Configure New Company"]
+)
+
+if demo_company == "Configure New Company":
+    st.sidebar.text_input("Company Name")
+    st.sidebar.number_input("Number of Devices", min_value=1, max_value=500)
+    # ... more configuration
+else:
+    # Load pre-configured demo company
+    if "Company A" in demo_company:
+        config = load_demo_company_a()
+    else:
+        config = load_demo_company_b()
+    
+    st.sidebar.success(f"✅ Loaded: {config.company_name}")
+    st.sidebar.metric("Devices in Portfolio", len(config.devices))
+    st.sidebar.metric("Jurisdictions", len(config.jurisdictions))
+
+# Main area: Tabs
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "🏠 Dashboard", 
+    "📊 Data Layer", 
+    "📚 Regulatory Knowledge", 
+    "🤖 Agent Orchestration",
+    "📝 Generate Document"
+])
+
+with tab1:
+    st.header("System Overview")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric("Active Agents", "5")
+        st.metric("Processes Configured", "3")
+    
+    with col2:
+        st.metric("Documents Generated", "0")
+        st.metric("Avg Generation Time", "--")
+    
+    with col3:
+        st.metric("Cost Savings", "$0")
+        st.metric("Time Savings", "0 hrs")
+    
+    st.subheader("Architecture")
+    st.image("architecture_diagram.png")  # Create this
+    
+    st.subheader("Available Agents")
+    agents = [
+        {"name": "PSUR Agent", "status": "✅ Active", "processes": "EU/UK/US PSUR Generation"},
+        {"name": "CAPA Agent", "status": "🚧 Demo", "processes": "CAPA Investigation, Root Cause Analysis"},
+        {"name": "Complaint Agent", "status": "🚧 Demo", "processes": "Complaint Analysis, Trending"},
+        {"name": "Trending Agent", "status": "🚧 Planned", "processes": "Statistical Analysis, Signal Detection"},
+    ]
+    
+    st.table(agents)
+
+with tab2:
+    st.header("Unified Data Layer")
+    
+    st.subheader("Data Sources Configuration")
+    
+    # Show data upload interface
+    st.file_uploader("Upload Sales Data (CSV/Excel)", type=['csv', 'xlsx'])
+    st.file_uploader("Upload Complaint Data (CSV/Excel)", type=['csv', 'xlsx'])
+    st.file_uploader("Upload Clinical Evaluation Report (DOCX)", type=['docx'])
+    
+    if st.button("Preview Data Normalization"):
+        # Show how raw data gets normalized
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("Raw Data (Your Format)")
+            st.code("""
+Product Code | Ship Country | Invoice Date | Qty
+ECM-001     | France       | 2024-01-15  | 500
+ECM-001     | Germany      | 2024-01-20  | 300
+            """)
+        
+        with col2:
+            st.subheader("Normalized Data (Standard Format)")
+            st.code("""
+device  | region | date       | quantity
+ECM-001 | EU     | 2024-01-15 | 500
+ECM-001 | EU     | 2024-01-20 | 300
+            """)
+    
+    st.subheader("Data Summary")
+    # Show data statistics
+
+with tab3:
+    st.header("Global Regulatory Knowledge Base (GRKB)")
+    
+    st.subheader("Query Regulatory Requirements")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        regulation = st.selectbox("Regulation", ["EU MDR", "UK MDR", "FDA 21 CFR"])
+        requirement_type = st.selectbox("Requirement Type", ["PSUR Requirements", "Complaint Handling", "Adverse Event Reporting"])
+        device_class = st.selectbox("Device Class", ["Class I", "Class IIa", "Class IIb", "Class III"])
+    
+    with col2:
+        if st.button("Query GRKB"):
+            # Show structured regulatory response
+            st.json({
+                "regulation": "EU MDR",
+                "article": "Article 86",
+                "frequency": "Annual for Class IIb+",
+                "required_sections": [
+                    "Device identification",
+                    "Surveillance period",
+                    "Sales and distribution data",
+                    "Complaint data and analysis",
+                    "Trend analysis",
+                    "Benefit-risk evaluation"
+                ],
+                "guidance": "MDCG 2022-21",
+                "submission": "EUDAMED"
+            })
+    
+    st.subheader("Regulatory Intelligence")
+    st.info("The GRKB contains structured representations of regulations, not just text. The system can 'understand' and apply regulatory requirements.")
+
+with tab4:
+    st.header("Agent Orchestration")
+    
+    st.subheader("Select Process to Execute")
+    
+    process = st.selectbox("Process Type", [
+        "PSUR Generation (Complete)",
+        "CAPA Investigation (Demo)",
+        "Complaint Analysis (Demo)",
+        "Trend Report (Planned)"
+    ])
+    
+    device = st.selectbox("Device", [d['device_name'] for d in config.devices])
+    jurisdiction = st.selectbox("Jurisdiction", ["EU", "UK", "US", "Canada"])
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        start_date = st.date_input("Period Start")
+    with col2:
+        end_date = st.date_input("Period End")
+    
+    if st.button("🚀 Execute Agent Workflow"):
+        if "PSUR" in process:
+            # Show agent orchestration in real-time
+            with st.status("Agent Orchestration in Progress...", expanded=True) as status:
+                st.write("🤖 Activating PSUR Agent...")
+                st.write("📚 Querying GRKB for EU MDR requirements...")
+                st.write("✅ Requirements retrieved: 8 sections required")
+                
+                st.write("📊 Activating Data Collection Agent...")
+                st.write("✅ Collected 125,000 sales records")
+                st.write("✅ Collected 45 complaint records")
+                
+                st.write("🔬 Activating Analysis Agent...")
+                st.write("✅ Calculated complaint rate: 0.036 per 100 units")
+                st.write("✅ Trend analysis: Stable, no statistical significance")
+                
+                st.write("📝 Activating Document Generation Agent...")
+                st.write("✅ Generated 42-page PSUR document")
+                
+                st.write("✔️ Creating review package...")
+                
+                status.update(label="✅ Agent Workflow Complete!", state="complete")
+            
+            # Show results
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("Generation Time", "9.7 minutes", delta="-99.3% vs manual")
+            with col2:
+                st.metric("Generation Cost", "$0.85", delta="-99.99% vs consultant")
+            with col3:
+                st.metric("Accuracy", "85%", help="Ready for expert review")
+            
+            st.success("Document ready for expert review")
+            
+            # Show review checklist
+            with st.expander("📋 Expert Review Checklist"):
+                st.checkbox("Data accuracy verified (spot-check 10 data points)")
+                st.checkbox("Regulatory compliance confirmed (all sections present)")
+                st.checkbox("Narrative quality assessed")
+                st.checkbox("Citation traceability verified")
+                st.checkbox("Completeness confirmed")
+
+with tab5:
+    st.header("Generate Document")
+    
+    st.info("This tab demonstrates the complete PSUR generation workflow")
+    
+    # Document configuration
+    st.subheader("Document Configuration")
+    
+    device_select = st.selectbox("Select Device", [d['device_name'] for d in config.devices], key="doc_device")
+    jurisdiction_select = st.selectbox("Select Jurisdiction", ["EU", "UK", "US"], key="doc_juris")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        period_start = st.date_input("Surveillance Period Start", key="doc_start")
+    with col2:
+        period_end = st.date_input("Surveillance Period End", key="doc_end")
+    
+    if st.button("🎯 Generate PSUR Document", type="primary"):
+        # Execute actual PSUR generation
+        with st.spinner("Generating PSUR... This will take ~10 minutes"):
+            
+            # Initialize agents
+            grkb = GlobalRegulatoryKnowledgeBase()
+            data_layer = UnifiedDataLayer(config)
+            psur_agent = PSURAgent(config, grkb, data_layer)
+            
+            # Generate
+            result = psur_agent.generate_psur(
+                device=device_select,
+                jurisdiction=jurisdiction_select,
+                surveillance_period=(period_start, period_end)
+            )
+            
+            # Display results
+            st.success("✅ PSUR Generated Successfully!")
+            
+            # Metrics
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Time", result['generation_time'])
+            with col2:
+                st.metric("Cost", f"${result['generation_cost']:.2f}")
+            with col3:
+                st.metric("Pages", "42")
+            with col4:
+                st.metric("Sections", "8/8")
+            
+            # Download button
+            st.download_button(
+                label="📥 Download PSUR Document",
+                data=result['document'],  # docx file
+                file_name=f"PSUR_{device_select}_{jurisdiction_select}_{period_end}.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
+            
+            # Show audit trail
+            with st.expander("🔍 Audit Trail"):
+                st.json(result['audit_trail'])
+            
+            # Show review checklist
+            with st.expander("📋 Review Checklist"):
+                st.json(result['review_checklist'])
+
+# Footer
+st.sidebar.markdown("---")
+st.sidebar.caption("RegulatoryOS MVP v0.1")
+st.sidebar.caption("Built for Replit Race to Revenue")
+
+Phase 4: Demo Preparation (Week 4)
+What to Have Ready for Demo
+1. Two Pre-Configured Demo Companies
+pythondef load_demo_company_a():
+    """
+    Demo Company A: Fertility/IVF Devices
+    """
+    config = CompanyConfiguration("FertilTech Medical")
+    
+    config.add_device({
+        'device_name': 'Embryo Culture Media ECM-Pro',
+        'device_code': 'ECM-001',
+        'risk_class': 'Class IIb',
+        'jurisdictions': ['EU', 'UK', 'US'],
+        'basic_udf': 'EU123456789',
+        'gmdn_code': '47668',
+        'device_group': 'IVF Consumables'
+    })
+    
+    config.add_device({
+        'device_name': 'Oocyte Collection Needle',
+        'device_code': 'OCN-001',
+        'risk_class': 'Class IIa',
+        'jurisdictions': ['EU', 'UK'],
+        'device_group': 'IVF Instruments'
+    })
+    
+    # Add 8-10 more devices to show portfolio management
+    
+    return config
+
+def load_demo_company_b():
+    """
+    Demo Company B: Surgical Instruments
+    """
+    config = CompanyConfiguration("SurgiPrecision Inc")
+    
+    config.add_device({
+        'device_name': 'Laparoscopic Grasper',
+        'device_code': 'LAP-G-001',
+        'risk_class': 'Class I',
+        'jurisdictions': ['EU', 'UK', 'US', 'Canada'],
+        'device_group': 'Surgical Instruments - Laparoscopic'
+    })
+    
+    # Add more surgical instruments
+    
+    return config
+```
+
+**2. Sample Data Files**
+
+Create realistic sample data:
+- `demo_data/company_a_sales.csv` (2 years of sales data)
+- `demo_data/company_a_complaints.csv` (45 complaints)
+- `demo_data/company_b_sales.csv`
+- `demo_data/company_b_complaints.csv`
+
+**3. Generated Sample Output**
+
+Pre-generate 2-3 complete PSURs so you can show:
+- Before (blank template)
+- After (completed PSUR)
+- Side-by-side comparison
+
+**4. Architecture Diagram**
+
+Create a visual showing:
+```
+┌─────────────────────────────────────┐
+│     Streamlit Interface              │
+└──────────────┬──────────────────────┘
+               │
+┌──────────────▼──────────────────────┐
+│   Agent Orchestration Layer          │
+│  ┌────────┐ ┌────────┐ ┌─────────┐ │
+│  │ PSUR   │ │ CAPA   │ │ Trend   │ │
+│  │ Agent  │ │ Agent  │ │ Agent   │ │
+│  └────────┘ └────────┘ └─────────┘ │
+└──────────────┬──────────────────────┘
+               │
+     ┌─────────┴─────────┐
+     │                   │
+┌────▼────┐      ┌───────▼────────┐
+│  GRKB   │      │  Data Layer    │
+│         │      │                │
+│ EU MDR  │      │ Sales Data     │
+│ UK MDR  │      │ Complaints     │
+│ FDA     │      │ AE Data        │
+│ MDCG    │      │ External DBs   │
+└─────────┘      └────────────────┘

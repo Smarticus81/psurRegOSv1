@@ -1,0 +1,262 @@
+Agent Architecture
+python# File: /home/claude/regulatoryos/agents/psur_agent.py
+
+from anthropic import Anthropic
+import json
+
+class PSURAgent:
+    """
+    Specialized agent for PSUR generation
+    Orchestrates data collection, analysis, and document generation
+    """
+    
+    def __init__(self, company_config, grkb, data_layer):
+        self.company_config = company_config
+        self.grkb = grkb
+        self.data_layer = data_layer
+        self.client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+        
+        # Sub-agents
+        self.data_agent = DataCollectionAgent(data_layer)
+        self.analysis_agent = AnalysisAgent(grkb)
+        self.document_agent = DocumentGenerationAgent(grkb)
+        
+    def generate_psur(self, 
+                      device: str,
+                      jurisdiction: str,
+                      surveillance_period: tuple,
+                      previous_psur: str = None):
+        """
+        Orchestrate complete PSUR generation
+        
+        Returns: {
+            'document': <python-docx Document object>,
+            'metadata': {...},
+            'audit_trail': [...],
+            'review_checklist': {...}
+        }
+        """
+        
+        print(f"🤖 PSUR Agent activated for {device} - {jurisdiction}")
+        print(f"📅 Surveillance period: {surveillance_period[0]} to {surveillance_period[1]}")
+        
+        # Step 1: Query GRKB for requirements
+        print("\n📚 Step 1: Querying regulatory requirements...")
+        requirements = self._get_requirements(jurisdiction, device)
+        print(f"✅ Requirements retrieved: {len(requirements['required_sections'])} sections required")
+        
+        # Step 2: Collect data
+        print("\n📊 Step 2: Collecting data...")
+        data = self.data_agent.collect_all_data(
+            device=device,
+            surveillance_period=surveillance_period,
+            jurisdiction=jurisdiction
+        )
+        print(f"✅ Data collected: {data['summary']}")
+        
+        # Step 3: Perform analysis
+        print("\n🔬 Step 3: Performing regulatory analysis...")
+        analysis = self.analysis_agent.analyze(
+            data=data,
+            requirements=requirements,
+            previous_psur=previous_psur
+        )
+        print(f"✅ Analysis complete: {analysis['summary']}")
+        
+        # Step 4: Generate document
+        print("\n📝 Step 4: Generating PSUR document...")
+        document = self.document_agent.generate_document(
+            device=device,
+            jurisdiction=jurisdiction,
+            requirements=requirements,
+            data=data,
+            analysis=analysis,
+            template=self._get_template(jurisdiction)
+        )
+        print("✅ Document generated")
+        
+        # Step 5: Create review package
+        print("\n✔️  Step 5: Preparing review package...")
+        review_package = self._create_review_package(
+            device, jurisdiction, requirements, data, analysis, document
+        )
+        
+        print("\n🎉 PSUR generation complete!")
+        print(f"⏱️  Total time: {review_package['generation_time']}")
+        print(f"💰 Total cost: ${review_package['generation_cost']:.2f}")
+        
+        return {
+            'document': document,
+            'metadata': review_package['metadata'],
+            'audit_trail': review_package['audit_trail'],
+            'review_checklist': review_package['review_checklist'],
+            'generation_time': review_package['generation_time'],
+            'generation_cost': review_package['generation_cost']
+        }
+        
+    def _get_requirements(self, jurisdiction, device):
+        """Get regulatory requirements from GRKB"""
+        device_class = self._get_device_class(device)
+        
+        req = self.grkb.query(
+            regulation=f'{jurisdiction}_MDR',
+            requirement='psur_requirements',
+            device_class=device_class
+        )
+        
+        return req
+        
+    def _get_template(self, jurisdiction):
+        """Load appropriate template"""
+        # For MVP: use your existing FormQAR-054 as basis
+        template_map = {
+            'EU': 'templates/EU_PSUR_Template.docx',
+            'UK': 'templates/UK_PSUR_Template.docx',
+            'US': 'templates/FDA_Periodic_Report_Template.docx'
+        }
+        return template_map.get(jurisdiction)
+Sub-Agents Implementation:
+python# File: /home/claude/regulatoryos/agents/data_collection_agent.py
+
+class DataCollectionAgent:
+    """
+    Specialized agent for data collection and validation
+    """
+    
+    def __init__(self, data_layer):
+        self.data_layer = data_layer
+        
+    def collect_all_data(self, device, surveillance_period, jurisdiction):
+        """
+        Collect all data needed for PSUR
+        """
+        
+        # Sales data
+        sales_summary = self._collect_sales_data(device, surveillance_period, jurisdiction)
+        
+        # Complaint data
+        complaint_summary = self._collect_complaint_data(device, surveillance_period)
+        
+        # Calculate rates
+        rates = self.data_layer.calculate_complaint_rates(
+            surveillance_period=surveillance_period,
+            device=device,
+            region=jurisdiction
+        )
+        
+        # External database searches (simulated for MVP)
+        external_data = self._search_external_databases(device, surveillance_period)
+        
+        return {
+            'sales': sales_summary,
+            'complaints': complaint_summary,
+            'rates': rates,
+            'external': external_data,
+            'summary': f"{sales_summary['total_units']} units, {complaint_summary['total']} complaints"
+        }
+        
+    def _collect_sales_data(self, device, period, region):
+        """Collect and summarize sales data"""
+        # Implementation using data_layer
+        pass
+        
+    def _collect_complaint_data(self, device, period):
+        """Collect and categorize complaints"""
+        # Implementation using data_layer
+        pass
+        
+    def _search_external_databases(self, device, period):
+        """
+        Search MAUDE, EUDAMED, etc.
+        For MVP: simulated results
+        """
+        return {
+            'maude_similar_devices': 0,
+            'eudamed_incidents': 0,
+            'search_performed': True,
+            'search_date': '2025-01-XX'
+        }
+python# File: /home/claude/regulatoryos/agents/analysis_agent.py
+
+class AnalysisAgent:
+    """
+    Performs statistical analysis and trend detection
+    """
+    
+    def __init__(self, grkb):
+        self.grkb = grkb
+        self.client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+        
+    def analyze(self, data, requirements, previous_psur=None):
+        """
+        Perform regulatory analysis
+        """
+        
+        # Statistical process control
+        trend_analysis = self._perform_trend_analysis(data)
+        
+        # Complaint categorization
+        complaint_categories = self._categorize_complaints(data['complaints'])
+        
+        # Risk assessment
+        risk_assessment = self._assess_risk(data, trend_analysis)
+        
+        # Generate narrative analysis using Claude
+        narrative = self._generate_analysis_narrative(
+            data, trend_analysis, complaint_categories, risk_assessment
+        )
+        
+        return {
+            'trend_analysis': trend_analysis,
+            'complaint_categories': complaint_categories,
+            'risk_assessment': risk_assessment,
+            'narrative': narrative,
+            'summary': f"Trend: {trend_analysis['trend']}, Risk: {risk_assessment['level']}"
+        }
+        
+    def _perform_trend_analysis(self, data):
+        """
+        Statistical process control analysis
+        """
+        # Calculate moving average, control limits, detect trends
+        # For MVP: simplified SPC
+        
+        rates = data['rates']
+        
+        return {
+            'current_rate': rates['complaint_rate'],
+            'trend': 'stable',  # stable/increasing/decreasing
+            'statistical_significance': False,
+            'control_limit_exceeded': False,
+            'method': '3-sigma control limits'
+        }
+        
+    def _generate_analysis_narrative(self, data, trend, categories, risk):
+        """
+        Use Claude to generate regulatory analysis narrative
+        """
+        
+        prompt = f"""You are a regulatory affairs expert analyzing post-market surveillance data for a medical device.
+
+Data Summary:
+- Total units distributed: {data['rates']['total_units_distributed']:,}
+- Total complaints: {data['rates']['total_complaints']}
+- Complaint rate: {data['rates']['complaint_rate']:.4f} per 100 units
+- Trend: {trend['trend']}
+- Risk level: {risk['level']}
+
+Generate a concise regulatory analysis (2-3 paragraphs) that:
+1. Summarizes the surveillance data objectively
+2. Interprets the complaint rate and trend
+3. Assesses whether this indicates any safety concerns
+4. Provides regulatory conclusion
+
+Use professional regulatory language. Ground all statements in the data provided. Do not speculate."""
+
+        message = self.client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=1000,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        
+        return message.content[0].text

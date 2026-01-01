@@ -1,0 +1,295 @@
+Build me a low-latency Voice PMS Project Manager (PSUR/PMSR)
+
+Mission:
+Create a production-ready, low-latency voice assistant and web app that manages my Periodic Safety Update Report (PSUR) and Post-Market Surveillance Report (PMSR) schedule end-to-end. It should understand PSUR/PMSR logic and regulatory context (EU MDR, UKCA, FDA, Health Canada, MDCG 2022-21, ISO 13485, ISO 14971), ingest my master schedule spreadsheet, and let me speak commands to organize, add/update items, reschedule, add notes, assign writers, and surface insights—all with immediate, real-time updates to the UI and data store.
+
+Input Data (seed the system from my sheet)
+
+I will upload an Excel file named 2025 Periodic Safety Update Report Master Schedule (1).xlsx.
+Use the “Schedule 2025” sheet as the authoritative table, with columns:
+
+TD Number (string)
+
+PSURNumber (string)
+
+Class (string, e.g., I, IIa, IIb, III)
+
+Type (string, e.g., Medical Device, Fertility)
+
+Product Name (string)
+
+Catalog Number (string/long text)
+
+Writer (string)
+
+Email (string)
+
+Start Period (date)
+
+End Period (date)
+
+Frequency (enum: “5 years”, “2 years”, “1 year”, “Ad-hoc”)
+
+Due Date (date)
+
+Status (enum: “Not started”, “Assigned”, “In progress”, “Draft”, “In review”, “Submitted”, “Closed”, “On hold”)
+
+Canada Summary Report Needed (enum: “YES”/“NO”)
+
+Canada Summary Report Status (free text/enum like Status)
+
+Comments (free text)
+
+Also ingest optional staffing info from sheet ISUI_00jnmykkz4sxdiktk if present (names/workload rows) to enable capacity/assignment insights.
+
+On first run: parse the Excel, normalize datatypes, and seed the database. Preserve the original file for audit, but treat the DB as the live source of truth going forward.
+
+Outcomes & UX
+
+Low latency voice: round-trip voice interaction target <300 ms perceived latency for local usage (buffering permitted), with barge-in (interruptible) and VAD (voice activity detection).
+
+Real-time UI: Any change via voice or UI instantly updates everywhere (WebSocket/SSE).
+
+Spreadsheet-like grid: Editable grid with filtering, grouping, inline edits, keyboard shortcuts, and colored status chips.
+
+Insights panel: Natural-language insights and suggested actions (e.g., “3 items due in 14 days; reassign 2 to balance workload”).
+
+Structured notes & audit trail: Every change is event-sourced (who/when/what, old → new).
+
+Safe by default: Validation rules enforce regulatory cadence and status progression.
+
+Core Voice Capabilities (intents & examples)
+
+Implement a semantic command layer with robust slot filling and confirmation when needed. Examples:
+
+Create/Clone
+
+“Add a PSUR for OBP Endoscopic Seals, class IIa, yearly, start Jan 1, 2025, due Jan 31, 2026; assign Harish; note ‘combine UKCA’.”
+
+“Duplicate PMS005R for the next cycle and align due date to frequency.”
+
+Update/Reschedule
+
+“Move all PSURs due in June 2026 out by 2 weeks.”
+
+“Change TD005 status to In review and add comment: ‘Draft C with NB.’”
+
+“Mark Canada Summary Report for RI Syringes as Needed and status In progress.”
+
+Assign/Load-balance
+
+“Reassign the 3 heaviest items from Venkata to Harish to balance due dates this quarter.”
+
+“Who is over capacity next month? Fix it.”
+
+Query/Explain
+
+“What’s due in the next 30 days by product family?”
+
+“Show me all Class IIb items with Canada Summary Report Needed = YES.”
+
+“Why is PMS012R flagged?”
+
+Notes & Links
+
+“Add a note to PMS005R: ‘Rev C is stuck in MC as Draft.’”
+
+“Attach the NB letter to PMS010R.”
+
+Bulk ops
+
+“For all Not started items with frequency 5 years, set status to Assigned and writer to TBD.”
+
+Regulatory logic
+
+“Check that all IIb/III EU devices have PSUR cadence compliant with Article 86.”
+
+“Warn me if a due date violates expected frequency from Start/End Period.”
+
+Regulatory & Business Rules (enforce in validators)
+
+EU MDR Article 86: PSUR required for Class IIa/IIb/III (cadence typically annually for III/IIb, at least every 2 years for IIa).
+
+UKCA PMSR/PSUR: keep parallel scheduling; allow device jurisdiction tags and jurisdiction-specific cadence checks.
+
+MDCG 2022-21: ensure PSUR content checklist is tracked via a sub-table (internal) and status gating (cannot move to “Submitted” if mandatory sections incomplete).
+
+ISO 13485/14971: link complaints/AER/risk trends to scheduling insights (placeholder hooks).
+
+Health Canada: if Canada Summary Report Needed = YES, ensure aligned due windows & status tracking.
+
+Status flow: Disallow skipping critical states (e.g., can’t go Not started → Submitted). Configurable transitions with guardrails and justification notes.
+
+(Keep these as configurable policies; default to the above.)
+
+Architecture
+
+Frontend (Next.js / React)
+
+Grid: TanStack Table (or AG Grid community), inline editing, multi-select bulk actions.
+
+Realtime: WebSocket (ws) for mutations; SSE optional for server → client pushes.
+
+Voice UI: push-to-talk + VAD mode, live transcript, partial result streaming, barge-in.
+
+Insight panel with “Apply fix” buttons (one-click bulk ops).
+
+Voice/LLM
+
+OpenAI Realtime API for low-latency speech in/out.
+
+Deterministic function calling / tool use for intents:
+
+create_psur(item), update_psur(id, patch), bulk_update(query, patch),
+
+reassign(load_strategy), compute_due_date(item),
+
+validate_item(item), regulatory_check(scope), add_note(id, note),
+
+explain(id), query(filter).
+
+Backend (FastAPI or Node/Express)
+
+REST + WebSocket endpoints; JSON schema validation (Pydantic/Zod).
+
+Event-sourcing: append-only events table; reducers maintain materialized psur_items.
+
+Postgres/SQLite (SQLite acceptable on Replit with WAL + periodic snapshot).
+
+Excel import module (pandas/xlsx) to seed DB; export back to Excel/CSV on demand.
+
+Background workers (RQ/BullMQ) for heavy analytics (optional).
+
+Latency Targets
+
+UI diff apply < 50 ms.
+
+Speech partials start < 250 ms, final < 1s typical.
+
+Tools respond with streaming deltas; update grid optimistically with server reconcile.
+
+Data Model (DDL outline)
+
+Tables:
+
+psur_item(id, td_number, psur_number, class, type, product_name, catalog_number, writer, email, start_period, end_period, frequency, due_date, status, canada_needed, canada_status, comments, jurisdictions[])
+
+note(id, psur_item_id, author, body, created_at)
+
+assignment(id, person, load_points, period_start, period_end) (optional)
+
+event(id, actor, action, entity, entity_id, payload_json, created_at)
+
+attachment(id, psur_item_id, filename, url, uploaded_at)
+
+Indexes on (due_date), (status), (writer), (class), and text search on (product_name, psur_number, td_number).
+
+Realtime Protocol
+
+Client subscribes to psur_items stream.
+
+Mutations are sent as tool calls from the LLM or UI → backend.
+
+Backend publishes event → reducer updates materialized view → server pushes patched rows to clients (JSON Patch or row-level updates).
+
+Voice → Tools Contract (JSON Schemas)
+
+Define strong, versioned schemas for tool calls:
+
+CreatePSUR: fields above (required: product_name, class, frequency, start_period, due_date or rule).
+
+UpdatePSUR: id, patch (partial).
+
+BulkUpdate: filter (DSL: e.g., status="Not started" AND frequency="5 years"), patch.
+
+Reassign: strategy (“balance_by_due_date”, “equalize_count”), scope (filter), targets (people).
+
+RegulatoryCheck: scope (“EU MDR”, “UKCA”, “Canada”), fix_mode (suggest | auto_fix_with_confirm).
+
+LLM must always call validate_item and regulatory_check after create/update before finalizing.
+
+Command Understanding & Confirmation
+
+If a command is destructive or ambiguous, ask for confirmation (“I’ll move 7 items out by 2 weeks—proceed?”).
+
+Provide a dry-run preview in the UI (diff list) and voice summarize it briefly.
+
+Keep transcripts linked to items for audit.
+
+UI Requirements
+
+Status pills (color coded), frequency badges, due-soon warnings (≤30 days), overdue flags.
+
+Quick filters: Due this week, Due next 30 days, Overdue, By Writer, By Class, Canada Needed.
+
+Bulk toolbar: Assign, Change Status, Move Due Date, Add Note.
+
+Insight cards with “Apply” buttons.
+
+Export: CSV/XLSX with filters applied, and a “Regulatory Evidence Pack” zip (JSON + CSV + change log).
+
+Security & Audit
+
+.env for API keys. Do not log secrets.
+
+Role gates for “Submit” and “Closed”.
+
+Full event log and “undo” (replay last event).
+
+Test Plan (must auto-generate)
+
+Unit tests: validators (frequency vs due), status transitions, regulatory checks.
+
+Integration tests: Excel import → DB seed, voice command → tool action → DB update → UI patch.
+
+E2E tests: bulk reschedule with confirmation; conflict resolution on concurrent edits.
+
+Deliverables to Generate
+
+Full repo with:
+
+frontend/ (Next.js + React)
+
+backend/ (FastAPI or Node)
+
+realtime/ (WebSocket server)
+
+voice/ (OpenAI Realtime integration + tool schemas)
+
+db/ (migrations, seed from Excel)
+
+tests/ (unit/integration/e2e)
+
+.env.example with placeholders.
+
+README.md with run instructions, Excel upload/seed instructions, and voice setup.
+
+OpenAPI spec for the backend.
+
+Schema docs and Regulatory policy config (YAML) with cadence and status rules per jurisdiction.
+
+Sample prompts for voice commands (cover all intents) and a command cheat sheet rendered in UI.
+
+Acceptance Criteria
+
+Uploading the Excel seeds the DB; grid renders all columns from “Schedule 2025”.
+
+I can say: “Move all items due in June 2026 by two weeks” → preview → confirm → grid updates instantly; event log recorded.
+
+I can say: “Add PSUR for OBP Endoscopic Seals, IIa, yearly, due Jan 1, 2027” → validation & regulatory check pass → row appears with correct cadence.
+
+Real-time multi-client: edits on one tab appear in another within <150 ms.
+
+Insight panel correctly identifies due-soon/over-capacity and offers 1-click fixes.
+
+Export produces a CSV/XLSX matching current filters and a JSON changelog.
+
+Nice-to-Haves (if time permits)
+
+Calendar view (month/quarter), iCal export for due dates.
+
+Lightweight RAG over internal SOPs/PSUR templates for “what goes in the report” Q&A.
+
+Attachments via S3-compatible storage (signed URLs).
+
+Email notifications for status changes and due-soon alerts (digest).

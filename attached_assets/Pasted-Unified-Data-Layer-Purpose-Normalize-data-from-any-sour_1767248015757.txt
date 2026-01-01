@@ -1,0 +1,158 @@
+Unified Data Layer
+Purpose: Normalize data from any source into standard format
+python# File: /home/claude/regulatoryos/core/data_layer.py
+
+import pandas as pd
+from typing import Dict, List
+
+class UnifiedDataLayer:
+    """
+    Ingests data from various sources and normalizes
+    """
+    
+    def __init__(self, company_config):
+        self.company_config = company_config
+        self.sales_data = None
+        self.complaint_data = None
+        self.adverse_event_data = None
+        
+    def ingest_sales_data(self, file_path: str, mapping: Dict = None):
+        """
+        Ingest sales data from any format
+        
+        mapping = {
+            'device_column': 'Product Code',
+            'country_column': 'Ship To Country',
+            'date_column': 'Invoice Date',
+            'quantity_column': 'Quantity Shipped',
+            'region_mapping': {
+                'France': 'EU',
+                'Germany': 'EU',
+                'UK': 'UK',
+                'USA': 'US'
+            }
+        }
+        """
+        # Read data
+        df = pd.read_excel(file_path) if file_path.endswith('.xlsx') else pd.read_csv(file_path)
+        
+        # Apply mapping if provided
+        if mapping:
+            df = df.rename(columns={
+                mapping['device_column']: 'device',
+                mapping['country_column']: 'country',
+                mapping['date_column']: 'date',
+                mapping['quantity_column']: 'quantity'
+            })
+            
+            # Map countries to regions
+            df['region'] = df['country'].map(mapping['region_mapping'])
+            
+        # Standardize date format
+        df['date'] = pd.to_datetime(df['date'])
+        
+        self.sales_data = df
+        return df
+        
+    def ingest_complaint_data(self, file_path: str, mapping: Dict = None):
+        """
+        Ingest complaint data from any QMS
+        
+        mapping = {
+            'complaint_id': 'Case Number',
+            'device': 'Product',
+            'date_received': 'Received Date',
+            'description': 'Issue Description',
+            'customer_effect': 'Patient Impact',
+            'classification': 'Severity'
+        }
+        """
+        df = pd.read_excel(file_path) if file_path.endswith('.xlsx') else pd.read_csv(file_path)
+        
+        if mapping:
+            df = df.rename(columns=mapping)
+            
+        df['date_received'] = pd.to_datetime(df['date_received'])
+        
+        self.complaint_data = df
+        return df
+        
+    def calculate_complaint_rates(self, 
+                                   surveillance_period: tuple,
+                                   device: str = None,
+                                   region: str = None):
+        """
+        Calculate complaint rates per regulatory requirements
+        
+        Returns:
+        {
+            'total_complaints': 45,
+            'total_units_distributed': 125000,
+            'complaint_rate': 0.036,  # per 100 units
+            'by_quarter': [...],
+            'trend': 'stable/increasing/decreasing',
+            'statistical_significance': True/False
+        }
+        """
+        start_date, end_date = surveillance_period
+        
+        # Filter data
+        complaints = self.complaint_data[
+            (self.complaint_data['date_received'] >= start_date) &
+            (self.complaint_data['date_received'] <= end_date)
+        ]
+        
+        sales = self.sales_data[
+            (self.sales_data['date'] >= start_date) &
+            (self.sales_data['date'] <= end_date)
+        ]
+        
+        if device:
+            complaints = complaints[complaints['device'] == device]
+            sales = sales[sales['device'] == device]
+            
+        if region:
+            sales = sales[sales['region'] == region]
+            
+        total_complaints = len(complaints)
+        total_units = sales['quantity'].sum()
+        
+        complaint_rate = (total_complaints / total_units * 100) if total_units > 0 else 0
+        
+        return {
+            'total_complaints': total_complaints,
+            'total_units_distributed': int(total_units),
+            'complaint_rate': round(complaint_rate, 4),
+            'complaints_per_100_units': round(complaint_rate, 2),
+            'calculation_method': 'EU MDR: complaints / units * 100',
+            'data_source': 'Integrated ERP + QMS data'
+        }
+        
+    def get_data_summary(self):
+        """
+        Summary of available data for demo
+        """
+        summary = {
+            'sales_data': {
+                'records': len(self.sales_data) if self.sales_data is not None else 0,
+                'date_range': (
+                    self.sales_data['date'].min().strftime('%Y-%m-%d'),
+                    self.sales_data['date'].max().strftime('%Y-%m-%d')
+                ) if self.sales_data is not None else None,
+                'regions': self.sales_data['region'].unique().tolist() if self.sales_data is not None else []
+            },
+            'complaint_data': {
+                'records': len(self.complaint_data) if self.complaint_data is not None else 0,
+                'date_range': (
+                    self.complaint_data['date_received'].min().strftime('%Y-%m-%d'),
+                    self.complaint_data['date_received'].max().strftime('%Y-%m-%d')
+                ) if self.complaint_data is not None else None
+            }
+        }
+        return summary
+Demo Value:
+
+Show data from "Company A" being ingested
+Switch to data from "Company B" with different column names
+Prove: System normalizes any data format
+

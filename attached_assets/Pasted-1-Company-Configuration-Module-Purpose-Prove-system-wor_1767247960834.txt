@@ -1,0 +1,68 @@
+1. Company Configuration Module
+Purpose: Prove system works for ANY manufacturer
+python# File: /home/claude/regulatoryos/core/company_config.py
+
+class CompanyConfiguration:
+    """
+    Configurable company profile - demonstrates system works 
+    for any manufacturer
+    """
+    
+    def __init__(self, company_name: str):
+        self.company_name = company_name
+        self.devices = []
+        self.jurisdictions = []
+        self.data_sources = {}
+        self.regulatory_calendar = {}
+        
+    def add_device(self, device_config: dict):
+        """
+        Add device to portfolio
+        
+        device_config = {
+            'device_name': 'Embryo Culture Media',
+            'device_code': 'ECM-001',
+            'risk_class': 'Class IIb',
+            'jurisdictions': ['EU', 'UK', 'US'],
+            'basic_udf': 'XXXXXX',  # EU
+            'gmdn_code': '12345',
+            'imdrf_classification': 'B',
+            'device_group': 'IVF Consumables'
+        }
+        """
+        self.devices.append(device_config)
+        
+    def configure_data_sources(self, sources: dict):
+        """
+        Configure where data comes from
+        
+        sources = {
+            'sales_data': {'type': 'csv', 'path': 'uploads/sales.csv'},
+            'complaints': {'type': 'csv', 'path': 'uploads/complaints.csv'},
+            'adverse_events': {'type': 'csv', 'path': 'uploads/ae.csv'},
+            'cer': {'type': 'docx', 'path': 'uploads/cer.docx'}
+        }
+        """
+        self.data_sources = sources
+        
+    def set_regulatory_calendar(self, calendar: dict):
+        """
+        Define when reports are due
+        
+        calendar = {
+            'EU_PSUR': {'frequency': 'annual', 'next_due': '2025-12-31'},
+            'UK_PSUR': {'frequency': 'annual', 'next_due': '2025-12-31'},
+            'FDA_Periodic': {'frequency': 'annual', 'next_due': '2025-06-30'}
+        }
+        """
+        self.regulatory_calendar = calendar
+        
+    def to_json(self):
+        """Save configuration for reuse"""
+        return {
+            'company_name': self.company_name,
+            'devices': self.devices,
+            'jurisdictions': self.jurisdictions,
+            'data_sources': self.data_sources,
+            'regulatory_calendar': self.regulatory_calendar
+        }

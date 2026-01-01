@@ -30,33 +30,48 @@ import {
 
 const euMdrRequirements = {
   psur_requirements: {
-    article: "Article 86",
-    title: "Periodic Safety Update Report",
+    article: "Article 86 & MDCG 2022-21",
+    title: "Periodic Safety Update Report (MDCG 2022-21 Compliant)",
+    guidance_document: "MDCG 2022-21 - Guidance on PSUR according to Regulation (EU) 2017/745",
+    effective_date: "December 2022",
     frequency: {
-      class_i: "Not required unless requested",
-      class_iia: "Upon request by competent authority",
-      class_iib: "Annual or upon request",
-      class_iii: "Annual",
-      class_iii_implant: "Annual",
+      class_i: "PMS Report only (not PSUR)",
+      class_iia: "Every 2 years or upon request",
+      class_iib: "Annually or upon request",
+      class_iii: "Annually (12-month reporting period)",
+      class_iii_implant: "Annually (12-month reporting period)",
     },
     required_sections: [
-      "Device identification and classification",
-      "Surveillance period covered",
-      "Sales and distribution data by region",
-      "Complaint data summary and analysis",
-      "Adverse event summary and reporting",
-      "Trend analysis (statistical process control)",
-      "Benefit-risk evaluation update",
-      "Conclusions and corrective actions",
+      { section: 1, title: "Executive Summary", description: "Overview of conclusions and key findings" },
+      { section: 2, title: "Device Description", description: "Device characteristics, intended purpose, classification, Basic UDI-DI, EMDN codes" },
+      { section: 3, title: "Data Collection Period", description: "Start/end dates aligned with MDR certification date" },
+      { section: 4, title: "PMS Data Analysis", description: "Data summary with IMDRF AET coding, trend identification" },
+      { section: 5, title: "Serious Incidents & FSCA", description: "Device problems, root causes, patient impact, Field Safety Corrective Actions" },
+      { section: 6, title: "Non-Serious Incidents & Complaints", description: "Complaints grouped by IMDRF medical device problem codes" },
+      { section: 7, title: "Sales Volume & Population Exposed", description: "Units sold vs. patient exposure estimates, demographics" },
+      { section: 8, title: "CAPA Information", description: "Type, scope, status, root cause (IMDRF codes), effectiveness assessment" },
+      { section: 9, title: "Literature & Similar Devices", description: "Relevant findings from specialist literature, comparative data" },
+      { section: 10, title: "Benefit-Risk Evaluation", description: "Updated benefit-risk determination with change impact analysis" },
+      { section: 11, title: "Conclusions", description: "Overall safety assessment, need for further actions" },
     ],
     device_grouping: {
-      guidance: "MDCG 2022-21",
+      guidance: "MDCG 2022-21 Annex I",
       criteria: [
-        "Same generic device group",
+        "Same generic device group (GMDN)",
         "Same intended purpose",
         "Similar design and technical characteristics",
-        "Same clinical effects",
+        "Same clinical effects and risk profile",
+        "Lead device assigned to drive PSUR schedule",
       ],
+    },
+    data_presentation: {
+      format: "Annex II Tables",
+      coding: "IMDRF AET codes for adverse events and medical device problems",
+      yearly_breakdown: "Historical data from previous reporting periods",
+    },
+    submission: {
+      portal: "EUDAMED PSUR Web Form",
+      access: "Available to Notified Bodies and Competent Authorities",
     },
   },
 };
@@ -276,12 +291,17 @@ export default function GRKB() {
                           </div>
                         </div>
                         <div>
-                          <h4 className="text-sm font-medium mb-2">Required Sections</h4>
+                          <h4 className="text-sm font-medium mb-2">MDCG 2022-21 Required Sections</h4>
                           <div className="space-y-1">
-                            {euMdrRequirements.psur_requirements.required_sections.map((section, idx) => (
-                              <div key={idx} className="flex items-center gap-2 text-sm">
-                                <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" />
-                                <span>{section}</span>
+                            {euMdrRequirements.psur_requirements.required_sections.map((section) => (
+                              <div key={section.section} className="flex items-start gap-2 text-sm p-2 rounded bg-muted/30">
+                                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-xs font-medium shrink-0">
+                                  {section.section}
+                                </span>
+                                <div>
+                                  <span className="font-medium">{section.title}</span>
+                                  <p className="text-xs text-muted-foreground mt-0.5">{section.description}</p>
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -293,24 +313,44 @@ export default function GRKB() {
                     <AccordionTrigger>
                       <div className="flex items-center gap-2">
                         <BookOpen className="h-4 w-4" />
-                        MDCG 2022-21 - Device Grouping Guidance
+                        MDCG 2022-21 - PSUR Guidance Document
                       </div>
                     </AccordionTrigger>
                     <AccordionContent>
-                      <div className="space-y-3">
-                        <p className="text-sm text-muted-foreground">
-                          Guidance on grouping devices for PSUR purposes
-                        </p>
-                        <div className="space-y-2">
-                          <h4 className="text-sm font-medium">Grouping Criteria:</h4>
-                          {euMdrRequirements.psur_requirements.device_grouping.criteria.map((criterion, idx) => (
-                            <div key={idx} className="flex items-center gap-2 text-sm p-2 rounded bg-muted/30">
-                              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-xs font-medium">
-                                {idx + 1}
-                              </span>
-                              <span>{criterion}</span>
+                      <div className="space-y-4">
+                        <div className="p-3 rounded-md bg-primary/5 border border-primary/20">
+                          <p className="text-sm font-medium">Official Guidance Document</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {euMdrRequirements.psur_requirements.guidance_document}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Effective: {euMdrRequirements.psur_requirements.effective_date}
+                          </p>
+                        </div>
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <div className="space-y-2">
+                            <h4 className="text-sm font-medium">Device Grouping Criteria (Annex I):</h4>
+                            {euMdrRequirements.psur_requirements.device_grouping.criteria.map((criterion, idx) => (
+                              <div key={idx} className="flex items-center gap-2 text-sm p-2 rounded bg-muted/30">
+                                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-xs font-medium shrink-0">
+                                  {idx + 1}
+                                </span>
+                                <span>{criterion}</span>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="space-y-2">
+                            <h4 className="text-sm font-medium">Data Presentation (Annex II):</h4>
+                            <div className="p-2 rounded bg-muted/30 text-sm">
+                              <p><span className="font-medium">Format:</span> {euMdrRequirements.psur_requirements.data_presentation.format}</p>
+                              <p className="mt-1"><span className="font-medium">Coding:</span> {euMdrRequirements.psur_requirements.data_presentation.coding}</p>
                             </div>
-                          ))}
+                            <h4 className="text-sm font-medium mt-3">Submission:</h4>
+                            <div className="p-2 rounded bg-muted/30 text-sm">
+                              <p><span className="font-medium">Portal:</span> {euMdrRequirements.psur_requirements.submission.portal}</p>
+                              <p className="mt-1"><span className="font-medium">Access:</span> {euMdrRequirements.psur_requirements.submission.access}</p>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </AccordionContent>

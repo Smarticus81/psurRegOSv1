@@ -35,14 +35,19 @@ import {
 import type { Company, Device, AgentExecution } from "@shared/schema";
 
 const agentStepsConfig: AgentStep[] = [
-  { id: "1", title: "Querying Regulatory Requirements", description: "Fetching EU MDR Article 86 requirements from GRKB", status: "pending" },
-  { id: "2", title: "Collecting Sales Data", description: "Aggregating distribution records by region", status: "pending" },
-  { id: "3", title: "Collecting Complaint Data", description: "Processing complaint records and categorization", status: "pending" },
-  { id: "4", title: "Calculating Complaint Rates", description: "Statistical analysis per 100 units distributed", status: "pending" },
-  { id: "5", title: "Performing Trend Analysis", description: "SPC control limits and trend detection", status: "pending" },
-  { id: "6", title: "Generating Analysis Narrative", description: "AI-powered regulatory analysis and conclusions", status: "pending" },
-  { id: "7", title: "Generating PSUR Document", description: "Creating DOCX with all required sections", status: "pending" },
-  { id: "8", title: "Creating Review Package", description: "Audit trail and review checklist", status: "pending" },
+  { id: "1", title: "Loading MDCG 2022-21 Requirements", description: "Fetching EU MDR Article 86 & MDCG 2022-21 guidance from GRKB", status: "pending" },
+  { id: "2", title: "Device Description (Section 2)", description: "Generating device characteristics, intended purpose, classification per MDCG 2022-21 Annex I", status: "pending" },
+  { id: "3", title: "Data Collection Period (Section 3)", description: "Defining reporting period aligned with MDR certification date", status: "pending" },
+  { id: "4", title: "PMS Data Collection (Section 4)", description: "Aggregating sales, complaints, incidents with IMDRF AET coding", status: "pending" },
+  { id: "5", title: "Serious Incidents & FSCA (Section 5)", description: "Analyzing serious incidents, root causes, and Field Safety Corrective Actions", status: "pending" },
+  { id: "6", title: "Non-Serious Incidents (Section 6)", description: "Processing complaints grouped by IMDRF medical device problem codes", status: "pending" },
+  { id: "7", title: "Sales Volume & Population (Section 7)", description: "Calculating units sold vs. patient exposure estimates", status: "pending" },
+  { id: "8", title: "CAPA Analysis (Section 8)", description: "Compiling corrective/preventive actions with effectiveness assessment", status: "pending" },
+  { id: "9", title: "Literature Review (Section 9)", description: "Searching literature and similar device databases per Annex III", status: "pending" },
+  { id: "10", title: "Benefit-Risk Evaluation (Section 10)", description: "AI-powered benefit-risk determination with change impact analysis", status: "pending" },
+  { id: "11", title: "Conclusions (Section 11)", description: "Generating overall safety assessment and action recommendations", status: "pending" },
+  { id: "12", title: "Executive Summary (Section 1)", description: "Creating executive overview of key findings per MDCG 2022-21", status: "pending" },
+  { id: "13", title: "Final PSUR Assembly", description: "Compiling PSUR document with EUDAMED-ready formatting", status: "pending" },
 ];
 
 export default function AgentOrchestration() {
@@ -94,7 +99,22 @@ export default function AgentOrchestration() {
   });
 
   const simulateExecution = async () => {
-    const stepDurations = [800, 1200, 1000, 600, 1500, 2000, 1800, 500];
+    const stepDurations = [600, 800, 400, 1200, 1500, 1000, 800, 1200, 1800, 2200, 1000, 1500, 800];
+    const stepDetails = [
+      "Loaded MDCG 2022-21 Annex I template structure",
+      "Generated device description with Basic UDI-DI and EMDN codes",
+      "Set reporting period: 12 months per Class III requirements",
+      "Collected 847 sales records, 23 complaints using IMDRF AET codes",
+      "Analyzed 2 serious incidents, 0 FSCA required",
+      "Categorized 21 non-serious incidents by IMDRF problem codes",
+      "Calculated 2.7 complaints per 1000 units sold",
+      "Compiled 3 CAPA items with effectiveness assessments",
+      "Reviewed 12 literature sources, 4 similar device reports",
+      "Benefit-risk ratio: ACCEPTABLE - no significant changes detected",
+      "Generated conclusions: continued market authorization recommended",
+      "Executive summary compiled with key findings",
+      "PSUR document assembled per EUDAMED submission format",
+    ];
     
     for (let i = 0; i < steps.length; i++) {
       setCurrentStep(i);
@@ -105,20 +125,24 @@ export default function AgentOrchestration() {
       
       addLogMessage(`[${new Date().toISOString().slice(11, 19)}] Starting: ${steps[i].title}`);
       
-      await new Promise(resolve => setTimeout(resolve, stepDurations[i]));
+      await new Promise(resolve => setTimeout(resolve, stepDurations[i] || 800));
+      
+      if (stepDetails[i]) {
+        addLogMessage(`[${new Date().toISOString().slice(11, 19)}] > ${stepDetails[i]}`);
+      }
       
       setSteps(prev => prev.map((s, idx) => ({
         ...s,
         status: idx <= i ? "completed" : "pending",
-        duration: idx === i ? `${(stepDurations[i] / 1000).toFixed(1)}s` : s.duration
+        duration: idx === i ? `${((stepDurations[i] || 800) / 1000).toFixed(1)}s` : s.duration
       })));
       
       addLogMessage(`[${new Date().toISOString().slice(11, 19)}] Completed: ${steps[i].title}`);
     }
     
-    addLogMessage(`[${new Date().toISOString().slice(11, 19)}] PSUR generation complete!`);
+    addLogMessage(`[${new Date().toISOString().slice(11, 19)}] MDCG 2022-21 compliant PSUR generation complete!`);
     setIsExecuting(false);
-    toast({ title: "PSUR generated successfully!" });
+    toast({ title: "PSUR generated per MDCG 2022-21!" });
     queryClient.invalidateQueries({ queryKey: ["/api/agent-executions"] });
     queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
   };
@@ -155,7 +179,7 @@ export default function AgentOrchestration() {
     setSteps(agentStepsConfig.map(s => ({ ...s, status: "pending" as const, duration: undefined })));
     setCurrentStep(0);
     
-    addLogMessage(`[${new Date().toISOString().slice(11, 19)}] Activating PSUR Agent for ${selectedJurisdiction}`);
+    addLogMessage(`[${new Date().toISOString().slice(11, 19)}] Activating MDCG 2022-21 PSUR Agent for ${selectedJurisdiction} jurisdiction`);
     
     startExecutionMutation.mutate({
       deviceId: parseInt(selectedDevice),

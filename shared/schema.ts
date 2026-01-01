@@ -160,6 +160,9 @@ export const agentExecutions = pgTable("agent_executions", {
   deviceId: integer("device_id").references(() => devices.id),
   psurItemId: integer("psur_item_id").references(() => psurItems.id),
   jurisdiction: text("jurisdiction"),
+  pmsPlanNumber: text("pms_plan_number"), // For quick start lookup
+  previousPsurNumber: text("previous_psur_number"), // For quick start lookup
+  partNumbers: text("part_numbers").array(), // Device part numbers for the surveillance
   startPeriod: timestamp("start_period"),
   endPeriod: timestamp("end_period"),
   steps: jsonb("steps").default(sql`'[]'::jsonb`), // Array of step objects

@@ -8,6 +8,7 @@ import {
   BookOpen,
   Settings,
   Activity,
+  HelpCircle,
 } from "lucide-react";
 import {
   Sidebar,
@@ -60,6 +61,14 @@ const dataNavItems = [
   },
 ];
 
+const helpNavItems = [
+  {
+    title: "PMS Instructions",
+    url: "/instructions",
+    icon: HelpCircle,
+  },
+];
+
 export function AppSidebar() {
   const [location] = useLocation();
 
@@ -108,6 +117,27 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {dataNavItems.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={location === item.url}
+                  >
+                    <Link href={item.url} data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, '-')}`}>
+                      <item.icon className="h-4 w-4" />
+                      <span>{item.title}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Help</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {helpNavItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
                     asChild

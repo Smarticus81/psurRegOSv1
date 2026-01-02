@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
@@ -68,7 +69,7 @@ export default function AgentOrchestration() {
   const [lookupResult, setLookupResult] = useState<{ found: boolean; device?: Device; psurItem?: PSURItem } | null>(null);
   const [isLookingUp, setIsLookingUp] = useState(false);
   
-  const [selectedJurisdiction, setSelectedJurisdiction] = useState<string>("");
+  const [selectedJurisdictions, setSelectedJurisdictions] = useState<string[]>([]);
   const [selectedDevice, setSelectedDevice] = useState<string>("");
   const [partNumbers, setPartNumbers] = useState("");
   const [startPeriod, setStartPeriod] = useState("");
@@ -135,7 +136,7 @@ export default function AgentOrchestration() {
   const startExecutionMutation = useMutation({
     mutationFn: async (data: { 
       deviceId?: number; 
-      jurisdiction: string;
+      jurisdictions: string[];
       pmsPlanNumber?: string;
       previousPsurNumber?: string;
       partNumbers?: string[];
@@ -145,7 +146,7 @@ export default function AgentOrchestration() {
       return apiRequest("POST", "/api/agent-executions", {
         agentType: "psur",
         deviceId: data.deviceId,
-        jurisdiction: data.jurisdiction,
+        jurisdictions: data.jurisdictions,
         pmsPlanNumber: data.pmsPlanNumber,
         previousPsurNumber: data.previousPsurNumber,
         partNumbers: data.partNumbers,
@@ -236,7 +237,15 @@ export default function AgentOrchestration() {
   }, [isExecuting]);
 
   const canStartQuickMode = lookupResult?.found && lookupResult.device;
-  const canStartManualMode = selectedJurisdiction && selectedDevice && startPeriod && endPeriod;
+  const canStartManualMode = selectedJurisdictions.length > 0 && selectedDevice && startPeriod && endPeriod;
+
+  const toggleJurisdiction = (value: string) => {
+    setSelectedJurisdictions(prev => 
+      prev.includes(value) 
+        ? prev.filter(j => j !== value)
+        : [...prev, value]
+    );
+  };
 
   const handleStartExecution = () => {
     setIsExecuting(true);
@@ -246,25 +255,26 @@ export default function AgentOrchestration() {
     setCurrentStep(0);
     
     if (configMode === "quick" && lookupResult?.device) {
-      const jurisdiction = lookupResult.psurItem?.jurisdiction || "EU_MDR";
+      const jurisdictions = lookupResult.psurItem?.jurisdiction ? [lookupResult.psurItem.jurisdiction] : ["EU_MDR"];
       addLogMessage(`[${new Date().toISOString().slice(11, 19)}] Quick Start: Retrieved device data for ${lookupResult.device.deviceName}`);
-      addLogMessage(`[${new Date().toISOString().slice(11, 19)}] Activating MDCG 2022-21 PSUR Agent for ${jurisdiction} jurisdiction`);
+      addLogMessage(`[${new Date().toISOString().slice(11, 19)}] Activating MDCG 2022-21 PSUR Agent for ${jurisdictions.join(", ")} jurisdiction(s)`);
       
       startExecutionMutation.mutate({
         deviceId: lookupResult.device.id,
-        jurisdiction,
+        jurisdictions,
         pmsPlanNumber: pmsPlanNumber || undefined,
         previousPsurNumber: previousPsurNumber || undefined,
       });
     } else {
-      addLogMessage(`[${new Date().toISOString().slice(11, 19)}] Manual Configuration: ${jurisdictionOptions.find(j => j.value === selectedJurisdiction)?.label}`);
-      addLogMessage(`[${new Date().toISOString().slice(11, 19)}] Activating MDCG 2022-21 PSUR Agent`);
+      const jurisdictionLabels = selectedJurisdictions.map(j => jurisdictionOptions.find(o => o.value === j)?.label).filter(Boolean).join(", ");
+      addLogMessage(`[${new Date().toISOString().slice(11, 19)}] Manual Configuration: ${jurisdictionLabels}`);
+      addLogMessage(`[${new Date().toISOString().slice(11, 19)}] Activating MDCG 2022-21 PSUR Agent for ${selectedJurisdictions.length} jurisdiction(s)`);
       
       const parts = partNumbers.split(",").map(p => p.trim()).filter(Boolean);
       
       startExecutionMutation.mutate({
         deviceId: parseInt(selectedDevice),
-        jurisdiction: selectedJurisdiction,
+        jurisdictions: selectedJurisdictions,
         partNumbers: parts.length > 0 ? parts : undefined,
         startPeriod,
         endPeriod,
@@ -400,21 +410,36 @@ export default function AgentOrchestration() {
                     </p>
                     
                     <div className="space-y-2">
-                      <Label>Jurisdiction / Regulation</Label>
-                      <Select 
-                        value={selectedJurisdiction} 
-                        onValueChange={setSelectedJurisdiction}
-                        disabled={isExecuting}
-                      >
-                        <SelectTrigger data-testid="select-jurisdiction">
-                          <SelectValue placeholder="Select applicable regulation" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {jurisdictionOptions.map((j) => (
-                            <SelectItem key={j.value} value={j.value}>{j.label}</SelectItem>
+                      <Label>Jurisdictions / Regulations</Label>
+                      <p className="text-xs text-muted-foreground mb-2">Select all applicable regulations for this PSUR</p>
+                      <div className="space-y-2 p-3 rounded-md border bg-muted/20">
+                        {jurisdictionOptions.map((j) => (
+                          <div key={j.value} className="flex items-center gap-2">
+                            <Checkbox
+                              id={`jurisdiction-${j.value}`}
+                              checked={selectedJurisdictions.includes(j.value)}
+                              onCheckedChange={() => toggleJurisdiction(j.value)}
+                              disabled={isExecuting}
+                              data-testid={`checkbox-jurisdiction-${j.value.toLowerCase()}`}
+                            />
+                            <label
+                              htmlFor={`jurisdiction-${j.value}`}
+                              className="text-sm cursor-pointer"
+                            >
+                              {j.label}
+                            </label>
+                          </div>
+                        ))}
+                      </div>
+                      {selectedJurisdictions.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {selectedJurisdictions.map(j => (
+                            <Badge key={j} variant="secondary" className="text-xs">
+                              {jurisdictionOptions.find(o => o.value === j)?.label}
+                            </Badge>
                           ))}
-                        </SelectContent>
-                      </Select>
+                        </div>
+                      )}
                     </div>
 
                     <div className="space-y-2">
@@ -623,7 +648,7 @@ export default function AgentOrchestration() {
                       <div className="min-w-0">
                         <p className="font-medium">{execution.agentType.toUpperCase()} Agent</p>
                         <p className="text-xs text-muted-foreground">
-                          {execution.jurisdiction} | {execution.pmsPlanNumber || execution.previousPsurNumber || 'Manual Config'}
+                          {(execution.jurisdictions as string[] | undefined)?.join(", ") || "N/A"} | {execution.pmsPlanNumber || execution.previousPsurNumber || 'Manual Config'}
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {execution.createdAt ? new Date(execution.createdAt).toLocaleDateString() : 'N/A'}

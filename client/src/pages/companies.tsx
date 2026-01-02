@@ -29,10 +29,10 @@ import {
   Trash2, 
   Package, 
   Globe,
-  ChevronRight,
-  Loader2
+  Loader2,
+  Settings,
+  Shield
 } from "lucide-react";
-import { Link } from "wouter";
 import type { Company, Device, InsertCompany, InsertDevice } from "@shared/schema";
 
 const jurisdictionOptions = ["EU", "UK", "US", "Canada", "Australia", "Japan"];
@@ -40,10 +40,9 @@ const deviceClassOptions = ["Class I", "Class IIa", "Class IIb", "Class III"];
 
 export default function Companies() {
   const { toast } = useToast();
-  const [isCompanyDialogOpen, setIsCompanyDialogOpen] = useState(false);
+  const [isSetupDialogOpen, setIsSetupDialogOpen] = useState(false);
   const [isDeviceDialogOpen, setIsDeviceDialogOpen] = useState(false);
-  const [selectedCompanyId, setSelectedCompanyId] = useState<number | null>(null);
-  const [expandedCompany, setExpandedCompany] = useState<number | null>(null);
+  const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
 
   const { data: companies = [], isLoading } = useQuery<Company[]>({
     queryKey: ["/api/companies"],
@@ -53,17 +52,34 @@ export default function Companies() {
     queryKey: ["/api/devices"],
   });
 
+  const company = companies[0];
+  const companyDevices = company ? devices.filter(d => d.companyId === company.id) : [];
+
   const createCompanyMutation = useMutation({
     mutationFn: async (data: InsertCompany) => {
       return apiRequest("POST", "/api/companies", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
-      setIsCompanyDialogOpen(false);
-      toast({ title: "Company created successfully" });
+      setIsSetupDialogOpen(false);
+      toast({ title: "Company profile created successfully" });
     },
     onError: () => {
-      toast({ title: "Failed to create company", variant: "destructive" });
+      toast({ title: "Failed to create company profile", variant: "destructive" });
+    },
+  });
+
+  const updateCompanyMutation = useMutation({
+    mutationFn: async (data: { id: number } & Partial<InsertCompany>) => {
+      return apiRequest("PATCH", `/api/companies/${data.id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
+      setIsEditProfileOpen(false);
+      toast({ title: "Company profile updated" });
+    },
+    onError: () => {
+      toast({ title: "Failed to update profile", variant: "destructive" });
     },
   });
 
@@ -81,14 +97,13 @@ export default function Companies() {
     },
   });
 
-  const deleteCompanyMutation = useMutation({
+  const deleteDeviceMutation = useMutation({
     mutationFn: async (id: number) => {
-      return apiRequest("DELETE", `/api/companies/${id}`);
+      return apiRequest("DELETE", `/api/devices/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
       queryClient.invalidateQueries({ queryKey: ["/api/devices"] });
-      toast({ title: "Company deleted" });
+      toast({ title: "Device removed" });
     },
   });
 
@@ -106,9 +121,26 @@ export default function Companies() {
     });
   };
 
+  const handleUpdateCompany = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!company) return;
+    
+    const formData = new FormData(e.currentTarget);
+    const selectedJurisdictions = jurisdictionOptions.filter(
+      (j) => formData.get(`edit-jurisdiction-${j}`) === "on"
+    );
+    
+    updateCompanyMutation.mutate({
+      id: company.id,
+      name: formData.get("name") as string,
+      description: formData.get("description") as string || undefined,
+      jurisdictions: selectedJurisdictions,
+    });
+  };
+
   const handleCreateDevice = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!selectedCompanyId) return;
+    if (!company) return;
     
     const formData = new FormData(e.currentTarget);
     const selectedJurisdictions = jurisdictionOptions.filter(
@@ -116,7 +148,7 @@ export default function Companies() {
     );
 
     createDeviceMutation.mutate({
-      companyId: selectedCompanyId,
+      companyId: company.id,
       deviceName: formData.get("deviceName") as string,
       deviceCode: formData.get("deviceCode") as string,
       riskClass: formData.get("riskClass") as string,
@@ -126,9 +158,6 @@ export default function Companies() {
       deviceGroup: formData.get("deviceGroup") as string || undefined,
     });
   };
-
-  const getDevicesForCompany = (companyId: number) => 
-    devices.filter(d => d.companyId === companyId);
 
   if (isLoading) {
     return (
@@ -143,151 +172,148 @@ export default function Companies() {
       <div className="p-6 space-y-6">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Companies</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">Company Profile</h1>
             <p className="text-muted-foreground text-sm mt-1">
-              Manage manufacturer profiles and device portfolios
+              Your organization details and device portfolio
             </p>
           </div>
-          <Button onClick={() => setIsCompanyDialogOpen(true)} data-testid="button-add-company">
-            <Plus className="h-4 w-4" />
-            Add Company
-          </Button>
+          {company && (
+            <Button variant="outline" onClick={() => setIsEditProfileOpen(true)} data-testid="button-edit-profile">
+              <Settings className="h-4 w-4" />
+              Edit Profile
+            </Button>
+          )}
         </div>
 
-        {companies.length === 0 ? (
+        {!company ? (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-16 text-center">
               <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted mb-4">
                 <Building2 className="h-8 w-8 text-muted-foreground" />
               </div>
-              <h3 className="text-lg font-semibold">No companies yet</h3>
+              <h3 className="text-lg font-semibold">Set Up Your Company Profile</h3>
               <p className="text-sm text-muted-foreground mt-1 max-w-sm">
-                Add a company to start configuring device portfolios and generating regulatory documents.
+                Configure your company details to start managing device portfolios and generating regulatory documents.
               </p>
-              <Button className="mt-6" onClick={() => setIsCompanyDialogOpen(true)}>
+              <Button className="mt-6" onClick={() => setIsSetupDialogOpen(true)} data-testid="button-setup-company">
                 <Plus className="h-4 w-4" />
-                Add Your First Company
+                Set Up Company Profile
               </Button>
             </CardContent>
           </Card>
         ) : (
-          <div className="space-y-4">
-            {companies.map((company) => {
-              const companyDevices = getDevicesForCompany(company.id);
-              const isExpanded = expandedCompany === company.id;
-              
-              return (
-                <Card key={company.id} data-testid={`card-company-${company.id}`}>
-                  <CardHeader 
-                    className="cursor-pointer"
-                    onClick={() => setExpandedCompany(isExpanded ? null : company.id)}
-                  >
-                    <div className="flex items-center justify-between gap-4">
-                      <div className="flex items-center gap-4 min-w-0">
-                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md bg-primary/10">
-                          <Building2 className="h-6 w-6 text-primary" />
-                        </div>
-                        <div className="min-w-0">
-                          <CardTitle className="text-lg">{company.name}</CardTitle>
-                          <CardDescription className="flex items-center gap-2 flex-wrap mt-1">
-                            <span className="flex items-center gap-1">
-                              <Package className="h-3 w-3" />
-                              {companyDevices.length} devices
-                            </span>
-                            {company.jurisdictions && company.jurisdictions.length > 0 && (
-                              <span className="flex items-center gap-1">
-                                <Globe className="h-3 w-3" />
-                                {company.jurisdictions.join(", ")}
-                              </span>
-                            )}
-                          </CardDescription>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Button 
-                          variant="ghost" 
-                          size="icon"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteCompanyMutation.mutate(company.id);
-                          }}
-                          data-testid={`button-delete-company-${company.id}`}
-                        >
-                          <Trash2 className="h-4 w-4 text-muted-foreground" />
-                        </Button>
-                        <ChevronRight className={`h-5 w-5 text-muted-foreground transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-                      </div>
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-4">
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md bg-primary/10">
+                    <Building2 className="h-7 w-7 text-primary" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <CardTitle className="text-xl" data-testid="text-company-name">{company.name}</CardTitle>
+                    <CardDescription className="flex items-center gap-4 flex-wrap mt-1">
+                      <span className="flex items-center gap-1">
+                        <Package className="h-3.5 w-3.5" />
+                        {companyDevices.length} device{companyDevices.length !== 1 ? 's' : ''}
+                      </span>
+                      {company.jurisdictions && company.jurisdictions.length > 0 && (
+                        <span className="flex items-center gap-1">
+                          <Globe className="h-3.5 w-3.5" />
+                          {company.jurisdictions.join(", ")}
+                        </span>
+                      )}
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              {company.description && (
+                <CardContent className="pt-0">
+                  <p className="text-sm text-muted-foreground">{company.description}</p>
+                </CardContent>
+              )}
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+                <div>
+                  <CardTitle className="text-lg">Device Portfolio</CardTitle>
+                  <CardDescription>Medical devices under regulatory surveillance</CardDescription>
+                </div>
+                <Button 
+                  onClick={() => setIsDeviceDialogOpen(true)}
+                  data-testid="button-add-device"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add Device
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {companyDevices.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted mb-4">
+                      <Shield className="h-6 w-6 text-muted-foreground" />
                     </div>
-                  </CardHeader>
-                  
-                  {isExpanded && (
-                    <CardContent className="pt-0">
-                      <div className="border-t pt-4 space-y-4">
-                        <div className="flex items-center justify-between">
-                          <h4 className="text-sm font-medium">Device Portfolio</h4>
-                          <Button 
-                            size="sm" 
-                            variant="outline"
-                            onClick={() => {
-                              setSelectedCompanyId(company.id);
-                              setIsDeviceDialogOpen(true);
-                            }}
-                            data-testid={`button-add-device-${company.id}`}
-                          >
-                            <Plus className="h-4 w-4" />
-                            Add Device
-                          </Button>
-                        </div>
-                        
-                        {companyDevices.length === 0 ? (
-                          <div className="text-center py-8 text-muted-foreground text-sm">
-                            No devices configured. Add a device to get started.
+                    <p className="text-sm font-medium">No devices configured</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Add your medical devices to generate PSURs and compliance documents
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                    {companyDevices.map((device) => (
+                      <div 
+                        key={device.id}
+                        className="p-4 rounded-md border bg-card"
+                        data-testid={`card-device-${device.id}`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium truncate" data-testid={`text-device-name-${device.id}`}>
+                              {device.deviceName}
+                            </p>
+                            <p className="text-xs font-mono text-muted-foreground">{device.deviceCode}</p>
                           </div>
-                        ) : (
-                          <div className="grid gap-3 md:grid-cols-2">
-                            {companyDevices.map((device) => (
-                              <div 
-                                key={device.id}
-                                className="p-4 rounded-md border bg-card/50"
-                                data-testid={`card-device-${device.id}`}
-                              >
-                                <div className="flex items-start justify-between gap-2">
-                                  <div className="min-w-0">
-                                    <p className="font-medium truncate">{device.deviceName}</p>
-                                    <p className="text-xs font-mono text-muted-foreground">{device.deviceCode}</p>
-                                  </div>
-                                  <Badge variant="outline" className="shrink-0">
-                                    {device.riskClass}
-                                  </Badge>
-                                </div>
-                                {device.jurisdictions && device.jurisdictions.length > 0 && (
-                                  <div className="flex gap-1 mt-2 flex-wrap">
-                                    {device.jurisdictions.map((j) => (
-                                      <span key={j} className="text-[10px] px-1.5 py-0.5 rounded bg-muted">
-                                        {j}
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
+                          <div className="flex items-center gap-1">
+                            <Badge variant="outline" className="shrink-0">
+                              {device.riskClass}
+                            </Badge>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => deleteDeviceMutation.mutate(device.id)}
+                              data-testid={`button-delete-device-${device.id}`}
+                            >
+                              <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                            </Button>
+                          </div>
+                        </div>
+                        {device.deviceGroup && (
+                          <p className="text-xs text-muted-foreground mt-2">{device.deviceGroup}</p>
+                        )}
+                        {device.jurisdictions && device.jurisdictions.length > 0 && (
+                          <div className="flex gap-1 mt-3 flex-wrap">
+                            {device.jurisdictions.map((j) => (
+                              <span key={j} className="text-[10px] px-1.5 py-0.5 rounded bg-muted">
+                                {j}
+                              </span>
                             ))}
                           </div>
                         )}
                       </div>
-                    </CardContent>
-                  )}
-                </Card>
-              );
-            })}
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
         )}
 
-        <Dialog open={isCompanyDialogOpen} onOpenChange={setIsCompanyDialogOpen}>
+        <Dialog open={isSetupDialogOpen} onOpenChange={setIsSetupDialogOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Add Company</DialogTitle>
+              <DialogTitle>Set Up Company Profile</DialogTitle>
               <DialogDescription>
-                Create a new manufacturer profile to manage device portfolios.
+                Enter your company details to get started with regulatory document generation.
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleCreateCompany} className="space-y-4">
@@ -306,12 +332,15 @@ export default function Companies() {
                 <Input 
                   id="description" 
                   name="description" 
-                  placeholder="Brief description of the company"
+                  placeholder="Brief description of your company"
                   data-testid="input-company-description"
                 />
               </div>
               <div className="space-y-2">
-                <Label>Jurisdictions</Label>
+                <Label>Active Jurisdictions</Label>
+                <p className="text-xs text-muted-foreground mb-2">
+                  Select the regulatory regions where you market devices
+                </p>
                 <div className="grid grid-cols-3 gap-2">
                   {jurisdictionOptions.map((j) => (
                     <div key={j} className="flex items-center gap-2">
@@ -324,12 +353,70 @@ export default function Companies() {
                 </div>
               </div>
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setIsCompanyDialogOpen(false)}>
+                <Button type="button" variant="outline" onClick={() => setIsSetupDialogOpen(false)}>
                   Cancel
                 </Button>
                 <Button type="submit" disabled={createCompanyMutation.isPending} data-testid="button-submit-company">
                   {createCompanyMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-                  Create Company
+                  Create Profile
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={isEditProfileOpen} onOpenChange={setIsEditProfileOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Edit Company Profile</DialogTitle>
+              <DialogDescription>
+                Update your company information and active jurisdictions.
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleUpdateCompany} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-name">Company Name</Label>
+                <Input 
+                  id="edit-name" 
+                  name="name" 
+                  defaultValue={company?.name || ""}
+                  required
+                  data-testid="input-edit-company-name"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-description">Description</Label>
+                <Input 
+                  id="edit-description" 
+                  name="description" 
+                  defaultValue={company?.description || ""}
+                  data-testid="input-edit-company-description"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Active Jurisdictions</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  {jurisdictionOptions.map((j) => (
+                    <div key={j} className="flex items-center gap-2">
+                      <Checkbox 
+                        id={`edit-jurisdiction-${j}`} 
+                        name={`edit-jurisdiction-${j}`}
+                        defaultChecked={company?.jurisdictions?.includes(j)}
+                      />
+                      <Label htmlFor={`edit-jurisdiction-${j}`} className="text-sm font-normal cursor-pointer">
+                        {j}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setIsEditProfileOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={updateCompanyMutation.isPending} data-testid="button-update-company">
+                  {updateCompanyMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                  Save Changes
                 </Button>
               </DialogFooter>
             </form>
@@ -341,7 +428,7 @@ export default function Companies() {
             <DialogHeader>
               <DialogTitle>Add Device</DialogTitle>
               <DialogDescription>
-                Add a medical device to the company portfolio.
+                Add a medical device to your portfolio for regulatory surveillance.
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleCreateDevice} className="space-y-4">
@@ -412,7 +499,10 @@ export default function Companies() {
                 </div>
               </div>
               <div className="space-y-2">
-                <Label>Jurisdictions</Label>
+                <Label>Device Jurisdictions</Label>
+                <p className="text-xs text-muted-foreground mb-2">
+                  Select regions where this device is marketed
+                </p>
                 <div className="grid grid-cols-3 gap-2">
                   {jurisdictionOptions.map((j) => (
                     <div key={j} className="flex items-center gap-2">

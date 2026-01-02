@@ -190,13 +190,13 @@ export default function Dashboard() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-4">
             <div>
-              <CardTitle className="text-lg font-semibold">Configured Companies</CardTitle>
-              <CardDescription>Manufacturer profiles and device portfolios</CardDescription>
+              <CardTitle className="text-lg font-semibold">Your Company</CardTitle>
+              <CardDescription>Company profile and device portfolio</CardDescription>
             </div>
             <Button size="sm" asChild>
               <Link href="/companies">
-                <Plus className="h-4 w-4" />
-                Add Company
+                <ArrowRight className="h-4 w-4" />
+                View Profile
               </Link>
             </Button>
           </CardHeader>
@@ -206,35 +206,34 @@ export default function Dashboard() {
                 <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted mb-4">
                   <Building2 className="h-6 w-6 text-muted-foreground" />
                 </div>
-                <p className="text-sm font-medium">No companies configured</p>
+                <p className="text-sm font-medium">Company profile not set up</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Add a company to start managing device portfolios
+                  Set up your company to start managing device portfolios
                 </p>
+                <Button size="sm" className="mt-4" asChild>
+                  <Link href="/companies">
+                    <Plus className="h-4 w-4" />
+                    Set Up Company
+                  </Link>
+                </Button>
               </div>
             ) : (
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {companies.map((company) => (
-                  <Link
-                    key={company.id}
-                    href={`/companies/${company.id}`}
-                    className="block"
-                  >
-                    <div className="p-4 rounded-md border bg-card hover-elevate cursor-pointer transition-colors">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-primary/10">
-                          <Building2 className="h-5 w-5 text-primary" />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="font-medium truncate">{company.name}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {company.jurisdictions?.join(", ") || "No jurisdictions"}
-                          </p>
-                        </div>
-                      </div>
+              <Link href="/companies" className="block">
+                <div className="p-4 rounded-md border bg-card hover-elevate cursor-pointer transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-primary/10">
+                      <Building2 className="h-5 w-5 text-primary" />
                     </div>
-                  </Link>
-                ))}
-              </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium truncate">{companies[0].name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {companies[0].jurisdictions?.join(", ") || "No jurisdictions configured"}
+                      </p>
+                    </div>
+                    <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                </div>
+              </Link>
             )}
           </CardContent>
         </Card>

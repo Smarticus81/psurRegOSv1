@@ -31,7 +31,7 @@ const mainNavItems = [
     icon: LayoutDashboard,
   },
   {
-    title: "Companies",
+    title: "Company Profile",
     url: "/companies",
     icon: Building2,
   },

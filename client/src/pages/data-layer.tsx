@@ -38,31 +38,36 @@ import type { Company, DataSource } from "@shared/schema";
 
 export default function DataLayer() {
   const { toast } = useToast();
-  const [selectedCompany, setSelectedCompany] = useState<string>("");
   const [uploadType, setUploadType] = useState<string>("sales");
   const uploadMetaRef = useRef<{ fileName: string; objectPath: string } | null>(null);
 
+  // Single-company deployment: auto-fetch the company
   const { data: companies = [] } = useQuery<Company[]>({
     queryKey: ["/api/companies"],
   });
+  
+  // Use the first (and only) company in single-company deployment
+  const company = companies[0];
+  const companyId = company?.id?.toString() || "";
 
   const { data: dataSources = [] } = useQuery<DataSource[]>({
     queryKey: ["/api/data-sources"],
   });
 
-  const companyDataSources = dataSources.filter(
-    (ds) => ds.companyId === parseInt(selectedCompany)
-  );
+  // Filter to company's data sources
+  const companyDataSources = company 
+    ? dataSources.filter((ds) => ds.companyId === company.id)
+    : [];
 
   const handleUploadComplete = async () => {
-    if (!uploadMetaRef.current || !selectedCompany) return;
+    if (!uploadMetaRef.current || !companyId) return;
 
     try {
       const response = await fetch("/api/data-sources/complete-upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          companyId: selectedCompany,
+          companyId: companyId,
           type: uploadType,
           fileName: uploadMetaRef.current.fileName,
           objectPath: uploadMetaRef.current.objectPath,
@@ -119,30 +124,23 @@ export default function DataLayer() {
           </TabsList>
 
           <TabsContent value="sources" className="space-y-6">
-            <div className="flex items-center gap-4">
-              <Select value={selectedCompany} onValueChange={setSelectedCompany}>
-                <SelectTrigger className="w-64" data-testid="select-data-company">
-                  <SelectValue placeholder="Select company" />
-                </SelectTrigger>
-                <SelectContent>
-                  {companies.map((c) => (
-                    <SelectItem key={c.id} value={c.id.toString()}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {company && (
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="text-xs">
+                  {company.name}
+                </Badge>
+              </div>
+            )}
 
-            {!selectedCompany ? (
+            {!company ? (
               <Card>
                 <CardContent className="flex flex-col items-center justify-center py-16 text-center">
                   <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted mb-4">
                     <Database className="h-8 w-8 text-muted-foreground" />
                   </div>
-                  <h3 className="text-lg font-semibold">Select a Company</h3>
+                  <h3 className="text-lg font-semibold">Loading Company Data</h3>
                   <p className="text-sm text-muted-foreground mt-1 max-w-sm">
-                    Choose a company to view and manage its data sources.
+                    Please wait while we load your company information.
                   </p>
                 </CardContent>
               </Card>
@@ -198,12 +196,12 @@ export default function DataLayer() {
                             Last updated: {new Date(ds.lastUpdated).toLocaleDateString()}
                           </p>
                         )}
-                        {ds.columnMapping && (
+                        {ds.columnMapping ? (
                           <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
                             <CheckCircle2 className="h-3 w-3" />
                             Column mapping configured
                           </div>
-                        )}
+                        ) : null}
                       </div>
                     </CardContent>
                   </Card>
@@ -221,36 +219,19 @@ export default function DataLayer() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label>Company</Label>
-                    <Select value={selectedCompany} onValueChange={setSelectedCompany}>
-                      <SelectTrigger data-testid="select-upload-company">
-                        <SelectValue placeholder="Select company" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {companies.map((c) => (
-                          <SelectItem key={c.id} value={c.id.toString()}>
-                            {c.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Data Type</Label>
-                    <Select value={uploadType} onValueChange={setUploadType}>
-                      <SelectTrigger data-testid="select-upload-type">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="sales">Sales Data</SelectItem>
-                        <SelectItem value="complaints">Complaints</SelectItem>
-                        <SelectItem value="adverse_events">Adverse Events</SelectItem>
-                        <SelectItem value="cer">Clinical Evaluation Report</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                <div className="space-y-2">
+                  <Label>Data Type</Label>
+                  <Select value={uploadType} onValueChange={setUploadType}>
+                    <SelectTrigger data-testid="select-upload-type" className="w-64">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="sales">Sales Data</SelectItem>
+                      <SelectItem value="complaints">Complaints</SelectItem>
+                      <SelectItem value="adverse_events">Adverse Events</SelectItem>
+                      <SelectItem value="cer">Clinical Evaluation Report</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="border-2 border-dashed rounded-lg p-8 text-center hover:border-primary/50 transition-colors">
@@ -264,8 +245,8 @@ export default function DataLayer() {
                         Supports CSV, XLS, XLSX files up to 10MB
                       </p>
                     </div>
-                    {!selectedCompany ? (
-                      <p className="text-sm text-muted-foreground">Please select a company first</p>
+                    {!company ? (
+                      <p className="text-sm text-muted-foreground">Loading company data...</p>
                     ) : (
                       <ObjectUploader
                         maxNumberOfFiles={5}

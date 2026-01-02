@@ -2,7 +2,9 @@
 
 ## Overview
 
-RegulatoryOS is an intelligent agent framework for medical device regulatory compliance. It provides AI-powered automation for generating Periodic Safety Update Reports (PSURs), Post-Market Surveillance Reports (PMSRs), and other regulatory documentation required for medical device manufacturers operating across multiple jurisdictions (EU MDR, UK MDR, FDA).
+RegulatoryOS is a single-company deployment system for medical device regulatory compliance. It provides AI-powered automation for generating MDCG 2022-21 compliant Periodic Safety Update Reports (PSURs) and other regulatory documentation required for medical device manufacturers operating across multiple jurisdictions (EU MDR, UK MDR, FDA).
+
+**Deployment Model**: Single-company - the logged-in user IS the company. No company selection is needed throughout the application.
 
 The system features a Global Regulatory Knowledge Base (GRKB) containing structured regulatory requirements, an agent orchestration layer for automating document generation workflows, and a unified data layer for ingesting and normalizing compliance data from various sources.
 

@@ -174,7 +174,7 @@ export default function Dashboard() {
                             {execution.agentType.toUpperCase()} Agent
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            {execution.jurisdiction || "All jurisdictions"}
+                            {(execution.jurisdictions as string[] | null)?.join(", ") || "All jurisdictions"}
                           </p>
                         </div>
                       </div>

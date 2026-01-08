@@ -16,8 +16,7 @@ import {
   listObligations,
   listConstraints,
   qualifyTemplate,
-  compileEuDsl,
-  compileUkDsl,
+  compileCombinedDsl,
 } from "./orchestrator";
 
 export async function registerRoutes(
@@ -456,29 +455,16 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/orchestrator/compile/eu", async (req, res) => {
+  app.post("/api/orchestrator/compile", async (req, res) => {
     try {
-      const result = await compileEuDsl();
+      const result = await compileCombinedDsl();
       if (result.success) {
         res.json(result.data);
       } else {
         res.status(500).json({ error: result.error });
       }
     } catch (error) {
-      res.status(500).json({ error: "Failed to compile EU DSL" });
-    }
-  });
-
-  app.post("/api/orchestrator/compile/uk", async (req, res) => {
-    try {
-      const result = await compileUkDsl();
-      if (result.success) {
-        res.json(result.data);
-      } else {
-        res.status(500).json({ error: result.error });
-      }
-    } catch (error) {
-      res.status(500).json({ error: "Failed to compile UK DSL" });
+      res.status(500).json({ error: "Failed to compile DSL" });
     }
   });
 

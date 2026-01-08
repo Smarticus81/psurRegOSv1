@@ -83,12 +83,7 @@ async function runOrchestratorCommand(
 
 export async function initializeOrchestrator(): Promise<OrchestratorResult> {
   const initResult = await runOrchestratorCommand(["init"]);
-  if (!initResult.success) {
-    return initResult;
-  }
-
-  const seedResult = await runOrchestratorCommand(["demo-seed"]);
-  return seedResult;
+  return initResult;
 }
 
 export async function compileEuDsl(): Promise<
@@ -161,65 +156,51 @@ export async function qualifyTemplate(
   return { success: false, error: result.error || "Unknown qualification result" };
 }
 
+function extractJson(output: string): string {
+  const lines = output.split("\n");
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
+      return trimmed;
+    }
+  }
+  return "[]";
+}
+
 export async function listObligations(): Promise<
   OrchestratorResult<Obligation[]>
 > {
-  const result = await runOrchestratorCommand(["list-obligations"]);
+  const result = await runOrchestratorCommand(["list-obligations", "--json"]);
 
   if (!result.success) {
     return { success: false, error: result.error };
   }
 
-  const obligations: Obligation[] = [];
-  const lines = result.data?.split("\n") || [];
-  
-  for (const line of lines) {
-    const match = line.match(/│\s+([^\s│]+)\s+│\s+([^│]+)\s+│\s+(\w+)\s+│\s+(true|false)\s+│/);
-    if (match) {
-      obligations.push({
-        id: match[1].trim(),
-        title: match[2].trim(),
-        jurisdiction: match[3].trim(),
-        mandatory: match[4] === "true",
-        required_evidence_types: [],
-        allowed_transformations: [],
-        forbidden_transformations: [],
-        required_time_scope: null,
-        sources: [],
-      });
-    }
+  try {
+    const jsonStr = extractJson(result.data || "");
+    const obligations = JSON.parse(jsonStr) as Obligation[];
+    return { success: true, data: obligations };
+  } catch (e) {
+    return { success: false, error: "Failed to parse obligations JSON" };
   }
-
-  return { success: true, data: obligations };
 }
 
 export async function listConstraints(): Promise<
   OrchestratorResult<Constraint[]>
 > {
-  const result = await runOrchestratorCommand(["list-constraints"]);
+  const result = await runOrchestratorCommand(["list-constraints", "--json"]);
 
   if (!result.success) {
     return { success: false, error: result.error };
   }
 
-  const constraints: Constraint[] = [];
-  const lines = result.data?.split("\n") || [];
-
-  for (const line of lines) {
-    const match = line.match(/│\s+([^\s│]+)\s+│\s+(BLOCK|WARN)\s+│\s+([^│]+)\s+│/);
-    if (match) {
-      constraints.push({
-        id: match[1].trim(),
-        severity: match[2] as "BLOCK" | "WARN",
-        trigger: match[3].trim(),
-        condition: "",
-        action: "",
-        jurisdiction: null,
-      });
-    }
+  try {
+    const jsonStr = extractJson(result.data || "");
+    const constraints = JSON.parse(jsonStr) as Constraint[];
+    return { success: true, data: constraints };
+  } catch (e) {
+    return { success: false, error: "Failed to parse constraints JSON" };
   }
-
-  return { success: true, data: constraints };
 }
 
 export async function getOrchestratorStatus(): Promise<
@@ -265,6 +246,32 @@ export async function getOrchestratorStatus(): Promise<
 
 let orchestratorInitialized = false;
 
+export async function compileCombinedDsl(): Promise<
+  OrchestratorResult<CompilationSummary>
+> {
+  const result = await runOrchestratorCommand([
+    "compile",
+    "psur_orchestrator/dsl/examples/combined.dsl",
+  ]);
+
+  if (!result.success) {
+    return { success: false, error: result.error };
+  }
+
+  const sourceMatch = result.data?.match(/Sources\s+│\s+(\d+)/);
+  const obligationMatch = result.data?.match(/Obligations\s+│\s+(\d+)/);
+  const constraintMatch = result.data?.match(/Constraints\s+│\s+(\d+)/);
+
+  return {
+    success: true,
+    data: {
+      sources: sourceMatch ? parseInt(sourceMatch[1]) : 0,
+      obligations: obligationMatch ? parseInt(obligationMatch[1]) : 0,
+      constraints: constraintMatch ? parseInt(constraintMatch[1]) : 0,
+    },
+  };
+}
+
 export async function ensureOrchestratorInitialized(): Promise<boolean> {
   if (orchestratorInitialized) {
     return true;
@@ -276,14 +283,9 @@ export async function ensureOrchestratorInitialized(): Promise<boolean> {
   if (initResult.success) {
     console.log("[Orchestrator] Compliance kernel initialized successfully");
     
-    const euResult = await compileEuDsl();
-    if (euResult.success) {
-      console.log(`[Orchestrator] EU DSL compiled: ${euResult.data?.obligations} obligations, ${euResult.data?.constraints} constraints`);
-    }
-    
-    const ukResult = await compileUkDsl();
-    if (ukResult.success) {
-      console.log(`[Orchestrator] UK DSL compiled: ${ukResult.data?.obligations} obligations, ${ukResult.data?.constraints} constraints`);
+    const combinedResult = await compileCombinedDsl();
+    if (combinedResult.success) {
+      console.log(`[Orchestrator] Combined DSL compiled: ${combinedResult.data?.obligations} obligations, ${combinedResult.data?.constraints} constraints`);
     }
     
     orchestratorInitialized = true;

@@ -388,14 +388,37 @@ def demo_seed_command():
 
 
 @app.command("list-obligations")
-def list_obligations_command():
+def list_obligations_command(
+    json_output: bool = typer.Option(False, "--json", "-j", help="Output as JSON"),
+):
     """List all compiled obligations."""
     ensure_db()
     storage = Storage(DB_PATH)
     
     obligations = storage.load_compiled_obligations()
     if obligations is None:
-        console.print("[yellow]No compiled obligations found. Run 'psur compile' first.[/yellow]")
+        if json_output:
+            print("[]")
+        else:
+            console.print("[yellow]No compiled obligations found. Run 'psur compile' first.[/yellow]")
+        return
+    
+    if json_output:
+        result = [
+            {
+                "id": obl.id,
+                "title": obl.title,
+                "jurisdiction": obl.jurisdiction.value,
+                "mandatory": obl.mandatory,
+                "required_evidence_types": [e.value for e in obl.required_evidence_types],
+                "allowed_transformations": [t.value for t in obl.allowed_transformations],
+                "forbidden_transformations": [t.value for t in obl.forbidden_transformations],
+                "required_time_scope": obl.required_time_scope,
+                "sources": obl.sources,
+            }
+            for obl in obligations.obligations
+        ]
+        print(json.dumps(result))
         return
     
     table = Table(title="Compiled Obligations")
@@ -416,14 +439,35 @@ def list_obligations_command():
 
 
 @app.command("list-constraints")
-def list_constraints_command():
+def list_constraints_command(
+    json_output: bool = typer.Option(False, "--json", "-j", help="Output as JSON"),
+):
     """List all compiled constraints."""
     ensure_db()
     storage = Storage(DB_PATH)
     
     rules = storage.load_compiled_rules()
     if rules is None:
-        console.print("[yellow]No compiled constraints found. Run 'psur compile' first.[/yellow]")
+        if json_output:
+            print("[]")
+        else:
+            console.print("[yellow]No compiled constraints found. Run 'psur compile' first.[/yellow]")
+        return
+    
+    if json_output:
+        result = [
+            {
+                "id": c.id,
+                "severity": c.severity.value,
+                "trigger": c.trigger,
+                "condition": c.condition,
+                "action": c.action,
+                "jurisdiction": c.jurisdiction.value if c.jurisdiction else None,
+                "sources": c.sources,
+            }
+            for c in rules.constraints
+        ]
+        print(json.dumps(result))
         return
     
     table = Table(title="Compiled Constraints")

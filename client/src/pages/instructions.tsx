@@ -133,10 +133,10 @@ const frequentlyAskedQuestions = [
 export default function Instructions() {
   return (
     <div className="flex-1 overflow-auto">
-      <div className="p-6 space-y-6 max-w-4xl mx-auto">
-        <div className="space-y-2">
-          <h1 className="text-2xl font-semibold tracking-tight">PSUR Generation Guide</h1>
-          <p className="text-muted-foreground">
+      <div className="p-8 space-y-8 max-w-4xl mx-auto">
+        <div className="space-y-1">
+          <h1 className="text-3xl font-light tracking-tight">PSUR Generation Guide</h1>
+          <p className="text-muted-foreground/80 text-sm">
             Step-by-step instructions for generating MDCG 2022-21 compliant Periodic Safety Update Reports
           </p>
         </div>

@@ -24,9 +24,9 @@ class DSLCompiler:
     def __init__(self):
         self.parser = DSLParser()
     
-    def _map_jurisdiction(self, value: str | None) -> Jurisdiction:
+    def _map_jurisdiction(self, value: str | None, context: str = "") -> Jurisdiction:
         if value is None:
-            return Jurisdiction.EU
+            raise ValueError(f"Missing required jurisdiction field{f' in {context}' if context else ''}")
         return Jurisdiction(value)
     
     def _map_severity(self, value: str) -> Severity:
@@ -44,7 +44,7 @@ class DSLCompiler:
     def _compile_source(self, node: SourceNode) -> RegulatorySource:
         return RegulatorySource(
             id=node.id,
-            jurisdiction=self._map_jurisdiction(node.jurisdiction),
+            jurisdiction=self._map_jurisdiction(node.jurisdiction, f"source {node.id}"),
             instrument=node.instrument or "Unknown",
             effective_date=node.effective_date,
             title=node.title,
@@ -54,7 +54,7 @@ class DSLCompiler:
         return Obligation(
             id=node.id,
             title=node.title or node.id,
-            jurisdiction=self._map_jurisdiction(node.jurisdiction),
+            jurisdiction=self._map_jurisdiction(node.jurisdiction, f"obligation {node.id}"),
             mandatory=node.mandatory,
             required_evidence_types=[
                 self._map_evidence_type(e) for e in (node.required_evidence_types or []) if e
@@ -81,7 +81,7 @@ class DSLCompiler:
             condition=node.condition or "",
             action=node.action or "",
             sources=node.sources,
-            jurisdiction=self._map_jurisdiction(node.jurisdiction) if node.jurisdiction else None,
+            jurisdiction=Jurisdiction(node.jurisdiction) if node.jurisdiction else None,
         )
     
     def compile(self, program: DSLProgram) -> tuple[CompiledObligations, CompiledRules]:

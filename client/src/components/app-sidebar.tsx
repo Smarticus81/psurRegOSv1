@@ -36,9 +36,9 @@ const mainNavItems = [
     icon: Building2,
   },
   {
-    title: "Agent Orchestration",
+    title: "PSUR Generator",
     url: "/agents",
-    icon: Cpu,
+    icon: FileText,
     badge: "Live",
   },
   {
@@ -81,7 +81,7 @@ export function AppSidebar() {
           </div>
           <div className="flex flex-col">
             <span className="font-medium text-sm tracking-tight">RegulatoryOS</span>
-            <span className="text-[11px] text-muted-foreground/70">Agent Framework</span>
+            <span className="text-[11px] text-muted-foreground/70">PMS Compliance Suite</span>
           </div>
         </div>
       </SidebarHeader>
@@ -113,7 +113,7 @@ export function AppSidebar() {
         </SidebarGroup>
 
         <SidebarGroup>
-          <SidebarGroupLabel>Intelligence</SidebarGroupLabel>
+          <SidebarGroupLabel>Data Sources</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {dataNavItems.map((item) => (

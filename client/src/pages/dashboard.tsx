@@ -43,7 +43,7 @@ export default function Dashboard() {
           <div className="space-y-1">
             <h1 className="text-3xl font-light tracking-tight">Dashboard</h1>
             <p className="text-muted-foreground/80 text-sm">
-              Intelligent agent framework for medical device compliance
+              Post-market surveillance compliance for medical devices
             </p>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
@@ -87,11 +87,11 @@ export default function Dashboard() {
           </div>
           <div className="zen-panel p-6 space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground/70">Active Agents</span>
+              <span className="text-sm text-muted-foreground/70">In Progress</span>
               <Cpu className="h-4 w-4 text-muted-foreground/50" />
             </div>
             <p className="text-3xl font-light">{activeAgents}</p>
-            <p className="text-xs text-muted-foreground/60">running now</p>
+            <p className="text-xs text-muted-foreground/60">generating now</p>
           </div>
         </div>
 
@@ -99,37 +99,37 @@ export default function Dashboard() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-4">
               <div>
-                <CardTitle className="text-lg font-semibold">Available Agents</CardTitle>
-                <CardDescription>AI-powered regulatory automation</CardDescription>
+                <CardTitle className="text-lg font-semibold">Compliance Tools</CardTitle>
+                <CardDescription>Automated regulatory documentation</CardDescription>
               </div>
             </CardHeader>
             <CardContent className="space-y-3">
               <AgentCard
-                name="PSUR Agent"
+                name="PSUR Generator"
                 description="Periodic Safety Update Report generation"
                 status="active"
                 processes={["EU MDR", "UK MDR", "FDA"]}
               />
               <AgentCard
-                name="Data Collection Agent"
+                name="Data Import"
                 description="Sales & complaint data aggregation"
                 status="active"
                 processes={["CSV/Excel import", "Normalization"]}
               />
               <AgentCard
-                name="Analysis Agent"
+                name="Trend Analysis"
                 description="Statistical analysis & trend detection"
                 status="active"
                 processes={["SPC", "Complaint rates"]}
               />
               <AgentCard
-                name="Document Agent"
+                name="Document Builder"
                 description="DOCX report generation"
                 status="active"
                 processes={["Templates", "Formatting"]}
               />
               <AgentCard
-                name="CAPA Agent"
+                name="CAPA Manager"
                 description="Corrective & preventive actions"
                 status="demo"
                 processes={["Investigation", "Root cause"]}
@@ -141,7 +141,7 @@ export default function Dashboard() {
             <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-4">
               <div>
                 <CardTitle className="text-lg font-semibold">Recent Activity</CardTitle>
-                <CardDescription>Agent executions and document generation</CardDescription>
+                <CardDescription>Report generation and document history</CardDescription>
               </div>
               <Button variant="ghost" size="sm" asChild>
                 <Link href="/agents">
@@ -163,7 +163,7 @@ export default function Dashboard() {
                   <Button size="sm" className="mt-4" asChild>
                     <Link href="/agents">
                       <Plus className="h-4 w-4" />
-                      Start Agent
+                      Generate Report
                     </Link>
                   </Button>
                 </div>
@@ -180,7 +180,7 @@ export default function Dashboard() {
                         </div>
                         <div className="min-w-0">
                           <p className="text-sm font-medium truncate">
-                            {execution.agentType.toUpperCase()} Agent
+                            {execution.agentType.toUpperCase()} Report
                           </p>
                           <p className="text-xs text-muted-foreground">
                             {(execution.jurisdictions as string[] | null)?.join(", ") || "All jurisdictions"}

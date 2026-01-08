@@ -55,11 +55,11 @@ const steps = [
   },
   {
     number: 4,
-    title: "Configure Agent Execution",
+    title: "Configure Report Settings",
     icon: Cpu,
     description: "Set up the PSUR generation parameters using Quick Start or Manual mode.",
     details: [
-      "Go to Agent Orchestration in the sidebar",
+      "Go to PSUR Generator in the sidebar",
       "Quick Start: Enter your PMS Plan Number or Previous PSUR Number to auto-retrieve settings",
       "Manual: Select applicable jurisdictions, device, part numbers, and surveillance period",
       "You can select multiple jurisdictions if your device is sold in multiple markets",
@@ -70,7 +70,7 @@ const steps = [
     number: 5,
     title: "Start PSUR Generation",
     icon: Cpu,
-    description: "Click Generate PSUR to start the AI-powered document creation process.",
+    description: "Click Generate PSUR to start the automated document creation process.",
     details: [
       "Review your configuration settings one final time",
       "Click the 'Generate PSUR' button to start the process",
@@ -83,7 +83,7 @@ const steps = [
     number: 6,
     title: "Review Generated Document",
     icon: FileText,
-    description: "Review the AI-generated PSUR and make any necessary adjustments.",
+    description: "Review the generated PSUR and make any necessary adjustments.",
     details: [
       "Navigate to Documents in the sidebar when complete",
       "Open the newly generated PSUR document",

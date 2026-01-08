@@ -49,7 +49,7 @@ export default function Documents() {
               </div>
               <h3 className="text-lg font-semibold">No documents yet</h3>
               <p className="text-sm text-muted-foreground mt-1 max-w-sm">
-                Documents will appear here after you run the PSUR Agent. Go to Agent Orchestration to generate your first document.
+                Documents will appear here after you generate a PSUR. Go to PSUR Generator to create your first report.
               </p>
             </CardContent>
           </Card>

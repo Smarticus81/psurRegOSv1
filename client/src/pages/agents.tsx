@@ -264,7 +264,7 @@ export default function AgentOrchestration() {
     setGeneratedPSUR(null);
     setConfigOpen(false);
     
-    addLogMessage("Initializing PSUR Agent...");
+    addLogMessage("Starting PSUR generation...");
     
     if (configMode === "quick" && lookupResult?.device) {
       startExecutionMutation.mutate({

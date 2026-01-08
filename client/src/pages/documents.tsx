@@ -89,18 +89,18 @@ export default function Documents() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="flex-1 pt-0">
-                  {doc.sections && Array.isArray(doc.sections) && (
+                  {doc.sections && Array.isArray(doc.sections) && (doc.sections as Array<{ name?: string }>).length > 0 && (
                     <div className="space-y-2 mb-4">
                       <p className="text-xs font-medium text-muted-foreground">Sections</p>
                       <div className="flex flex-wrap gap-1">
-                        {(doc.sections as any[]).slice(0, 4).map((section: any, idx: number) => (
+                        {(doc.sections as Array<{ name?: string }>).slice(0, 4).map((section, idx) => (
                           <span key={idx} className="text-[10px] px-1.5 py-0.5 rounded bg-muted">
                             {section.name || `Section ${idx + 1}`}
                           </span>
                         ))}
-                        {(doc.sections as any[]).length > 4 && (
+                        {(doc.sections as Array<{ name?: string }>).length > 4 && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted">
-                            +{(doc.sections as any[]).length - 4} more
+                            +{(doc.sections as Array<{ name?: string }>).length - 4} more
                           </span>
                         )}
                       </div>

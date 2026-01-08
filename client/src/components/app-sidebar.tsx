@@ -74,14 +74,14 @@ export function AppSidebar() {
 
   return (
     <Sidebar>
-      <SidebarHeader className="p-4 border-b border-sidebar-border">
+      <SidebarHeader className="p-5 border-b border-sidebar-border/50">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-sm">
             <Activity className="h-5 w-5" />
           </div>
           <div className="flex flex-col">
-            <span className="font-semibold text-sm">RegulatoryOS</span>
-            <span className="text-xs text-muted-foreground">Agent Framework</span>
+            <span className="font-medium text-sm tracking-tight">RegulatoryOS</span>
+            <span className="text-[11px] text-muted-foreground/70">Agent Framework</span>
           </div>
         </div>
       </SidebarHeader>
@@ -100,9 +100,9 @@ export function AppSidebar() {
                       <item.icon className="h-4 w-4" />
                       <span>{item.title}</span>
                       {item.badge && (
-                        <Badge variant="secondary" className="ml-auto text-xs">
+                        <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary">
                           {item.badge}
-                        </Badge>
+                        </span>
                       )}
                     </Link>
                   </SidebarMenuButton>
@@ -154,10 +154,10 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter className="p-4 border-t border-sidebar-border">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+      <SidebarFooter className="p-5 border-t border-sidebar-border/50">
+        <div className="flex items-center gap-2 text-[11px] text-muted-foreground/60">
           <Settings className="h-3 w-3" />
-          <span>v0.1.0 MVP</span>
+          <span>v0.1.0</span>
         </div>
       </SidebarFooter>
     </Sidebar>

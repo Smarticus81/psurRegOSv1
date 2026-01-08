@@ -31,11 +31,11 @@ export default function Documents() {
 
   return (
     <div className="flex-1 overflow-auto">
-      <div className="p-6 space-y-6">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Documents</h1>
-            <p className="text-muted-foreground text-sm mt-1">
+      <div className="p-8 space-y-8 max-w-7xl mx-auto">
+        <div className="flex items-center justify-between gap-6 flex-wrap">
+          <div className="space-y-1">
+            <h1 className="text-3xl font-light tracking-tight">Documents</h1>
+            <p className="text-muted-foreground/80 text-sm">
               Generated regulatory documents and review packages
             </p>
           </div>
@@ -91,15 +91,15 @@ export default function Documents() {
                 <CardContent className="flex-1 pt-0">
                   {doc.sections && Array.isArray(doc.sections) && (doc.sections as Array<{ name?: string }>).length > 0 && (
                     <div className="space-y-2 mb-4">
-                      <p className="text-xs font-medium text-muted-foreground">Sections</p>
-                      <div className="flex flex-wrap gap-1">
+                      <p className="text-xs font-medium text-muted-foreground/70">Sections</p>
+                      <div className="flex flex-wrap gap-1.5">
                         {(doc.sections as Array<{ name?: string }>).slice(0, 4).map((section, idx) => (
-                          <span key={idx} className="text-[10px] px-1.5 py-0.5 rounded bg-muted">
-                            {section.name || `Section ${idx + 1}`}
+                          <span key={idx} className="text-[10px] px-2 py-1 rounded-lg bg-muted/50 text-muted-foreground">
+                            {String(section.name || `Section ${idx + 1}`)}
                           </span>
                         ))}
                         {(doc.sections as Array<{ name?: string }>).length > 4 && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted">
+                          <span className="text-[10px] px-2 py-1 rounded-lg bg-muted/50 text-muted-foreground">
                             +{(doc.sections as Array<{ name?: string }>).length - 4} more
                           </span>
                         )}

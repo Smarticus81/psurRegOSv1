@@ -127,11 +127,11 @@ export default function GRKB() {
 
   return (
     <div className="flex-1 overflow-auto">
-      <div className="p-6 space-y-6">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Knowledge Base</h1>
-            <p className="text-muted-foreground text-sm mt-1">
+      <div className="p-8 space-y-8 max-w-7xl mx-auto">
+        <div className="flex items-center justify-between gap-6 flex-wrap">
+          <div className="space-y-1">
+            <h1 className="text-3xl font-light tracking-tight">Knowledge Base</h1>
+            <p className="text-muted-foreground/80 text-sm">
               Global Regulatory Knowledge Base (GRKB) - Structured regulatory intelligence
             </p>
           </div>

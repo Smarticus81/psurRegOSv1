@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
+import { Badge } from "@/components/ui/badge";
 import { 
   FileText, 
   Clock, 
@@ -11,10 +12,20 @@ import {
   ArrowRight,
   Building2,
   Activity,
-  Sparkles
+  Sparkles,
+  Shield,
+  CheckCircle2,
+  AlertCircle
 } from "lucide-react";
 import { Link } from "wouter";
 import type { Company, AgentExecution, GeneratedDocument } from "@shared/schema";
+
+interface OrchestratorStatus {
+  initialized: boolean;
+  euObligations: number;
+  ukObligations: number;
+  constraints: number;
+}
 
 export default function Dashboard() {
   const { data: companies = [] } = useQuery<Company[]>({
@@ -27,6 +38,11 @@ export default function Dashboard() {
 
   const { data: documents = [] } = useQuery<GeneratedDocument[]>({
     queryKey: ["/api/documents"],
+  });
+
+  const { data: orchestratorStatus } = useQuery<OrchestratorStatus>({
+    queryKey: ["/api/orchestrator/status"],
+    refetchInterval: 30000,
   });
 
   const activeAgents = executions.filter(e => e.status === "running").length;
@@ -94,6 +110,50 @@ export default function Dashboard() {
             <p className="text-xs text-muted-foreground/60">generating now</p>
           </div>
         </div>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-900/30">
+                <Shield className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <div>
+                <CardTitle className="text-lg font-semibold">Compliance Kernel</CardTitle>
+                <CardDescription>DSL-driven regulatory rule engine</CardDescription>
+              </div>
+            </div>
+            {orchestratorStatus?.initialized ? (
+              <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-700">
+                <CheckCircle2 className="h-3 w-3 mr-1" />
+                Active
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-700">
+                <AlertCircle className="h-3 w-3 mr-1" />
+                Initializing
+              </Badge>
+            )}
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="p-4 rounded-lg bg-muted/30 space-y-1">
+                <p className="text-xs text-muted-foreground">EU MDR Obligations</p>
+                <p className="text-2xl font-light">{orchestratorStatus?.euObligations || 0}</p>
+                <p className="text-xs text-blue-600 dark:text-blue-400">MDCG 2022-21</p>
+              </div>
+              <div className="p-4 rounded-lg bg-muted/30 space-y-1">
+                <p className="text-xs text-muted-foreground">UK MDR Obligations</p>
+                <p className="text-2xl font-light">{orchestratorStatus?.ukObligations || 0}</p>
+                <p className="text-xs text-purple-600 dark:text-purple-400">SI 2024/1368</p>
+              </div>
+              <div className="p-4 rounded-lg bg-muted/30 space-y-1">
+                <p className="text-xs text-muted-foreground">Active Constraints</p>
+                <p className="text-2xl font-light">{orchestratorStatus?.constraints || 0}</p>
+                <p className="text-xs text-muted-foreground">Validation rules</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         <div className="grid gap-6 lg:grid-cols-2">
           <Card>

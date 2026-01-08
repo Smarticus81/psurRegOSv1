@@ -10,6 +10,15 @@ import {
   insertAgentExecutionSchema,
   insertGeneratedDocumentSchema,
 } from "@shared/schema";
+import {
+  ensureOrchestratorInitialized,
+  getOrchestratorStatus,
+  listObligations,
+  listConstraints,
+  qualifyTemplate,
+  compileEuDsl,
+  compileUkDsl,
+} from "./orchestrator";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -402,6 +411,95 @@ export async function registerRoutes(
       res.status(500).json({ error: "Failed to fetch audit events" });
     }
   });
+
+  app.get("/api/orchestrator/status", async (req, res) => {
+    try {
+      const status = await getOrchestratorStatus();
+      res.json(status.data);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get orchestrator status" });
+    }
+  });
+
+  app.post("/api/orchestrator/initialize", async (req, res) => {
+    try {
+      const success = await ensureOrchestratorInitialized();
+      res.json({ success, message: success ? "Compliance kernel initialized" : "Failed to initialize" });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to initialize orchestrator" });
+    }
+  });
+
+  app.get("/api/orchestrator/obligations", async (req, res) => {
+    try {
+      const result = await listObligations();
+      if (result.success) {
+        res.json(result.data);
+      } else {
+        res.status(500).json({ error: result.error });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to list obligations" });
+    }
+  });
+
+  app.get("/api/orchestrator/constraints", async (req, res) => {
+    try {
+      const result = await listConstraints();
+      if (result.success) {
+        res.json(result.data);
+      } else {
+        res.status(500).json({ error: result.error });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to list constraints" });
+    }
+  });
+
+  app.post("/api/orchestrator/compile/eu", async (req, res) => {
+    try {
+      const result = await compileEuDsl();
+      if (result.success) {
+        res.json(result.data);
+      } else {
+        res.status(500).json({ error: result.error });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to compile EU DSL" });
+    }
+  });
+
+  app.post("/api/orchestrator/compile/uk", async (req, res) => {
+    try {
+      const result = await compileUkDsl();
+      if (result.success) {
+        res.json(result.data);
+      } else {
+        res.status(500).json({ error: result.error });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to compile UK DSL" });
+    }
+  });
+
+  app.post("/api/orchestrator/qualify", async (req, res) => {
+    try {
+      const { templateId } = req.body;
+      if (!templateId) {
+        return res.status(400).json({ error: "Template ID required" });
+      }
+      const result = await qualifyTemplate(templateId);
+      if (result.success) {
+        res.json(result.data);
+      } else {
+        res.status(500).json({ error: result.error });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to qualify template" });
+    }
+  });
+
+  ensureOrchestratorInitialized().catch(console.error);
 
   return httpServer;
 }

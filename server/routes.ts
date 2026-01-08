@@ -309,7 +309,20 @@ export async function registerRoutes(
 
   app.post("/api/agent-executions", async (req, res) => {
     try {
-      const parsed = insertAgentExecutionSchema.safeParse(req.body);
+      const body = { ...req.body };
+      if (body.startPeriod && typeof body.startPeriod === "string") {
+        body.startPeriod = new Date(body.startPeriod);
+      }
+      if (body.endPeriod && typeof body.endPeriod === "string") {
+        body.endPeriod = new Date(body.endPeriod);
+      }
+      if (body.startedAt && typeof body.startedAt === "string") {
+        body.startedAt = new Date(body.startedAt);
+      }
+      if (body.completedAt && typeof body.completedAt === "string") {
+        body.completedAt = new Date(body.completedAt);
+      }
+      const parsed = insertAgentExecutionSchema.safeParse(body);
       if (!parsed.success) {
         return res.status(400).json({ error: parsed.error.errors });
       }

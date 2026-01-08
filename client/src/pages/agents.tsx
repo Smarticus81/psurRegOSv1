@@ -682,26 +682,46 @@ export default function AgentOrchestration() {
               </CardContent>
             </Card>
 
-            {generatedPSUR && !isExecuting && (
-              <Card className="border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/30">
+            {(generatedPSUR || isExecuting) && (
+              <Card className={isExecuting ? "border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/30" : "border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/30"}>
                 <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-emerald-100 dark:bg-emerald-900">
-                      <FileCheck className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-md ${isExecuting ? 'bg-blue-100 dark:bg-blue-900' : 'bg-emerald-100 dark:bg-emerald-900'}`}>
+                      {isExecuting ? (
+                        <Loader2 className="h-5 w-5 text-blue-600 dark:text-blue-400 animate-spin" />
+                      ) : (
+                        <FileCheck className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                      )}
                     </div>
                     <div>
-                      <CardTitle className="text-lg">Generated PSUR</CardTitle>
-                      <CardDescription className="text-emerald-700 dark:text-emerald-300">
-                        Ready for review and download
+                      <CardTitle className="text-lg">{isExecuting ? "Generating PSUR..." : "Generated PSUR"}</CardTitle>
+                      <CardDescription className={isExecuting ? "text-blue-700 dark:text-blue-300" : "text-emerald-700 dark:text-emerald-300"}>
+                        {isExecuting ? `Step ${currentStep + 1} of 13 - Processing...` : "Ready for review and download"}
                       </CardDescription>
                     </div>
                   </div>
-                  <Badge className="gap-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300 border-emerald-200 dark:border-emerald-700">
-                    <CheckCircle2 className="h-3 w-3" />
-                    Complete
-                  </Badge>
+                  {isExecuting ? (
+                    <Badge className="gap-1 bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 border-blue-200 dark:border-blue-700">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      In Progress
+                    </Badge>
+                  ) : (
+                    <Badge className="gap-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300 border-emerald-200 dark:border-emerald-700">
+                      <CheckCircle2 className="h-3 w-3" />
+                      Complete
+                    </Badge>
+                  )}
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  {isExecuting ? (
+                    <div className="space-y-3">
+                      <Progress value={(currentStep / 13) * 100} className="h-2" />
+                      <p className="text-sm text-muted-foreground">
+                        PSUR document will appear here when generation is complete. Please wait...
+                      </p>
+                    </div>
+                  ) : generatedPSUR && (
+                    <>
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
                       <p className="text-muted-foreground text-xs">Device</p>
@@ -781,6 +801,8 @@ export default function AgentOrchestration() {
                       Download PSUR
                     </Button>
                   </div>
+                    </>
+                  )}
                 </CardContent>
               </Card>
             )}

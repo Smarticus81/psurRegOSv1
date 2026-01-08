@@ -10,12 +10,11 @@ import {
   Shield,
   CheckCircle2,
   AlertCircle,
-  Edit2,
   MoreHorizontal,
   Upload,
   FileText
 } from "lucide-react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import type { Device, Company } from "@shared/schema";
 import {
   DropdownMenu,
@@ -46,12 +45,6 @@ export default function Dashboard() {
   });
 
   const company = companies[0];
-  const devicesByClass = {
-    I: devices.filter(d => d.riskClass === "Class I"),
-    IIa: devices.filter(d => d.riskClass === "Class IIa"),
-    IIb: devices.filter(d => d.riskClass === "Class IIb"),
-    III: devices.filter(d => d.riskClass === "Class III"),
-  };
 
   return (
     <div className="flex-1 overflow-auto">
@@ -195,6 +188,7 @@ function CompactStatCard({
 }
 
 function DeviceRow({ device }: { device: Device }) {
+  const [, navigate] = useLocation();
   const classColors: Record<string, string> = {
     "Class I": "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300",
     "Class IIa": "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
@@ -238,15 +232,11 @@ function DeviceRow({ device }: { device: Device }) {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem>
-                  <Edit2 className="h-4 w-4 mr-2" />
-                  Edit Device
-                </DropdownMenuItem>
-                <DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate("/data")}>
                   <Upload className="h-4 w-4 mr-2" />
                   Upload Data
                 </DropdownMenuItem>
-                <DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate(`/agents?device=${device.id}`)}>
                   <FileText className="h-4 w-4 mr-2" />
                   Generate PSUR
                 </DropdownMenuItem>

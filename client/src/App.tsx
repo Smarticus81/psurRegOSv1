@@ -15,6 +15,7 @@ import Documents from "@/pages/documents";
 import DataLayer from "@/pages/data-layer";
 import GRKB from "@/pages/grkb";
 import Instructions from "@/pages/instructions";
+import Settings from "@/pages/settings";
 
 function Router() {
   return (
@@ -27,6 +28,7 @@ function Router() {
       <Route path="/data" component={DataLayer} />
       <Route path="/grkb" component={GRKB} />
       <Route path="/instructions" component={Instructions} />
+      <Route path="/settings" component={Settings} />
       <Route component={NotFound} />
     </Switch>
   );

@@ -36,6 +36,20 @@ import {
   ChevronLeft,
   Settings2,
   X,
+  ClipboardList,
+  Stethoscope,
+  Calendar,
+  Database,
+  AlertTriangle,
+  ShieldQuestion,
+  BarChart3,
+  Wrench,
+  BookOpenCheck,
+  ActivitySquare,
+  ScrollText,
+  ClipboardCheck,
+  Layers,
+  ArrowRight,
 } from "lucide-react";
 import type { Device, AgentExecution, PSURItem } from "@shared/schema";
 
@@ -53,6 +67,22 @@ const stepLabels = [
   "Requirements", "Device", "Period", "PMS Data", "Incidents", 
   "Non-Serious", "Sales", "CAPA", "Literature", "Risk", 
   "Conclusions", "Summary", "Assembly"
+];
+
+const stepIcons = [
+  ClipboardList,
+  Stethoscope,
+  Calendar,
+  Database,
+  AlertTriangle,
+  ShieldQuestion,
+  BarChart3,
+  Wrench,
+  BookOpenCheck,
+  ActivitySquare,
+  ScrollText,
+  ClipboardCheck,
+  Layers,
 ];
 
 const jurisdictionOptions = [
@@ -477,81 +507,128 @@ export default function AgentOrchestration() {
               )}
             </div>
             
-            {/* Horizontal Steps - Two Rows for Serpentine Effect */}
-            <div className="space-y-2">
+            {/* Horizontal Steps - Zen Serpentine Flow */}
+            <div className="space-y-4">
               {/* Row 1: Steps 1-7 (left to right) */}
-              <div className="flex gap-1">
+              <div className="flex items-center">
                 {stepLabels.slice(0, 7).map((label, idx) => {
                   const isCompleted = completedSteps.includes(idx);
                   const isActive = currentStep === idx;
+                  const Icon = stepIcons[idx];
                   return (
-                    <div 
-                      key={idx}
-                      className={`flex-1 relative group ${idx < 6 ? 'after:content-[""] after:absolute after:right-0 after:top-1/2 after:-translate-y-1/2 after:w-1 after:h-1 after:rounded-full after:bg-border' : ''}`}
-                      data-testid={`step-${idx + 1}`}
-                    >
+                    <div key={idx} className="flex items-center flex-1">
                       <div 
-                        className={`h-8 rounded-lg flex items-center justify-center text-[10px] font-medium transition-all duration-300 ${
-                          isActive 
-                            ? 'bg-primary text-primary-foreground scale-105 shadow-md' 
-                            : isCompleted 
-                              ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300' 
-                              : 'bg-muted/50 text-muted-foreground'
-                        }`}
+                        className="zen-step-node flex-1"
+                        data-testid={`step-${idx + 1}`}
                       >
-                        {isCompleted && !isActive ? (
-                          <CheckCircle2 className="h-3 w-3" />
-                        ) : isActive ? (
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                        ) : (
-                          <span className="opacity-60">{idx + 1}</span>
-                        )}
+                        <div 
+                          className={`zen-step-icon ${isActive ? 'active animate-zen-pulse-glow' : isCompleted ? 'completed' : 'pending'}`}
+                          aria-label={label}
+                        >
+                          {isActive ? (
+                            <Loader2 className="h-5 w-5 animate-spin" />
+                          ) : isCompleted ? (
+                            <CheckCircle2 className="h-5 w-5" />
+                          ) : (
+                            <Icon className="h-5 w-5" />
+                          )}
+                        </div>
+                        <p className={`text-[10px] text-center mt-2 font-medium transition-colors ${
+                          isActive ? 'text-primary' : isCompleted ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/70'
+                        }`}>
+                          {label}
+                        </p>
                       </div>
-                      <p className={`text-[9px] text-center mt-1 truncate ${isActive ? 'text-primary font-medium' : 'text-muted-foreground'}`}>
-                        {label}
-                      </p>
+                      {idx < 6 && (
+                        <div className="flex items-center justify-center w-6 -mt-5">
+                          <svg width="24" height="16" viewBox="0 0 24 16" className="overflow-visible">
+                            <path 
+                              d="M0 8 L20 8" 
+                              className={`zen-connector ${isCompleted ? 'completed' : currentStep > idx ? 'active' : ''}`}
+                              strokeLinecap="round"
+                            />
+                            <path 
+                              d="M16 4 L22 8 L16 12" 
+                              className={`zen-connector ${isCompleted ? 'completed' : currentStep > idx ? 'active' : ''}`}
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              fill="none"
+                            />
+                          </svg>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
               </div>
               
-              {/* Connector */}
-              <div className="flex justify-end pr-2">
-                <ChevronRight className="h-3 w-3 text-muted-foreground rotate-90" />
+              {/* Serpentine Turn Connector */}
+              <div className="flex justify-end pr-8">
+                <svg width="40" height="32" viewBox="0 0 40 32" className="overflow-visible">
+                  <path 
+                    d="M20 0 C20 16, 20 16, 20 32" 
+                    className={`zen-connector ${completedSteps.includes(6) ? 'completed' : currentStep === 6 ? 'active' : ''}`}
+                    strokeLinecap="round"
+                  />
+                  <path 
+                    d="M16 26 L20 32 L24 26" 
+                    className={`zen-connector ${completedSteps.includes(6) ? 'completed' : currentStep === 6 ? 'active' : ''}`}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    fill="none"
+                  />
+                </svg>
               </div>
               
-              {/* Row 2: Steps 8-13 (right to left, so we reverse display) */}
-              <div className="flex gap-1 flex-row-reverse">
+              {/* Row 2: Steps 8-13 (right to left) */}
+              <div className="flex items-center flex-row-reverse">
                 {stepLabels.slice(7).map((label, i) => {
                   const idx = i + 7;
                   const isCompleted = completedSteps.includes(idx);
                   const isActive = currentStep === idx;
+                  const Icon = stepIcons[idx];
                   return (
-                    <div 
-                      key={idx}
-                      className={`flex-1 relative group ${i < 5 ? 'after:content-[""] after:absolute after:left-0 after:top-1/2 after:-translate-y-1/2 after:w-1 after:h-1 after:rounded-full after:bg-border' : ''}`}
-                      data-testid={`step-${idx + 1}`}
-                    >
+                    <div key={idx} className="flex items-center flex-1 flex-row-reverse">
                       <div 
-                        className={`h-8 rounded-lg flex items-center justify-center text-[10px] font-medium transition-all duration-300 ${
-                          isActive 
-                            ? 'bg-primary text-primary-foreground scale-105 shadow-md' 
-                            : isCompleted 
-                              ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300' 
-                              : 'bg-muted/50 text-muted-foreground'
-                        }`}
+                        className="zen-step-node flex-1"
+                        data-testid={`step-${idx + 1}`}
                       >
-                        {isCompleted && !isActive ? (
-                          <CheckCircle2 className="h-3 w-3" />
-                        ) : isActive ? (
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                        ) : (
-                          <span className="opacity-60">{idx + 1}</span>
-                        )}
+                        <div 
+                          className={`zen-step-icon ${isActive ? 'active animate-zen-pulse-glow' : isCompleted ? 'completed' : 'pending'}`}
+                          aria-label={label}
+                        >
+                          {isActive ? (
+                            <Loader2 className="h-5 w-5 animate-spin" />
+                          ) : isCompleted ? (
+                            <CheckCircle2 className="h-5 w-5" />
+                          ) : (
+                            <Icon className="h-5 w-5" />
+                          )}
+                        </div>
+                        <p className={`text-[10px] text-center mt-2 font-medium transition-colors ${
+                          isActive ? 'text-primary' : isCompleted ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/70'
+                        }`}>
+                          {label}
+                        </p>
                       </div>
-                      <p className={`text-[9px] text-center mt-1 truncate ${isActive ? 'text-primary font-medium' : 'text-muted-foreground'}`}>
-                        {label}
-                      </p>
+                      {i < 5 && (
+                        <div className="flex items-center justify-center w-6 -mt-5">
+                          <svg width="24" height="16" viewBox="0 0 24 16" className="overflow-visible rotate-180">
+                            <path 
+                              d="M0 8 L20 8" 
+                              className={`zen-connector ${completedSteps.includes(idx) ? 'completed' : currentStep > idx ? 'active' : ''}`}
+                              strokeLinecap="round"
+                            />
+                            <path 
+                              d="M16 4 L22 8 L16 12" 
+                              className={`zen-connector ${completedSteps.includes(idx) ? 'completed' : currentStep > idx ? 'active' : ''}`}
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              fill="none"
+                            />
+                          </svg>
+                        </div>
+                      )}
                     </div>
                   );
                 })}

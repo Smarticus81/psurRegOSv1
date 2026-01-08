@@ -195,6 +195,115 @@
  * Even without handling focused or not, this is six possible combinations that
  * need to be distinguished from eachother visually.
  */
+/* Zen Minimalist Motion & Glow Tokens */
+:root {
+  --zen-easing: cubic-bezier(0.25, 0.8, 0.25, 1);
+  --zen-duration-fast: 200ms;
+  --zen-duration-medium: 350ms;
+  --zen-duration-slow: 500ms;
+  --zen-glow-primary: 0 0 24px -4px hsl(217 91% 60% / 0.5);
+  --zen-glow-success: 0 0 24px -4px hsl(142 76% 45% / 0.5);
+  --zen-shadow-soft: 0 8px 32px -16px rgba(15, 23, 42, 0.15);
+  --zen-shadow-float: 0 20px 40px -24px rgba(15, 23, 42, 0.25);
+}
+
+.dark {
+  --zen-shadow-soft: 0 8px 32px -16px rgba(0, 0, 0, 0.4);
+  --zen-shadow-float: 0 20px 40px -24px rgba(0, 0, 0, 0.5);
+}
+
+/* Keyframe Animations for Zen Effects */
+@keyframes zen-breathe {
+  0%, 100% { transform: scale(1); opacity: 0.5; }
+  50% { transform: scale(1.05); opacity: 0.8; }
+}
+
+@keyframes zen-pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 hsl(217 91% 60% / 0); }
+  50% { box-shadow: 0 0 20px 4px hsl(217 91% 60% / 0.3); }
+}
+
+@keyframes zen-fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes zen-connector-flow {
+  0% { stroke-dashoffset: 20; }
+  100% { stroke-dashoffset: 0; }
+}
+
+.animate-zen-breathe {
+  animation: zen-breathe 3s var(--zen-easing) infinite;
+}
+
+.animate-zen-pulse-glow {
+  animation: zen-pulse-glow 2s var(--zen-easing) infinite;
+}
+
+.animate-zen-fade-in {
+  animation: zen-fade-in var(--zen-duration-medium) var(--zen-easing) forwards;
+}
+
+/* Zen Step Node Styles */
+.zen-step-node {
+  @apply relative flex flex-col items-center transition-all;
+  transition-duration: var(--zen-duration-medium);
+  transition-timing-function: var(--zen-easing);
+}
+
+.zen-step-icon {
+  @apply relative w-12 h-12 rounded-xl flex items-center justify-center transition-all;
+  transition-duration: var(--zen-duration-medium);
+  transition-timing-function: var(--zen-easing);
+  background: hsl(var(--muted) / 0.3);
+}
+
+.zen-step-icon.active {
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  box-shadow: var(--zen-glow-primary);
+  transform: scale(1.1);
+}
+
+.zen-step-icon.completed {
+  background: hsl(142 76% 45%);
+  color: white;
+  box-shadow: var(--zen-glow-success);
+}
+
+.zen-step-icon.pending {
+  @apply text-muted-foreground;
+}
+
+/* Zen Connector SVG Styles */
+.zen-connector {
+  stroke: hsl(var(--border));
+  stroke-width: 2;
+  fill: none;
+  transition: stroke var(--zen-duration-medium) var(--zen-easing);
+}
+
+.zen-connector.active {
+  stroke: hsl(var(--primary));
+  stroke-dasharray: 6 3;
+  animation: zen-connector-flow 1s linear infinite;
+}
+
+.zen-connector.completed {
+  stroke: hsl(142 76% 45%);
+}
+
+/* Zen Panel Styles */
+.zen-panel {
+  @apply rounded-2xl border bg-card/50 backdrop-blur-sm;
+  transition: all var(--zen-duration-medium) var(--zen-easing);
+}
+
+.zen-panel:hover {
+  box-shadow: var(--zen-shadow-soft);
+}
+
 @layer utilities {
 
   /* Hide ugly search cancel button in Chrome until we can style it properly */

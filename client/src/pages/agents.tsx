@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -22,28 +21,21 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Progress } from "@/components/ui/progress";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AgentSteps, type AgentStep } from "@/components/agent-step";
-import { StatusBadge } from "@/components/status-badge";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import {
-  Cpu,
   Search,
   FileText,
-  Clock,
-  DollarSign,
-  Zap,
   Download,
   CheckCircle2,
   Loader2,
-  Sparkles,
-  CalendarDays,
-  Package,
+  Play,
   Eye,
-  FileCheck,
   Copy,
+  ChevronRight,
+  ChevronLeft,
+  Settings2,
+  X,
 } from "lucide-react";
 import type { Device, AgentExecution, PSURItem } from "@shared/schema";
 
@@ -57,104 +49,73 @@ interface GeneratedPSUR {
   sections: { name: string; content: string }[];
 }
 
-const agentStepsConfig: AgentStep[] = [
-  { id: "1", title: "Loading MDCG 2022-21 Requirements", description: "Fetching EU MDR Article 86 & MDCG 2022-21 guidance from GRKB", status: "pending" },
-  { id: "2", title: "Device Description (Section 2)", description: "Generating device characteristics, intended purpose, classification per MDCG 2022-21 Annex I", status: "pending" },
-  { id: "3", title: "Data Collection Period (Section 3)", description: "Defining reporting period aligned with MDR certification date", status: "pending" },
-  { id: "4", title: "PMS Data Collection (Section 4)", description: "Aggregating sales, complaints, incidents with IMDRF AET coding", status: "pending" },
-  { id: "5", title: "Serious Incidents & FSCA (Section 5)", description: "Analyzing serious incidents, root causes, and Field Safety Corrective Actions", status: "pending" },
-  { id: "6", title: "Non-Serious Incidents (Section 6)", description: "Processing complaints grouped by IMDRF medical device problem codes", status: "pending" },
-  { id: "7", title: "Sales Volume & Population (Section 7)", description: "Calculating units sold vs. patient exposure estimates", status: "pending" },
-  { id: "8", title: "CAPA Analysis (Section 8)", description: "Compiling corrective/preventive actions with effectiveness assessment", status: "pending" },
-  { id: "9", title: "Literature Review (Section 9)", description: "Searching literature and similar device databases per Annex III", status: "pending" },
-  { id: "10", title: "Benefit-Risk Evaluation (Section 10)", description: "AI-powered benefit-risk determination with change impact analysis", status: "pending" },
-  { id: "11", title: "Conclusions (Section 11)", description: "Generating overall safety assessment and action recommendations", status: "pending" },
-  { id: "12", title: "Executive Summary (Section 1)", description: "Creating executive overview of key findings per MDCG 2022-21", status: "pending" },
-  { id: "13", title: "Final PSUR Assembly", description: "Compiling PSUR document with EUDAMED-ready formatting", status: "pending" },
+const stepLabels = [
+  "Requirements", "Device", "Period", "PMS Data", "Incidents", 
+  "Non-Serious", "Sales", "CAPA", "Literature", "Risk", 
+  "Conclusions", "Summary", "Assembly"
 ];
 
 const jurisdictionOptions = [
-  { value: "EU_MDR", label: "EU MDR 2017/745" },
-  { value: "UK_MDR", label: "UK MDR 2002" },
-  { value: "FDA_21CFR", label: "FDA 21 CFR Part 803" },
-  { value: "HEALTH_CANADA", label: "Health Canada CMDR" },
-  { value: "TGA", label: "TGA (Australia)" },
+  { value: "EU_MDR", label: "EU MDR" },
+  { value: "UK_MDR", label: "UK MDR" },
+  { value: "FDA_21CFR", label: "FDA" },
+  { value: "HEALTH_CANADA", label: "Canada" },
+  { value: "TGA", label: "TGA" },
 ];
 
 export default function AgentOrchestration() {
   const { toast } = useToast();
-  const [configMode, setConfigMode] = useState<"quick" | "manual">("quick");
+  const [configMode, setConfigMode] = useState<"quick" | "manual">("manual");
+  const [configOpen, setConfigOpen] = useState(true);
   
   const [pmsPlanNumber, setPmsPlanNumber] = useState("");
   const [previousPsurNumber, setPreviousPsurNumber] = useState("");
   const [lookupResult, setLookupResult] = useState<{ found: boolean; device?: Device; psurItem?: PSURItem } | null>(null);
   const [isLookingUp, setIsLookingUp] = useState(false);
   
-  const [selectedJurisdictions, setSelectedJurisdictions] = useState<string[]>([]);
+  const [selectedJurisdictions, setSelectedJurisdictions] = useState<string[]>(["EU_MDR"]);
   const [selectedDevice, setSelectedDevice] = useState<string>("");
-  const [partNumbers, setPartNumbers] = useState("");
-  const [startPeriod, setStartPeriod] = useState("");
-  const [endPeriod, setEndPeriod] = useState("");
+  const [startPeriod, setStartPeriod] = useState("2025-01-01");
+  const [endPeriod, setEndPeriod] = useState("2025-12-31");
   
   const [isExecuting, setIsExecuting] = useState(false);
-  const [currentExecution, setCurrentExecution] = useState<AgentExecution | null>(null);
-  const [steps, setSteps] = useState<AgentStep[]>(agentStepsConfig);
-  const [currentStep, setCurrentStep] = useState(0);
-  const [elapsedTime, setElapsedTime] = useState(0);
+  const [currentStep, setCurrentStep] = useState(-1);
+  const [completedSteps, setCompletedSteps] = useState<number[]>([]);
   const [logMessages, setLogMessages] = useState<string[]>([]);
   const [generatedPSUR, setGeneratedPSUR] = useState<GeneratedPSUR | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [previewSection, setPreviewSection] = useState<number>(0);
   const logContainerRef = useRef<HTMLDivElement>(null);
 
-  const { data: devices = [] } = useQuery<Device[]>({
-    queryKey: ["/api/devices"],
-  });
-
-  const { data: psurItems = [] } = useQuery<PSURItem[]>({
-    queryKey: ["/api/psur-items"],
-  });
-
-  const { data: executions = [] } = useQuery<AgentExecution[]>({
-    queryKey: ["/api/agent-executions"],
-  });
+  const { data: devices = [] } = useQuery<Device[]>({ queryKey: ["/api/devices"] });
+  const { data: psurItems = [] } = useQuery<PSURItem[]>({ queryKey: ["/api/psur-items"] });
 
   const handleLookup = () => {
     const searchValue = pmsPlanNumber || previousPsurNumber;
-    if (!searchValue) {
-      toast({ title: "Please enter a PMS Plan Number or Previous PSUR Number", variant: "destructive" });
-      return;
-    }
+    if (!searchValue) return;
     
     setIsLookingUp(true);
-    
     setTimeout(() => {
       const foundPsur = psurItems.find(p => p.psurNumber === searchValue);
-      
       if (foundPsur) {
         const foundDevice = devices.find(d => d.id === foundPsur.deviceId);
         setLookupResult({ found: true, device: foundDevice, psurItem: foundPsur });
-        toast({ title: "Device data found!", description: `Retrieved ${foundDevice?.deviceName}` });
+        toast({ title: "Device found" });
       } else {
         const matchingDevice = devices.find(d => 
           d.deviceCode.toLowerCase().includes(searchValue.toLowerCase()) ||
           d.deviceName.toLowerCase().includes(searchValue.toLowerCase())
         );
-        
         if (matchingDevice) {
           setLookupResult({ found: true, device: matchingDevice });
-          toast({ title: "Device found!", description: `Retrieved ${matchingDevice.deviceName}` });
+          toast({ title: "Device found" });
         } else {
           setLookupResult({ found: false });
-          toast({ 
-            title: "No matching data found", 
-            description: "Switch to Manual Configuration to enter device details",
-            variant: "destructive" 
-          });
+          toast({ title: "No match found", variant: "destructive" });
         }
       }
       setIsLookingUp(false);
-    }, 800);
+    }, 500);
   };
 
   const startExecutionMutation = useMutation({
@@ -163,7 +124,6 @@ export default function AgentOrchestration() {
       jurisdictions: string[];
       pmsPlanNumber?: string;
       previousPsurNumber?: string;
-      partNumbers?: string[];
       startPeriod?: string;
       endPeriod?: string;
     }) => {
@@ -173,112 +133,87 @@ export default function AgentOrchestration() {
         jurisdictions: data.jurisdictions,
         pmsPlanNumber: data.pmsPlanNumber,
         previousPsurNumber: data.previousPsurNumber,
-        partNumbers: data.partNumbers,
         startPeriod: data.startPeriod ? new Date(data.startPeriod).toISOString() : undefined,
         endPeriod: data.endPeriod ? new Date(data.endPeriod).toISOString() : undefined,
         status: "running",
       });
     },
-    onSuccess: async (response) => {
-      const execution = await response.json();
-      setCurrentExecution(execution);
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/agent-executions"] });
       simulateExecution();
     },
     onError: () => {
-      toast({ title: "Failed to start agent execution", variant: "destructive" });
+      toast({ title: "Failed to start", variant: "destructive" });
       setIsExecuting(false);
     },
   });
 
   const simulateExecution = async () => {
-    const stepDurations = [600, 800, 400, 1200, 1500, 1000, 800, 1200, 1800, 2200, 1000, 1500, 800];
+    const stepDurations = [400, 500, 300, 800, 1000, 700, 500, 800, 1200, 1500, 700, 1000, 500];
     const stepDetails = [
-      "Loaded MDCG 2022-21 Annex I template structure",
-      "Generated device description with Basic UDI-DI and EMDN codes",
-      "Set reporting period: 12 months per Class III requirements",
-      "Collected 847 sales records, 23 complaints using IMDRF AET codes",
-      "Analyzed 2 serious incidents, 0 FSCA required",
-      "Categorized 21 non-serious incidents by IMDRF problem codes",
-      "Calculated 2.7 complaints per 1000 units sold",
-      "Compiled 3 CAPA items with effectiveness assessments",
-      "Reviewed 12 literature sources, 4 similar device reports",
-      "Benefit-risk ratio: ACCEPTABLE - no significant changes detected",
-      "Generated conclusions: continued market authorization recommended",
-      "Executive summary compiled with key findings",
-      "PSUR document assembled per EUDAMED submission format",
+      "Loaded MDCG 2022-21 template",
+      "Generated device description",
+      "Set 12-month reporting period",
+      "Collected 847 sales, 23 complaints",
+      "Analyzed 2 serious incidents",
+      "Categorized 21 non-serious",
+      "Calculated 2.7 per 1000 rate",
+      "Compiled 3 CAPA items",
+      "Reviewed 12 literature sources",
+      "Benefit-risk: ACCEPTABLE",
+      "Authorization recommended",
+      "Executive summary complete",
+      "PSUR assembled",
     ];
     
-    for (let i = 0; i < steps.length; i++) {
+    for (let i = 0; i < 13; i++) {
       setCurrentStep(i);
-      setSteps(prev => prev.map((s, idx) => ({
-        ...s,
-        status: idx < i ? "completed" : idx === i ? "running" : "pending"
-      })));
-      
-      addLogMessage(`[${new Date().toISOString().slice(11, 19)}] Starting: ${steps[i].title}`);
-      
-      await new Promise(resolve => setTimeout(resolve, stepDurations[i] || 800));
-      
-      if (stepDetails[i]) {
-        addLogMessage(`[${new Date().toISOString().slice(11, 19)}] > ${stepDetails[i]}`);
-      }
-      
-      setSteps(prev => prev.map((s, idx) => ({
-        ...s,
-        status: idx <= i ? "completed" : "pending",
-        duration: idx === i ? `${((stepDurations[i] || 800) / 1000).toFixed(1)}s` : s.duration
-      })));
-      
-      addLogMessage(`[${new Date().toISOString().slice(11, 19)}] Completed: ${steps[i].title}`);
+      addLogMessage(`${stepLabels[i]}: ${stepDetails[i]}`);
+      await new Promise(resolve => setTimeout(resolve, stepDurations[i]));
+      setCompletedSteps(prev => [...prev, i]);
     }
-    
-    addLogMessage(`[${new Date().toISOString().slice(11, 19)}] MDCG 2022-21 compliant PSUR generation complete!`);
     
     const deviceName = configMode === "quick" && lookupResult?.device 
       ? lookupResult.device.deviceName 
-      : devices.find(d => d.id === parseInt(selectedDevice))?.deviceName || "Unknown Device";
+      : devices.find(d => d.id === parseInt(selectedDevice))?.deviceName || "Medical Device";
     const deviceCode = configMode === "quick" && lookupResult?.device 
       ? lookupResult.device.deviceCode 
-      : devices.find(d => d.id === parseInt(selectedDevice))?.deviceCode || "N/A";
-    const jurisdictions = configMode === "quick" 
-      ? (lookupResult?.psurItem?.jurisdiction ? [lookupResult.psurItem.jurisdiction] : ["EU_MDR"])
-      : selectedJurisdictions;
+      : devices.find(d => d.id === parseInt(selectedDevice))?.deviceCode || "DEV-001";
     
     setGeneratedPSUR({
       title: `PSUR - ${deviceName}`,
       deviceName,
       deviceCode,
-      jurisdiction: jurisdictions.map(j => jurisdictionOptions.find(o => o.value === j)?.label || j).join(", "),
-      reportingPeriod: startPeriod && endPeriod 
-        ? `${new Date(startPeriod).toLocaleDateString()} - ${new Date(endPeriod).toLocaleDateString()}`
-        : "Last 12 months",
+      jurisdiction: selectedJurisdictions.map(j => jurisdictionOptions.find(o => o.value === j)?.label || j).join(", "),
+      reportingPeriod: `${new Date(startPeriod).toLocaleDateString()} - ${new Date(endPeriod).toLocaleDateString()}`,
       generatedAt: new Date().toISOString(),
       sections: [
-        { name: "1. Executive Summary", content: `This Periodic Safety Update Report (PSUR) covers the post-market surveillance data for ${deviceName} (${deviceCode}) during the reporting period. The device continues to meet its intended purpose with an acceptable benefit-risk profile. No new safety signals were identified that would require changes to the device or its labeling.` },
-        { name: "2. Device Description", content: `${deviceName} is a Class III medical device designed for in-vitro diagnostic use. The device operates under the Basic UDI-DI framework and is classified according to Annex VIII of MDR 2017/745. The intended purpose remains unchanged from the previous reporting period.` },
-        { name: "3. Reporting Period", content: `This PSUR covers the period from ${startPeriod || "January 1, 2025"} to ${endPeriod || "December 31, 2025"}. Data collection aligns with the certification renewal cycle as required under Article 86 of MDR 2017/745.` },
-        { name: "4. PMS Data Collection", content: `During the reporting period, 847 units were distributed across the covered jurisdictions. A total of 23 complaints were received and classified using IMDRF Adverse Event Terminology (AET) codes. The complaint rate of 2.7% is within acceptable limits and consistent with historical trends.` },
-        { name: "5. Serious Incidents & FSCA", content: `Two (2) serious incidents were reported during the period. Root cause analysis identified user error as the primary factor in both cases. No Field Safety Corrective Actions (FSCA) were required. Incidents were reported to relevant competent authorities within regulatory timeframes.` },
-        { name: "6. Non-Serious Incidents", content: `Twenty-one (21) non-serious incidents were categorized by IMDRF Medical Device Problem Codes. The most common issues related to device malfunction (9 cases) and use errors (7 cases). All incidents were investigated and closed with appropriate corrective actions.` },
-        { name: "7. Sales & Exposure Data", content: `Total units sold: 847. Estimated patient exposure: 2,541 procedures. Complaint rate per 1000 units: 2.7. The exposure data remains consistent with the Clinical Evaluation Report assumptions.` },
-        { name: "8. CAPA Analysis", content: `Three (3) Corrective and Preventive Actions were initiated during the reporting period. Two CAPAs related to labeling improvements have been completed and verified effective. One CAPA addressing packaging improvements is ongoing with expected completion in Q2 2026.` },
-        { name: "9. Literature Review", content: `A systematic literature review was conducted per MDCG 2020-13. Twelve (12) relevant publications were identified and assessed. Four (4) similar device reports from the MAUDE database were reviewed. No new safety signals or contraindications were identified.` },
-        { name: "10. Benefit-Risk Evaluation", content: `Based on the cumulative post-market data, the benefit-risk determination remains ACCEPTABLE. The device continues to perform as intended with no significant safety concerns. The clinical benefits outweigh the residual risks when the device is used according to the Instructions for Use.` },
-        { name: "11. Conclusions", content: `This PSUR demonstrates continued compliance with MDR 2017/745 requirements. The device maintains an acceptable safety profile. Continued market authorization is recommended. No changes to the device design, labeling, or intended purpose are required at this time.` },
-        { name: "12. Actions Planned", content: `Continue routine post-market surveillance activities. Complete ongoing CAPA for packaging improvements. Update Clinical Evaluation Report with latest PSUR findings. Prepare for next PSUR cycle in accordance with the PMS Plan.` },
-        { name: "13. Appendices", content: `Appendix A: Complaint Trend Analysis\nAppendix B: Incident Summary Table\nAppendix C: Literature Search Strategy\nAppendix D: CAPA Register Extract\nAppendix E: EUDAMED Reporting Confirmations` },
+        { name: "1. Executive Summary", content: `This PSUR covers post-market surveillance data for ${deviceName} (${deviceCode}). The device maintains an acceptable benefit-risk profile with no new safety signals identified.` },
+        { name: "2. Device Description", content: `${deviceName} is a Class III medical device classified according to Annex VIII of MDR 2017/745.` },
+        { name: "3. Reporting Period", content: `This PSUR covers ${startPeriod} to ${endPeriod}, aligned with MDR Article 86 requirements.` },
+        { name: "4. PMS Data Collection", content: `847 units distributed. 23 complaints received (2.7% rate) classified using IMDRF AET codes.` },
+        { name: "5. Serious Incidents", content: `Two serious incidents reported. Root cause: user error. No FSCA required.` },
+        { name: "6. Non-Serious Incidents", content: `21 non-serious incidents: malfunction (9), use errors (7), other (5).` },
+        { name: "7. Sales & Exposure", content: `Units sold: 847. Patient exposure: 2,541 procedures. Rate: 2.7 per 1000.` },
+        { name: "8. CAPA Analysis", content: `3 CAPAs initiated. 2 completed (labeling), 1 ongoing (packaging).` },
+        { name: "9. Literature Review", content: `12 publications reviewed per MDCG 2020-13. No new safety signals.` },
+        { name: "10. Benefit-Risk", content: `Determination: ACCEPTABLE. Clinical benefits outweigh residual risks.` },
+        { name: "11. Conclusions", content: `Device maintains acceptable safety profile. Continued authorization recommended.` },
+        { name: "12. Actions Planned", content: `Continue PMS activities. Complete packaging CAPA Q2 2026.` },
+        { name: "13. Appendices", content: `A: Complaint Trends\nB: Incident Summary\nC: Literature Strategy\nD: CAPA Register` },
       ],
     });
     
+    setCurrentStep(-1);
     setIsExecuting(false);
-    toast({ title: "PSUR generated per MDCG 2022-21!" });
+    addLogMessage("PSUR generation complete");
+    toast({ title: "PSUR Ready" });
     queryClient.invalidateQueries({ queryKey: ["/api/agent-executions"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
   };
 
   const addLogMessage = (message: string) => {
-    setLogMessages(prev => [...prev, message]);
+    const time = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    setLogMessages(prev => [...prev, `${time} ${message}`]);
   };
 
   useEffect(() => {
@@ -287,110 +222,103 @@ export default function AgentOrchestration() {
     }
   }, [logMessages]);
 
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (isExecuting) {
-      interval = setInterval(() => {
-        setElapsedTime(prev => prev + 1);
-      }, 1000);
-    }
-    return () => clearInterval(interval);
-  }, [isExecuting]);
+  const canStart = configMode === "quick" 
+    ? lookupResult?.found && lookupResult.device
+    : selectedJurisdictions.length > 0 && selectedDevice;
 
-  const canStartQuickMode = lookupResult?.found && lookupResult.device;
-  const canStartManualMode = selectedJurisdictions.length > 0 && selectedDevice && startPeriod && endPeriod;
-
-  const toggleJurisdiction = (value: string) => {
-    setSelectedJurisdictions(prev => 
-      prev.includes(value) 
-        ? prev.filter(j => j !== value)
-        : [...prev, value]
-    );
-  };
-
-  const handleStartExecution = () => {
+  const handleStart = () => {
     setIsExecuting(true);
-    setElapsedTime(0);
     setLogMessages([]);
-    setSteps(agentStepsConfig.map(s => ({ ...s, status: "pending" as const, duration: undefined })));
+    setCompletedSteps([]);
     setCurrentStep(0);
+    setGeneratedPSUR(null);
+    setConfigOpen(false);
+    
+    addLogMessage("Initializing PSUR Agent...");
     
     if (configMode === "quick" && lookupResult?.device) {
-      const jurisdictions = lookupResult.psurItem?.jurisdiction ? [lookupResult.psurItem.jurisdiction] : ["EU_MDR"];
-      addLogMessage(`[${new Date().toISOString().slice(11, 19)}] Quick Start: Retrieved device data for ${lookupResult.device.deviceName}`);
-      addLogMessage(`[${new Date().toISOString().slice(11, 19)}] Activating MDCG 2022-21 PSUR Agent for ${jurisdictions.join(", ")} jurisdiction(s)`);
-      
       startExecutionMutation.mutate({
         deviceId: lookupResult.device.id,
-        jurisdictions,
+        jurisdictions: selectedJurisdictions,
         pmsPlanNumber: pmsPlanNumber || undefined,
         previousPsurNumber: previousPsurNumber || undefined,
+        startPeriod,
+        endPeriod,
       });
     } else {
-      const jurisdictionLabels = selectedJurisdictions.map(j => jurisdictionOptions.find(o => o.value === j)?.label).filter(Boolean).join(", ");
-      addLogMessage(`[${new Date().toISOString().slice(11, 19)}] Manual Configuration: ${jurisdictionLabels}`);
-      addLogMessage(`[${new Date().toISOString().slice(11, 19)}] Activating MDCG 2022-21 PSUR Agent for ${selectedJurisdictions.length} jurisdiction(s)`);
-      
-      const parts = partNumbers.split(",").map(p => p.trim()).filter(Boolean);
-      
       startExecutionMutation.mutate({
         deviceId: parseInt(selectedDevice),
         jurisdictions: selectedJurisdictions,
-        partNumbers: parts.length > 0 ? parts : undefined,
         startPeriod,
         endPeriod,
       });
     }
   };
 
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  const toggleJurisdiction = (value: string) => {
+    setSelectedJurisdictions(prev => 
+      prev.includes(value) ? prev.filter(j => j !== value) : [...prev, value]
+    );
   };
 
-  const progress = (currentStep / steps.length) * 100;
-  const estimatedCost = ((currentStep + 1) * 0.12).toFixed(2);
+  const downloadPSUR = () => {
+    if (!generatedPSUR) return;
+    const content = generatedPSUR.sections.map(s => `${s.name}\n${s.content}`).join('\n\n');
+    const doc = `PERIODIC SAFETY UPDATE REPORT\n\nDevice: ${generatedPSUR.deviceName}\nCode: ${generatedPSUR.deviceCode}\nPeriod: ${generatedPSUR.reportingPeriod}\n\n${content}`;
+    const blob = new Blob([doc], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `PSUR_${generatedPSUR.deviceCode}_${new Date().toISOString().slice(0, 10)}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast({ title: "Downloaded" });
+  };
 
   return (
-    <div className="flex-1 overflow-auto">
-      <div className="p-6 space-y-6">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Agent Orchestration</h1>
-            <p className="text-muted-foreground text-sm mt-1">
-              Execute MDCG 2022-21 compliant PSUR generation agents
-            </p>
+    <div className="flex h-full">
+      {/* Left Config Panel */}
+      <div className={`shrink-0 border-r bg-muted/20 transition-all duration-300 ease-out ${configOpen ? 'w-80' : 'w-12'}`}>
+        <div className="h-full flex flex-col">
+          <div className="p-3 border-b flex items-center justify-between gap-2">
+            {configOpen && <span className="text-sm font-medium">Configure</span>}
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={() => setConfigOpen(!configOpen)}
+              className="shrink-0"
+            >
+              {configOpen ? <ChevronLeft className="h-4 w-4" /> : <Settings2 className="h-4 w-4" />}
+            </Button>
           </div>
-        </div>
+          
+          {configOpen && (
+            <ScrollArea className="flex-1 p-4">
+              <div className="space-y-6">
+                {/* Mode Toggle */}
+                <div className="flex rounded-lg bg-muted p-1">
+                  <button
+                    onClick={() => setConfigMode("quick")}
+                    className={`flex-1 text-xs py-2 px-3 rounded-md transition-all ${configMode === "quick" ? 'bg-background shadow-sm' : ''}`}
+                    data-testid="tab-quick-start"
+                  >
+                    Quick Start
+                  </button>
+                  <button
+                    onClick={() => setConfigMode("manual")}
+                    className={`flex-1 text-xs py-2 px-3 rounded-md transition-all ${configMode === "manual" ? 'bg-background shadow-sm' : ''}`}
+                    data-testid="tab-manual-config"
+                  >
+                    Manual
+                  </button>
+                </div>
 
-        <div className="grid gap-6 lg:grid-cols-3">
-          <div className="lg:col-span-1 space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Configuration</CardTitle>
-                <CardDescription>Choose how to configure the PSUR generation</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <Tabs value={configMode} onValueChange={(v) => setConfigMode(v as "quick" | "manual")}>
-                  <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="quick" data-testid="tab-quick-start">
-                      <Search className="h-4 w-4 mr-2" />
-                      Quick Start
-                    </TabsTrigger>
-                    <TabsTrigger value="manual" data-testid="tab-manual-config">
-                      <FileText className="h-4 w-4 mr-2" />
-                      Manual
-                    </TabsTrigger>
-                  </TabsList>
-                  
-                  <TabsContent value="quick" className="space-y-4 mt-4">
-                    <p className="text-xs text-muted-foreground">
-                      Enter a PMS Plan Number or Previous PSUR Number to auto-retrieve device data from the knowledge base.
-                    </p>
-                    
+                {configMode === "quick" ? (
+                  <div className="space-y-4">
                     <div className="space-y-2">
-                      <Label>PMS Plan Number</Label>
+                      <Label className="text-xs text-muted-foreground">PMS Plan Number</Label>
                       <Input
                         placeholder="e.g., PMS-2024-001"
                         value={pmsPlanNumber}
@@ -398,6 +326,7 @@ export default function AgentOrchestration() {
                           setPmsPlanNumber(e.target.value);
                           if (e.target.value) setPreviousPsurNumber("");
                         }}
+                        className="text-sm"
                         disabled={isExecuting}
                         data-testid="input-pms-plan"
                       />
@@ -405,19 +334,20 @@ export default function AgentOrchestration() {
                     
                     <div className="flex items-center gap-2">
                       <Separator className="flex-1" />
-                      <span className="text-xs text-muted-foreground">or</span>
+                      <span className="text-[10px] text-muted-foreground">or</span>
                       <Separator className="flex-1" />
                     </div>
                     
                     <div className="space-y-2">
-                      <Label>Previous PSUR Number</Label>
+                      <Label className="text-xs text-muted-foreground">Previous PSUR Number</Label>
                       <Input
-                        placeholder="e.g., PSUR-2023-CardioMonitor-001"
+                        placeholder="e.g., PSUR-2023-001"
                         value={previousPsurNumber}
                         onChange={(e) => {
                           setPreviousPsurNumber(e.target.value);
                           if (e.target.value) setPmsPlanNumber("");
                         }}
+                        className="text-sm"
                         disabled={isExecuting}
                         data-testid="input-previous-psur"
                       />
@@ -425,547 +355,405 @@ export default function AgentOrchestration() {
                     
                     <Button 
                       variant="outline" 
+                      size="sm"
                       className="w-full"
                       onClick={handleLookup}
                       disabled={isExecuting || isLookingUp || (!pmsPlanNumber && !previousPsurNumber)}
                       data-testid="button-lookup"
                     >
-                      {isLookingUp ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          Looking up...
-                        </>
-                      ) : (
-                        <>
-                          <Search className="h-4 w-4" />
-                          Lookup Device Data
-                        </>
-                      )}
+                      {isLookingUp ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                      Lookup
                     </Button>
                     
-                    {lookupResult && (
-                      <div className={`p-3 rounded-md text-sm ${lookupResult.found ? 'bg-emerald-50 dark:bg-emerald-950 border border-emerald-200 dark:border-emerald-800' : 'bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800'}`}>
-                        {lookupResult.found && lookupResult.device ? (
-                          <div className="space-y-1">
-                            <p className="font-medium text-emerald-700 dark:text-emerald-300">Device Data Retrieved</p>
-                            <p className="text-muted-foreground">{lookupResult.device.deviceName}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {lookupResult.device.riskClass} | {lookupResult.device.deviceCode}
-                            </p>
-                            {lookupResult.psurItem && (
-                              <p className="text-xs text-muted-foreground">
-                                Previous period: {new Date(lookupResult.psurItem.startPeriod).toLocaleDateString()} - {new Date(lookupResult.psurItem.endPeriod).toLocaleDateString()}
-                              </p>
-                            )}
-                          </div>
-                        ) : (
-                          <p className="text-amber-700 dark:text-amber-300">No matching data found. Use Manual Configuration.</p>
-                        )}
+                    {lookupResult?.found && lookupResult.device && (
+                      <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-sm" data-testid="lookup-result">
+                        <p className="font-medium">{lookupResult.device.deviceName}</p>
+                        <p className="text-xs text-muted-foreground">{lookupResult.device.deviceCode}</p>
                       </div>
                     )}
-                  </TabsContent>
-                  
-                  <TabsContent value="manual" className="space-y-4 mt-4">
-                    <p className="text-xs text-muted-foreground">
-                      Configure device and surveillance period manually when no previous data exists.
-                    </p>
-                    
+                  </div>
+                ) : (
+                  <div className="space-y-4">
                     <div className="space-y-2">
-                      <Label>Jurisdictions / Regulations</Label>
-                      <p className="text-xs text-muted-foreground mb-2">Select all applicable regulations for this PSUR</p>
-                      <div className="space-y-2 p-3 rounded-md border bg-muted/20">
-                        {jurisdictionOptions.map((j) => (
-                          <div key={j.value} className="flex items-center gap-2">
-                            <Checkbox
-                              id={`jurisdiction-${j.value}`}
-                              checked={selectedJurisdictions.includes(j.value)}
-                              onCheckedChange={() => toggleJurisdiction(j.value)}
-                              disabled={isExecuting}
-                              data-testid={`checkbox-jurisdiction-${j.value.toLowerCase()}`}
-                            />
-                            <label
-                              htmlFor={`jurisdiction-${j.value}`}
-                              className="text-sm cursor-pointer"
-                            >
-                              {j.label}
-                            </label>
-                          </div>
-                        ))}
-                      </div>
-                      {selectedJurisdictions.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-2">
-                          {selectedJurisdictions.map(j => (
-                            <Badge key={j} variant="secondary" className="text-xs">
-                              {jurisdictionOptions.find(o => o.value === j)?.label}
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>Device</Label>
-                      <Select 
-                        value={selectedDevice} 
-                        onValueChange={setSelectedDevice}
-                        disabled={isExecuting}
-                      >
-                        <SelectTrigger data-testid="select-device">
+                      <Label className="text-xs text-muted-foreground">Device</Label>
+                      <Select value={selectedDevice} onValueChange={setSelectedDevice} disabled={isExecuting}>
+                        <SelectTrigger className="text-sm" data-testid="select-device">
                           <SelectValue placeholder="Select device" />
                         </SelectTrigger>
                         <SelectContent>
                           {devices.map((d) => (
-                            <SelectItem key={d.id} value={d.id.toString()}>
-                              {d.deviceName} ({d.riskClass})
-                            </SelectItem>
+                            <SelectItem key={d.id} value={d.id.toString()}>{d.deviceName}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     </div>
+                  </div>
+                )}
 
-                    <div className="space-y-2">
-                      <Label className="flex items-center gap-2">
-                        <Package className="h-4 w-4" />
-                        Part Numbers
-                      </Label>
-                      <Input
-                        placeholder="e.g., CM-100, CM-100A, CM-200"
-                        value={partNumbers}
-                        onChange={(e) => setPartNumbers(e.target.value)}
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">Jurisdictions</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {jurisdictionOptions.map((j) => (
+                      <button
+                        key={j.value}
+                        onClick={() => !isExecuting && toggleJurisdiction(j.value)}
+                        className={`text-xs px-3 py-1.5 rounded-full border transition-all ${
+                          selectedJurisdictions.includes(j.value) 
+                            ? 'bg-primary text-primary-foreground border-primary' 
+                            : 'hover-elevate'
+                        }`}
                         disabled={isExecuting}
-                        data-testid="input-part-numbers"
-                      />
-                      <p className="text-xs text-muted-foreground">Comma-separated list of part numbers included in this PSUR</p>
-                    </div>
+                        data-testid={`checkbox-jurisdiction-${j.value.toLowerCase()}`}
+                      >
+                        {j.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-2">
-                        <Label className="flex items-center gap-2">
-                          <CalendarDays className="h-4 w-4" />
-                          Period Start
-                        </Label>
-                        <Input
-                          type="date"
-                          value={startPeriod}
-                          onChange={(e) => setStartPeriod(e.target.value)}
-                          disabled={isExecuting}
-                          data-testid="input-start-period"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label className="flex items-center gap-2">
-                          <CalendarDays className="h-4 w-4" />
-                          Period End
-                        </Label>
-                        <Input
-                          type="date"
-                          value={endPeriod}
-                          onChange={(e) => setEndPeriod(e.target.value)}
-                          disabled={isExecuting}
-                          data-testid="input-end-period"
-                        />
-                      </div>
-                    </div>
-                  </TabsContent>
-                </Tabs>
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">Reporting Period</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input
+                      type="date"
+                      value={startPeriod}
+                      onChange={(e) => setStartPeriod(e.target.value)}
+                      className="text-sm"
+                      data-testid="input-start-period"
+                      disabled={isExecuting}
+                    />
+                    <Input
+                      type="date"
+                      value={endPeriod}
+                      onChange={(e) => setEndPeriod(e.target.value)}
+                      className="text-sm"
+                      disabled={isExecuting}
+                      data-testid="input-end-period"
+                    />
+                  </div>
+                </div>
 
                 <Separator />
 
                 <Button 
                   className="w-full" 
-                  size="lg"
-                  onClick={handleStartExecution}
-                  disabled={isExecuting || (configMode === "quick" ? !canStartQuickMode : !canStartManualMode)}
+                  onClick={handleStart}
+                  disabled={isExecuting || !canStart}
                   data-testid="button-start-agent"
                 >
                   {isExecuting ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Executing...
-                    </>
+                    <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     <>
-                      <Sparkles className="h-4 w-4" />
+                      <Play className="h-4 w-4" />
                       Generate PSUR
                     </>
                   )}
                 </Button>
-              </CardContent>
-            </Card>
+              </div>
+            </ScrollArea>
+          )}
+        </div>
+      </div>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Execution Metrics</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Clock className="h-4 w-4" />
-                    Elapsed Time
-                  </div>
-                  <span className="font-mono text-sm font-medium">{formatTime(elapsedTime)}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Zap className="h-4 w-4" />
-                    Tokens Used
-                  </div>
-                  <span className="font-mono text-sm font-medium">{isExecuting ? (currentStep + 1) * 1250 : 0}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <DollarSign className="h-4 w-4" />
-                    Estimated Cost
-                  </div>
-                  <span className="font-mono text-sm font-medium">${isExecuting ? estimatedCost : "0.00"}</span>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="lg:col-span-2 space-y-6">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-                <div>
-                  <CardTitle className="text-lg">MDCG 2022-21 Workflow</CardTitle>
-                  <CardDescription>
-                    {isExecuting ? "Executing PSUR generation pipeline..." : "Configure and start agent execution"}
-                  </CardDescription>
-                </div>
-                {isExecuting && (
-                  <Badge variant="secondary" className="gap-1">
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    Running
-                  </Badge>
-                )}
-                {!isExecuting && currentStep === steps.length && (
-                  <Badge className="gap-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-                    <CheckCircle2 className="h-3 w-3" />
-                    Complete
-                  </Badge>
-                )}
-              </CardHeader>
-              <CardContent>
-                {isExecuting && (
-                  <div className="mb-6">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium">Progress</span>
-                      <span className="text-sm text-muted-foreground">{Math.round(progress)}%</span>
-                    </div>
-                    <Progress value={progress} className="h-2" />
-                  </div>
-                )}
-                
-                <AgentSteps steps={steps} />
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Execution Log</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div 
-                  ref={logContainerRef}
-                  className="h-48 overflow-auto rounded-md bg-muted/30 p-3 font-mono text-xs"
-                >
-                  {logMessages.length === 0 ? (
-                    <p className="text-muted-foreground">Waiting for agent execution...</p>
-                  ) : (
-                    logMessages.map((msg, idx) => (
-                      <div key={idx} className="text-muted-foreground">
-                        {msg}
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Horizontal Step Timeline */}
+        <div className="shrink-0 border-b bg-background/80 backdrop-blur-sm">
+          <div className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h1 className="text-lg font-semibold">PSUR Generation</h1>
+              {isExecuting && (
+                <Badge variant="secondary" className="text-xs">
+                  <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                  Processing
+                </Badge>
+              )}
+              {!isExecuting && completedSteps.length === 13 && (
+                <Badge className="text-xs bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300">
+                  <CheckCircle2 className="h-3 w-3 mr-1" />
+                  Complete
+                </Badge>
+              )}
+            </div>
+            
+            {/* Horizontal Steps - Two Rows for Serpentine Effect */}
+            <div className="space-y-2">
+              {/* Row 1: Steps 1-7 (left to right) */}
+              <div className="flex gap-1">
+                {stepLabels.slice(0, 7).map((label, idx) => {
+                  const isCompleted = completedSteps.includes(idx);
+                  const isActive = currentStep === idx;
+                  return (
+                    <div 
+                      key={idx}
+                      className={`flex-1 relative group ${idx < 6 ? 'after:content-[""] after:absolute after:right-0 after:top-1/2 after:-translate-y-1/2 after:w-1 after:h-1 after:rounded-full after:bg-border' : ''}`}
+                      data-testid={`step-${idx + 1}`}
+                    >
+                      <div 
+                        className={`h-8 rounded-lg flex items-center justify-center text-[10px] font-medium transition-all duration-300 ${
+                          isActive 
+                            ? 'bg-primary text-primary-foreground scale-105 shadow-md' 
+                            : isCompleted 
+                              ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300' 
+                              : 'bg-muted/50 text-muted-foreground'
+                        }`}
+                      >
+                        {isCompleted && !isActive ? (
+                          <CheckCircle2 className="h-3 w-3" />
+                        ) : isActive ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <span className="opacity-60">{idx + 1}</span>
+                        )}
                       </div>
-                    ))
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            {(generatedPSUR || isExecuting) && (
-              <Card className={isExecuting ? "border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/30" : "border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/30"}>
-                <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-                  <div className="flex items-center gap-3">
-                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-md ${isExecuting ? 'bg-blue-100 dark:bg-blue-900' : 'bg-emerald-100 dark:bg-emerald-900'}`}>
-                      {isExecuting ? (
-                        <Loader2 className="h-5 w-5 text-blue-600 dark:text-blue-400 animate-spin" />
-                      ) : (
-                        <FileCheck className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-                      )}
-                    </div>
-                    <div>
-                      <CardTitle className="text-lg">{isExecuting ? "Generating PSUR..." : "Generated PSUR"}</CardTitle>
-                      <CardDescription className={isExecuting ? "text-blue-700 dark:text-blue-300" : "text-emerald-700 dark:text-emerald-300"}>
-                        {isExecuting ? `Step ${currentStep + 1} of 13 - Processing...` : "Ready for review and download"}
-                      </CardDescription>
-                    </div>
-                  </div>
-                  {isExecuting ? (
-                    <Badge className="gap-1 bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 border-blue-200 dark:border-blue-700">
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      In Progress
-                    </Badge>
-                  ) : (
-                    <Badge className="gap-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300 border-emerald-200 dark:border-emerald-700">
-                      <CheckCircle2 className="h-3 w-3" />
-                      Complete
-                    </Badge>
-                  )}
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {isExecuting ? (
-                    <div className="space-y-3">
-                      <Progress value={(currentStep / 13) * 100} className="h-2" />
-                      <p className="text-sm text-muted-foreground">
-                        PSUR document will appear here when generation is complete. Please wait...
+                      <p className={`text-[9px] text-center mt-1 truncate ${isActive ? 'text-primary font-medium' : 'text-muted-foreground'}`}>
+                        {label}
                       </p>
                     </div>
-                  ) : generatedPSUR && (
-                    <>
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <p className="text-muted-foreground text-xs">Device</p>
-                      <p className="font-medium">{generatedPSUR.deviceName}</p>
-                      <p className="text-xs text-muted-foreground font-mono">{generatedPSUR.deviceCode}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground text-xs">Jurisdiction</p>
-                      <p className="font-medium">{generatedPSUR.jurisdiction}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground text-xs">Reporting Period</p>
-                      <p className="font-medium">{generatedPSUR.reportingPeriod}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground text-xs">Generated</p>
-                      <p className="font-medium">{new Date(generatedPSUR.generatedAt).toLocaleString()}</p>
-                    </div>
-                  </div>
-
-                  <Separator />
-
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground mb-2">Document Sections ({generatedPSUR.sections.length})</p>
-                    <div className="flex flex-wrap gap-1">
-                      {generatedPSUR.sections.map((section, idx) => (
-                        <button
-                          key={idx}
-                          onClick={() => {
-                            setPreviewSection(idx);
-                            setIsPreviewOpen(true);
-                          }}
-                          className="text-[10px] px-2 py-1 rounded bg-background border hover-elevate cursor-pointer"
-                          data-testid={`button-section-${idx}`}
-                        >
-                          {section.name}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2 pt-2">
-                    <Button 
-                      variant="outline" 
-                      className="flex-1"
-                      onClick={() => {
-                        setPreviewSection(0);
-                        setIsPreviewOpen(true);
-                      }}
-                      data-testid="button-preview-psur"
+                  );
+                })}
+              </div>
+              
+              {/* Connector */}
+              <div className="flex justify-end pr-2">
+                <ChevronRight className="h-3 w-3 text-muted-foreground rotate-90" />
+              </div>
+              
+              {/* Row 2: Steps 8-13 (right to left, so we reverse display) */}
+              <div className="flex gap-1 flex-row-reverse">
+                {stepLabels.slice(7).map((label, i) => {
+                  const idx = i + 7;
+                  const isCompleted = completedSteps.includes(idx);
+                  const isActive = currentStep === idx;
+                  return (
+                    <div 
+                      key={idx}
+                      className={`flex-1 relative group ${i < 5 ? 'after:content-[""] after:absolute after:left-0 after:top-1/2 after:-translate-y-1/2 after:w-1 after:h-1 after:rounded-full after:bg-border' : ''}`}
+                      data-testid={`step-${idx + 1}`}
                     >
-                      <Eye className="h-4 w-4" />
-                      Preview Document
-                    </Button>
-                    <Button 
-                      className="flex-1"
-                      onClick={() => {
-                        const content = generatedPSUR.sections.map(s => 
-                          `${s.name}\n${'='.repeat(s.name.length)}\n\n${s.content}\n`
-                        ).join('\n\n');
-                        const fullDoc = `PERIODIC SAFETY UPDATE REPORT (PSUR)\n${'='.repeat(40)}\n\nDevice: ${generatedPSUR.deviceName} (${generatedPSUR.deviceCode})\nJurisdiction: ${generatedPSUR.jurisdiction}\nReporting Period: ${generatedPSUR.reportingPeriod}\nGenerated: ${new Date(generatedPSUR.generatedAt).toLocaleString()}\n\n${'='.repeat(40)}\n\n${content}`;
-                        
-                        const blob = new Blob([fullDoc], { type: 'text/plain' });
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = `PSUR_${generatedPSUR.deviceCode}_${new Date().toISOString().slice(0, 10)}.txt`;
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                        URL.revokeObjectURL(url);
-                        toast({ title: "PSUR downloaded successfully" });
-                      }}
-                      data-testid="button-download-psur"
-                    >
-                      <Download className="h-4 w-4" />
-                      Download PSUR
-                    </Button>
-                  </div>
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-            )}
+                      <div 
+                        className={`h-8 rounded-lg flex items-center justify-center text-[10px] font-medium transition-all duration-300 ${
+                          isActive 
+                            ? 'bg-primary text-primary-foreground scale-105 shadow-md' 
+                            : isCompleted 
+                              ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300' 
+                              : 'bg-muted/50 text-muted-foreground'
+                        }`}
+                      >
+                        {isCompleted && !isActive ? (
+                          <CheckCircle2 className="h-3 w-3" />
+                        ) : isActive ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <span className="opacity-60">{idx + 1}</span>
+                        )}
+                      </div>
+                      <p className={`text-[9px] text-center mt-1 truncate ${isActive ? 'text-primary font-medium' : 'text-muted-foreground'}`}>
+                        {label}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </div>
 
-        <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
-          <DialogContent className="max-w-4xl max-h-[80vh]">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <FileText className="h-5 w-5" />
-                {generatedPSUR?.title || "PSUR Preview"}
-              </DialogTitle>
-              <DialogDescription>
-                {generatedPSUR?.jurisdiction} | {generatedPSUR?.reportingPeriod}
-              </DialogDescription>
-            </DialogHeader>
-            
-            <div className="flex gap-4 h-[60vh]">
-              <div className="w-48 shrink-0 border-r pr-4">
-                <p className="text-xs font-medium text-muted-foreground mb-2">Sections</p>
-                <ScrollArea className="h-full">
-                  <div className="space-y-1">
-                    {generatedPSUR?.sections.map((section, idx) => (
-                      <button
-                        key={idx}
-                        onClick={() => setPreviewSection(idx)}
-                        className={`w-full text-left text-xs px-2 py-1.5 rounded transition-colors ${
-                          previewSection === idx 
-                            ? 'bg-primary text-primary-foreground' 
-                            : 'hover-elevate'
-                        }`}
-                        data-testid={`nav-section-${idx}`}
-                      >
-                        {section.name}
-                      </button>
-                    ))}
-                  </div>
-                </ScrollArea>
+        {/* Log & Output Split View */}
+        <div className="flex-1 flex overflow-hidden">
+          {/* Execution Log */}
+          <div className="flex-1 flex flex-col border-r min-w-0">
+            <div className="p-3 border-b">
+              <span className="text-xs font-medium text-muted-foreground">Execution Log</span>
+            </div>
+            <ScrollArea className="flex-1">
+              <div ref={logContainerRef} className="p-3 font-mono text-xs space-y-1">
+                {logMessages.length === 0 ? (
+                  <p className="text-muted-foreground/50">Waiting for execution...</p>
+                ) : (
+                  logMessages.map((msg, idx) => (
+                    <div key={idx} className="text-muted-foreground leading-relaxed">
+                      <span className="text-muted-foreground/50">{msg.slice(0, 8)}</span>
+                      <span className="ml-2">{msg.slice(9)}</span>
+                    </div>
+                  ))
+                )}
               </div>
-              
-              <div className="flex-1 overflow-hidden">
-                <ScrollArea className="h-full">
-                  <div className="pr-4">
-                    <h3 className="text-lg font-semibold mb-4">
-                      {generatedPSUR?.sections[previewSection]?.name}
-                    </h3>
-                    <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                      {generatedPSUR?.sections[previewSection]?.content}
+            </ScrollArea>
+          </div>
+
+          {/* Generated Output */}
+          <div className="w-80 shrink-0 flex flex-col bg-muted/10">
+            <div className="p-3 border-b">
+              <span className="text-xs font-medium text-muted-foreground">Output</span>
+            </div>
+            <ScrollArea className="flex-1">
+              <div className="p-3">
+                {!generatedPSUR && !isExecuting && (
+                  <div className="h-full flex items-center justify-center">
+                    <p className="text-xs text-muted-foreground/50 text-center">
+                      Generated PSUR will appear here
                     </p>
                   </div>
-                </ScrollArea>
-              </div>
-            </div>
+                )}
+                
+                {isExecuting && !generatedPSUR && (
+                  <div className="space-y-3 animate-pulse">
+                    <div className="h-4 bg-muted rounded w-3/4" />
+                    <div className="h-3 bg-muted rounded w-1/2" />
+                    <div className="h-20 bg-muted rounded" />
+                  </div>
+                )}
 
-            <div className="flex justify-between pt-4 border-t">
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={previewSection === 0}
-                  onClick={() => setPreviewSection(p => p - 1)}
-                >
-                  Previous
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={previewSection === (generatedPSUR?.sections.length || 1) - 1}
-                  onClick={() => setPreviewSection(p => p + 1)}
-                >
-                  Next
-                </Button>
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    const content = generatedPSUR?.sections[previewSection]?.content || '';
-                    navigator.clipboard.writeText(content);
-                    toast({ title: "Section copied to clipboard" });
-                  }}
-                >
-                  <Copy className="h-4 w-4" />
-                  Copy Section
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    if (!generatedPSUR) return;
-                    const content = generatedPSUR.sections.map(s => 
-                      `${s.name}\n${'='.repeat(s.name.length)}\n\n${s.content}\n`
-                    ).join('\n\n');
-                    const fullDoc = `PERIODIC SAFETY UPDATE REPORT (PSUR)\n${'='.repeat(40)}\n\nDevice: ${generatedPSUR.deviceName} (${generatedPSUR.deviceCode})\nJurisdiction: ${generatedPSUR.jurisdiction}\nReporting Period: ${generatedPSUR.reportingPeriod}\nGenerated: ${new Date(generatedPSUR.generatedAt).toLocaleString()}\n\n${'='.repeat(40)}\n\n${content}`;
+                {generatedPSUR && (
+                  <div className="space-y-4">
+                    <div>
+                      <p className="font-medium text-sm">{generatedPSUR.deviceName}</p>
+                      <p className="text-xs text-muted-foreground font-mono">{generatedPSUR.deviceCode}</p>
+                    </div>
                     
-                    const blob = new Blob([fullDoc], { type: 'text/plain' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `PSUR_${generatedPSUR.deviceCode}_${new Date().toISOString().slice(0, 10)}.txt`;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
-                    toast({ title: "PSUR downloaded" });
-                  }}
-                >
-                  <Download className="h-4 w-4" />
-                  Download Full PSUR
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Recent Executions</CardTitle>
-            <CardDescription>History of agent executions and generated documents</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {executions.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground text-sm">
-                No executions yet. Start an agent to generate regulatory documents.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {executions.slice(0, 10).map((execution) => (
-                  <div 
-                    key={execution.id}
-                    className="flex items-center justify-between gap-4 p-4 rounded-md border bg-card/50"
-                    data-testid={`execution-row-${execution.id}`}
-                  >
-                    <div className="flex items-center gap-4 min-w-0">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-primary/10">
-                        <Cpu className="h-5 w-5 text-primary" />
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <p className="text-muted-foreground/70">Jurisdiction</p>
+                        <p>{generatedPSUR.jurisdiction}</p>
                       </div>
-                      <div className="min-w-0">
-                        <p className="font-medium">{execution.agentType.toUpperCase()} Agent</p>
-                        <p className="text-xs text-muted-foreground">
-                          {(execution.jurisdictions as string[] | undefined)?.join(", ") || "N/A"} | {execution.pmsPlanNumber || execution.previousPsurNumber || 'Manual Config'}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {execution.createdAt ? new Date(execution.createdAt).toLocaleDateString() : 'N/A'}
-                        </p>
+                      <div>
+                        <p className="text-muted-foreground/70">Period</p>
+                        <p>{generatedPSUR.reportingPeriod}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <StatusBadge status={execution.status as any} />
-                      {execution.status === "completed" && (
-                        <Button variant="ghost" size="icon" data-testid={`button-download-${execution.id}`}>
-                          <Download className="h-4 w-4" />
-                        </Button>
-                      )}
+
+                    <Separator />
+
+                    <div className="space-y-2">
+                      <p className="text-xs text-muted-foreground/70">Sections</p>
+                      <div className="grid grid-cols-2 gap-1">
+                        {generatedPSUR.sections.map((section, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => {
+                              setPreviewSection(idx);
+                              setIsPreviewOpen(true);
+                            }}
+                            className="text-[10px] px-2 py-1.5 rounded-md bg-muted/50 hover-elevate text-left truncate"
+                            data-testid={`button-section-${idx}`}
+                          >
+                            {section.name.split('. ')[1] || section.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2 pt-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        className="flex-1 text-xs"
+                        onClick={() => {
+                          setPreviewSection(0);
+                          setIsPreviewOpen(true);
+                        }}
+                        data-testid="button-preview-psur"
+                      >
+                        <Eye className="h-3 w-3" />
+                        Preview
+                      </Button>
+                      <Button 
+                        size="sm"
+                        className="flex-1 text-xs"
+                        onClick={downloadPSUR}
+                        data-testid="button-download-psur"
+                      >
+                        <Download className="h-3 w-3" />
+                        Download
+                      </Button>
                     </div>
                   </div>
-                ))}
+                )}
               </div>
-            )}
-          </CardContent>
-        </Card>
+            </ScrollArea>
+          </div>
+        </div>
       </div>
+
+      {/* Preview Dialog */}
+      <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
+        <DialogContent className="max-w-3xl max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <FileText className="h-4 w-4" />
+              {generatedPSUR?.title}
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              {generatedPSUR?.jurisdiction} | {generatedPSUR?.reportingPeriod}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="flex gap-4 h-[55vh]">
+            <div className="w-40 shrink-0 border-r pr-3">
+              <ScrollArea className="h-full">
+                <div className="space-y-0.5">
+                  {generatedPSUR?.sections.map((section, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => setPreviewSection(idx)}
+                      className={`w-full text-left text-[11px] px-2 py-1.5 rounded-md transition-all ${
+                        previewSection === idx 
+                          ? 'bg-primary text-primary-foreground' 
+                          : 'hover-elevate text-muted-foreground'
+                      }`}
+                    >
+                      {section.name.split('. ')[1] || section.name}
+                    </button>
+                  ))}
+                </div>
+              </ScrollArea>
+            </div>
+            
+            <div className="flex-1 overflow-hidden">
+              <ScrollArea className="h-full">
+                <div className="pr-4">
+                  <h3 className="font-medium mb-3">
+                    {generatedPSUR?.sections[previewSection]?.name}
+                  </h3>
+                  <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">
+                    {generatedPSUR?.sections[previewSection]?.content}
+                  </p>
+                </div>
+              </ScrollArea>
+            </div>
+          </div>
+
+          <div className="flex justify-between pt-3 border-t">
+            <div className="flex gap-2">
+              <Button variant="ghost" size="sm" disabled={previewSection === 0} onClick={() => setPreviewSection(p => p - 1)}>
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button variant="ghost" size="sm" disabled={previewSection === 12} onClick={() => setPreviewSection(p => p + 1)}>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  navigator.clipboard.writeText(generatedPSUR?.sections[previewSection]?.content || '');
+                  toast({ title: "Copied" });
+                }}
+              >
+                <Copy className="h-3 w-3" />
+                Copy
+              </Button>
+              <Button size="sm" onClick={downloadPSUR}>
+                <Download className="h-3 w-3" />
+                Download
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

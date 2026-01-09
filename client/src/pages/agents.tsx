@@ -33,6 +33,10 @@ import {
   Shield,
   Clock,
   BookOpen,
+  ListOrdered,
+  AlertCircle,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import type { Device, DataSource } from "@shared/schema";
 
@@ -61,6 +65,43 @@ interface GeneratedPSUR {
   reportingPeriod: string;
   generatedAt: string;
   sections: { name: string; content: string }[];
+}
+
+interface QueueSlotItem {
+  slotId: string;
+  priority: number;
+  tier: number;
+  status: "pending" | "generating" | "proposed" | "accepted" | "rejected";
+  mappedObligations: string[];
+  evidenceRequirements: {
+    requiredEvidenceTypes: string[];
+    availableEvidenceTypes: string[];
+    missingEvidenceTypes: string[];
+    periodCheck: boolean;
+  };
+  generationContract: {
+    allowedTransformations: string[];
+    forbiddenTransformations: string[];
+    traceGranularity: string;
+  };
+  dependencies: string[];
+  recommendedAgent: string;
+  acceptanceCriteria: string[];
+}
+
+interface CoverageSlotQueue {
+  id: number;
+  psurCaseId: number;
+  psurReference: string;
+  profileId: string;
+  mandatoryObligationsTotal: number;
+  mandatoryObligationsSatisfied: number;
+  mandatoryObligationsRemaining: number;
+  requiredSlotsTotal: number;
+  requiredSlotsFilled: number;
+  requiredSlotsRemaining: number;
+  queue: QueueSlotItem[];
+  createdAt: string;
 }
 
 const WORKFLOW_STEPS: Omit<WorkflowStep, "status">[] = [
@@ -113,6 +154,8 @@ export default function PSURGenerator() {
   const [hitlMessage, setHitlMessage] = useState("");
   const [hitlHistory, setHitlHistory] = useState<{ role: string; message: string }[]>([]);
   const [activeTab, setActiveTab] = useState("workflow");
+  const [coverageQueue, setCoverageQueue] = useState<CoverageSlotQueue | null>(null);
+  const [expandedSlots, setExpandedSlots] = useState<Set<string>>(new Set());
   
   const logContainerRef = useRef<HTMLDivElement>(null);
 
@@ -287,6 +330,13 @@ export default function PSURGenerator() {
         }
         
         if (i === 4 && psurCaseId) {
+          const queueResponse = await apiRequest("POST", "/api/coverage-slot-queues/build", {
+            psurCaseId,
+          });
+          const queueData = await queueResponse.json();
+          setCoverageQueue(queueData);
+          addLogMessage(`    Coverage queue built: ${queueData.queue?.length || 0} slots prioritized`);
+          
           const sampleSlots = ["cover.manufacturer", "exec_summary.benefit_risk", "device_description.intended_purpose", "sales_data.volume", "pms_data.incidents"];
           for (const slotId of sampleSlots) {
             await apiRequest("POST", "/api/slot-proposals", {
@@ -418,6 +468,8 @@ export default function PSURGenerator() {
     setCurrentStepId(1);
     setGeneratedPSUR(null);
     setDecisionTraces([]);
+    setCoverageQueue(null);
+    setExpandedSlots(new Set());
     setActiveTab("workflow");
     addLogMessage("Starting 8-step PSUR orchestration workflow...");
     
@@ -552,6 +604,10 @@ export default function PSURGenerator() {
                 <Layers className="h-3 w-3 mr-1" />
                 Workflow
               </TabsTrigger>
+              <TabsTrigger value="queue" className="text-xs h-7">
+                <ListOrdered className="h-3 w-3 mr-1" />
+                Queue
+              </TabsTrigger>
               <TabsTrigger value="output" className="text-xs h-7">
                 <FileText className="h-3 w-3 mr-1" />
                 Output
@@ -658,6 +714,155 @@ export default function PSURGenerator() {
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+
+          <TabsContent value="queue" className="flex-1 m-0 p-3 overflow-auto">
+            {coverageQueue ? (
+              <div className="space-y-3">
+                <Card>
+                  <CardHeader className="py-2 px-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <CardTitle className="text-xs font-medium">Coverage Summary</CardTitle>
+                      <Badge variant="outline" className="text-[10px]">{coverageQueue.profileId}</Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="p-3 pt-0">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                      <div className="p-2 rounded-md bg-muted/30">
+                        <p className="text-muted-foreground text-[10px]">Mandatory Obs</p>
+                        <p className="font-semibold">{coverageQueue.mandatoryObligationsSatisfied}/{coverageQueue.mandatoryObligationsTotal}</p>
+                      </div>
+                      <div className="p-2 rounded-md bg-muted/30">
+                        <p className="text-muted-foreground text-[10px]">Slots Filled</p>
+                        <p className="font-semibold">{coverageQueue.requiredSlotsFilled}/{coverageQueue.requiredSlotsTotal}</p>
+                      </div>
+                      <div className="p-2 rounded-md bg-muted/30">
+                        <p className="text-muted-foreground text-[10px]">Remaining Obs</p>
+                        <p className="font-semibold text-amber-600 dark:text-amber-400">{coverageQueue.mandatoryObligationsRemaining}</p>
+                      </div>
+                      <div className="p-2 rounded-md bg-muted/30">
+                        <p className="text-muted-foreground text-[10px]">Slots Pending</p>
+                        <p className="font-semibold text-amber-600 dark:text-amber-400">{coverageQueue.requiredSlotsRemaining}</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="py-2 px-3">
+                    <CardTitle className="text-xs font-medium">Slot Generation Queue ({coverageQueue.queue.length} items)</CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <ScrollArea className="h-[400px]">
+                      <div className="p-3 space-y-1.5">
+                        {coverageQueue.queue.map((item, idx) => {
+                          const isExpanded = expandedSlots.has(item.slotId);
+                          const toggleExpand = () => {
+                            setExpandedSlots(prev => {
+                              const next = new Set(prev);
+                              if (next.has(item.slotId)) {
+                                next.delete(item.slotId);
+                              } else {
+                                next.add(item.slotId);
+                              }
+                              return next;
+                            });
+                          };
+                          
+                          const statusColors: Record<string, string> = {
+                            pending: "bg-muted/50",
+                            generating: "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800",
+                            proposed: "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800",
+                            accepted: "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800",
+                            rejected: "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800",
+                          };
+                          
+                          return (
+                            <div key={item.slotId} className={`border rounded-md ${statusColors[item.status]}`}>
+                              <div 
+                                className="flex items-center gap-2 p-2 cursor-pointer"
+                                onClick={toggleExpand}
+                                data-testid={`queue-item-${item.slotId}`}
+                              >
+                                {isExpanded ? (
+                                  <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
+                                ) : (
+                                  <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+                                )}
+                                <span className="text-[10px] font-mono text-muted-foreground w-6">#{idx + 1}</span>
+                                <span className="text-xs font-medium flex-1 truncate">{item.slotId}</span>
+                                <Badge variant="outline" className="text-[9px]">T{item.tier}</Badge>
+                                <Badge variant="secondary" className="text-[9px]">P:{item.priority}</Badge>
+                                {item.evidenceRequirements.missingEvidenceTypes.length > 0 && (
+                                  <AlertCircle className="h-3 w-3 text-amber-500 shrink-0" />
+                                )}
+                              </div>
+                              
+                              {isExpanded && (
+                                <div className="px-3 pb-3 pt-1 border-t space-y-2">
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                      <p className="text-[10px] text-muted-foreground mb-1">Obligations</p>
+                                      <div className="flex flex-wrap gap-1">
+                                        {item.mappedObligations.map((ob, i) => (
+                                          <Badge key={i} variant="outline" className="text-[8px]">{ob}</Badge>
+                                        ))}
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <p className="text-[10px] text-muted-foreground mb-1">Agent</p>
+                                      <Badge className="text-[9px]">{item.recommendedAgent}</Badge>
+                                    </div>
+                                  </div>
+                                  
+                                  <div>
+                                    <p className="text-[10px] text-muted-foreground mb-1">Evidence</p>
+                                    <div className="flex flex-wrap gap-1">
+                                      {item.evidenceRequirements.availableEvidenceTypes.map((ev, i) => (
+                                        <Badge key={i} variant="secondary" className="text-[8px] bg-emerald-100 dark:bg-emerald-900/30">{ev}</Badge>
+                                      ))}
+                                      {item.evidenceRequirements.missingEvidenceTypes.map((ev, i) => (
+                                        <Badge key={i} variant="secondary" className="text-[8px] bg-red-100 dark:bg-red-900/30">{ev}</Badge>
+                                      ))}
+                                    </div>
+                                  </div>
+                                  
+                                  <div>
+                                    <p className="text-[10px] text-muted-foreground mb-1">Allowed Transforms</p>
+                                    <div className="flex flex-wrap gap-1">
+                                      {item.generationContract.allowedTransformations.map((tr, i) => (
+                                        <Badge key={i} variant="outline" className="text-[8px]">{tr}</Badge>
+                                      ))}
+                                    </div>
+                                  </div>
+                                  
+                                  {item.dependencies.length > 0 && (
+                                    <div>
+                                      <p className="text-[10px] text-muted-foreground mb-1">Dependencies</p>
+                                      <div className="flex flex-wrap gap-1">
+                                        {item.dependencies.map((dep, i) => (
+                                          <Badge key={i} variant="outline" className="text-[8px]">{dep}</Badge>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </ScrollArea>
+                  </CardContent>
+                </Card>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full text-center">
+                <ListOrdered className="h-8 w-8 text-muted-foreground mb-2" />
+                <p className="text-sm text-muted-foreground">No coverage queue yet</p>
+                <p className="text-xs text-muted-foreground mt-1">Queue is built during Step 4 (Propose Slots)</p>
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="output" className="flex-1 m-0 p-3 overflow-auto">

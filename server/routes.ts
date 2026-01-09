@@ -1348,7 +1348,7 @@ export async function registerRoutes(
 
       const evidenceAtoms = await storage.getEvidenceAtoms(psurCaseId);
       
-      const result = runDeterministicGenerator(slotId, evidenceAtoms, psurCase);
+      const result = runDeterministicGenerator(slotId, evidenceAtoms, psurCase, psurCase.templateId);
       
       if (!result.success) {
         return res.status(422).json({
@@ -1400,10 +1400,11 @@ export async function registerRoutes(
 
   app.get("/api/slots/deterministic-supported", async (req, res) => {
     try {
-      const { isDeterministicSupported, DETERMINISTIC_SUPPORTED_SLOTS } = await import("./deterministic-generators");
+      const { DETERMINISTIC_SUPPORTED_SLOTS } = await import("./deterministic-generators");
+      const slotId = req.query.slotId as string | undefined;
       res.json({
         supportedSlots: Array.from(DETERMINISTIC_SUPPORTED_SLOTS),
-        checkSlot: (slotId: string) => isDeterministicSupported(slotId)
+        isSupported: slotId ? DETERMINISTIC_SUPPORTED_SLOTS.has(slotId) : null,
       });
     } catch (error) {
       res.status(500).json({ error: "Failed to get supported slots" });

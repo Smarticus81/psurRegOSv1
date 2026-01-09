@@ -239,6 +239,19 @@ const OBLIGATIONS: Record<string, ObligationDefinition> = {
 
 // Validate slots at module initialization to catch misalignments early
 let slotsValidated = false;
+
+export function getSlotDefinitionsForTemplate(profileId: string): SlotDefinition[] {
+  const slots = profileId === "FormQAR-054_C" ? FORMQAR_SLOTS : ANNEX_I_SLOTS;
+  
+  if (!slotsValidated) {
+    validateSlotEvidenceTypes(ANNEX_I_SLOTS, "ANNEX_I_SLOTS");
+    validateSlotEvidenceTypes(FORMQAR_SLOTS, "FORMQAR_SLOTS");
+    slotsValidated = true;
+  }
+  
+  return slots;
+}
+
 function getSlotDefinitions(profileId: string): SlotDefinition[] {
   const slots = profileId === "FormQAR-054_C" ? FORMQAR_SLOTS : ANNEX_I_SLOTS;
   

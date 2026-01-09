@@ -204,7 +204,7 @@ export default function PSURGenerator() {
     onMutate: (params) => {
       setGeneratingSlots(prev => new Set(prev).add(params.slotId));
     },
-    onSuccess: (data, params) => {
+    onSuccess: async (data, params) => {
       setGeneratingSlots(prev => {
         const next = new Set(prev);
         next.delete(params.slotId);
@@ -214,17 +214,25 @@ export default function PSURGenerator() {
         title: "Slot generated", 
         description: `${params.slotId} generated deterministically with ${data.generationResult?.evidenceAtomCount || 0} evidence atoms` 
       });
-      if (coverageQueue) {
-        setCoverageQueue({
-          ...coverageQueue,
-          queue: coverageQueue.queue.map(item => 
-            item.slotId === params.slotId 
-              ? { ...item, status: "accepted" as const }
-              : item
-          ),
-          requiredSlotsFilled: coverageQueue.requiredSlotsFilled + 1,
-          requiredSlotsRemaining: Math.max(0, coverageQueue.requiredSlotsRemaining - 1),
-        });
+      if (coverageQueue?.psurCaseId) {
+        try {
+          const response = await apiRequest("POST", "/api/coverage-slot-queues/build", {
+            psurCaseId: coverageQueue.psurCaseId,
+          });
+          const updatedQueue = await response.json();
+          setCoverageQueue(updatedQueue);
+        } catch {
+          if (coverageQueue) {
+            setCoverageQueue({
+              ...coverageQueue,
+              queue: coverageQueue.queue.map(item =>
+                item.slotId === params.slotId
+                  ? { ...item, status: "accepted" as const }
+                  : item
+              ),
+            });
+          }
+        }
       }
       queryClient.invalidateQueries({ queryKey: ["/api/slot-proposals"] });
     },

@@ -15,6 +15,7 @@ import {
   type CoverageReport, type InsertCoverageReport,
   type AuditBundle, type InsertAuditBundle,
   type CoverageSlotQueue, type InsertCoverageSlotQueue,
+  type ColumnMappingProfile, type InsertColumnMappingProfile,
   users,
   companies,
   devices,
@@ -31,9 +32,10 @@ import {
   coverageReports,
   auditBundles,
   coverageSlotQueues,
+  columnMappingProfiles,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, inArray } from "drizzle-orm";
+import { eq, desc, and, inArray, sql } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -114,6 +116,12 @@ export interface IStorage {
   getCoverageSlotQueues(psurCaseId?: number): Promise<CoverageSlotQueue[]>;
   getCoverageSlotQueue(id: number): Promise<CoverageSlotQueue | undefined>;
   createCoverageSlotQueue(queue: InsertCoverageSlotQueue): Promise<CoverageSlotQueue>;
+
+  getColumnMappingProfiles(evidenceType?: string): Promise<ColumnMappingProfile[]>;
+  getColumnMappingProfile(id: number): Promise<ColumnMappingProfile | undefined>;
+  createColumnMappingProfile(profile: InsertColumnMappingProfile): Promise<ColumnMappingProfile>;
+  updateColumnMappingProfile(id: number, profile: Partial<InsertColumnMappingProfile>): Promise<ColumnMappingProfile | undefined>;
+  incrementMappingProfileUsage(id: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -464,6 +472,39 @@ export class DatabaseStorage implements IStorage {
   async createCoverageSlotQueue(queue: InsertCoverageSlotQueue): Promise<CoverageSlotQueue> {
     const [newQueue] = await db.insert(coverageSlotQueues).values(queue).returning();
     return newQueue;
+  }
+
+  async getColumnMappingProfiles(evidenceType?: string): Promise<ColumnMappingProfile[]> {
+    if (evidenceType) {
+      return db.select().from(columnMappingProfiles)
+        .where(eq(columnMappingProfiles.evidenceType, evidenceType))
+        .orderBy(desc(columnMappingProfiles.usageCount));
+    }
+    return db.select().from(columnMappingProfiles).orderBy(desc(columnMappingProfiles.usageCount));
+  }
+
+  async getColumnMappingProfile(id: number): Promise<ColumnMappingProfile | undefined> {
+    const [profile] = await db.select().from(columnMappingProfiles).where(eq(columnMappingProfiles.id, id));
+    return profile;
+  }
+
+  async createColumnMappingProfile(profile: InsertColumnMappingProfile): Promise<ColumnMappingProfile> {
+    const [newProfile] = await db.insert(columnMappingProfiles).values(profile).returning();
+    return newProfile;
+  }
+
+  async updateColumnMappingProfile(id: number, profile: Partial<InsertColumnMappingProfile>): Promise<ColumnMappingProfile | undefined> {
+    const [updated] = await db.update(columnMappingProfiles)
+      .set({ ...profile, updatedAt: new Date() })
+      .where(eq(columnMappingProfiles.id, id))
+      .returning();
+    return updated;
+  }
+
+  async incrementMappingProfileUsage(id: number): Promise<void> {
+    await db.execute(
+      sql`UPDATE column_mapping_profiles SET usage_count = usage_count + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ${id}`
+    );
   }
 }
 

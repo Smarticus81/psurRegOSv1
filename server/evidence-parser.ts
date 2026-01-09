@@ -613,9 +613,10 @@ export function parseEvidenceFile(
   options?: {
     periodStart?: string;
     periodEnd?: string;
-  }
+  },
+  preParseRows?: Record<string, unknown>[]
 ): ParseResult {
-  const records = parseCSV(content);
+  const records = preParseRows || parseCSV(content);
   const errors: string[] = [];
   const warnings: string[] = [];
   

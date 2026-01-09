@@ -29,9 +29,31 @@ import {
   ChevronDown,
   ChevronRight,
   AlertTriangle,
+  ArrowRight,
+  ArrowLeft,
+  Settings2,
+  Save,
+  Columns,
 } from "lucide-react";
 import type { Device, EvidenceUpload, EvidenceAtom, PSURCase } from "@shared/schema";
 import { EVIDENCE_DEFINITIONS, type EvidenceDefinition } from "@shared/schema";
+
+interface ColumnAnalysis {
+  sourceColumns: string[];
+  suggestedMappings: Record<string, string>;
+  requiredFields: string[];
+  sampleRows: Record<string, unknown>[];
+  fileFormat: string;
+  totalRows: number;
+}
+
+interface MappingProfile {
+  id: number;
+  name: string;
+  evidenceType: string;
+  columnMappings: Record<string, string>;
+  usageCount: number;
+}
 
 interface EvidenceCoverage {
   psurCaseId?: number;
@@ -93,6 +115,13 @@ export default function EvidencePage() {
   const [periodEnd, setPeriodEnd] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [expandedAtoms, setExpandedAtoms] = useState<Set<number>>(new Set());
+  
+  const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [columnAnalysis, setColumnAnalysis] = useState<ColumnAnalysis | null>(null);
+  const [columnMappings, setColumnMappings] = useState<Record<string, string>>({});
+  const [newProfileName, setNewProfileName] = useState("");
+  const [selectedProfileId, setSelectedProfileId] = useState<number | null>(null);
 
   const { data: devices = [] } = useQuery<Device[]>({ queryKey: ["/api/devices"] });
   const { data: psurCases = [] } = useQuery<PSURCase[]>({ queryKey: ["/api/psur-cases"] });
@@ -102,11 +131,99 @@ export default function EvidencePage() {
     queryKey: ["/api/evidence/coverage", psurCaseId, periodStart, periodEnd],
     enabled: true,
   });
+  const { data: mappingProfiles = [] } = useQuery<MappingProfile[]>({ 
+    queryKey: ["/api/column-mapping-profiles", evidenceType],
+    enabled: !!evidenceType,
+  });
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setSelectedFile(file);
+      setColumnAnalysis(null);
+      setColumnMappings({});
+      setWizardStep(1);
+    }
+  };
+
+  const resetWizard = () => {
+    setSelectedFile(null);
+    setEvidenceType("");
+    setWizardStep(1);
+    setColumnAnalysis(null);
+    setColumnMappings({});
+    setNewProfileName("");
+    setSelectedProfileId(null);
+  };
+
+  const handleAnalyzeFile = async () => {
+    if (!selectedFile || !evidenceType) {
+      toast({ title: "Missing required fields", description: "Please select a file and evidence type", variant: "destructive" });
+      return;
+    }
+
+    setIsAnalyzing(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+      formData.append("evidence_type", evidenceType);
+
+      const response = await fetch("/api/evidence/analyze", {
+        method: "POST",
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        toast({ title: "Analysis failed", description: result.error || "Failed to analyze file", variant: "destructive" });
+        return;
+      }
+
+      setColumnAnalysis(result);
+      setColumnMappings(result.suggestedMappings || {});
+      setWizardStep(2);
+    } catch (error) {
+      toast({ title: "Analysis failed", description: "An error occurred during file analysis", variant: "destructive" });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const applyProfile = (profile: MappingProfile) => {
+    setColumnMappings(profile.columnMappings);
+    setSelectedProfileId(profile.id);
+    toast({ title: "Profile applied", description: `Applied "${profile.name}" mappings` });
+  };
+
+  const saveAsProfile = async () => {
+    if (!newProfileName.trim() || !evidenceType || Object.keys(columnMappings).length === 0) {
+      toast({ title: "Cannot save profile", description: "Please enter a name and configure mappings", variant: "destructive" });
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/column-mapping-profiles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newProfileName.trim(),
+          evidenceType,
+          columnMappings,
+        }),
+      });
+
+      if (!response.ok) {
+        const result = await response.json();
+        toast({ title: "Save failed", description: result.error || "Failed to save profile", variant: "destructive" });
+        return;
+      }
+
+      toast({ title: "Profile saved", description: `Profile "${newProfileName}" saved for future use` });
+      setNewProfileName("");
+      queryClient.invalidateQueries({ queryKey: ["/api/column-mapping-profiles", evidenceType] });
+    } catch (error) {
+      toast({ title: "Save failed", description: "An error occurred while saving the profile", variant: "destructive" });
     }
   };
 
@@ -128,6 +245,12 @@ export default function EvidencePage() {
       if (extractionNotes) formData.append("extraction_notes", extractionNotes);
       if (periodStart) formData.append("period_start", periodStart);
       if (periodEnd) formData.append("period_end", periodEnd);
+      if (Object.keys(columnMappings).length > 0) {
+        formData.append("column_mappings", JSON.stringify(columnMappings));
+      }
+      if (selectedProfileId) {
+        formData.append("mapping_profile_id", selectedProfileId.toString());
+      }
 
       const response = await fetch("/api/evidence/upload", {
         method: "POST",
@@ -150,8 +273,7 @@ export default function EvidencePage() {
         description: `Created ${result.summary.atomsCreated} evidence atoms from ${result.summary.totalRecords} records` 
       });
 
-      setSelectedFile(null);
-      setEvidenceType("");
+      resetWizard();
       setSourceSystem("");
       setExtractionNotes("");
       
@@ -229,182 +351,394 @@ export default function EvidencePage() {
             <div className="grid gap-4 lg:grid-cols-2">
               <Card>
                 <CardHeader className="py-3 px-4">
-                  <CardTitle className="text-sm font-medium">Upload Evidence File</CardTitle>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-sm font-medium">Upload Evidence File</CardTitle>
+                    <div className="flex items-center gap-1">
+                      {[1, 2, 3].map((step) => (
+                        <div
+                          key={step}
+                          className={`w-2 h-2 rounded-full ${
+                            wizardStep === step
+                              ? "bg-primary"
+                              : wizardStep > step
+                              ? "bg-primary/40"
+                              : "bg-muted"
+                          }`}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 </CardHeader>
                 <CardContent className="p-4 pt-0 space-y-4">
-                  <div className="space-y-2">
-                    <Label className="text-xs">Evidence Type *</Label>
-                    <Select value={evidenceType} onValueChange={setEvidenceType}>
-                      <SelectTrigger className="h-9" data-testid="select-evidence-type">
-                        <SelectValue placeholder="Select evidence type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {EVIDENCE_TYPES.map((type) => (
-                          <SelectItem key={type.value} value={type.value}>
-                            <div className="flex items-center gap-2">
-                              <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 w-8 justify-center">{type.section}</Badge>
-                              <div className="flex flex-col">
-                                <span className="text-sm">{type.label}</span>
-                                <span className="text-[10px] text-muted-foreground">{type.description}</span>
+                  {wizardStep === 1 && (
+                    <>
+                      <div className="space-y-2">
+                        <Label className="text-xs">Evidence Type *</Label>
+                        <Select value={evidenceType} onValueChange={setEvidenceType}>
+                          <SelectTrigger className="h-9" data-testid="select-evidence-type">
+                            <SelectValue placeholder="Select evidence type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {EVIDENCE_TYPES.map((type) => (
+                              <SelectItem key={type.value} value={type.value}>
+                                <div className="flex items-center gap-2">
+                                  <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 w-8 justify-center">{type.section}</Badge>
+                                  <div className="flex flex-col">
+                                    <span className="text-sm">{type.label}</span>
+                                    <span className="text-[10px] text-muted-foreground">{type.description}</span>
+                                  </div>
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label className="text-xs">File (CSV or XLSX) *</Label>
+                        <div className="border-2 border-dashed rounded-md p-4 text-center">
+                          <input
+                            type="file"
+                            accept=".csv,.xlsx,.xls"
+                            onChange={handleFileChange}
+                            className="hidden"
+                            id="file-upload"
+                            data-testid="input-file-upload"
+                          />
+                          <label htmlFor="file-upload" className="cursor-pointer">
+                            {selectedFile ? (
+                              <div className="flex items-center justify-center gap-2">
+                                <FileSpreadsheet className="h-5 w-5 text-primary" />
+                                <span className="text-sm">{selectedFile.name}</span>
+                                <Badge variant="secondary" className="text-[10px]">{(selectedFile.size / 1024).toFixed(1)} KB</Badge>
                               </div>
+                            ) : (
+                              <div className="space-y-1">
+                                <Upload className="h-6 w-6 mx-auto text-muted-foreground" />
+                                <p className="text-sm text-muted-foreground">Click to select CSV or Excel file</p>
+                              </div>
+                            )}
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-2">
+                          <Label className="text-xs">Device Scope</Label>
+                          <Select value={deviceScopeId} onValueChange={setDeviceScopeId}>
+                            <SelectTrigger className="h-9" data-testid="select-device-scope">
+                              <SelectValue placeholder="All devices" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__all__">All devices</SelectItem>
+                              {devices.map((d) => (
+                                <SelectItem key={d.id} value={d.id.toString()}>{d.deviceName}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label className="text-xs">Link to PSUR Case</Label>
+                          <Select value={psurCaseId} onValueChange={setPsurCaseId}>
+                            <SelectTrigger className="h-9" data-testid="select-psur-case">
+                              <SelectValue placeholder="None" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__none__">None</SelectItem>
+                              {psurCases.map((c) => (
+                                <SelectItem key={c.id} value={c.id.toString()}>{c.psurReference}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-2">
+                          <Label className="text-xs">Period Start</Label>
+                          <Input 
+                            type="date" 
+                            value={periodStart} 
+                            onChange={(e) => setPeriodStart(e.target.value)} 
+                            className="h-9"
+                            data-testid="input-period-start"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-xs">Period End</Label>
+                          <Input 
+                            type="date" 
+                            value={periodEnd} 
+                            onChange={(e) => setPeriodEnd(e.target.value)} 
+                            className="h-9"
+                            data-testid="input-period-end"
+                          />
+                        </div>
+                      </div>
+
+                      <Button 
+                        className="w-full" 
+                        onClick={handleAnalyzeFile}
+                        disabled={isAnalyzing || !selectedFile || !evidenceType}
+                        data-testid="button-analyze"
+                      >
+                        {isAnalyzing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Columns className="h-4 w-4 mr-2" />}
+                        {isAnalyzing ? "Analyzing..." : "Analyze Columns"}
+                        <ArrowRight className="h-4 w-4 ml-2" />
+                      </Button>
+                    </>
+                  )}
+
+                  {wizardStep === 2 && columnAnalysis && (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-medium">Column Mapping</p>
+                          <p className="text-[10px] text-muted-foreground">
+                            {columnAnalysis.totalRows} rows, {columnAnalysis.sourceColumns.length} columns detected
+                          </p>
+                        </div>
+                        <Badge variant="outline" className="text-[10px]">{columnAnalysis.fileFormat}</Badge>
+                      </div>
+
+                      {mappingProfiles.length > 0 && (
+                        <div className="space-y-2">
+                          <Label className="text-xs flex items-center gap-1">
+                            <Settings2 className="h-3 w-3" />
+                            Saved Profiles
+                          </Label>
+                          <div className="flex flex-wrap gap-1">
+                            {mappingProfiles.map((profile) => (
+                              <Badge
+                                key={profile.id}
+                                variant={selectedProfileId === profile.id ? "default" : "outline"}
+                                className="text-[10px] cursor-pointer hover-elevate"
+                                onClick={() => applyProfile(profile)}
+                              >
+                                {profile.name}
+                                <span className="ml-1 text-muted-foreground">({profile.usageCount})</span>
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <ScrollArea className="h-[200px] border rounded-md p-2">
+                        <div className="space-y-2">
+                          {columnAnalysis.requiredFields.map((targetField) => (
+                            <div key={targetField} className="flex items-center gap-2">
+                              <div className="w-1/3">
+                                <Badge variant="outline" className="text-[9px] w-full justify-center">
+                                  {targetField}
+                                </Badge>
+                              </div>
+                              <ArrowRight className="h-3 w-3 text-muted-foreground shrink-0" />
+                              <Select
+                                value={columnMappings[targetField] || "__unmapped__"}
+                                onValueChange={(v) => {
+                                  setColumnMappings(prev => ({
+                                    ...prev,
+                                    [targetField]: v === "__unmapped__" ? "" : v,
+                                  }));
+                                }}
+                              >
+                                <SelectTrigger className="h-7 text-xs flex-1">
+                                  <SelectValue placeholder="Select column" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="__unmapped__">
+                                    <span className="text-muted-foreground">Not mapped</span>
+                                  </SelectItem>
+                                  {columnAnalysis.sourceColumns.map((col) => (
+                                    <SelectItem key={col} value={col}>{col}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              {columnMappings[targetField] ? (
+                                <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" />
+                              ) : (
+                                <AlertCircle className="h-3 w-3 text-amber-500 shrink-0" />
+                              )}
                             </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label className="text-xs">File (CSV) *</Label>
-                    <div className="border-2 border-dashed rounded-md p-4 text-center">
-                      <input
-                        type="file"
-                        accept=".csv"
-                        onChange={handleFileChange}
-                        className="hidden"
-                        id="file-upload"
-                        data-testid="input-file-upload"
-                      />
-                      <label htmlFor="file-upload" className="cursor-pointer">
-                        {selectedFile ? (
-                          <div className="flex items-center justify-center gap-2">
-                            <FileSpreadsheet className="h-5 w-5 text-primary" />
-                            <span className="text-sm">{selectedFile.name}</span>
-                            <Badge variant="secondary" className="text-[10px]">{(selectedFile.size / 1024).toFixed(1)} KB</Badge>
-                          </div>
-                        ) : (
-                          <div className="space-y-1">
-                            <Upload className="h-6 w-6 mx-auto text-muted-foreground" />
-                            <p className="text-sm text-muted-foreground">Click to select CSV file</p>
-                          </div>
-                        )}
-                      </label>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-2">
-                      <Label className="text-xs">Device Scope</Label>
-                      <Select value={deviceScopeId} onValueChange={setDeviceScopeId}>
-                        <SelectTrigger className="h-9" data-testid="select-device-scope">
-                          <SelectValue placeholder="All devices" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__all__">All devices</SelectItem>
-                          {devices.map((d) => (
-                            <SelectItem key={d.id} value={d.id.toString()}>{d.deviceName}</SelectItem>
                           ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                        </div>
+                      </ScrollArea>
 
-                    <div className="space-y-2">
-                      <Label className="text-xs">Link to PSUR Case</Label>
-                      <Select value={psurCaseId} onValueChange={setPsurCaseId}>
-                        <SelectTrigger className="h-9" data-testid="select-psur-case">
-                          <SelectValue placeholder="None" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__none__">None</SelectItem>
-                          {psurCases.map((c) => (
-                            <SelectItem key={c.id} value={c.id.toString()}>{c.psurReference}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          placeholder="Save as profile name..."
+                          value={newProfileName}
+                          onChange={(e) => setNewProfileName(e.target.value)}
+                          className="h-8 text-xs flex-1"
+                          data-testid="input-profile-name"
+                        />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={saveAsProfile}
+                          disabled={!newProfileName.trim()}
+                          data-testid="button-save-profile"
+                        >
+                          <Save className="h-3 w-3 mr-1" />
+                          Save
+                        </Button>
+                      </div>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-2">
-                      <Label className="text-xs">Period Start</Label>
-                      <Input 
-                        type="date" 
-                        value={periodStart} 
-                        onChange={(e) => setPeriodStart(e.target.value)} 
-                        className="h-9"
-                        data-testid="input-period-start"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-xs">Period End</Label>
-                      <Input 
-                        type="date" 
-                        value={periodEnd} 
-                        onChange={(e) => setPeriodEnd(e.target.value)} 
-                        className="h-9"
-                        data-testid="input-period-end"
-                      />
-                    </div>
-                  </div>
+                      <div className="flex gap-2">
+                        <Button 
+                          variant="outline"
+                          onClick={() => setWizardStep(1)}
+                          data-testid="button-back"
+                        >
+                          <ArrowLeft className="h-4 w-4 mr-1" />
+                          Back
+                        </Button>
+                        <Button 
+                          className="flex-1"
+                          onClick={() => setWizardStep(3)}
+                          data-testid="button-next"
+                        >
+                          Review & Upload
+                          <ArrowRight className="h-4 w-4 ml-2" />
+                        </Button>
+                      </div>
+                    </>
+                  )}
 
-                  <div className="space-y-2">
-                    <Label className="text-xs">Source System</Label>
-                    <Input 
-                      value={sourceSystem}
-                      onChange={(e) => setSourceSystem(e.target.value)}
-                      placeholder="e.g., SAP, Salesforce, Manual Extract"
-                      className="h-9"
-                      data-testid="input-source-system"
-                    />
-                  </div>
+                  {wizardStep === 3 && (
+                    <>
+                      <div className="space-y-3">
+                        <div className="bg-muted/30 rounded-md p-3 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-muted-foreground">File</span>
+                            <span className="text-xs font-medium">{selectedFile?.name}</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-muted-foreground">Evidence Type</span>
+                            <Badge variant="secondary" className="text-[10px]">{evidenceType}</Badge>
+                          </div>
+                          {columnAnalysis && (
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-muted-foreground">Rows</span>
+                              <span className="text-xs font-medium">{columnAnalysis.totalRows}</span>
+                            </div>
+                          )}
+                          {periodStart && periodEnd && (
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-muted-foreground">Period</span>
+                              <span className="text-xs font-medium">{periodStart} to {periodEnd}</span>
+                            </div>
+                          )}
+                        </div>
 
-                  <div className="space-y-2">
-                    <Label className="text-xs">Extraction Notes</Label>
-                    <Textarea 
-                      value={extractionNotes}
-                      onChange={(e) => setExtractionNotes(e.target.value)}
-                      placeholder="Query filters, date range, exclusions applied..."
-                      className="min-h-[60px] text-sm"
-                      data-testid="input-extraction-notes"
-                    />
-                  </div>
+                        <div className="space-y-2">
+                          <Label className="text-xs">Source System</Label>
+                          <Input 
+                            value={sourceSystem}
+                            onChange={(e) => setSourceSystem(e.target.value)}
+                            placeholder="e.g., SAP, Salesforce, Manual Extract"
+                            className="h-9"
+                            data-testid="input-source-system"
+                          />
+                        </div>
 
-                  <Button 
-                    className="w-full" 
-                    onClick={handleUpload} 
-                    disabled={isUploading || !selectedFile || !evidenceType}
-                    data-testid="button-upload"
-                  >
-                    {isUploading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Upload className="h-4 w-4 mr-2" />}
-                    {isUploading ? "Processing..." : "Upload & Parse"}
-                  </Button>
+                        <div className="space-y-2">
+                          <Label className="text-xs">Extraction Notes</Label>
+                          <Textarea 
+                            value={extractionNotes}
+                            onChange={(e) => setExtractionNotes(e.target.value)}
+                            placeholder="Query filters, date range, exclusions applied..."
+                            className="min-h-[60px] text-sm"
+                            data-testid="input-extraction-notes"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <Button 
+                          variant="outline"
+                          onClick={() => setWizardStep(2)}
+                          disabled={isUploading}
+                          data-testid="button-back-review"
+                        >
+                          <ArrowLeft className="h-4 w-4 mr-1" />
+                          Back
+                        </Button>
+                        <Button 
+                          className="flex-1"
+                          onClick={handleUpload}
+                          disabled={isUploading}
+                          data-testid="button-upload"
+                        >
+                          {isUploading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Upload className="h-4 w-4 mr-2" />}
+                          {isUploading ? "Processing..." : "Upload & Parse"}
+                        </Button>
+                      </div>
+                    </>
+                  )}
                 </CardContent>
               </Card>
 
               <Card>
                 <CardHeader className="py-3 px-4">
-                  <CardTitle className="text-sm font-medium">Expected CSV Formats</CardTitle>
+                  <CardTitle className="text-sm font-medium">
+                    {wizardStep === 2 && columnAnalysis ? "Data Preview" : "Expected Formats"}
+                  </CardTitle>
                 </CardHeader>
                 <CardContent className="p-4 pt-0 space-y-4">
-                  <div className="space-y-2">
-                    <h4 className="text-xs font-medium">Sales Volume</h4>
-                    <div className="bg-muted/50 rounded-md p-3 font-mono text-[10px] overflow-x-auto">
-                      <p>device_code, product_name, quantity, region, country, period_start, period_end</p>
-                      <p className="text-muted-foreground mt-1">JS3000X, Janice Scalpel, 150, EMEA, Germany, 2025-01-01, 2025-03-31</p>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground">Required: device_code, quantity, period_start, period_end</p>
-                  </div>
-
-                  <div className="space-y-2">
-                    <h4 className="text-xs font-medium">Complaint Records</h4>
-                    <div className="bg-muted/50 rounded-md p-3 font-mono text-[10px] overflow-x-auto">
-                      <p>complaint_id, device_code, complaint_date, description, severity, device_related</p>
-                      <p className="text-muted-foreground mt-1">C-2025-001, JS3000X, 2025-02-15, Handle loosening, medium, yes</p>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground">Required: complaint_id, device_code, complaint_date, description</p>
-                  </div>
-
-                  <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-md p-3">
-                    <div className="flex items-start gap-2">
-                      <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
-                      <div className="text-xs">
-                        <p className="font-medium text-amber-800 dark:text-amber-200">Data Integrity</p>
-                        <p className="text-amber-700 dark:text-amber-300 mt-1">
-                          Each uploaded record becomes an immutable EvidenceAtom with SHA-256 hash and full provenance tracking.
-                        </p>
+                  {wizardStep === 2 && columnAnalysis && columnAnalysis.sampleRows.length > 0 ? (
+                    <ScrollArea className="h-[320px]">
+                      <div className="space-y-2">
+                        <p className="text-[10px] text-muted-foreground">Sample rows from your file:</p>
+                        {columnAnalysis.sampleRows.slice(0, 5).map((row, idx) => (
+                          <div key={idx} className="bg-muted/30 rounded p-2 space-y-1">
+                            {Object.entries(row).slice(0, 6).map(([key, value]) => (
+                              <div key={key} className="flex items-start gap-2 text-[10px]">
+                                <span className="text-muted-foreground font-mono w-24 shrink-0 truncate">{key}:</span>
+                                <span className="font-mono truncate">{String(value)}</span>
+                              </div>
+                            ))}
+                            {Object.keys(row).length > 6 && (
+                              <p className="text-[10px] text-muted-foreground">+ {Object.keys(row).length - 6} more fields</p>
+                            )}
+                          </div>
+                        ))}
                       </div>
-                    </div>
-                  </div>
+                    </ScrollArea>
+                  ) : (
+                    <>
+                      <div className="space-y-2">
+                        <h4 className="text-xs font-medium">Sales Volume</h4>
+                        <div className="bg-muted/50 rounded-md p-3 font-mono text-[10px] overflow-x-auto">
+                          <p>device_code, product_name, quantity, region, country, period_start, period_end</p>
+                          <p className="text-muted-foreground mt-1">JS3000X, Janice Scalpel, 150, EMEA, Germany, 2025-01-01, 2025-03-31</p>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">Required: device_code, quantity, period_start, period_end</p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <h4 className="text-xs font-medium">Complaint Records</h4>
+                        <div className="bg-muted/50 rounded-md p-3 font-mono text-[10px] overflow-x-auto">
+                          <p>complaint_id, device_code, complaint_date, description, severity, device_related</p>
+                          <p className="text-muted-foreground mt-1">C-2025-001, JS3000X, 2025-02-15, Handle loosening, medium, yes</p>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">Required: complaint_id, device_code, complaint_date, description</p>
+                      </div>
+
+                      <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-md p-3">
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                          <div className="text-xs">
+                            <p className="font-medium text-amber-800 dark:text-amber-200">Data Integrity</p>
+                            <p className="text-amber-700 dark:text-amber-300 mt-1">
+                              Each uploaded record becomes an immutable EvidenceAtom with SHA-256 hash and full provenance tracking.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </CardContent>
               </Card>
             </div>
@@ -473,22 +807,22 @@ export default function EvidencePage() {
                                   <p>{formatDate(atom.extractDate)}</p>
                                 </div>
                               </div>
-                              {atom.normalizedData && (
+                              {atom.normalizedData ? (
                                 <div>
                                   <p className="text-muted-foreground text-[10px] mb-1">Normalized Data</p>
                                   <pre className="bg-muted/50 rounded p-2 text-[10px] overflow-x-auto">
                                     {JSON.stringify(atom.normalizedData, null, 2)}
                                   </pre>
                                 </div>
-                              )}
-                              {atom.provenance && (
+                              ) : null}
+                              {atom.provenance ? (
                                 <div>
                                   <p className="text-muted-foreground text-[10px] mb-1">Provenance</p>
                                   <pre className="bg-muted/50 rounded p-2 text-[10px] overflow-x-auto">
                                     {JSON.stringify(atom.provenance, null, 2)}
                                   </pre>
                                 </div>
-                              )}
+                              ) : null}
                             </div>
                           )}
                         </div>

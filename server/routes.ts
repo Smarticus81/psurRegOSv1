@@ -29,6 +29,7 @@ import {
 } from "./orchestrator";
 import { buildCoverageSlotQueue } from "./queue-builder";
 import { parseEvidenceFile, createEvidenceAtomBatch } from "./evidence-parser";
+import { parseFileBuffer, detectColumnMappings, applyColumnMapping } from "./file-parser";
 import { 
   computeFileSha256, 
   computeContentHash, 
@@ -621,6 +622,86 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/evidence/analyze", upload.single("file"), async (req, res) => {
+    try {
+      const file = req.file;
+      if (!file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      const { evidence_type } = req.body;
+      if (!evidence_type) {
+        return res.status(400).json({ error: "evidence_type is required" });
+      }
+
+      const parseResult = parseFileBuffer(file.buffer, file.originalname);
+      if (!parseResult.success) {
+        return res.status(400).json({
+          error: "Failed to parse file",
+          details: parseResult.errors,
+        });
+      }
+
+      const mappingDetection = detectColumnMappings(parseResult.columns, evidence_type);
+      const existingProfiles = await storage.getColumnMappingProfiles(evidence_type);
+
+      const sampleRows = parseResult.rows.slice(0, 5);
+
+      res.json({
+        success: true,
+        fileType: parseResult.fileType,
+        sheetName: parseResult.sheetName,
+        totalRows: parseResult.rows.length,
+        columns: parseResult.columns,
+        sampleData: sampleRows,
+        mapping: {
+          autoMapped: mappingDetection.autoMapped,
+          unmapped: mappingDetection.unmapped,
+          requiredFields: mappingDetection.requiredFields,
+          optionalFields: mappingDetection.optionalFields,
+        },
+        existingProfiles: existingProfiles.map(p => ({
+          id: p.id,
+          name: p.name,
+          usageCount: p.usageCount,
+          columnMappings: p.columnMappings,
+        })),
+        warnings: parseResult.errors,
+      });
+    } catch (error) {
+      console.error("File analysis error:", error);
+      res.status(500).json({ error: "Failed to analyze file" });
+    }
+  });
+
+  app.get("/api/column-mapping-profiles", async (req, res) => {
+    try {
+      const evidenceType = req.query.evidenceType as string | undefined;
+      const profiles = await storage.getColumnMappingProfiles(evidenceType);
+      res.json(profiles);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch column mapping profiles" });
+    }
+  });
+
+  app.post("/api/column-mapping-profiles", async (req, res) => {
+    try {
+      const { name, evidenceType, sourceSystemHint, columnMappings } = req.body;
+      if (!name || !evidenceType || !columnMappings) {
+        return res.status(400).json({ error: "name, evidenceType, and columnMappings are required" });
+      }
+      const profile = await storage.createColumnMappingProfile({
+        name,
+        evidenceType,
+        sourceSystemHint: sourceSystemHint || null,
+        columnMappings,
+      });
+      res.status(201).json(profile);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create column mapping profile" });
+    }
+  });
+
   app.post("/api/evidence/upload", upload.single("file"), async (req, res) => {
     try {
       const file = req.file;
@@ -640,8 +721,10 @@ export async function registerRoutes(
         });
       }
 
-      const fileContent = file.buffer.toString("utf-8");
       const sourceFileSha256 = computeFileSha256(file.buffer);
+      const columnMappings = req.body.column_mappings ? JSON.parse(req.body.column_mappings) : null;
+      const jurisdictions = req.body.jurisdictions ? JSON.parse(req.body.jurisdictions) : [];
+      const mappingProfileId = req.body.mapping_profile_id ? parseInt(req.body.mapping_profile_id) : null;
 
       const evidenceUpload = await storage.createEvidenceUpload({
         filename: `${Date.now()}_${file.originalname}`,
@@ -668,14 +751,40 @@ export async function registerRoutes(
         uploadId: evidenceUpload.id,
         uploadedAt: new Date().toISOString(),
         uploadedBy: "system",
-        parserVersion: "1.0.0",
+        parserVersion: "1.1.0",
         extractionTimestamp: new Date().toISOString(),
       };
+
+      const fileParseResult = parseFileBuffer(file.buffer, file.originalname);
+      if (!fileParseResult.success) {
+        await storage.updateEvidenceUpload(evidenceUpload.id, {
+          status: "failed",
+          processingErrors: { errors: fileParseResult.errors },
+        });
+        return res.status(400).json({
+          error: "Failed to parse file",
+          details: fileParseResult.errors,
+          upload: evidenceUpload,
+        });
+      }
+
+      let rows = fileParseResult.rows;
+      if (columnMappings && Object.keys(columnMappings).length > 0) {
+        rows = applyColumnMapping(rows, columnMappings);
+      }
+
+      if (mappingProfileId) {
+        await storage.incrementMappingProfileUsage(mappingProfileId);
+      }
+
+      const fileContent = rows.map(row => {
+        return Object.entries(row).map(([k, v]) => `${k}:${v}`).join(",");
+      }).join("\n");
 
       const parseResult = parseEvidenceFile(fileContent, evidence_type, {
         periodStart: period_start,
         periodEnd: period_end,
-      });
+      }, rows);
 
       if (!parseResult.success) {
         await storage.updateEvidenceUpload(evidenceUpload.id, {

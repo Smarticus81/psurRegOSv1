@@ -654,3 +654,25 @@ export interface QueueSlotItem {
   recommended_agents: string[];
   acceptance_criteria: string[];
 }
+
+// ============== COLUMN MAPPING PROFILES ==============
+export const columnMappingProfiles = pgTable("column_mapping_profiles", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  evidenceType: text("evidence_type").notNull(),
+  sourceSystemHint: text("source_system_hint"),
+  columnMappings: jsonb("column_mappings").notNull(),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  usageCount: integer("usage_count").default(0).notNull(),
+});
+
+export const insertColumnMappingProfileSchema = createInsertSchema(columnMappingProfiles).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  usageCount: true,
+});
+
+export type ColumnMappingProfile = typeof columnMappingProfiles.$inferSelect;
+export type InsertColumnMappingProfile = z.infer<typeof insertColumnMappingProfileSchema>;

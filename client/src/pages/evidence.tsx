@@ -63,8 +63,8 @@ export default function EvidencePage() {
   const [activeTab, setActiveTab] = useState("upload");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [evidenceType, setEvidenceType] = useState("");
-  const [deviceScopeId, setDeviceScopeId] = useState("");
-  const [psurCaseId, setPsurCaseId] = useState("");
+  const [deviceScopeId, setDeviceScopeId] = useState("__all__");
+  const [psurCaseId, setPsurCaseId] = useState("__none__");
   const [sourceSystem, setSourceSystem] = useState("");
   const [extractionNotes, setExtractionNotes] = useState("");
   const [periodStart, setPeriodStart] = useState("");
@@ -100,8 +100,8 @@ export default function EvidencePage() {
       const formData = new FormData();
       formData.append("file", selectedFile);
       formData.append("evidence_type", evidenceType);
-      if (deviceScopeId) formData.append("device_scope_id", deviceScopeId);
-      if (psurCaseId) formData.append("psur_case_id", psurCaseId);
+      if (deviceScopeId && deviceScopeId !== "__all__") formData.append("device_scope_id", deviceScopeId);
+      if (psurCaseId && psurCaseId !== "__none__") formData.append("psur_case_id", psurCaseId);
       if (sourceSystem) formData.append("source_system", sourceSystem);
       if (extractionNotes) formData.append("extraction_notes", extractionNotes);
       if (periodStart) formData.append("period_start", periodStart);
@@ -265,7 +265,7 @@ export default function EvidencePage() {
                           <SelectValue placeholder="All devices" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">All devices</SelectItem>
+                          <SelectItem value="__all__">All devices</SelectItem>
                           {devices.map((d) => (
                             <SelectItem key={d.id} value={d.id.toString()}>{d.deviceName}</SelectItem>
                           ))}
@@ -280,7 +280,7 @@ export default function EvidencePage() {
                           <SelectValue placeholder="None" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">None</SelectItem>
+                          <SelectItem value="__none__">None</SelectItem>
                           {psurCases.map((c) => (
                             <SelectItem key={c.id} value={c.id.toString()}>{c.psurReference}</SelectItem>
                           ))}
@@ -581,7 +581,7 @@ export default function EvidencePage() {
                         <SelectValue placeholder="All cases" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">All cases</SelectItem>
+                        <SelectItem value="__all__">All cases</SelectItem>
                         {psurCases.map((c) => (
                           <SelectItem key={c.id} value={c.id.toString()}>{c.psurReference}</SelectItem>
                         ))}

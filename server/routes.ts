@@ -1323,6 +1323,93 @@ export async function registerRoutes(
     }
   });
 
+  // ============== DETERMINISTIC SLOT GENERATION ==============
+  app.post("/api/slots/generate-deterministic", async (req, res) => {
+    try {
+      const { psurCaseId, slotId, autoAdjudicate = true } = req.body;
+      
+      if (!psurCaseId || !slotId) {
+        return res.status(400).json({ error: "psurCaseId and slotId are required" });
+      }
+
+      const { isDeterministicSupported, runDeterministicGenerator } = await import("./deterministic-generators");
+      
+      if (!isDeterministicSupported(slotId)) {
+        return res.status(400).json({ 
+          error: `Slot ${slotId} does not support deterministic generation`,
+          supportedSlots: ["F.11.complaints_by_region_severity"]
+        });
+      }
+
+      const psurCase = await storage.getPSURCase(psurCaseId);
+      if (!psurCase) {
+        return res.status(404).json({ error: "PSUR case not found" });
+      }
+
+      const evidenceAtoms = await storage.getEvidenceAtoms(psurCaseId);
+      
+      const result = runDeterministicGenerator(slotId, evidenceAtoms, psurCase);
+      
+      if (!result.success) {
+        return res.status(422).json({
+          error: "Deterministic generation failed",
+          details: result.error,
+          slotId: result.slotId
+        });
+      }
+
+      const proposalData = {
+        psurCaseId,
+        slotId: result.slotId,
+        templateId: psurCase.templateId,
+        content: JSON.stringify(result.content),
+        evidenceAtomIds: result.evidenceAtomIds,
+        claimedObligationIds: result.claimedObligationIds,
+        methodStatement: result.methodStatement,
+        transformations: result.transformationsUsed,
+        obligationIds: result.claimedObligationIds,
+        confidenceScore: "1.0",
+        status: autoAdjudicate ? "accepted" : "pending",
+        adjudicationResult: autoAdjudicate ? {
+          decision: "accepted",
+          adjudicatedAt: new Date().toISOString(),
+          autoAdjudicated: true,
+          reason: "Deterministic generation - no AI inference"
+        } : null,
+        adjudicatedAt: autoAdjudicate ? new Date() : null
+      };
+
+      const proposal = await storage.createSlotProposal(proposalData);
+
+      res.status(201).json({
+        success: true,
+        proposal,
+        generationResult: {
+          contentType: result.contentType,
+          evidenceAtomCount: result.evidenceAtomIds.length,
+          methodStatement: result.methodStatement,
+          transformationsUsed: result.transformationsUsed,
+          autoAdjudicated: autoAdjudicate
+        }
+      });
+    } catch (error) {
+      console.error("Deterministic generation error:", error);
+      res.status(500).json({ error: "Failed to generate slot deterministically" });
+    }
+  });
+
+  app.get("/api/slots/deterministic-supported", async (req, res) => {
+    try {
+      const { isDeterministicSupported, DETERMINISTIC_SUPPORTED_SLOTS } = await import("./deterministic-generators");
+      res.json({
+        supportedSlots: Array.from(DETERMINISTIC_SUPPORTED_SLOTS),
+        checkSlot: (slotId: string) => isDeterministicSupported(slotId)
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get supported slots" });
+    }
+  });
+
   // ============== COVERAGE REPORTS ==============
   app.get("/api/coverage-reports", async (req, res) => {
     try {

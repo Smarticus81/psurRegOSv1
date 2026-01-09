@@ -156,6 +156,11 @@ export default function PSURGenerator() {
   const [activeTab, setActiveTab] = useState("workflow");
   const [coverageQueue, setCoverageQueue] = useState<CoverageSlotQueue | null>(null);
   const [expandedSlots, setExpandedSlots] = useState<Set<string>>(new Set());
+  const [generatingSlots, setGeneratingSlots] = useState<Set<string>>(new Set());
+  
+  const DETERMINISTIC_SUPPORTED_SLOTS = new Set([
+    "F.11.complaints_by_region_severity",
+  ]);
   
   const logContainerRef = useRef<HTMLDivElement>(null);
 
@@ -186,6 +191,67 @@ export default function PSURGenerator() {
       setIsExecuting(false);
     },
   });
+
+  const generateDeterministicMutation = useMutation({
+    mutationFn: async (params: { psurCaseId: number; slotId: string }) => {
+      const response = await apiRequest("POST", "/api/slots/generate-deterministic", {
+        psurCaseId: params.psurCaseId,
+        slotId: params.slotId,
+        autoAdjudicate: true,
+      });
+      return response.json();
+    },
+    onMutate: (params) => {
+      setGeneratingSlots(prev => new Set(prev).add(params.slotId));
+    },
+    onSuccess: (data, params) => {
+      setGeneratingSlots(prev => {
+        const next = new Set(prev);
+        next.delete(params.slotId);
+        return next;
+      });
+      toast({ 
+        title: "Slot generated", 
+        description: `${params.slotId} generated deterministically with ${data.generationResult?.evidenceAtomCount || 0} evidence atoms` 
+      });
+      if (coverageQueue) {
+        setCoverageQueue({
+          ...coverageQueue,
+          queue: coverageQueue.queue.map(item => 
+            item.slotId === params.slotId 
+              ? { ...item, status: "accepted" as const }
+              : item
+          ),
+          requiredSlotsFilled: coverageQueue.requiredSlotsFilled + 1,
+          requiredSlotsRemaining: Math.max(0, coverageQueue.requiredSlotsRemaining - 1),
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/slot-proposals"] });
+    },
+    onError: (error, params) => {
+      setGeneratingSlots(prev => {
+        const next = new Set(prev);
+        next.delete(params.slotId);
+        return next;
+      });
+      toast({ 
+        title: "Generation failed", 
+        description: error instanceof Error ? error.message : "Could not generate slot deterministically",
+        variant: "destructive" 
+      });
+    },
+  });
+
+  const handleDeterministicGenerate = (slotId: string) => {
+    if (!coverageQueue?.psurCaseId) {
+      toast({ title: "No active PSUR case", variant: "destructive" });
+      return;
+    }
+    generateDeterministicMutation.mutate({ 
+      psurCaseId: coverageQueue.psurCaseId, 
+      slotId 
+    });
+  };
 
   const runWorkflow = async () => {
     const device = devices.find(d => d.id === parseInt(selectedDevice));
@@ -844,6 +910,36 @@ export default function PSURGenerator() {
                                           <Badge key={i} variant="outline" className="text-[8px]">{dep}</Badge>
                                         ))}
                                       </div>
+                                    </div>
+                                  )}
+                                  
+                                  {DETERMINISTIC_SUPPORTED_SLOTS.has(item.slotId) && item.status !== "accepted" && (
+                                    <div className="pt-2 border-t mt-2">
+                                      <Button
+                                        size="sm"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleDeterministicGenerate(item.slotId);
+                                        }}
+                                        disabled={generatingSlots.has(item.slotId) || item.evidenceRequirements.availableEvidenceTypes.length === 0}
+                                        className="text-[10px] h-7"
+                                        data-testid={`btn-generate-deterministic-${item.slotId}`}
+                                      >
+                                        {generatingSlots.has(item.slotId) ? (
+                                          <>
+                                            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                            Generating...
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Play className="h-3 w-3 mr-1" />
+                                            Generate (Deterministic)
+                                          </>
+                                        )}
+                                      </Button>
+                                      <p className="text-[9px] text-muted-foreground mt-1">
+                                        No AI inference - aggregates evidence atoms directly
+                                      </p>
                                     </div>
                                   )}
                                 </div>

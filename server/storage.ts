@@ -8,6 +8,11 @@ import {
   type AuditEvent, type InsertAuditEvent,
   type GeneratedDocument, type InsertGeneratedDocument,
   type GRKBEntry, type InsertGRKBEntry,
+  type PSURCase, type InsertPSURCase,
+  type EvidenceAtom, type InsertEvidenceAtom,
+  type SlotProposal, type InsertSlotProposal,
+  type CoverageReport, type InsertCoverageReport,
+  type AuditBundle, type InsertAuditBundle,
   users,
   companies,
   devices,
@@ -17,6 +22,11 @@ import {
   auditEvents,
   generatedDocuments,
   grkbEntries,
+  psurCases,
+  evidenceAtoms,
+  slotProposals,
+  coverageReports,
+  auditBundles,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and } from "drizzle-orm";
@@ -66,6 +76,24 @@ export interface IStorage {
 
   getGRKBEntries(regulation?: string, category?: string): Promise<GRKBEntry[]>;
   createGRKBEntry(entry: InsertGRKBEntry): Promise<GRKBEntry>;
+
+  getPSURCases(): Promise<PSURCase[]>;
+  getPSURCase(id: number): Promise<PSURCase | undefined>;
+  createPSURCase(psurCase: InsertPSURCase): Promise<PSURCase>;
+  updatePSURCase(id: number, psurCase: Partial<InsertPSURCase>): Promise<PSURCase | undefined>;
+
+  getEvidenceAtoms(psurCaseId?: number): Promise<EvidenceAtom[]>;
+  createEvidenceAtom(atom: InsertEvidenceAtom): Promise<EvidenceAtom>;
+
+  getSlotProposals(psurCaseId?: number): Promise<SlotProposal[]>;
+  createSlotProposal(proposal: InsertSlotProposal): Promise<SlotProposal>;
+  updateSlotProposal(id: number, proposal: Partial<InsertSlotProposal>): Promise<SlotProposal | undefined>;
+
+  getCoverageReports(psurCaseId?: number): Promise<CoverageReport[]>;
+  createCoverageReport(report: InsertCoverageReport): Promise<CoverageReport>;
+
+  getAuditBundles(psurCaseId?: number): Promise<AuditBundle[]>;
+  createAuditBundle(bundle: InsertAuditBundle): Promise<AuditBundle>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -256,6 +284,78 @@ export class DatabaseStorage implements IStorage {
   async createGRKBEntry(entry: InsertGRKBEntry): Promise<GRKBEntry> {
     const [newEntry] = await db.insert(grkbEntries).values(entry).returning();
     return newEntry;
+  }
+
+  async getPSURCases(): Promise<PSURCase[]> {
+    return db.select().from(psurCases).orderBy(desc(psurCases.createdAt));
+  }
+
+  async getPSURCase(id: number): Promise<PSURCase | undefined> {
+    const [psurCase] = await db.select().from(psurCases).where(eq(psurCases.id, id));
+    return psurCase;
+  }
+
+  async createPSURCase(psurCase: InsertPSURCase): Promise<PSURCase> {
+    const [newCase] = await db.insert(psurCases).values(psurCase).returning();
+    return newCase;
+  }
+
+  async updatePSURCase(id: number, psurCase: Partial<InsertPSURCase>): Promise<PSURCase | undefined> {
+    const [updated] = await db.update(psurCases).set(psurCase).where(eq(psurCases.id, id)).returning();
+    return updated;
+  }
+
+  async getEvidenceAtoms(psurCaseId?: number): Promise<EvidenceAtom[]> {
+    if (psurCaseId) {
+      return db.select().from(evidenceAtoms).where(eq(evidenceAtoms.psurCaseId, psurCaseId)).orderBy(desc(evidenceAtoms.createdAt));
+    }
+    return db.select().from(evidenceAtoms).orderBy(desc(evidenceAtoms.createdAt));
+  }
+
+  async createEvidenceAtom(atom: InsertEvidenceAtom): Promise<EvidenceAtom> {
+    const [newAtom] = await db.insert(evidenceAtoms).values(atom).returning();
+    return newAtom;
+  }
+
+  async getSlotProposals(psurCaseId?: number): Promise<SlotProposal[]> {
+    if (psurCaseId) {
+      return db.select().from(slotProposals).where(eq(slotProposals.psurCaseId, psurCaseId)).orderBy(desc(slotProposals.createdAt));
+    }
+    return db.select().from(slotProposals).orderBy(desc(slotProposals.createdAt));
+  }
+
+  async createSlotProposal(proposal: InsertSlotProposal): Promise<SlotProposal> {
+    const [newProposal] = await db.insert(slotProposals).values(proposal).returning();
+    return newProposal;
+  }
+
+  async updateSlotProposal(id: number, proposal: Partial<InsertSlotProposal>): Promise<SlotProposal | undefined> {
+    const [updated] = await db.update(slotProposals).set(proposal).where(eq(slotProposals.id, id)).returning();
+    return updated;
+  }
+
+  async getCoverageReports(psurCaseId?: number): Promise<CoverageReport[]> {
+    if (psurCaseId) {
+      return db.select().from(coverageReports).where(eq(coverageReports.psurCaseId, psurCaseId)).orderBy(desc(coverageReports.createdAt));
+    }
+    return db.select().from(coverageReports).orderBy(desc(coverageReports.createdAt));
+  }
+
+  async createCoverageReport(report: InsertCoverageReport): Promise<CoverageReport> {
+    const [newReport] = await db.insert(coverageReports).values(report).returning();
+    return newReport;
+  }
+
+  async getAuditBundles(psurCaseId?: number): Promise<AuditBundle[]> {
+    if (psurCaseId) {
+      return db.select().from(auditBundles).where(eq(auditBundles.psurCaseId, psurCaseId)).orderBy(desc(auditBundles.exportedAt));
+    }
+    return db.select().from(auditBundles).orderBy(desc(auditBundles.exportedAt));
+  }
+
+  async createAuditBundle(bundle: InsertAuditBundle): Promise<AuditBundle> {
+    const [newBundle] = await db.insert(auditBundles).values(bundle).returning();
+    return newBundle;
   }
 }
 

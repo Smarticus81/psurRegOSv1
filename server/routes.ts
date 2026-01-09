@@ -9,6 +9,11 @@ import {
   insertDataSourceSchema,
   insertAgentExecutionSchema,
   insertGeneratedDocumentSchema,
+  insertPsurCaseSchema,
+  insertEvidenceAtomSchema,
+  insertSlotProposalSchema,
+  insertCoverageReportSchema,
+  insertAuditBundleSchema,
 } from "@shared/schema";
 import {
   ensureOrchestratorInitialized,
@@ -482,6 +487,181 @@ export async function registerRoutes(
       }
     } catch (error) {
       res.status(500).json({ error: "Failed to qualify template" });
+    }
+  });
+
+  // ============== PSUR CASES ==============
+  app.get("/api/psur-cases", async (req, res) => {
+    try {
+      const cases = await storage.getPSURCases();
+      res.json(cases);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch PSUR cases" });
+    }
+  });
+
+  app.get("/api/psur-cases/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const psurCase = await storage.getPSURCase(id);
+      if (!psurCase) {
+        return res.status(404).json({ error: "PSUR case not found" });
+      }
+      res.json(psurCase);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch PSUR case" });
+    }
+  });
+
+  app.post("/api/psur-cases", async (req, res) => {
+    try {
+      const body = { ...req.body };
+      if (body.startPeriod && typeof body.startPeriod === "string") {
+        body.startPeriod = new Date(body.startPeriod);
+      }
+      if (body.endPeriod && typeof body.endPeriod === "string") {
+        body.endPeriod = new Date(body.endPeriod);
+      }
+      const parsed = insertPsurCaseSchema.safeParse(body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors });
+      }
+      const psurCase = await storage.createPSURCase(parsed.data);
+      res.status(201).json(psurCase);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create PSUR case" });
+    }
+  });
+
+  app.patch("/api/psur-cases/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const psurCase = await storage.updatePSURCase(id, req.body);
+      if (!psurCase) {
+        return res.status(404).json({ error: "PSUR case not found" });
+      }
+      res.json(psurCase);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update PSUR case" });
+    }
+  });
+
+  // ============== EVIDENCE ATOMS ==============
+  app.get("/api/evidence-atoms", async (req, res) => {
+    try {
+      const psurCaseId = req.query.psurCaseId ? parseInt(req.query.psurCaseId as string) : undefined;
+      const atoms = await storage.getEvidenceAtoms(psurCaseId);
+      res.json(atoms);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch evidence atoms" });
+    }
+  });
+
+  app.post("/api/evidence-atoms", async (req, res) => {
+    try {
+      const body = { ...req.body };
+      if (body.extractDate && typeof body.extractDate === "string") {
+        body.extractDate = new Date(body.extractDate);
+      }
+      if (body.periodStart && typeof body.periodStart === "string") {
+        body.periodStart = new Date(body.periodStart);
+      }
+      if (body.periodEnd && typeof body.periodEnd === "string") {
+        body.periodEnd = new Date(body.periodEnd);
+      }
+      const parsed = insertEvidenceAtomSchema.safeParse(body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors });
+      }
+      const atom = await storage.createEvidenceAtom(parsed.data);
+      res.status(201).json(atom);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create evidence atom" });
+    }
+  });
+
+  // ============== SLOT PROPOSALS ==============
+  app.get("/api/slot-proposals", async (req, res) => {
+    try {
+      const psurCaseId = req.query.psurCaseId ? parseInt(req.query.psurCaseId as string) : undefined;
+      const proposals = await storage.getSlotProposals(psurCaseId);
+      res.json(proposals);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch slot proposals" });
+    }
+  });
+
+  app.post("/api/slot-proposals", async (req, res) => {
+    try {
+      const parsed = insertSlotProposalSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors });
+      }
+      const proposal = await storage.createSlotProposal(parsed.data);
+      res.status(201).json(proposal);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create slot proposal" });
+    }
+  });
+
+  app.patch("/api/slot-proposals/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const proposal = await storage.updateSlotProposal(id, req.body);
+      if (!proposal) {
+        return res.status(404).json({ error: "Slot proposal not found" });
+      }
+      res.json(proposal);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update slot proposal" });
+    }
+  });
+
+  // ============== COVERAGE REPORTS ==============
+  app.get("/api/coverage-reports", async (req, res) => {
+    try {
+      const psurCaseId = req.query.psurCaseId ? parseInt(req.query.psurCaseId as string) : undefined;
+      const reports = await storage.getCoverageReports(psurCaseId);
+      res.json(reports);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch coverage reports" });
+    }
+  });
+
+  app.post("/api/coverage-reports", async (req, res) => {
+    try {
+      const parsed = insertCoverageReportSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors });
+      }
+      const report = await storage.createCoverageReport(parsed.data);
+      res.status(201).json(report);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create coverage report" });
+    }
+  });
+
+  // ============== AUDIT BUNDLES ==============
+  app.get("/api/audit-bundles", async (req, res) => {
+    try {
+      const psurCaseId = req.query.psurCaseId ? parseInt(req.query.psurCaseId as string) : undefined;
+      const bundles = await storage.getAuditBundles(psurCaseId);
+      res.json(bundles);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch audit bundles" });
+    }
+  });
+
+  app.post("/api/audit-bundles", async (req, res) => {
+    try {
+      const parsed = insertAuditBundleSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.errors });
+      }
+      const bundle = await storage.createAuditBundle(parsed.data);
+      res.status(201).json(bundle);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create audit bundle" });
     }
   });
 

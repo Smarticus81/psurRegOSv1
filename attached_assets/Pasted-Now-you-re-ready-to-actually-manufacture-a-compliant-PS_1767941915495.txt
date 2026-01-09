@@ -1,0 +1,149 @@
+Now you’re ready to actually manufacture a compliant PSUR. Here’s what’s next, in the exact order that keeps the system deterministic and audit-proof.
+
+1) Run Template Qualification (hard gate)
+
+Goal: prove the mapping covers every mandatory obligation before you write anything.
+
+You run qualification twice (because you have two “render profiles”):
+
+Annex I profile (pure MDCG structure)
+
+FormQAR profile (company structure)
+
+Expected outputs:
+
+PASS/FAIL
+
+Missing mandatory obligations list
+
+Dangling slot references
+
+Slot type incompatibilities
+
+If either fails, fix mapping/slots now. Don’t generate content yet.
+
+2) Register the PSUR “case” (scope + period + jurisdiction)
+
+Goal: lock the “physics” of the PSUR.
+
+You must create a PSUR case record that includes:
+
+PSUR reference number + version
+
+Start/end dates (data collection period)
+
+EU and/or UK scope (and whether you’re generating one combined report or two)
+
+Device list (Basic UDI-DI / family / models)
+
+Grouping + leading device (if grouped)
+
+This is what enables the orchestrator to enforce:
+
+No gaps / no overlaps in reporting periods
+
+Correct periodicity
+
+Grouping constraints
+
+3) Ingest evidence (turn reality into EvidenceAtoms)
+
+Goal: feed the system facts, not prose.
+
+Minimum evidence sets for a real PSUR run:
+
+Sales volume extract (period scoped)
+
+Population / exposure method inputs (or “not available” evidence + justification)
+
+Complaints + non-serious incidents
+
+Serious incidents
+
+FSCAs
+
+CAPAs (if relevant)
+
+PMCF summary (or explicit “no PMCF performed” with rationale)
+
+Literature review results (or justified absence)
+
+External database/reg/field safety info as applicable
+
+Each evidence atom needs provenance:
+
+source system
+
+extract date
+
+query/filter criteria
+
+hashes if possible
+
+No evidence = your agents will get rejected later.
+
+4) Generate “slot proposals” (agents fill slots; orchestrator judges)
+
+Goal: fill every slot required by the mapping, with traceable content.
+
+Workflow:
+
+For each slot, an agent generates a SlotProposal
+
+Proposal must cite:
+
+evidence atom IDs
+
+transformations (summarize/tabulate/etc.)
+
+which obligation(s) it intends to satisfy
+
+Orchestrator adjudicates:
+
+ACCEPT → stored + trace nodes created
+
+REJECT → exact reasons (missing evidence, forbidden transformation, out-of-period, wrong jurisdiction, etc.)
+
+Do this slot-by-slot until coverage is complete.
+
+5) Close coverage gaps (obligation-first, not section-first)
+
+Goal: reach “all mandatory obligations satisfied.”
+
+Run an automated coverage check:
+
+For every mandatory obligation:
+
+does at least one ACCEPTED slot payload satisfy it?
+
+For every required slot in your chosen template:
+
+is it ACCEPTED or explicitly justified as “not applicable / not available” where allowed?
+
+This is where your orchestrator shines: it tells you exactly what’s missing.
+
+6) Render the PSUR (Annex I version OR FormQAR version)
+
+Goal: produce the final document from accepted content only.
+
+Render outputs:
+
+Annex I PSUR (MDCG-structured)
+
+FormQAR PSUR (company-structured)
+
+Same accepted content can render into both, if your mappings are solid.
+
+7) Export the audit bundle (this is your “Notified Body shield”)
+
+Export:
+
+Trace JSONL (paragraph/cell-level)
+
+Coverage report (obligations satisfied, by which slots)
+
+Evidence register (what inputs were used, by period)
+
+Qualification report (template was valid)
+
+This bundle is what turns audits into a calm trace-walk instead of a debate.

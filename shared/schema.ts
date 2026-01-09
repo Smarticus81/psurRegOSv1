@@ -293,3 +293,137 @@ export const insertGrkbEntrySchema = createInsertSchema(grkbEntries).omit({
 
 export type GRKBEntry = typeof grkbEntries.$inferSelect;
 export type InsertGRKBEntry = z.infer<typeof insertGrkbEntrySchema>;
+
+// ============== PSUR CASES ==============
+export const psurCaseStatusEnum = ["draft", "qualified", "in_progress", "rendered", "exported"] as const;
+export type PSURCaseStatus = typeof psurCaseStatusEnum[number];
+
+export const psurCases = pgTable("psur_cases", {
+  id: serial("id").primaryKey(),
+  psurReference: text("psur_reference").notNull(),
+  version: integer("version").notNull().default(1),
+  templateId: text("template_id").notNull(),
+  jurisdictions: text("jurisdictions").array().default(sql`ARRAY[]::text[]`),
+  startPeriod: timestamp("start_period").notNull(),
+  endPeriod: timestamp("end_period").notNull(),
+  deviceIds: integer("device_ids").array(),
+  leadingDeviceId: integer("leading_device_id").references(() => devices.id),
+  groupingRationale: text("grouping_rationale"),
+  qualificationStatus: text("qualification_status").default("pending"),
+  qualificationResult: jsonb("qualification_result"),
+  status: text("status").notNull().default("draft"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const insertPsurCaseSchema = createInsertSchema(psurCases).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type PSURCase = typeof psurCases.$inferSelect;
+export type InsertPSURCase = z.infer<typeof insertPsurCaseSchema>;
+
+// ============== EVIDENCE ATOMS ==============
+export const evidenceTypeEnum = ["sales", "complaints", "incidents", "fsca", "capa", "pmcf", "literature", "registry", "exposure"] as const;
+export type EvidenceType = typeof evidenceTypeEnum[number];
+
+export const evidenceAtoms = pgTable("evidence_atoms", {
+  id: serial("id").primaryKey(),
+  psurCaseId: integer("psur_case_id").references(() => psurCases.id, { onDelete: "cascade" }),
+  evidenceType: text("evidence_type").notNull(),
+  sourceSystem: text("source_system").notNull(),
+  extractDate: timestamp("extract_date").notNull(),
+  queryFilters: jsonb("query_filters"),
+  contentHash: text("content_hash"),
+  recordCount: integer("record_count"),
+  periodStart: timestamp("period_start"),
+  periodEnd: timestamp("period_end"),
+  data: jsonb("data"),
+  provenance: jsonb("provenance"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const insertEvidenceAtomSchema = createInsertSchema(evidenceAtoms).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type EvidenceAtom = typeof evidenceAtoms.$inferSelect;
+export type InsertEvidenceAtom = z.infer<typeof insertEvidenceAtomSchema>;
+
+// ============== SLOT PROPOSALS ==============
+export const proposalStatusEnum = ["pending", "accepted", "rejected", "revised"] as const;
+export type ProposalStatus = typeof proposalStatusEnum[number];
+
+export const slotProposals = pgTable("slot_proposals", {
+  id: serial("id").primaryKey(),
+  psurCaseId: integer("psur_case_id").references(() => psurCases.id, { onDelete: "cascade" }),
+  slotId: text("slot_id").notNull(),
+  templateId: text("template_id").notNull(),
+  content: text("content"),
+  evidenceAtomIds: integer("evidence_atom_ids").array(),
+  transformations: text("transformations").array(),
+  obligationIds: text("obligation_ids").array(),
+  status: text("status").notNull().default("pending"),
+  adjudicationResult: jsonb("adjudication_result"),
+  rejectionReasons: text("rejection_reasons").array(),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  adjudicatedAt: timestamp("adjudicated_at"),
+});
+
+export const insertSlotProposalSchema = createInsertSchema(slotProposals).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type SlotProposal = typeof slotProposals.$inferSelect;
+export type InsertSlotProposal = z.infer<typeof insertSlotProposalSchema>;
+
+// ============== COVERAGE REPORTS ==============
+export const coverageReports = pgTable("coverage_reports", {
+  id: serial("id").primaryKey(),
+  psurCaseId: integer("psur_case_id").references(() => psurCases.id, { onDelete: "cascade" }),
+  templateId: text("template_id").notNull(),
+  totalObligations: integer("total_obligations").notNull(),
+  satisfiedObligations: integer("satisfied_obligations").notNull(),
+  missingObligations: text("missing_obligations").array(),
+  totalSlots: integer("total_slots").notNull(),
+  filledSlots: integer("filled_slots").notNull(),
+  emptySlots: text("empty_slots").array(),
+  justifiedAbsences: jsonb("justified_absences"),
+  coveragePercent: text("coverage_percent"),
+  passed: boolean("passed").default(false),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const insertCoverageReportSchema = createInsertSchema(coverageReports).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type CoverageReport = typeof coverageReports.$inferSelect;
+export type InsertCoverageReport = z.infer<typeof insertCoverageReportSchema>;
+
+// ============== AUDIT BUNDLES ==============
+export const auditBundles = pgTable("audit_bundles", {
+  id: serial("id").primaryKey(),
+  psurCaseId: integer("psur_case_id").references(() => psurCases.id, { onDelete: "cascade" }),
+  bundleReference: text("bundle_reference").notNull(),
+  traceJsonlPath: text("trace_jsonl_path"),
+  coverageReportPath: text("coverage_report_path"),
+  evidenceRegisterPath: text("evidence_register_path"),
+  qualificationReportPath: text("qualification_report_path"),
+  renderedDocumentPath: text("rendered_document_path"),
+  metadata: jsonb("metadata"),
+  exportedAt: timestamp("exported_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const insertAuditBundleSchema = createInsertSchema(auditBundles).omit({
+  id: true,
+  exportedAt: true,
+});
+
+export type AuditBundle = typeof auditBundles.$inferSelect;
+export type InsertAuditBundle = z.infer<typeof insertAuditBundleSchema>;

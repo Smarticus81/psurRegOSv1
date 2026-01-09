@@ -1,11 +1,9 @@
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useQuery } from "@tanstack/react-query";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { StatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { 
   Plus, 
-  ArrowRight,
   Box,
   Shield,
   CheckCircle2,
@@ -127,36 +125,6 @@ export default function Dashboard() {
             ))}
           </div>
         )}
-
-        <Card>
-          <CardHeader className="py-3 px-4">
-            <div className="flex items-center justify-between gap-2">
-              <CardTitle className="text-sm font-medium">Quick Actions</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent className="px-4 pb-4 pt-0">
-            <div className="grid gap-2 sm:grid-cols-3">
-              <Link href="/data">
-                <Button variant="outline" className="w-full justify-start" size="sm">
-                  <Upload className="h-4 w-4" />
-                  Upload Data Inputs
-                </Button>
-              </Link>
-              <Link href="/agents">
-                <Button variant="outline" className="w-full justify-start" size="sm">
-                  <FileText className="h-4 w-4" />
-                  Generate PSUR
-                </Button>
-              </Link>
-              <Link href="/documents">
-                <Button variant="outline" className="w-full justify-start" size="sm">
-                  <ArrowRight className="h-4 w-4" />
-                  View Documents
-                </Button>
-              </Link>
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </div>
   );

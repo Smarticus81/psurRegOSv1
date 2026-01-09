@@ -46,6 +46,16 @@ import { EVIDENCE_DEFINITIONS } from "@shared/schema";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
+// Standard 400 error response helper
+function badRequest(res: any, code: string, message: string, details?: any) {
+  return res.status(400).json({
+    error: "Bad Request",
+    code,
+    message,
+    details: details ?? null,
+  });
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -751,21 +761,24 @@ export async function registerRoutes(
 
   app.post("/api/evidence/upload", upload.single("file"), async (req, res) => {
     try {
+      // Required field validation
+      const evidenceType = req.body?.evidence_type || req.body?.evidenceType;
+      if (!evidenceType) {
+        return badRequest(res, "MISSING_EVIDENCE_TYPE", "evidence_type is required.");
+      }
+
+      if (!req.file) {
+        return badRequest(res, "MISSING_FILE", "file is required.");
+      }
+
       const file = req.file;
-      if (!file) {
-        return res.status(400).json({ error: "No file uploaded" });
-      }
+      const { device_scope_id, psur_case_id, source_system, extraction_notes, period_start, period_end, device_code, jurisdiction } = req.body;
 
-      const { evidence_type, device_scope_id, psur_case_id, source_system, extraction_notes, period_start, period_end, device_code, jurisdiction } = req.body;
-
-      if (!evidence_type) {
-        return res.status(400).json({ error: "evidence_type is required" });
-      }
-
-      if (!hasSchemaFor(evidence_type)) {
-        return res.status(400).json({ 
-          error: `Unsupported evidence_type: ${evidence_type}. Supported types: sales_volume, complaint_record` 
-        });
+      if (!hasSchemaFor(evidenceType)) {
+        return badRequest(res, "UNSUPPORTED_EVIDENCE_TYPE", 
+          `Unsupported evidence_type: ${evidenceType}. Supported types: sales_volume, complaint_record`,
+          { providedType: evidenceType }
+        );
       }
 
       const sourceFileSha256 = computeFileSha256(file.buffer);
@@ -779,7 +792,7 @@ export async function registerRoutes(
         mimeType: file.mimetype,
         fileSize: file.size,
         sha256Hash: sourceFileSha256,
-        evidenceType: evidence_type,
+        evidenceType: evidenceType,
         deviceScopeId: device_scope_id ? parseInt(device_scope_id) : null,
         psurCaseId: psur_case_id ? parseInt(psur_case_id) : null,
         uploadedBy: "system",
@@ -829,7 +842,7 @@ export async function registerRoutes(
         return Object.entries(row).map(([k, v]) => `${k}:${v}`).join(",");
       }).join("\n");
 
-      const parseResult = parseEvidenceFile(fileContent, evidence_type, {
+      const parseResult = parseEvidenceFile(fileContent, evidenceType, {
         periodStart: period_start,
         periodEnd: period_end,
       }, rows);
@@ -863,7 +876,7 @@ export async function registerRoutes(
         
         const { atom, errors } = buildEvidenceAtom(
           {
-            atomType: evidence_type,
+            atomType: evidenceType,
             payload: normalizedPayload,
             deviceRef: device_code || deviceCodeFromData ? {
               deviceCode: (device_code || deviceCodeFromData) as string,
@@ -885,7 +898,7 @@ export async function registerRoutes(
             atomId: atom.atomId,
             psurCaseId: psur_case_id ? parseInt(psur_case_id) : null,
             uploadId: evidenceUpload.id,
-            evidenceType: evidence_type,
+            evidenceType: evidenceType,
             sourceSystem: source_system || "manual_upload",
             extractDate: new Date(),
             contentHash: atom.contentHash,

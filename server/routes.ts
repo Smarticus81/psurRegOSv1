@@ -761,6 +761,14 @@ export async function registerRoutes(
 
   app.post("/api/evidence/upload", upload.single("file"), async (req, res) => {
     try {
+      // TEMPORARY DEBUG - remove after
+      console.log("UPLOAD DEBUG", {
+        bodyKeys: Object.keys(req.body || {}),
+        file: req.file
+          ? { originalname: req.file.originalname, mimetype: req.file.mimetype, size: req.file.size }
+          : null,
+      });
+
       // Required field validation
       const evidenceType = req.body?.evidence_type || req.body?.evidenceType;
       if (!evidenceType) {

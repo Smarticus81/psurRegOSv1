@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://regulatoryos.io/schemas/psur_period.schema.json",
+  "title": "PSURPeriod",
+  "description": "PSUR reporting period specification",
+  "type": "object",
+  "properties": {
+    "psurCaseId": {
+      "type": "integer",
+      "description": "Reference to psur_cases table"
+    },
+    "periodStart": {
+      "type": "string",
+      "format": "date",
+      "description": "Start date of PSUR reporting period (ISO 8601 date)"
+    },
+    "periodEnd": {
+      "type": "string",
+      "format": "date",
+      "description": "End date of PSUR reporting period (ISO 8601 date)"
+    },
+    "reportingInterval": {
+      "type": "string",
+      "enum": ["annual", "biennial", "triennial", "custom"],
+      "description": "Standard reporting interval"
+    }
+  },
+  "required": ["periodStart", "periodEnd"],
+  "additionalProperties": false
+}

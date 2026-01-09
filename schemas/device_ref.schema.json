@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://regulatoryos.io/schemas/device_ref.schema.json",
+  "title": "DeviceRef",
+  "description": "Reference to a medical device for evidence traceability",
+  "type": "object",
+  "properties": {
+    "deviceId": {
+      "type": "integer",
+      "description": "Internal device ID from devices table"
+    },
+    "deviceCode": {
+      "type": "string",
+      "description": "External device code/SKU"
+    },
+    "deviceName": {
+      "type": "string",
+      "description": "Human-readable device name"
+    },
+    "udiDi": {
+      "type": "string",
+      "description": "UDI-DI identifier if available"
+    }
+  },
+  "required": ["deviceCode"],
+  "additionalProperties": false
+}

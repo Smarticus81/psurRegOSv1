@@ -29,6 +29,16 @@ import {
 } from "./orchestrator";
 import { buildCoverageSlotQueue } from "./queue-builder";
 import { parseEvidenceFile, createEvidenceAtomBatch } from "./evidence-parser";
+import { 
+  computeFileSha256, 
+  computeContentHash, 
+  generateAtomId,
+  validateEvidenceAtomPayload,
+  buildEvidenceAtom,
+  hasSchemaFor,
+  type ProvenanceInput
+} from "./schema-validator";
+import { EVIDENCE_DEFINITIONS } from "@shared/schema";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
@@ -615,25 +625,27 @@ export async function registerRoutes(
         return res.status(400).json({ error: "No file uploaded" });
       }
 
-      const { evidence_type, device_scope_id, psur_case_id, source_system, extraction_notes, period_start, period_end } = req.body;
+      const { evidence_type, device_scope_id, psur_case_id, source_system, extraction_notes, period_start, period_end, device_code } = req.body;
 
       if (!evidence_type) {
         return res.status(400).json({ error: "evidence_type is required" });
       }
 
-      if (!["sales_volume", "complaint_record"].includes(evidence_type)) {
-        return res.status(400).json({ error: "Unsupported evidence_type. Use: sales_volume or complaint_record" });
+      if (!hasSchemaFor(evidence_type)) {
+        return res.status(400).json({ 
+          error: `Unsupported evidence_type: ${evidence_type}. Supported types: sales_volume, complaint_record` 
+        });
       }
 
       const fileContent = file.buffer.toString("utf-8");
-      const sha256Hash = createHash("sha256").update(file.buffer).digest("hex");
+      const sourceFileSha256 = computeFileSha256(file.buffer);
 
       const evidenceUpload = await storage.createEvidenceUpload({
         filename: `${Date.now()}_${file.originalname}`,
         originalFilename: file.originalname,
         mimeType: file.mimetype,
         fileSize: file.size,
-        sha256Hash,
+        sha256Hash: sourceFileSha256,
         evidenceType: evidence_type,
         deviceScopeId: device_scope_id ? parseInt(device_scope_id) : null,
         psurCaseId: psur_case_id ? parseInt(psur_case_id) : null,
@@ -645,6 +657,17 @@ export async function registerRoutes(
         status: "processing",
         storagePath: null,
       });
+
+      const provenance: ProvenanceInput = {
+        sourceSystem: source_system || "manual_upload",
+        sourceFile: file.originalname,
+        sourceFileSha256,
+        uploadId: evidenceUpload.id,
+        uploadedAt: new Date().toISOString(),
+        uploadedBy: "system",
+        parserVersion: "1.0.0",
+        extractionTimestamp: new Date().toISOString(),
+      };
 
       const parseResult = parseEvidenceFile(fileContent, evidence_type, {
         periodStart: period_start,
@@ -663,26 +686,93 @@ export async function registerRoutes(
         });
       }
 
-      const atomBatch = createEvidenceAtomBatch(parseResult, evidenceUpload.id, {
-        psurCaseId: psur_case_id ? parseInt(psur_case_id) : undefined,
-        deviceScopeId: device_scope_id ? parseInt(device_scope_id) : undefined,
-        sourceSystem: source_system || "manual_upload",
-        periodStart: period_start ? new Date(period_start) : undefined,
-        periodEnd: period_end ? new Date(period_end) : undefined,
-      });
+      const validAtoms: any[] = [];
+      const rejectedRecords: Array<{ rowIndex: number; errors: Array<{ path: string; message: string }> }> = [];
 
-      const createdAtoms = await storage.createEvidenceAtomsBatch(atomBatch.atoms as any);
+      for (let i = 0; i < parseResult.records.length; i++) {
+        const record = parseResult.records[i];
+        const payload = record as Record<string, unknown>;
+        
+        const { atom, errors } = buildEvidenceAtom(
+          {
+            atomType: evidence_type,
+            payload,
+            deviceRef: device_code || payload.deviceCode ? {
+              deviceCode: (device_code || payload.deviceCode) as string,
+              deviceId: device_scope_id ? parseInt(device_scope_id) : undefined,
+            } : undefined,
+            psurPeriod: period_start && period_end ? {
+              psurCaseId: psur_case_id ? parseInt(psur_case_id) : undefined,
+              periodStart: period_start,
+              periodEnd: period_end,
+            } : undefined,
+          },
+          provenance
+        );
+
+        if (errors.length > 0) {
+          rejectedRecords.push({ rowIndex: i, errors });
+        } else {
+          validAtoms.push({
+            atomId: atom.atomId,
+            psurCaseId: psur_case_id ? parseInt(psur_case_id) : null,
+            uploadId: evidenceUpload.id,
+            evidenceType: evidence_type,
+            sourceSystem: source_system || "manual_upload",
+            extractDate: new Date(),
+            contentHash: atom.contentHash,
+            recordCount: 1,
+            periodStart: period_start ? new Date(period_start) : null,
+            periodEnd: period_end ? new Date(period_end) : null,
+            deviceScopeId: device_scope_id ? parseInt(device_scope_id) : null,
+            deviceRef: atom.deviceRef || null,
+            data: payload,
+            normalizedData: atom.payload,
+            provenance: {
+              ...provenance,
+              atomId: atom.atomId,
+              version: atom.version,
+              deviceRef: atom.deviceRef,
+              psurPeriod: atom.psurPeriod,
+            },
+            validationErrors: null,
+            status: "valid",
+            version: 1,
+          });
+        }
+      }
+
+      if (rejectedRecords.length > 0 && validAtoms.length === 0) {
+        await storage.updateEvidenceUpload(evidenceUpload.id, {
+          status: "rejected",
+          recordsParsed: parseResult.records.length,
+          recordsRejected: rejectedRecords.length,
+          processingErrors: { 
+            schemaValidationFailed: true,
+            rejectedRecords: rejectedRecords.slice(0, 10),
+          },
+          processedAt: new Date(),
+        });
+        return res.status(400).json({
+          error: "All records failed schema validation",
+          rejectedCount: rejectedRecords.length,
+          sampleErrors: rejectedRecords.slice(0, 3),
+          upload: await storage.getEvidenceUpload(evidenceUpload.id),
+        });
+      }
+
+      const createdAtoms = validAtoms.length > 0 
+        ? await storage.createEvidenceAtomsBatch(validAtoms)
+        : [];
 
       await storage.updateEvidenceUpload(evidenceUpload.id, {
-        status: atomBatch.summary.valid > 0 ? "completed" : "rejected",
+        status: validAtoms.length > 0 ? "completed" : "rejected",
         atomsCreated: createdAtoms.length,
-        recordsParsed: atomBatch.summary.total,
-        recordsRejected: atomBatch.summary.invalid,
-        processingErrors: atomBatch.rejected.length > 0 ? {
-          rejectedRecords: atomBatch.rejected.map(r => ({
-            rowIndex: r.rowIndex,
-            errors: r.validationErrors,
-          })),
+        recordsParsed: parseResult.records.length,
+        recordsRejected: rejectedRecords.length,
+        processingErrors: rejectedRecords.length > 0 ? {
+          schemaValidationFailed: true,
+          rejectedRecords: rejectedRecords.slice(0, 10),
         } : null,
         processedAt: new Date(),
       });
@@ -692,12 +782,14 @@ export async function registerRoutes(
       res.status(201).json({
         upload: updatedUpload,
         summary: {
-          totalRecords: atomBatch.summary.total,
-          validRecords: atomBatch.summary.valid,
-          rejectedRecords: atomBatch.summary.invalid,
+          totalRecords: parseResult.records.length,
+          validRecords: validAtoms.length,
+          rejectedRecords: rejectedRecords.length,
           atomsCreated: createdAtoms.length,
+          sourceFileSha256,
         },
         atoms: createdAtoms,
+        validationErrors: rejectedRecords.length > 0 ? rejectedRecords.slice(0, 5) : undefined,
       });
     } catch (error) {
       console.error("Evidence upload error:", error);
@@ -709,6 +801,8 @@ export async function registerRoutes(
     try {
       const psurCaseId = req.query.psurCaseId ? parseInt(req.query.psurCaseId as string) : undefined;
       const evidenceType = req.query.evidenceType as string | undefined;
+      const periodStart = req.query.periodStart ? new Date(req.query.periodStart as string) : undefined;
+      const periodEnd = req.query.periodEnd ? new Date(req.query.periodEnd as string) : undefined;
       
       let atoms;
       if (evidenceType) {
@@ -717,12 +811,60 @@ export async function registerRoutes(
         atoms = await storage.getEvidenceAtoms(psurCaseId);
       }
 
-      const typeCoverage: Record<string, { count: number; periodStart: Date | null; periodEnd: Date | null }> = {};
+      const mandatoryTypes = EVIDENCE_DEFINITIONS
+        .filter(d => d.tier <= 2 && !d.isAggregated)
+        .map(d => d.type);
+      
+      const typeCoverage: Record<string, { 
+        count: number; 
+        inPeriod: number;
+        outOfPeriod: number;
+        periodStart: Date | null; 
+        periodEnd: Date | null;
+        label: string;
+        tier: number;
+      }> = {};
+      
+      for (const def of EVIDENCE_DEFINITIONS) {
+        typeCoverage[def.type] = { 
+          count: 0, 
+          inPeriod: 0, 
+          outOfPeriod: 0, 
+          periodStart: null, 
+          periodEnd: null,
+          label: def.label,
+          tier: def.tier
+        };
+      }
+
       for (const atom of atoms) {
         if (!typeCoverage[atom.evidenceType]) {
-          typeCoverage[atom.evidenceType] = { count: 0, periodStart: null, periodEnd: null };
+          const def = EVIDENCE_DEFINITIONS.find(d => d.type === atom.evidenceType);
+          typeCoverage[atom.evidenceType] = { 
+            count: 0, 
+            inPeriod: 0, 
+            outOfPeriod: 0, 
+            periodStart: null, 
+            periodEnd: null,
+            label: def?.label || atom.evidenceType,
+            tier: def?.tier || 0
+          };
         }
         typeCoverage[atom.evidenceType].count++;
+
+        if (periodStart && periodEnd && atom.periodStart && atom.periodEnd) {
+          const atomStart = new Date(atom.periodStart);
+          const atomEnd = new Date(atom.periodEnd);
+          const overlaps = atomStart <= periodEnd && atomEnd >= periodStart;
+          if (overlaps) {
+            typeCoverage[atom.evidenceType].inPeriod++;
+          } else {
+            typeCoverage[atom.evidenceType].outOfPeriod++;
+          }
+        } else {
+          typeCoverage[atom.evidenceType].inPeriod++;
+        }
+
         if (atom.periodStart) {
           const start = new Date(atom.periodStart);
           if (!typeCoverage[atom.evidenceType].periodStart || start < typeCoverage[atom.evidenceType].periodStart!) {
@@ -737,10 +879,22 @@ export async function registerRoutes(
         }
       }
 
+      const presentTypes = Object.keys(typeCoverage).filter(t => typeCoverage[t].count > 0);
+      const missingMandatoryTypes = mandatoryTypes.filter(t => !presentTypes.includes(t));
+      
+      const coverageSummary = {
+        totalAtoms: atoms.length,
+        uniqueTypes: presentTypes.length,
+        missingMandatoryTypes,
+        ready: missingMandatoryTypes.length === 0 && atoms.length > 0,
+        reportingPeriod: periodStart && periodEnd ? { start: periodStart, end: periodEnd } : null,
+      };
+
       res.json({
         atoms,
         totalCount: atoms.length,
         coverageByType: typeCoverage,
+        coverageSummary,
       });
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch evidence" });

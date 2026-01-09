@@ -1,0 +1,80 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://regulatoryos.io/schemas/evidence_atom.complaint_record.schema.json",
+  "title": "EvidenceAtom.ComplaintRecord",
+  "description": "Evidence atom for customer complaint records (PSUR Section F)",
+  "allOf": [
+    {
+      "type": "object",
+      "properties": {
+        "atomType": {
+          "const": "complaint_record"
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "complaintId": {
+              "type": "string",
+              "description": "Unique complaint identifier"
+            },
+            "deviceCode": {
+              "type": "string",
+              "description": "Device code/SKU involved"
+            },
+            "complaintDate": {
+              "type": "string",
+              "format": "date",
+              "description": "Date complaint was received"
+            },
+            "description": {
+              "type": "string",
+              "description": "Description of the complaint"
+            },
+            "category": {
+              "type": "string",
+              "description": "Complaint category classification"
+            },
+            "severity": {
+              "type": "string",
+              "enum": ["low", "medium", "high", "critical"],
+              "description": "Severity classification"
+            },
+            "patientImpact": {
+              "type": "boolean",
+              "description": "Whether patient harm was reported"
+            },
+            "rootCause": {
+              "type": "string",
+              "description": "Identified root cause if determined"
+            },
+            "resolutionDate": {
+              "type": "string",
+              "format": "date",
+              "description": "Date complaint was resolved"
+            },
+            "resolutionSummary": {
+              "type": "string",
+              "description": "Summary of resolution actions"
+            },
+            "lotNumber": {
+              "type": "string",
+              "description": "Lot/batch number if applicable"
+            },
+            "serialNumber": {
+              "type": "string",
+              "description": "Device serial number if applicable"
+            },
+            "reporterType": {
+              "type": "string",
+              "enum": ["patient", "healthcare_professional", "distributor", "other"],
+              "description": "Type of person who reported"
+            }
+          },
+          "required": ["complaintId", "deviceCode", "complaintDate", "description"],
+          "additionalProperties": true
+        }
+      },
+      "required": ["atomType", "payload"]
+    }
+  ]
+}

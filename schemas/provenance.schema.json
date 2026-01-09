@@ -1,0 +1,58 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://regulatoryos.io/schemas/provenance.schema.json",
+  "title": "Provenance",
+  "description": "Full provenance chain for evidence traceability and auditability",
+  "type": "object",
+  "properties": {
+    "sourceSystem": {
+      "type": "string",
+      "description": "System that originated the data (e.g., 'SAP', 'Salesforce', 'manual_upload')"
+    },
+    "sourceFile": {
+      "type": "string",
+      "description": "Original filename of uploaded evidence"
+    },
+    "sourceFileSha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 hash of the original uploaded file"
+    },
+    "uploadId": {
+      "type": "integer",
+      "description": "Reference to evidence_uploads table"
+    },
+    "uploadedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of upload"
+    },
+    "uploadedBy": {
+      "type": "string",
+      "description": "User or system that performed the upload"
+    },
+    "parserVersion": {
+      "type": "string",
+      "description": "Version of the parser used to extract data"
+    },
+    "extractionTimestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When data was extracted/parsed"
+    },
+    "transformations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "step": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "details": { "type": "object" }
+        }
+      },
+      "description": "Ordered list of transformations applied"
+    }
+  },
+  "required": ["sourceSystem", "sourceFileSha256", "uploadedAt"],
+  "additionalProperties": false
+}

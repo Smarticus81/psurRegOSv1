@@ -444,6 +444,7 @@ export type EvidenceAtomStatus = typeof evidenceAtomStatusEnum[number];
 
 export const evidenceAtoms = pgTable("evidence_atoms", {
   id: serial("id").primaryKey(),
+  atomId: text("atom_id").notNull(),
   psurCaseId: integer("psur_case_id").references(() => psurCases.id, { onDelete: "cascade" }),
   uploadId: integer("upload_id").references(() => evidenceUploads.id),
   evidenceType: text("evidence_type").notNull(),
@@ -455,6 +456,7 @@ export const evidenceAtoms = pgTable("evidence_atoms", {
   periodStart: timestamp("period_start"),
   periodEnd: timestamp("period_end"),
   deviceScopeId: integer("device_scope_id").references(() => devices.id),
+  deviceRef: jsonb("device_ref"),
   data: jsonb("data").notNull(),
   normalizedData: jsonb("normalized_data"),
   provenance: jsonb("provenance").notNull(),

@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://regulatoryos.io/schemas/evidence_atom_base.schema.json",
+  "title": "EvidenceAtomBase",
+  "description": "Base schema for all evidence atoms - immutable unit of regulatory evidence",
+  "type": "object",
+  "properties": {
+    "atomId": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]+:[a-f0-9]{12}$",
+      "description": "Unique atom identifier: {type}:{hash_prefix}"
+    },
+    "atomType": {
+      "type": "string",
+      "description": "Evidence type from EVIDENCE_DEFINITIONS registry"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Version number for atom lineage tracking"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["valid", "invalid", "superseded"],
+      "description": "Current status of this atom"
+    },
+    "psurPeriod": {
+      "$ref": "psur_period.schema.json",
+      "description": "PSUR period this evidence applies to"
+    },
+    "deviceRef": {
+      "$ref": "device_ref.schema.json",
+      "description": "Device this evidence relates to"
+    },
+    "provenance": {
+      "$ref": "provenance.schema.json",
+      "description": "Full provenance chain"
+    },
+    "contentHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 hash of normalized payload for deduplication"
+    },
+    "payload": {
+      "type": "object",
+      "description": "Type-specific evidence data"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this atom was created"
+    }
+  },
+  "required": ["atomId", "atomType", "version", "status", "provenance", "contentHash", "payload", "createdAt"],
+  "additionalProperties": false
+}

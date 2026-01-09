@@ -689,16 +689,24 @@ export async function registerRoutes(
       const validAtoms: any[] = [];
       const rejectedRecords: Array<{ rowIndex: number; errors: Array<{ path: string; message: string }> }> = [];
 
-      for (let i = 0; i < parseResult.records.length; i++) {
-        const record = parseResult.records[i];
-        const payload = record as Record<string, unknown>;
+      for (const record of parseResult.records) {
+        if (!record.isValid || !record.normalizedData) {
+          rejectedRecords.push({ 
+            rowIndex: record.rowIndex, 
+            errors: record.validationErrors.map(e => ({ path: "/", message: e }))
+          });
+          continue;
+        }
+
+        const normalizedPayload = record.normalizedData as Record<string, unknown>;
+        const deviceCodeFromData = normalizedPayload.deviceCode as string | undefined;
         
         const { atom, errors } = buildEvidenceAtom(
           {
             atomType: evidence_type,
-            payload,
-            deviceRef: device_code || payload.deviceCode ? {
-              deviceCode: (device_code || payload.deviceCode) as string,
+            payload: normalizedPayload,
+            deviceRef: device_code || deviceCodeFromData ? {
+              deviceCode: (device_code || deviceCodeFromData) as string,
               deviceId: device_scope_id ? parseInt(device_scope_id) : undefined,
             } : undefined,
             psurPeriod: period_start && period_end ? {
@@ -711,7 +719,7 @@ export async function registerRoutes(
         );
 
         if (errors.length > 0) {
-          rejectedRecords.push({ rowIndex: i, errors });
+          rejectedRecords.push({ rowIndex: record.rowIndex, errors });
         } else {
           validAtoms.push({
             atomId: atom.atomId,
@@ -726,8 +734,8 @@ export async function registerRoutes(
             periodEnd: period_end ? new Date(period_end) : null,
             deviceScopeId: device_scope_id ? parseInt(device_scope_id) : null,
             deviceRef: atom.deviceRef || null,
-            data: payload,
-            normalizedData: atom.payload,
+            data: record.data,
+            normalizedData: normalizedPayload,
             provenance: {
               ...provenance,
               atomId: atom.atomId,

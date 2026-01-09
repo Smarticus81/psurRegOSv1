@@ -725,7 +725,10 @@ export function createEvidenceAtomBatch(
       atomPeriodEnd = atomPeriodStart;
     }
 
+    const atomId = `${parseResult.evidenceType}:${contentHash}`;
+    
     const atom: Omit<InsertEvidenceAtom, "id" | "createdAt"> = {
+      atomId,
       psurCaseId: options.psurCaseId || null,
       uploadId,
       evidenceType: parseResult.evidenceType,
@@ -736,9 +739,11 @@ export function createEvidenceAtomBatch(
       periodStart: atomPeriodStart,
       periodEnd: atomPeriodEnd,
       deviceScopeId: options.deviceScopeId || null,
+      deviceRef: null,
       data: record.data,
       normalizedData: record.normalizedData,
       provenance: {
+        atomId,
         uploadId,
         rowIndex: record.rowIndex,
         sourceSystem: options.sourceSystem,

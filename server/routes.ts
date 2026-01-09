@@ -23,6 +23,7 @@ import {
   qualifyTemplate,
   compileCombinedDsl,
 } from "./orchestrator";
+import { buildCoverageSlotQueue } from "./queue-builder";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -662,6 +663,78 @@ export async function registerRoutes(
       res.status(201).json(bundle);
     } catch (error) {
       res.status(500).json({ error: "Failed to create audit bundle" });
+    }
+  });
+
+  // ============== COVERAGE SLOT QUEUE ==============
+  app.get("/api/coverage-slot-queues", async (req, res) => {
+    try {
+      const psurCaseId = req.query.psurCaseId ? parseInt(req.query.psurCaseId as string) : undefined;
+      const queues = await storage.getCoverageSlotQueues(psurCaseId);
+      res.json(queues);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch coverage slot queues" });
+    }
+  });
+
+  app.get("/api/coverage-slot-queues/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const queue = await storage.getCoverageSlotQueue(id);
+      if (!queue) {
+        return res.status(404).json({ error: "Coverage slot queue not found" });
+      }
+      res.json(queue);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch coverage slot queue" });
+    }
+  });
+
+  app.post("/api/coverage-slot-queues/build", async (req, res) => {
+    try {
+      const { psurCaseId } = req.body;
+      if (!psurCaseId) {
+        return res.status(400).json({ error: "psurCaseId is required" });
+      }
+      
+      const psurCase = await storage.getPSURCase(psurCaseId);
+      if (!psurCase) {
+        return res.status(404).json({ error: "PSUR case not found" });
+      }
+      
+      const evidenceAtoms = await storage.getEvidenceAtoms(psurCaseId);
+      const acceptedProposals = await storage.getSlotProposals(psurCaseId);
+      
+      const queueOutput = buildCoverageSlotQueue({
+        psurReference: psurCase.psurReference,
+        profileId: psurCase.templateId,
+        jurisdictions: psurCase.jurisdictions || [],
+        evidenceAtoms,
+        acceptedProposals,
+        periodStart: new Date(psurCase.startPeriod),
+        periodEnd: new Date(psurCase.endPeriod),
+      });
+      
+      const savedQueue = await storage.createCoverageSlotQueue({
+        psurCaseId,
+        psurReference: queueOutput.psurReference,
+        profileId: queueOutput.profileId,
+        mandatoryObligationsTotal: queueOutput.coverageSummary.mandatoryObligationsTotal,
+        mandatoryObligationsSatisfied: queueOutput.coverageSummary.mandatoryObligationsSatisfied,
+        mandatoryObligationsRemaining: queueOutput.coverageSummary.mandatoryObligationsRemaining,
+        requiredSlotsTotal: queueOutput.coverageSummary.requiredSlotsTotal,
+        requiredSlotsFilled: queueOutput.coverageSummary.requiredSlotsFilled,
+        requiredSlotsRemaining: queueOutput.coverageSummary.requiredSlotsRemaining,
+        queue: queueOutput.queue,
+      });
+      
+      res.status(201).json({
+        ...savedQueue,
+        coverageSummary: queueOutput.coverageSummary,
+      });
+    } catch (error) {
+      console.error("Failed to build coverage slot queue:", error);
+      res.status(500).json({ error: "Failed to build coverage slot queue" });
     }
   });
 

@@ -427,3 +427,60 @@ export const insertAuditBundleSchema = createInsertSchema(auditBundles).omit({
 
 export type AuditBundle = typeof auditBundles.$inferSelect;
 export type InsertAuditBundle = z.infer<typeof insertAuditBundleSchema>;
+
+// ============== COVERAGE SLOT QUEUE ==============
+export const coverageSlotQueues = pgTable("coverage_slot_queues", {
+  id: serial("id").primaryKey(),
+  psurCaseId: integer("psur_case_id").references(() => psurCases.id, { onDelete: "cascade" }),
+  psurReference: text("psur_reference").notNull(),
+  profileId: text("profile_id").notNull(),
+  mandatoryObligationsTotal: integer("mandatory_obligations_total").notNull(),
+  mandatoryObligationsSatisfied: integer("mandatory_obligations_satisfied").notNull(),
+  mandatoryObligationsRemaining: integer("mandatory_obligations_remaining").notNull(),
+  requiredSlotsTotal: integer("required_slots_total").notNull(),
+  requiredSlotsFilled: integer("required_slots_filled").notNull(),
+  requiredSlotsRemaining: integer("required_slots_remaining").notNull(),
+  queue: jsonb("queue").notNull(),
+  generatedAt: timestamp("generated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const insertCoverageSlotQueueSchema = createInsertSchema(coverageSlotQueues).omit({
+  id: true,
+  generatedAt: true,
+});
+
+export type CoverageSlotQueue = typeof coverageSlotQueues.$inferSelect;
+export type InsertCoverageSlotQueue = z.infer<typeof insertCoverageSlotQueueSchema>;
+
+// Queue Item TypeScript type (for the queue jsonb array)
+export interface QueueSlotItem {
+  queue_rank: number;
+  slot_id: string;
+  slot_path: string;
+  slot_type: "narrative" | "table" | "kv" | "object" | "array";
+  requiredness: "required" | "conditional" | "required_if_applicable";
+  mapped_obligations: {
+    obligation_id: string;
+    requirement_level: "MUST" | "SHOULD" | "MUST_IF_APPLICABLE";
+    status: "unsatisfied" | "partially_satisfied" | "satisfied";
+    why_unsatisfied: string[];
+  }[];
+  evidence_requirements: {
+    required_evidence_types: string[];
+    available_evidence_types: string[];
+    missing_evidence_types: string[];
+    period_check: "pass" | "fail" | "unknown";
+  };
+  generation_contract: {
+    allowed_transformations: string[];
+    forbidden_transformations: string[];
+    must_include: string[];
+    trace_granularity: "paragraph" | "cell" | "key";
+  };
+  dependencies: {
+    must_fill_before: string[];
+    must_have_evidence_before: string[];
+  };
+  recommended_agents: string[];
+  acceptance_criteria: string[];
+}

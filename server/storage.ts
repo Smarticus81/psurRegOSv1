@@ -13,6 +13,7 @@ import {
   type SlotProposal, type InsertSlotProposal,
   type CoverageReport, type InsertCoverageReport,
   type AuditBundle, type InsertAuditBundle,
+  type CoverageSlotQueue, type InsertCoverageSlotQueue,
   users,
   companies,
   devices,
@@ -27,6 +28,7 @@ import {
   slotProposals,
   coverageReports,
   auditBundles,
+  coverageSlotQueues,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and } from "drizzle-orm";
@@ -94,6 +96,10 @@ export interface IStorage {
 
   getAuditBundles(psurCaseId?: number): Promise<AuditBundle[]>;
   createAuditBundle(bundle: InsertAuditBundle): Promise<AuditBundle>;
+
+  getCoverageSlotQueues(psurCaseId?: number): Promise<CoverageSlotQueue[]>;
+  getCoverageSlotQueue(id: number): Promise<CoverageSlotQueue | undefined>;
+  createCoverageSlotQueue(queue: InsertCoverageSlotQueue): Promise<CoverageSlotQueue>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -356,6 +362,23 @@ export class DatabaseStorage implements IStorage {
   async createAuditBundle(bundle: InsertAuditBundle): Promise<AuditBundle> {
     const [newBundle] = await db.insert(auditBundles).values(bundle).returning();
     return newBundle;
+  }
+
+  async getCoverageSlotQueues(psurCaseId?: number): Promise<CoverageSlotQueue[]> {
+    if (psurCaseId) {
+      return db.select().from(coverageSlotQueues).where(eq(coverageSlotQueues.psurCaseId, psurCaseId)).orderBy(desc(coverageSlotQueues.generatedAt));
+    }
+    return db.select().from(coverageSlotQueues).orderBy(desc(coverageSlotQueues.generatedAt));
+  }
+
+  async getCoverageSlotQueue(id: number): Promise<CoverageSlotQueue | undefined> {
+    const [queue] = await db.select().from(coverageSlotQueues).where(eq(coverageSlotQueues.id, id));
+    return queue;
+  }
+
+  async createCoverageSlotQueue(queue: InsertCoverageSlotQueue): Promise<CoverageSlotQueue> {
+    const [newQueue] = await db.insert(coverageSlotQueues).values(queue).returning();
+    return newQueue;
   }
 }
 

@@ -9,6 +9,7 @@ import {
   type GeneratedDocument, type InsertGeneratedDocument,
   type GRKBEntry, type InsertGRKBEntry,
   type PSURCase, type InsertPSURCase,
+  type EvidenceUpload, type InsertEvidenceUpload,
   type EvidenceAtom, type InsertEvidenceAtom,
   type SlotProposal, type InsertSlotProposal,
   type CoverageReport, type InsertCoverageReport,
@@ -24,6 +25,7 @@ import {
   generatedDocuments,
   grkbEntries,
   psurCases,
+  evidenceUploads,
   evidenceAtoms,
   slotProposals,
   coverageReports,
@@ -84,8 +86,17 @@ export interface IStorage {
   createPSURCase(psurCase: InsertPSURCase): Promise<PSURCase>;
   updatePSURCase(id: number, psurCase: Partial<InsertPSURCase>): Promise<PSURCase | undefined>;
 
+  getEvidenceUploads(psurCaseId?: number): Promise<EvidenceUpload[]>;
+  getEvidenceUpload(id: number): Promise<EvidenceUpload | undefined>;
+  createEvidenceUpload(upload: InsertEvidenceUpload): Promise<EvidenceUpload>;
+  updateEvidenceUpload(id: number, upload: Partial<InsertEvidenceUpload>): Promise<EvidenceUpload | undefined>;
+
   getEvidenceAtoms(psurCaseId?: number): Promise<EvidenceAtom[]>;
+  getEvidenceAtomsByUpload(uploadId: number): Promise<EvidenceAtom[]>;
+  getEvidenceAtomsByType(evidenceType: string, psurCaseId?: number): Promise<EvidenceAtom[]>;
+  getEvidenceAtomsByPeriod(startDate: Date, endDate: Date, psurCaseId?: number): Promise<EvidenceAtom[]>;
   createEvidenceAtom(atom: InsertEvidenceAtom): Promise<EvidenceAtom>;
+  createEvidenceAtomsBatch(atoms: InsertEvidenceAtom[]): Promise<EvidenceAtom[]>;
 
   getSlotProposals(psurCaseId?: number): Promise<SlotProposal[]>;
   createSlotProposal(proposal: InsertSlotProposal): Promise<SlotProposal>;
@@ -311,6 +322,28 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
+  async getEvidenceUploads(psurCaseId?: number): Promise<EvidenceUpload[]> {
+    if (psurCaseId) {
+      return db.select().from(evidenceUploads).where(eq(evidenceUploads.psurCaseId, psurCaseId)).orderBy(desc(evidenceUploads.createdAt));
+    }
+    return db.select().from(evidenceUploads).orderBy(desc(evidenceUploads.createdAt));
+  }
+
+  async getEvidenceUpload(id: number): Promise<EvidenceUpload | undefined> {
+    const [upload] = await db.select().from(evidenceUploads).where(eq(evidenceUploads.id, id));
+    return upload;
+  }
+
+  async createEvidenceUpload(upload: InsertEvidenceUpload): Promise<EvidenceUpload> {
+    const [newUpload] = await db.insert(evidenceUploads).values(upload).returning();
+    return newUpload;
+  }
+
+  async updateEvidenceUpload(id: number, upload: Partial<InsertEvidenceUpload>): Promise<EvidenceUpload | undefined> {
+    const [updated] = await db.update(evidenceUploads).set(upload).where(eq(evidenceUploads.id, id)).returning();
+    return updated;
+  }
+
   async getEvidenceAtoms(psurCaseId?: number): Promise<EvidenceAtom[]> {
     if (psurCaseId) {
       return db.select().from(evidenceAtoms).where(eq(evidenceAtoms.psurCaseId, psurCaseId)).orderBy(desc(evidenceAtoms.createdAt));
@@ -318,9 +351,37 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(evidenceAtoms).orderBy(desc(evidenceAtoms.createdAt));
   }
 
+  async getEvidenceAtomsByUpload(uploadId: number): Promise<EvidenceAtom[]> {
+    return db.select().from(evidenceAtoms).where(eq(evidenceAtoms.uploadId, uploadId)).orderBy(desc(evidenceAtoms.createdAt));
+  }
+
+  async getEvidenceAtomsByType(evidenceType: string, psurCaseId?: number): Promise<EvidenceAtom[]> {
+    if (psurCaseId) {
+      return db.select().from(evidenceAtoms)
+        .where(and(eq(evidenceAtoms.evidenceType, evidenceType), eq(evidenceAtoms.psurCaseId, psurCaseId)))
+        .orderBy(desc(evidenceAtoms.createdAt));
+    }
+    return db.select().from(evidenceAtoms).where(eq(evidenceAtoms.evidenceType, evidenceType)).orderBy(desc(evidenceAtoms.createdAt));
+  }
+
+  async getEvidenceAtomsByPeriod(startDate: Date, endDate: Date, psurCaseId?: number): Promise<EvidenceAtom[]> {
+    const allAtoms = await this.getEvidenceAtoms(psurCaseId);
+    return allAtoms.filter(atom => {
+      if (!atom.periodStart || !atom.periodEnd) return false;
+      const atomStart = new Date(atom.periodStart);
+      const atomEnd = new Date(atom.periodEnd);
+      return atomStart >= startDate && atomEnd <= endDate;
+    });
+  }
+
   async createEvidenceAtom(atom: InsertEvidenceAtom): Promise<EvidenceAtom> {
     const [newAtom] = await db.insert(evidenceAtoms).values(atom).returning();
     return newAtom;
+  }
+
+  async createEvidenceAtomsBatch(atoms: InsertEvidenceAtom[]): Promise<EvidenceAtom[]> {
+    if (atoms.length === 0) return [];
+    return db.insert(evidenceAtoms).values(atoms).returning();
   }
 
   async getSlotProposals(psurCaseId?: number): Promise<SlotProposal[]> {

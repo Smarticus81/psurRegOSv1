@@ -7,6 +7,7 @@ import {
   Settings,
   Activity,
   Box,
+  Database,
 } from "lucide-react";
 import {
   Sidebar,
@@ -26,6 +27,12 @@ const pmsNavItems = [
     title: "Device Portfolio",
     url: "/",
     icon: Box,
+  },
+  {
+    title: "Evidence",
+    url: "/evidence",
+    icon: Database,
+    badge: "New",
   },
   {
     title: "Data Inputs",

@@ -325,23 +325,70 @@ export const insertPsurCaseSchema = createInsertSchema(psurCases).omit({
 export type PSURCase = typeof psurCases.$inferSelect;
 export type InsertPSURCase = z.infer<typeof insertPsurCaseSchema>;
 
+// ============== EVIDENCE UPLOADS ==============
+export const evidenceUploadStatusEnum = ["pending", "processing", "completed", "failed", "rejected"] as const;
+export type EvidenceUploadStatus = typeof evidenceUploadStatusEnum[number];
+
+export const evidenceUploads = pgTable("evidence_uploads", {
+  id: serial("id").primaryKey(),
+  filename: text("filename").notNull(),
+  originalFilename: text("original_filename").notNull(),
+  mimeType: text("mime_type").notNull(),
+  fileSize: integer("file_size").notNull(),
+  sha256Hash: text("sha256_hash").notNull(),
+  evidenceType: text("evidence_type").notNull(),
+  deviceScopeId: integer("device_scope_id").references(() => devices.id),
+  psurCaseId: integer("psur_case_id").references(() => psurCases.id),
+  uploadedBy: text("uploaded_by").default("system"),
+  sourceSystem: text("source_system"),
+  extractionNotes: text("extraction_notes"),
+  periodStart: timestamp("period_start"),
+  periodEnd: timestamp("period_end"),
+  status: text("status").notNull().default("pending"),
+  processingErrors: jsonb("processing_errors"),
+  atomsCreated: integer("atoms_created").default(0),
+  recordsParsed: integer("records_parsed").default(0),
+  recordsRejected: integer("records_rejected").default(0),
+  storagePath: text("storage_path"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  processedAt: timestamp("processed_at"),
+});
+
+export const insertEvidenceUploadSchema = createInsertSchema(evidenceUploads).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type EvidenceUpload = typeof evidenceUploads.$inferSelect;
+export type InsertEvidenceUpload = z.infer<typeof insertEvidenceUploadSchema>;
+
 // ============== EVIDENCE ATOMS ==============
-export const evidenceTypeEnum = ["sales", "complaints", "incidents", "fsca", "capa", "pmcf", "literature", "registry", "exposure"] as const;
+export const evidenceTypeEnum = ["sales_volume", "complaint_record", "incident_record", "fsca", "capa", "pmcf", "literature", "registry", "exposure"] as const;
 export type EvidenceType = typeof evidenceTypeEnum[number];
+
+export const evidenceAtomStatusEnum = ["valid", "invalid", "superseded"] as const;
+export type EvidenceAtomStatus = typeof evidenceAtomStatusEnum[number];
 
 export const evidenceAtoms = pgTable("evidence_atoms", {
   id: serial("id").primaryKey(),
   psurCaseId: integer("psur_case_id").references(() => psurCases.id, { onDelete: "cascade" }),
+  uploadId: integer("upload_id").references(() => evidenceUploads.id),
   evidenceType: text("evidence_type").notNull(),
   sourceSystem: text("source_system").notNull(),
   extractDate: timestamp("extract_date").notNull(),
   queryFilters: jsonb("query_filters"),
-  contentHash: text("content_hash"),
+  contentHash: text("content_hash").notNull(),
   recordCount: integer("record_count"),
   periodStart: timestamp("period_start"),
   periodEnd: timestamp("period_end"),
-  data: jsonb("data"),
-  provenance: jsonb("provenance"),
+  deviceScopeId: integer("device_scope_id").references(() => devices.id),
+  data: jsonb("data").notNull(),
+  normalizedData: jsonb("normalized_data"),
+  provenance: jsonb("provenance").notNull(),
+  validationErrors: jsonb("validation_errors"),
+  status: text("status").notNull().default("valid"),
+  version: integer("version").notNull().default(1),
+  supersededBy: integer("superseded_by"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
@@ -352,6 +399,42 @@ export const insertEvidenceAtomSchema = createInsertSchema(evidenceAtoms).omit({
 
 export type EvidenceAtom = typeof evidenceAtoms.$inferSelect;
 export type InsertEvidenceAtom = z.infer<typeof insertEvidenceAtomSchema>;
+
+// Canonical validation schemas for evidence atoms
+export const salesVolumeAtomDataSchema = z.object({
+  deviceCode: z.string(),
+  productName: z.string().optional(),
+  quantity: z.number().int().nonnegative(),
+  region: z.string().optional(),
+  country: z.string().optional(),
+  distributionChannel: z.string().optional(),
+  saleDate: z.string().datetime().optional(),
+  periodStart: z.string().datetime(),
+  periodEnd: z.string().datetime(),
+  currency: z.string().optional(),
+  revenue: z.number().optional(),
+});
+
+export const complaintRecordAtomDataSchema = z.object({
+  complaintId: z.string(),
+  deviceCode: z.string(),
+  productName: z.string().optional(),
+  complaintDate: z.string().datetime(),
+  reportedBy: z.string().optional(),
+  description: z.string(),
+  category: z.string().optional(),
+  severity: z.enum(["low", "medium", "high", "critical"]).optional(),
+  deviceRelated: z.boolean().optional(),
+  patientInjury: z.boolean().optional(),
+  investigationStatus: z.string().optional(),
+  rootCause: z.string().optional(),
+  correctiveAction: z.string().optional(),
+  imdrfCode: z.string().optional(),
+  country: z.string().optional(),
+});
+
+export type SalesVolumeAtomData = z.infer<typeof salesVolumeAtomDataSchema>;
+export type ComplaintRecordAtomData = z.infer<typeof complaintRecordAtomDataSchema>;
 
 // ============== SLOT PROPOSALS ==============
 export const proposalStatusEnum = ["pending", "accepted", "rejected", "revised"] as const;
@@ -469,7 +552,16 @@ export interface QueueSlotItem {
     required_evidence_types: string[];
     available_evidence_types: string[];
     missing_evidence_types: string[];
-    period_check: "pass" | "fail" | "unknown";
+    in_period_evidence_types?: string[];
+    period_check: "pass" | "partial" | "fail" | "unknown";
+    evidence_coverage?: {
+      type: string;
+      available: boolean;
+      inPeriod: boolean;
+      coverage: "full" | "partial" | "none" | "out_of_period";
+      atomCount: number;
+      inPeriodCount: number;
+    }[];
   };
   generation_contract: {
     allowed_transformations: string[];

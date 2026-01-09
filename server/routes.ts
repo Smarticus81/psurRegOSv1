@@ -1,5 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import { createHash } from "crypto";
+import multer from "multer";
 import { storage } from "./storage";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
 import { 
@@ -24,6 +26,9 @@ import {
   compileCombinedDsl,
 } from "./orchestrator";
 import { buildCoverageSlotQueue } from "./queue-builder";
+import { parseEvidenceFile, createEvidenceAtomBatch } from "./evidence-parser";
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 export async function registerRoutes(
   httpServer: Server,
@@ -544,6 +549,245 @@ export async function registerRoutes(
       res.json(psurCase);
     } catch (error) {
       res.status(500).json({ error: "Failed to update PSUR case" });
+    }
+  });
+
+  // ============== EVIDENCE UPLOADS ==============
+  app.get("/api/evidence/uploads", async (req, res) => {
+    try {
+      const psurCaseId = req.query.psurCaseId ? parseInt(req.query.psurCaseId as string) : undefined;
+      const uploads = await storage.getEvidenceUploads(psurCaseId);
+      res.json(uploads);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch evidence uploads" });
+    }
+  });
+
+  app.get("/api/evidence/uploads/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const upload = await storage.getEvidenceUpload(id);
+      if (!upload) {
+        return res.status(404).json({ error: "Evidence upload not found" });
+      }
+      res.json(upload);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch evidence upload" });
+    }
+  });
+
+  app.post("/api/evidence/upload", upload.single("file"), async (req, res) => {
+    try {
+      const file = req.file;
+      if (!file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      const { evidence_type, device_scope_id, psur_case_id, source_system, extraction_notes, period_start, period_end } = req.body;
+
+      if (!evidence_type) {
+        return res.status(400).json({ error: "evidence_type is required" });
+      }
+
+      if (!["sales_volume", "complaint_record"].includes(evidence_type)) {
+        return res.status(400).json({ error: "Unsupported evidence_type. Use: sales_volume or complaint_record" });
+      }
+
+      const fileContent = file.buffer.toString("utf-8");
+      const sha256Hash = createHash("sha256").update(file.buffer).digest("hex");
+
+      const evidenceUpload = await storage.createEvidenceUpload({
+        filename: `${Date.now()}_${file.originalname}`,
+        originalFilename: file.originalname,
+        mimeType: file.mimetype,
+        fileSize: file.size,
+        sha256Hash,
+        evidenceType: evidence_type,
+        deviceScopeId: device_scope_id ? parseInt(device_scope_id) : null,
+        psurCaseId: psur_case_id ? parseInt(psur_case_id) : null,
+        uploadedBy: "system",
+        sourceSystem: source_system || "manual_upload",
+        extractionNotes: extraction_notes || null,
+        periodStart: period_start ? new Date(period_start) : null,
+        periodEnd: period_end ? new Date(period_end) : null,
+        status: "processing",
+        storagePath: null,
+      });
+
+      const parseResult = parseEvidenceFile(fileContent, evidence_type, {
+        periodStart: period_start,
+        periodEnd: period_end,
+      });
+
+      if (!parseResult.success) {
+        await storage.updateEvidenceUpload(evidenceUpload.id, {
+          status: "failed",
+          processingErrors: { errors: parseResult.errors },
+        });
+        return res.status(400).json({
+          error: "Failed to parse file",
+          details: parseResult.errors,
+          upload: evidenceUpload,
+        });
+      }
+
+      const atomBatch = createEvidenceAtomBatch(parseResult, evidenceUpload.id, {
+        psurCaseId: psur_case_id ? parseInt(psur_case_id) : undefined,
+        deviceScopeId: device_scope_id ? parseInt(device_scope_id) : undefined,
+        sourceSystem: source_system || "manual_upload",
+        periodStart: period_start ? new Date(period_start) : undefined,
+        periodEnd: period_end ? new Date(period_end) : undefined,
+      });
+
+      const createdAtoms = await storage.createEvidenceAtomsBatch(atomBatch.atoms as any);
+
+      await storage.updateEvidenceUpload(evidenceUpload.id, {
+        status: atomBatch.summary.valid > 0 ? "completed" : "rejected",
+        atomsCreated: createdAtoms.length,
+        recordsParsed: atomBatch.summary.total,
+        recordsRejected: atomBatch.summary.invalid,
+        processingErrors: atomBatch.rejected.length > 0 ? {
+          rejectedRecords: atomBatch.rejected.map(r => ({
+            rowIndex: r.rowIndex,
+            errors: r.validationErrors,
+          })),
+        } : null,
+        processedAt: new Date(),
+      });
+
+      const updatedUpload = await storage.getEvidenceUpload(evidenceUpload.id);
+
+      res.status(201).json({
+        upload: updatedUpload,
+        summary: {
+          totalRecords: atomBatch.summary.total,
+          validRecords: atomBatch.summary.valid,
+          rejectedRecords: atomBatch.summary.invalid,
+          atomsCreated: createdAtoms.length,
+        },
+        atoms: createdAtoms,
+      });
+    } catch (error) {
+      console.error("Evidence upload error:", error);
+      res.status(500).json({ error: "Failed to process evidence upload" });
+    }
+  });
+
+  app.get("/api/evidence", async (req, res) => {
+    try {
+      const psurCaseId = req.query.psurCaseId ? parseInt(req.query.psurCaseId as string) : undefined;
+      const evidenceType = req.query.evidenceType as string | undefined;
+      
+      let atoms;
+      if (evidenceType) {
+        atoms = await storage.getEvidenceAtomsByType(evidenceType, psurCaseId);
+      } else {
+        atoms = await storage.getEvidenceAtoms(psurCaseId);
+      }
+
+      const typeCoverage: Record<string, { count: number; periodStart: Date | null; periodEnd: Date | null }> = {};
+      for (const atom of atoms) {
+        if (!typeCoverage[atom.evidenceType]) {
+          typeCoverage[atom.evidenceType] = { count: 0, periodStart: null, periodEnd: null };
+        }
+        typeCoverage[atom.evidenceType].count++;
+        if (atom.periodStart) {
+          const start = new Date(atom.periodStart);
+          if (!typeCoverage[atom.evidenceType].periodStart || start < typeCoverage[atom.evidenceType].periodStart!) {
+            typeCoverage[atom.evidenceType].periodStart = start;
+          }
+        }
+        if (atom.periodEnd) {
+          const end = new Date(atom.periodEnd);
+          if (!typeCoverage[atom.evidenceType].periodEnd || end > typeCoverage[atom.evidenceType].periodEnd!) {
+            typeCoverage[atom.evidenceType].periodEnd = end;
+          }
+        }
+      }
+
+      res.json({
+        atoms,
+        totalCount: atoms.length,
+        coverageByType: typeCoverage,
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch evidence" });
+    }
+  });
+
+  app.get("/api/evidence/coverage", async (req, res) => {
+    try {
+      const psurCaseId = req.query.psurCaseId ? parseInt(req.query.psurCaseId as string) : undefined;
+      const periodStart = req.query.periodStart ? new Date(req.query.periodStart as string) : undefined;
+      const periodEnd = req.query.periodEnd ? new Date(req.query.periodEnd as string) : undefined;
+
+      const allAtoms = await storage.getEvidenceAtoms(psurCaseId);
+      
+      const mandatoryTypes = ["sales_volume", "complaint_record", "incident_record"];
+      const coverageByType: Record<string, {
+        count: number;
+        inPeriod: number;
+        outOfPeriod: number;
+        periodCoverage: { start: Date | null; end: Date | null };
+      }> = {};
+
+      for (const type of mandatoryTypes) {
+        coverageByType[type] = { count: 0, inPeriod: 0, outOfPeriod: 0, periodCoverage: { start: null, end: null } };
+      }
+
+      for (const atom of allAtoms) {
+        if (!coverageByType[atom.evidenceType]) {
+          coverageByType[atom.evidenceType] = { count: 0, inPeriod: 0, outOfPeriod: 0, periodCoverage: { start: null, end: null } };
+        }
+        
+        coverageByType[atom.evidenceType].count++;
+
+        if (periodStart && periodEnd && atom.periodStart && atom.periodEnd) {
+          const atomStart = new Date(atom.periodStart);
+          const atomEnd = new Date(atom.periodEnd);
+          if (atomStart >= periodStart && atomEnd <= periodEnd) {
+            coverageByType[atom.evidenceType].inPeriod++;
+          } else {
+            coverageByType[atom.evidenceType].outOfPeriod++;
+          }
+        }
+
+        if (atom.periodStart) {
+          const start = new Date(atom.periodStart);
+          if (!coverageByType[atom.evidenceType].periodCoverage.start || start < coverageByType[atom.evidenceType].periodCoverage.start!) {
+            coverageByType[atom.evidenceType].periodCoverage.start = start;
+          }
+        }
+        if (atom.periodEnd) {
+          const end = new Date(atom.periodEnd);
+          if (!coverageByType[atom.evidenceType].periodCoverage.end || end > coverageByType[atom.evidenceType].periodCoverage.end!) {
+            coverageByType[atom.evidenceType].periodCoverage.end = end;
+          }
+        }
+      }
+
+      const missingMandatory = mandatoryTypes.filter(type => coverageByType[type].count === 0);
+
+      let deviceMatchRate = 1.0;
+      if (psurCaseId) {
+        const psurCase = await storage.getPSURCase(psurCaseId);
+        if (psurCase && psurCase.leadingDeviceId) {
+          const matchedAtoms = allAtoms.filter(a => a.deviceScopeId === psurCase.leadingDeviceId);
+          deviceMatchRate = allAtoms.length > 0 ? matchedAtoms.length / allAtoms.length : 0;
+        }
+      }
+
+      res.json({
+        psurCaseId,
+        reportingPeriod: periodStart && periodEnd ? { start: periodStart, end: periodEnd } : null,
+        coverageByType,
+        missingMandatoryTypes: missingMandatory,
+        totalAtoms: allAtoms.length,
+        deviceMatchRate,
+        ready: missingMandatory.length === 0,
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to compute evidence coverage" });
     }
   });
 

@@ -1326,10 +1326,10 @@ export async function registerRoutes(
   // ============== DETERMINISTIC SLOT GENERATION ==============
   app.post("/api/slots/generate-deterministic", async (req, res) => {
     try {
-      const { psurCaseId, slotId, autoAdjudicate = true } = req.body;
+      const { psurCaseId: rawPsurCaseId, psurRef, slotId, autoAdjudicate = true } = req.body;
       
-      if (!psurCaseId || !slotId) {
-        return res.status(400).json({ error: "psurCaseId and slotId are required" });
+      if ((!rawPsurCaseId && !psurRef) || !slotId) {
+        return res.status(400).json({ error: "psurCaseId (or psurRef) and slotId are required" });
       }
 
       const { isDeterministicSupported, runDeterministicGenerator } = await import("./deterministic-generators");
@@ -1342,9 +1342,23 @@ export async function registerRoutes(
         });
       }
 
-      const psurCase = await storage.getPSURCase(psurCaseId);
-      if (!psurCase) {
-        return res.status(404).json({ error: "PSUR case not found" });
+      // Resolve psurCaseId from psurRef if needed
+      let psurCaseId = rawPsurCaseId;
+      let psurCase;
+      
+      if (psurRef && !rawPsurCaseId) {
+        // Look up PSUR case by reference
+        const allCases = await storage.getPSURCases();
+        psurCase = allCases.find(c => c.psurReference === psurRef);
+        if (!psurCase) {
+          return res.status(404).json({ error: `PSUR case not found for reference: ${psurRef}` });
+        }
+        psurCaseId = psurCase.id;
+      } else {
+        psurCase = await storage.getPSURCase(psurCaseId);
+        if (!psurCase) {
+          return res.status(404).json({ error: "PSUR case not found" });
+        }
       }
 
       const evidenceAtoms = await storage.getEvidenceAtoms(psurCaseId);
@@ -1368,6 +1382,8 @@ export async function registerRoutes(
       if (result.evidenceAtomIds.length === 0) {
         return res.status(422).json({
           success: false,
+          adjudication: "REJECTED",
+          reasons: ["evidence_atom_ids is empty - slot requires in-period evidence"],
           error: "Adjudication rejected: No evidence atoms",
           adjudicationResult: {
             decision: "rejected",
@@ -1402,6 +1418,8 @@ export async function registerRoutes(
       if (outOfPeriodAtoms.length > 0) {
         return res.status(422).json({
           success: false,
+          adjudication: "REJECTED",
+          reasons: [`${outOfPeriodAtoms.length} evidence atoms are outside the PSUR period`],
           error: "Adjudication rejected: Out-of-period evidence atoms detected",
           adjudicationResult: {
             decision: "rejected",
@@ -1500,6 +1518,10 @@ export async function registerRoutes(
         success: true,
         proposalId: result.proposalId,
         
+        // Component-compatible fields
+        adjudication: autoAdjudicate ? "ACCEPTED" : "PENDING",
+        reasons: [], // Empty for accepted proposals
+        
         // Full proposal JSON
         proposal: {
           id: proposal.id,
@@ -1558,8 +1580,10 @@ export async function registerRoutes(
     try {
       const { DETERMINISTIC_SUPPORTED_SLOTS } = await import("./deterministic-generators");
       const slotId = req.query.slotId as string | undefined;
+      const slotsArray = Array.from(DETERMINISTIC_SUPPORTED_SLOTS);
       res.json({
-        supportedSlots: Array.from(DETERMINISTIC_SUPPORTED_SLOTS),
+        supportedSlots: slotsArray,
+        supportedSlotIds: slotsArray, // Alias for component compatibility
         isSupported: slotId ? DETERMINISTIC_SUPPORTED_SLOTS.has(slotId) : null,
       });
     } catch (error) {

@@ -1,0 +1,152 @@
+// COPY/PASTE: deterministic slot generation (strict + debuggable)
+
+import crypto from "crypto";
+
+function dateOnly(d: string): string {
+  return d.length >= 10 ? d.slice(0, 10) : d;
+}
+
+function isInPeriod(dateISO: string, start: string, end: string): boolean {
+  const d = dateOnly(dateISO);
+  return d >= start && d <= end;
+}
+
+router.post("/generate-deterministic", async (req, res) => {
+  const { psurRef, slotId } = req.body;
+
+  if (!psurRef || !slotId) {
+    return res.status(400).json({ error: "psurRef and slotId required" });
+  }
+
+  if (slotId !== "PSUR.COMPLAINTS.SUMMARY_BY_REGION_SERIOUSNESS") {
+    return res.status(400).json({ error: "Unsupported deterministic slot" });
+  }
+
+  // 1) Load PSUR case
+  const psur = await db.psurCase.findUnique({ where: { psur_ref: psurRef } });
+  if (!psur) {
+    return res.status(404).json({ error: "PSUR not found" });
+  }
+
+  const periodStart = dateOnly(psur.start_date);
+  const periodEnd = dateOnly(psur.end_date);
+
+  // 2) Load complaint evidence
+  const atoms = await db.evidenceAtom.findMany({
+    where: {
+      psur_ref: psurRef,
+      atom_type: "complaint_record",
+    },
+  });
+
+  // 3) STRICT in-period filtering
+  const inPeriodAtoms = atoms.filter(a =>
+    isInPeriod(a.complaint.event_date, periodStart, periodEnd)
+  );
+
+  if (inPeriodAtoms.length === 0) {
+    return res.json({
+      adjudication: "REJECTED",
+      reasons: ["No in-period complaint evidence available"],
+      debug: {
+        totalAtoms: atoms.length,
+        inPeriodAtoms: 0,
+        periodStart,
+        periodEnd,
+      },
+    });
+  }
+
+  // 4) Deterministic aggregation
+  const counts: Record<string, Record<string, number>> = {};
+
+  for (const a of inPeriodAtoms) {
+    const region = (a.complaint.region || "UNKNOWN").toUpperCase();
+    const seriousness = a.complaint.seriousness;
+
+    if (!counts[region]) counts[region] = {};
+    if (!counts[region][seriousness]) counts[region][seriousness] = 0;
+
+    counts[region][seriousness]++;
+  }
+
+  const tableRows = Object.entries(counts).flatMap(([region, bySeriousness]) =>
+    Object.entries(bySeriousness).map(([seriousness, count]) => ({
+      region,
+      seriousness,
+      complaint_count: count,
+    }))
+  );
+
+  // 5) Build SlotProposal
+  const proposal = {
+    proposal_id: `PROP-${crypto.randomBytes(6).toString("hex")}`,
+    psur_ref: psurRef,
+    agent_id: "DeterministicSlotGenerator:v1",
+    slot_id: slotId,
+    payload: {
+      content_type: "table",
+      content: {
+        columns: ["region", "seriousness", "complaint_count"],
+        rows: tableRows,
+      },
+    },
+    evidence_atom_ids: inPeriodAtoms.map(a => a.atom_id),
+    claimed_obligation_ids: [
+      "EU.MDR.ANNEX_III.1.1.COMPLAINT_TRENDS",
+    ],
+    transformations_used: ["aggregate", "tabulate", "cite"],
+    method_statement:
+      `Filtered complaint_record EvidenceAtoms by event_date within PSUR period ` +
+      `(${periodStart} to ${periodEnd}) and counted by region and seriousness.`,
+  };
+
+  // 6) Schema validation
+  const validation = validateWithAjv("slot_proposal.schema.json", proposal);
+  if (!validation.ok) {
+    return res.json({
+      adjudication: "REJECTED",
+      reasons: ["SlotProposal schema validation failed"],
+      errors: validation.errors,
+      proposal,
+    });
+  }
+
+  // 7) Adjudicate
+  const adjudication = await adjudicateSlotProposal({ psurRef, proposal });
+
+  if (adjudication.status !== "ACCEPTED") {
+    return res.json({
+      adjudication: "REJECTED",
+      reasons: adjudication.reasons,
+      proposal,
+    });
+  }
+
+  // 8) Persist ACCEPTED proposal
+  await db.slotProposal.create({
+    data: {
+      ...proposal,
+      status: "ACCEPTED",
+      content_hash: crypto
+        .createHash("sha256")
+        .update(JSON.stringify(proposal))
+        .digest("hex"),
+    },
+  });
+
+  // 9) Recompute coverage
+  const coverage = await coverageService.recompute(psurRef);
+
+  return res.json({
+    adjudication: "ACCEPTED",
+    proposal,
+    coverage,
+    debug: {
+      totalAtoms: atoms.length,
+      inPeriodAtoms: inPeriodAtoms.length,
+      periodStart,
+      periodEnd,
+    },
+  });
+});

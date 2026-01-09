@@ -20,6 +20,7 @@ const psurPeriodSchema = JSON.parse(fs.readFileSync(path.join(schemasDir, "psur_
 const evidenceAtomBaseSchema = JSON.parse(fs.readFileSync(path.join(schemasDir, "evidence_atom_base.schema.json"), "utf-8"));
 const salesVolumeSchema = JSON.parse(fs.readFileSync(path.join(schemasDir, "evidence_atom.sales_volume.schema.json"), "utf-8"));
 const complaintRecordSchema = JSON.parse(fs.readFileSync(path.join(schemasDir, "evidence_atom.complaint_record.schema.json"), "utf-8"));
+const slotProposalSchema = JSON.parse(fs.readFileSync(path.join(schemasDir, "slot_proposal.schema.json"), "utf-8"));
 
 ajv.addSchema(deviceRefSchema, "device_ref.schema.json");
 ajv.addSchema(provenanceSchema, "provenance.schema.json");
@@ -27,6 +28,7 @@ ajv.addSchema(psurPeriodSchema, "psur_period.schema.json");
 ajv.addSchema(evidenceAtomBaseSchema, "evidence_atom_base.schema.json");
 ajv.addSchema(salesVolumeSchema, "evidence_atom.sales_volume.schema.json");
 ajv.addSchema(complaintRecordSchema, "evidence_atom.complaint_record.schema.json");
+ajv.addSchema(slotProposalSchema, "slot_proposal.schema.json");
 
 const typeSchemaMap: Record<string, string> = {
   "sales_volume": "evidence_atom.sales_volume.schema.json",
@@ -256,4 +258,116 @@ export function getAvailableSchemaTypes(): string[] {
 
 export function hasSchemaFor(atomType: string): boolean {
   return atomType in typeSchemaMap;
+}
+
+export interface SlotProposalInput {
+  slotId: string;
+  templateId: string;
+  content?: string;
+  evidenceAtomIds: number[];
+  claimedObligationIds: string[];
+  methodStatement: string;
+  transformations?: string[];
+  confidenceScore?: number;
+  psurCaseId?: number;
+  status?: "pending" | "accepted" | "rejected" | "needs_review";
+}
+
+export interface SlotProposalValidationResult {
+  valid: boolean;
+  errors: Array<{ path: string; message: string }>;
+  warnings: Array<{ path: string; message: string }>;
+}
+
+export function validateSlotProposal(proposal: unknown): SlotProposalValidationResult {
+  const validate = ajv.getSchema("slot_proposal.schema.json");
+  if (!validate) {
+    return { 
+      valid: false, 
+      errors: [{ path: "", message: "slot_proposal schema not found" }],
+      warnings: []
+    };
+  }
+  
+  const valid = validate(proposal);
+  const errors: Array<{ path: string; message: string }> = [];
+  const warnings: Array<{ path: string; message: string }> = [];
+  
+  if (!valid) {
+    for (const e of validate.errors || []) {
+      errors.push({
+        path: e.instancePath || "/",
+        message: e.message || "validation error"
+      });
+    }
+  }
+  
+  const p = proposal as Record<string, unknown>;
+  
+  if (!p.evidenceAtomIds || !Array.isArray(p.evidenceAtomIds) || p.evidenceAtomIds.length === 0) {
+    errors.push({ 
+      path: "/evidenceAtomIds", 
+      message: "evidenceAtomIds is required and must contain at least one atom ID for traceability" 
+    });
+  }
+  
+  if (!p.claimedObligationIds || !Array.isArray(p.claimedObligationIds) || p.claimedObligationIds.length === 0) {
+    errors.push({ 
+      path: "/claimedObligationIds", 
+      message: "claimedObligationIds is required and must claim at least one obligation" 
+    });
+  }
+  
+  if (!p.methodStatement || typeof p.methodStatement !== "string" || p.methodStatement.length < 10) {
+    errors.push({ 
+      path: "/methodStatement", 
+      message: "methodStatement is required and must explain how evidence was used (min 10 chars)" 
+    });
+  }
+  
+  if (p.confidenceScore !== undefined) {
+    const score = p.confidenceScore as number;
+    if (score < 0.5) {
+      warnings.push({ 
+        path: "/confidenceScore", 
+        message: `Low confidence score (${score}) - consider manual review` 
+      });
+    }
+  }
+  
+  return { valid: errors.length === 0, errors, warnings };
+}
+
+export function validateSlotProposalForAdjudication(
+  proposal: SlotProposalInput,
+  validObligationIds: string[]
+): SlotProposalValidationResult {
+  const baseValidation = validateSlotProposal(proposal);
+  
+  if (!baseValidation.valid) {
+    return baseValidation;
+  }
+  
+  const errors: Array<{ path: string; message: string }> = [];
+  const warnings = [...baseValidation.warnings];
+  
+  const invalidObligations = proposal.claimedObligationIds.filter(
+    id => !validObligationIds.includes(id)
+  );
+  
+  if (invalidObligations.length > 0) {
+    errors.push({
+      path: "/claimedObligationIds",
+      message: `Invalid obligation IDs: ${invalidObligations.join(", ")}. Must reference valid obligations from the template.`
+    });
+  }
+  
+  if (proposal.claimedObligationIds.length === 0) {
+    errors.push({
+      path: "/claimedObligationIds",
+      message: "Proposal must satisfy at least one obligation to be accepted"
+    });
+  }
+  
+  return { valid: errors.length === 0, errors, warnings };
 }

@@ -33,7 +33,7 @@ import {
   coverageSlotQueues,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, inArray } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -92,6 +92,7 @@ export interface IStorage {
   updateEvidenceUpload(id: number, upload: Partial<InsertEvidenceUpload>): Promise<EvidenceUpload | undefined>;
 
   getEvidenceAtoms(psurCaseId?: number): Promise<EvidenceAtom[]>;
+  getEvidenceAtomsByIds(ids: number[]): Promise<EvidenceAtom[]>;
   getEvidenceAtomsByUpload(uploadId: number): Promise<EvidenceAtom[]>;
   getEvidenceAtomsByType(evidenceType: string, psurCaseId?: number): Promise<EvidenceAtom[]>;
   getEvidenceAtomsByPeriod(startDate: Date, endDate: Date, psurCaseId?: number): Promise<EvidenceAtom[]>;
@@ -99,6 +100,8 @@ export interface IStorage {
   createEvidenceAtomsBatch(atoms: InsertEvidenceAtom[]): Promise<EvidenceAtom[]>;
 
   getSlotProposals(psurCaseId?: number): Promise<SlotProposal[]>;
+  getSlotProposal(id: number): Promise<SlotProposal | undefined>;
+  getAcceptedSlotProposals(psurCaseId?: number): Promise<SlotProposal[]>;
   createSlotProposal(proposal: InsertSlotProposal): Promise<SlotProposal>;
   updateSlotProposal(id: number, proposal: Partial<InsertSlotProposal>): Promise<SlotProposal | undefined>;
 
@@ -351,6 +354,11 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(evidenceAtoms).orderBy(desc(evidenceAtoms.createdAt));
   }
 
+  async getEvidenceAtomsByIds(ids: number[]): Promise<EvidenceAtom[]> {
+    if (ids.length === 0) return [];
+    return db.select().from(evidenceAtoms).where(inArray(evidenceAtoms.id, ids));
+  }
+
   async getEvidenceAtomsByUpload(uploadId: number): Promise<EvidenceAtom[]> {
     return db.select().from(evidenceAtoms).where(eq(evidenceAtoms.uploadId, uploadId)).orderBy(desc(evidenceAtoms.createdAt));
   }
@@ -389,6 +397,22 @@ export class DatabaseStorage implements IStorage {
       return db.select().from(slotProposals).where(eq(slotProposals.psurCaseId, psurCaseId)).orderBy(desc(slotProposals.createdAt));
     }
     return db.select().from(slotProposals).orderBy(desc(slotProposals.createdAt));
+  }
+
+  async getSlotProposal(id: number): Promise<SlotProposal | undefined> {
+    const [proposal] = await db.select().from(slotProposals).where(eq(slotProposals.id, id));
+    return proposal;
+  }
+
+  async getAcceptedSlotProposals(psurCaseId?: number): Promise<SlotProposal[]> {
+    if (psurCaseId) {
+      return db.select().from(slotProposals)
+        .where(and(eq(slotProposals.psurCaseId, psurCaseId), eq(slotProposals.status, "accepted")))
+        .orderBy(desc(slotProposals.createdAt));
+    }
+    return db.select().from(slotProposals)
+      .where(eq(slotProposals.status, "accepted"))
+      .orderBy(desc(slotProposals.createdAt));
   }
 
   async createSlotProposal(proposal: InsertSlotProposal): Promise<SlotProposal> {

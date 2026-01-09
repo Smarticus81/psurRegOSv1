@@ -36,7 +36,10 @@ import {
   validateEvidenceAtomPayload,
   buildEvidenceAtom,
   hasSchemaFor,
-  type ProvenanceInput
+  validateSlotProposal,
+  validateSlotProposalForAdjudication,
+  type ProvenanceInput,
+  type SlotProposalInput
 } from "./schema-validator";
 import { EVIDENCE_DEFINITIONS } from "@shared/schema";
 
@@ -1032,13 +1035,57 @@ export async function registerRoutes(
 
   app.post("/api/slot-proposals", async (req, res) => {
     try {
-      const parsed = insertSlotProposalSchema.safeParse(req.body);
+      const proposalInput: SlotProposalInput = {
+        slotId: req.body.slotId,
+        templateId: req.body.templateId,
+        content: req.body.content,
+        evidenceAtomIds: req.body.evidenceAtomIds || [],
+        claimedObligationIds: req.body.claimedObligationIds || [],
+        methodStatement: req.body.methodStatement || "",
+        transformations: req.body.transformations,
+        confidenceScore: req.body.confidenceScore,
+        psurCaseId: req.body.psurCaseId,
+        status: req.body.status,
+      };
+
+      const validation = validateSlotProposal(proposalInput);
+      if (!validation.valid) {
+        return res.status(400).json({ 
+          error: "Slot proposal validation failed",
+          validationErrors: validation.errors,
+          warnings: validation.warnings
+        });
+      }
+
+      if (proposalInput.evidenceAtomIds.length > 0) {
+        const atoms = await storage.getEvidenceAtomsByIds(proposalInput.evidenceAtomIds);
+        const foundIds = atoms.map(a => a.id);
+        const missingAtomIds = proposalInput.evidenceAtomIds.filter(id => !foundIds.includes(id));
+        if (missingAtomIds.length > 0) {
+          return res.status(400).json({
+            error: "Referenced evidence atoms do not exist",
+            missingAtomIds
+          });
+        }
+      }
+
+      const parsed = insertSlotProposalSchema.safeParse({
+        ...req.body,
+        evidenceAtomIds: proposalInput.evidenceAtomIds,
+        claimedObligationIds: proposalInput.claimedObligationIds,
+        methodStatement: proposalInput.methodStatement,
+      });
       if (!parsed.success) {
         return res.status(400).json({ error: parsed.error.errors });
       }
+      
       const proposal = await storage.createSlotProposal(parsed.data);
-      res.status(201).json(proposal);
+      res.status(201).json({
+        proposal,
+        validationWarnings: validation.warnings.length > 0 ? validation.warnings : undefined
+      });
     } catch (error) {
+      console.error("Slot proposal creation error:", error);
       res.status(500).json({ error: "Failed to create slot proposal" });
     }
   });
@@ -1053,6 +1100,69 @@ export async function registerRoutes(
       res.json(proposal);
     } catch (error) {
       res.status(500).json({ error: "Failed to update slot proposal" });
+    }
+  });
+
+  app.post("/api/slot-proposals/:id/adjudicate", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { decision, rejectionReasons } = req.body;
+
+      if (!["accepted", "rejected", "needs_review"].includes(decision)) {
+        return res.status(400).json({ error: "Invalid decision. Use: accepted, rejected, needs_review" });
+      }
+
+      const proposal = await storage.getSlotProposal(id);
+      if (!proposal) {
+        return res.status(404).json({ error: "Slot proposal not found" });
+      }
+
+      if (decision === "accepted") {
+        const proposalInput: SlotProposalInput = {
+          slotId: proposal.slotId,
+          templateId: proposal.templateId,
+          content: proposal.content || undefined,
+          evidenceAtomIds: proposal.evidenceAtomIds || [],
+          claimedObligationIds: proposal.claimedObligationIds || [],
+          methodStatement: proposal.methodStatement,
+          transformations: proposal.transformations || undefined,
+          psurCaseId: proposal.psurCaseId || undefined,
+        };
+
+        const obligationsResult = await listObligations();
+        if (!obligationsResult.success || !obligationsResult.data || obligationsResult.data.length === 0) {
+          return res.status(500).json({
+            error: "Cannot validate proposal - failed to retrieve valid obligations from orchestrator",
+            orchestratorError: obligationsResult.error
+          });
+        }
+        const validObligationIds = obligationsResult.data.map((o: { id: string }) => o.id);
+
+        const adjValidation = validateSlotProposalForAdjudication(proposalInput, validObligationIds);
+        if (!adjValidation.valid) {
+          return res.status(400).json({
+            error: "Proposal cannot be accepted - validation failed",
+            validationErrors: adjValidation.errors,
+            warnings: adjValidation.warnings
+          });
+        }
+      }
+
+      const updatedProposal = await storage.updateSlotProposal(id, {
+        status: decision,
+        rejectionReasons: decision === "rejected" ? rejectionReasons : null,
+        adjudicatedAt: new Date(),
+        adjudicationResult: {
+          decision,
+          adjudicatedAt: new Date().toISOString(),
+          rejectionReasons: decision === "rejected" ? rejectionReasons : undefined,
+        }
+      });
+
+      res.json(updatedProposal);
+    } catch (error) {
+      console.error("Adjudication error:", error);
+      res.status(500).json({ error: "Failed to adjudicate slot proposal" });
     }
   });
 

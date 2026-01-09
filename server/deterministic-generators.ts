@@ -1,15 +1,19 @@
 import type { EvidenceAtom, PSURCase } from "@shared/schema";
 import { FORMQAR_SLOTS, getSlotDefinitionsForTemplate } from "./queue-builder";
+import crypto from "crypto";
 
 export interface DeterministicGeneratorResult {
   success: boolean;
   slotId: string;
+  proposalId: string;
   contentType: "table" | "narrative" | "object";
   content: unknown;
+  contentHash: string;
   evidenceAtomIds: number[];
   methodStatement: string;
   claimedObligationIds: string[];
   transformationsUsed: string[];
+  agentId: string;
   error?: string;
   errorDetails?: {
     totalAtoms: number;
@@ -18,6 +22,14 @@ export interface DeterministicGeneratorResult {
     periodEnd: string;
     reason: string;
   };
+}
+
+function generateProposalId(): string {
+  return `PROP-${crypto.randomBytes(6).toString("hex")}`;
+}
+
+function sha256Json(obj: unknown): string {
+  return crypto.createHash("sha256").update(JSON.stringify(obj)).digest("hex");
 }
 
 export interface TableContent {
@@ -75,16 +87,21 @@ export function generateComplaintsByRegionSeverity(
   const periodStart = normalizeToDate(psurCase.startPeriod);
   const periodEnd = normalizeToDate(psurCase.endPeriod);
   
+  const agentId = "DeterministicSlotGenerator:v1";
+  
   if (!periodStart || !periodEnd) {
     return {
       success: false,
       slotId,
+      proposalId: generateProposalId(),
       contentType: "table",
       content: null,
+      contentHash: "",
       evidenceAtomIds: [],
       methodStatement: "",
       claimedObligationIds: slotMetadata.obligationIds,
       transformationsUsed: slotMetadata.allowedTransformations,
+      agentId,
       error: "Invalid PSUR period dates - cannot determine reporting period",
       errorDetails: {
         totalAtoms: complaintAtoms.length,
@@ -100,12 +117,15 @@ export function generateComplaintsByRegionSeverity(
     return {
       success: false,
       slotId,
+      proposalId: generateProposalId(),
       contentType: "table",
       content: null,
+      contentHash: "",
       evidenceAtomIds: [],
       methodStatement: "",
       claimedObligationIds: slotMetadata.obligationIds,
       transformationsUsed: slotMetadata.allowedTransformations,
+      agentId,
       error: "No complaint_record evidence atoms available",
       errorDetails: {
         totalAtoms: 0,
@@ -141,12 +161,15 @@ export function generateComplaintsByRegionSeverity(
     return {
       success: false,
       slotId,
+      proposalId: generateProposalId(),
       contentType: "table",
       content: null,
+      contentHash: "",
       evidenceAtomIds: complaintAtoms.map(a => a.id),
       methodStatement: "",
       claimedObligationIds: slotMetadata.obligationIds,
       transformationsUsed: slotMetadata.allowedTransformations,
+      agentId,
       error: `No complaint records found within the PSUR period`,
       errorDetails: {
         totalAtoms: complaintAtoms.length,
@@ -224,12 +247,15 @@ export function generateComplaintsByRegionSeverity(
   return {
     success: true,
     slotId,
+    proposalId: generateProposalId(),
     contentType: "table",
     content: tableContent,
+    contentHash: sha256Json(tableContent),
     evidenceAtomIds: inPeriodAtoms.map(a => a.id),
     methodStatement,
     claimedObligationIds: slotMetadata.obligationIds,
     transformationsUsed: slotMetadata.allowedTransformations,
+    agentId,
   };
 }
 
@@ -240,17 +266,21 @@ export function runDeterministicGenerator(
   templateId: string
 ): DeterministicGeneratorResult {
   const slotMetadata = getSlotMetadata(slotId, templateId);
+  const agentId = "DeterministicSlotGenerator:v1";
   
   if (!slotMetadata) {
     return {
       success: false,
       slotId,
+      proposalId: generateProposalId(),
       contentType: "table",
       content: null,
+      contentHash: "",
       evidenceAtomIds: [],
       methodStatement: "",
       claimedObligationIds: [],
       transformationsUsed: [],
+      agentId,
       error: `Slot definition not found for slot '${slotId}' in template '${templateId}'`,
     };
   }
@@ -266,12 +296,15 @@ export function runDeterministicGenerator(
       return {
         success: false,
         slotId,
+        proposalId: generateProposalId(),
         contentType: "table",
         content: null,
+        contentHash: "",
         evidenceAtomIds: [],
         methodStatement: "",
         claimedObligationIds: slotMetadata.obligationIds,
         transformationsUsed: slotMetadata.allowedTransformations,
+        agentId,
         error: `No deterministic generator implemented for slot: ${slotId}`,
       };
   }

@@ -1374,7 +1374,9 @@ export async function registerRoutes(
           decision: "accepted",
           adjudicatedAt: new Date().toISOString(),
           autoAdjudicated: true,
-          reason: "Deterministic generation - no AI inference"
+          reason: "Deterministic generation - no AI inference",
+          agentId: result.agentId,
+          contentHash: result.contentHash,
         } : null,
         adjudicatedAt: autoAdjudicate ? new Date() : null
       };
@@ -1383,12 +1385,15 @@ export async function registerRoutes(
 
       res.status(201).json({
         success: true,
+        proposalId: result.proposalId,
         proposal,
         generationResult: {
           contentType: result.contentType,
+          contentHash: result.contentHash,
           evidenceAtomCount: result.evidenceAtomIds.length,
           methodStatement: result.methodStatement,
           transformationsUsed: result.transformationsUsed,
+          agentId: result.agentId,
           autoAdjudicated: autoAdjudicate
         }
       });

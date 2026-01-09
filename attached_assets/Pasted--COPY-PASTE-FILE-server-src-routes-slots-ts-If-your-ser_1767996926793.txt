@@ -1,0 +1,201 @@
+// COPY/PASTE FILE: server/src/routes/slots.ts
+// (If your server folder differs, keep the content and adjust the path/imports.)
+
+import { Router } from "express";
+import crypto from "crypto";
+import { z } from "zod";
+
+/**
+ * IMPORTANT:
+ * Replace these imports with your actual project services.
+ * - db: your database client
+ * - validateWithAjv: your AJV schema validator helper
+ * - adjudicateSlotProposal: your existing adjudicator function
+ */
+import { db } from "../db";
+import { validateWithAjv } from "../validation/ajv";
+import { adjudicateSlotProposal } from "../services/adjudicator";
+
+const router = Router();
+
+/**
+ * Slot supported by deterministic generator (no AI)
+ */
+const DETERMINISTIC_SLOT_IDS = new Set([
+  "PSUR.COMPLAINTS.SUMMARY_BY_REGION_SERIOUSNESS",
+]);
+
+const BodySchema = z.object({
+  psurRef: z.string().min(1),
+  slotId: z.string().min(1),
+});
+
+type ComplaintAtom = {
+  atom_id: string;
+  atom_type: "complaint_record";
+  psur_period: { start_date: string; end_date: string };
+  complaint: {
+    event_date: string; // YYYY-MM-DD
+    region?: string | null;
+    country: string;
+    seriousness: "serious_incident" | "non_serious" | "unknown";
+  };
+};
+
+function toDateOnly(d: string): string {
+  // normalize "YYYY-MM-DD" or date-time to date
+  return d.length >= 10 ? d.slice(0, 10) : d;
+}
+
+function inPeriod(dateISO: string, startISO: string, endISO: string): boolean {
+  const d = toDateOnly(dateISO);
+  return d >= startISO && d <= endISO;
+}
+
+function sha256Json(obj: unknown): string {
+  return crypto.createHash("sha256").update(JSON.stringify(obj)).digest("hex");
+}
+
+function buildDeterministicComplaintsTable(atoms: ComplaintAtom[], period: { start: string; end: string }) {
+  // filter in-period using complaint.event_date
+  const inScope = atoms.filter(a => inPeriod(a.complaint.event_date, period.start, period.end));
+  const counts = new Map<string, number>();
+
+  for (const a of inScope) {
+    const region = (a.complaint.region || "UNKNOWN").toUpperCase();
+    const seriousness = a.complaint.seriousness;
+    const key = `${region}||${seriousness}`;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+
+  // build rows
+  const rows = Array.from(counts.entries())
+    .map(([key, count]) => {
+      const [region, seriousness] = key.split("||");
+      return { region, seriousness, complaint_count: count };
+    })
+    .sort((a, b) => (a.region + a.seriousness).localeCompare(b.region + b.seriousness));
+
+  return {
+    columns: ["region", "seriousness", "complaint_count"],
+    rows,
+    totals: {
+      complaints_in_period: inScope.length,
+      distinct_region_seriousness_cells: rows.length,
+    },
+  };
+}
+
+router.post("/generate-deterministic", async (req, res) => {
+  const parsed = BodySchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid body", details: parsed.error.flatten() });
+  }
+
+  const { psurRef, slotId } = parsed.data;
+
+  if (!DETERMINISTIC_SLOT_IDS.has(slotId)) {
+    return res.status(400).json({ error: "slotId not supported by deterministic generator", slotId });
+  }
+
+  // 1) Load PSUR case (period + scope)
+  const psurCase = await db.psurCase.findUnique({ where: { psur_ref: psurRef } });
+  if (!psurCase) return res.status(404).json({ error: "PSUR case not found", psurRef });
+
+  const period = {
+    start: toDateOnly(psurCase.start_date),
+    end: toDateOnly(psurCase.end_date),
+  };
+
+  // 2) Fetch complaint atoms for this PSUR scope
+  const complaintAtoms: ComplaintAtom[] = await db.evidenceAtom.findMany({
+    where: {
+      psur_ref: psurRef,
+      atom_type: "complaint_record",
+    },
+    select: {
+      atom_id: true,
+      atom_type: true,
+      psur_period: true,
+      complaint: true,
+    },
+  });
+
+  if (!complaintAtoms.length) {
+    return res.status(400).json({
+      adjudication: "REJECTED",
+      reasons: ["Missing required evidence: complaint_record atoms not found for this PSUR case."],
+    });
+  }
+
+  // 3) Generate deterministic payload for slot
+  const table = buildDeterministicComplaintsTable(complaintAtoms, period);
+
+  const evidenceAtomIds = complaintAtoms.map(a => a.atom_id);
+
+  const proposal = {
+    proposal_id: `PROP-${crypto.randomBytes(6).toString("hex")}`,
+    psur_ref: psurRef,
+    agent_id: "DeterministicSlotGenerator:v1",
+    slot_id: slotId,
+    payload: {
+      content_type: "table",
+      content: table,
+    },
+    evidence_atom_ids: evidenceAtomIds,
+    claimed_obligation_ids: [
+      // Use your real obligation IDs here if you have them; keep at least one.
+      "EU.PSUR.CONTENT.SAFETY_SUMMARY.COMPLAINTS_TRENDS"
+    ],
+    transformations_used: ["aggregate", "tabulate", "cite"],
+    method_statement:
+      `Counted complaint_record EvidenceAtoms where complaint.event_date is within PSUR period ` +
+      `(${period.start} to ${period.end}). Grouped counts by (region, seriousness).`,
+  };
+
+  // 4) Validate SlotProposal schema (AJV)
+  const valid = validateWithAjv("slot_proposal.schema.json", proposal);
+  if (!valid.ok) {
+    return res.status(400).json({
+      adjudication: "REJECTED",
+      reasons: ["SlotProposal schema validation failed", ...(valid.errors || [])],
+    });
+  }
+
+  // 5) Adjudicate (your existing logic)
+  const adjudication = await adjudicateSlotProposal({ psurRef, proposal });
+
+  // 6) Persist accepted proposal + coverage updates (match your existing data model)
+  if (adjudication.status === "ACCEPTED") {
+    const contentHash = sha256Json(proposal);
+
+    await db.slotProposal.create({
+      data: {
+        proposal_id: proposal.proposal_id,
+        psur_ref: psurRef,
+        slot_id: slotId,
+        agent_id: proposal.agent_id,
+        payload: proposal.payload,
+        evidence_atom_ids: proposal.evidence_atom_ids,
+        claimed_obligation_ids: proposal.claimed_obligation_ids,
+        transformations_used: proposal.transformations_used,
+        method_statement: proposal.method_statement,
+        content_hash: contentHash,
+        status: "ACCEPTED",
+      },
+    });
+
+    // If you already have a coverage service, call it here.
+    // Example:
+    // await coverageService.recompute(psurRef);
+
+    return res.json({ adjudication: "ACCEPTED", proposalId: proposal.proposal_id });
+  }
+
+  return res.json({
+    adjudication: "REJECTED",
+    reasons: adjudication.reasons || ["Adjudicator rejected proposal"],
+  });
+});
+
+export default router;

@@ -68,7 +68,7 @@ const ANNEX_I_SLOTS: SlotDefinition[] = [
   { slot_id: "conclusions.summary", slot_path: "Conclusions / summary", slot_type: "narrative", requiredness: "required", obligation_ids: ["EU.PSUR.CONTENT.CONCLUSIONS"], evidence_types: [], allowed_transformations: ["summarize"], trace_granularity: "paragraph", dependencies: ["benefit_risk.evaluation"], acceptance_criteria: ["Conclusions consistent with prior sections.", "Actions recommended if needed.", "Next PSUR period stated."], tier: 4, recommended_agents: ["ConclusionAgent"] },
 ];
 
-const FORMQAR_SLOTS: SlotDefinition[] = [
+export const FORMQAR_SLOTS: SlotDefinition[] = [
   // ==================== SECTION A: ADMINISTRATIVE (8 slots) ====================
   { slot_id: "A.01.manufacturer_name", slot_path: "A / Administrative / Manufacturer Legal Name", slot_type: "kv", requiredness: "required", obligation_ids: ["MDCG_COVER_MIN_FIELDS", "FORMQAR_A_MANUFACTURER"], evidence_types: ["manufacturer_master_data"], allowed_transformations: ["cite"], trace_granularity: "key", dependencies: [], acceptance_criteria: ["Legal entity name matches registration."], tier: 0, recommended_agents: ["IdentitySlotFiller"] },
   { slot_id: "A.02.manufacturer_address", slot_path: "A / Administrative / Manufacturer Address", slot_type: "object", requiredness: "required", obligation_ids: ["MDCG_COVER_MIN_FIELDS", "FORMQAR_A_MANUFACTURER"], evidence_types: ["manufacturer_master_data"], allowed_transformations: ["cite"], trace_granularity: "key", dependencies: [], acceptance_criteria: ["Full legal address with country code."], tier: 0, recommended_agents: ["IdentitySlotFiller"] },

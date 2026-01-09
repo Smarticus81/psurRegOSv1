@@ -345,12 +345,26 @@ export default function EvidencePage() {
         body: formData,
       });
 
-      const result = await response.json();
+      // Read raw body first (works for JSON and non-JSON)
+      const text = await response.text();
+      let result: any = null;
+      try {
+        result = text ? JSON.parse(text) : null;
+      } catch {
+        result = text;
+      }
 
       if (!response.ok) {
+        console.error("UPLOAD FAILED", {
+          status: response.status,
+          statusText: response.statusText,
+          payload: result,
+        });
         toast({ 
           title: "Upload failed", 
-          description: result.error || "Failed to process file", 
+          description: typeof result === "string" 
+            ? result 
+            : (result?.error || result?.message || JSON.stringify(result) || "Failed to process file"), 
           variant: "destructive" 
         });
         return;

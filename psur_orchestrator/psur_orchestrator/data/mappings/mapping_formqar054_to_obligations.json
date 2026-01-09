@@ -1,0 +1,168 @@
+{
+  "mapping_id": "mapping.formqar054_to_obligations.v1",
+  "template_id": "FormQAR-054_C",
+  "obligations": {
+    "MDCG_A1_COVER_MIN_FIELDS": {
+      "authority": "MDCG_2022_21",
+      "anchor": "Annex I - PSUR cover page minimum fields",
+      "requirement": "Cover page shall at least include manufacturer info, device(s) covered, notified body name+number, PSUR reference, version, data collection period, and table of contents.",
+      "evidence_minimum": ["source_pointer"],
+      "citations": ["MDCG_2022_21_ANNEX_I_COVER_MIN"]
+    },
+    "MDCG_A1_EXEC_SUMMARY_MIN_FIELDS": {
+      "authority": "MDCG_2022_21",
+      "anchor": "Annex I - Executive summary content",
+      "requirement": "If executive summary is produced, include actions by manufacturer since previous PSUR, actions by NB from previous review, and period change justification/comparability; include a clear statement on whether benefit-risk profile impacted or unchanged.",
+      "evidence_minimum": ["source_pointer", "exclusions_and_justification"],
+      "citations": ["MDCG_2022_21_ANNEX_I_EXEC_SUMMARY"]
+    },
+    "MDCG_A1_DEVICE_DESCRIPTION_INTENDED_USE": {
+      "authority": "MDCG_2022_21",
+      "anchor": "Annex I - Description of devices covered and intended uses (Art 86.1)",
+      "requirement": "Provide overview of devices covered, added/removed devices, device classification, first key dates, device status, intended purpose per IFU, indications/contraindications/target populations; for MDR devices break down by Basic UDI-DI and describe changes since previous PSUR.",
+      "evidence_minimum": ["source_pointer"],
+      "citations": ["MDCG_2022_21_ANNEX_I_DEVICE_DESCRIPTION"]
+    },
+    "MDCG_A1_SALES_VOLUME": {
+      "authority": "MDCG_2022_21",
+      "anchor": "Annex I - Sales volume and population exposure",
+      "requirement": "Provide sales volume data by region and estimate patient population exposure with justification for methodology.",
+      "evidence_minimum": ["source_pointer", "aggregation_math"],
+      "citations": ["MDCG_2022_21_ANNEX_I_SALES"]
+    },
+    "MDCG_A1_SERIOUS_INCIDENTS": {
+      "authority": "MDCG_2022_21",
+      "anchor": "Annex I - Serious incidents and FSCA",
+      "requirement": "Summarize serious incidents using IMDRF problem codes, investigation findings by region over time, and health impact categorization.",
+      "evidence_minimum": ["source_pointer", "filters", "transform_steps"],
+      "citations": ["MDCG_2022_21_ANNEX_I_INCIDENTS"]
+    },
+    "MDCG_A1_TREND_REPORTING": {
+      "authority": "MDCG_2022_21",
+      "anchor": "Annex I - Trend reporting",
+      "requirement": "Report on statistically significant upward trends in incidents or complaints that require action.",
+      "evidence_minimum": ["source_pointer", "aggregation_math"],
+      "citations": ["MDCG_2022_21_ANNEX_I_TRENDS"]
+    },
+    "MDCG_A1_PMCF_SUMMARY": {
+      "authority": "MDCG_2022_21",
+      "anchor": "Annex I - PMCF main findings",
+      "requirement": "Summarize PMCF activities and main findings during the reporting period.",
+      "evidence_minimum": ["source_pointer"],
+      "citations": ["MDCG_2022_21_ANNEX_I_PMCF"]
+    },
+    "MDCG_A1_LITERATURE_REVIEW": {
+      "authority": "MDCG_2022_21",
+      "anchor": "Annex I - Literature review",
+      "requirement": "Summarize literature review methodology and any findings relevant to device safety.",
+      "evidence_minimum": ["source_pointer", "query_params"],
+      "citations": ["MDCG_2022_21_ANNEX_I_LITERATURE"]
+    },
+    "MDCG_A1_BENEFIT_RISK": {
+      "authority": "MDCG_2022_21",
+      "anchor": "Annex I - Benefit-risk conclusions",
+      "requirement": "Provide overall benefit-risk conclusion and statement on whether profile is changed or unchanged from previous assessment.",
+      "evidence_minimum": ["source_pointer", "assumptions"],
+      "citations": ["MDCG_2022_21_ANNEX_I_BENEFIT_RISK"]
+    },
+    "UK_REQUEST_AVAILABILITY_3_WORKING_DAYS": {
+      "authority": "UK",
+      "anchor": "UK PMS expectations (availability upon request)",
+      "requirement": "PSURs shall be made available to MHRA within 3 working days upon request.",
+      "evidence_minimum": ["source_pointer"],
+      "citations": ["UK_PMS_WI_3_WORKING_DAYS"]
+    }
+  },
+  "slot_to_obligation_refs": {
+    "cover.manufacturer.company_name": ["MDCG_A1_COVER_MIN_FIELDS"],
+    "cover.manufacturer.address": ["MDCG_A1_COVER_MIN_FIELDS"],
+    "cover.manufacturer.srn": ["MDCG_A1_COVER_MIN_FIELDS"],
+    "cover.authorised_rep.name_address": ["MDCG_A1_COVER_MIN_FIELDS"],
+    "cover.authorised_rep.srn": ["MDCG_A1_COVER_MIN_FIELDS"],
+    "cover.device.device_names": ["MDCG_A1_COVER_MIN_FIELDS"],
+    "cover.device.basic_udi_di": ["MDCG_A1_COVER_MIN_FIELDS"],
+    "cover.device.family_name_legacy": ["MDCG_A1_COVER_MIN_FIELDS"],
+    "cover.regulatory.certificate_number": ["MDCG_A1_COVER_MIN_FIELDS"],
+    "cover.regulatory.certificate_issue_date": ["MDCG_A1_COVER_MIN_FIELDS"],
+    "cover.regulatory.notified_body.name": ["MDCG_A1_COVER_MIN_FIELDS"],
+    "cover.regulatory.notified_body.number": ["MDCG_A1_COVER_MIN_FIELDS"],
+    "cover.uk.request_availability_within_3_working_days": ["UK_REQUEST_AVAILABILITY_3_WORKING_DAYS"],
+    "cover.document.data_collection_period.start_date": ["MDCG_A1_COVER_MIN_FIELDS"],
+    "cover.document.data_collection_period.end_date": ["MDCG_A1_COVER_MIN_FIELDS"],
+    "cover.document.psur_cadence": [],
+
+    "A.prev_psur.actions_description": ["MDCG_A1_EXEC_SUMMARY_MIN_FIELDS"],
+    "A.prev_psur.status": ["MDCG_A1_EXEC_SUMMARY_MIN_FIELDS"],
+    "A.prev_psur.status_details": ["MDCG_A1_EXEC_SUMMARY_MIN_FIELDS"],
+    "A.nb_review.reviewed": ["MDCG_A1_EXEC_SUMMARY_MIN_FIELDS"],
+    "A.nb_review.actions_taken": ["MDCG_A1_EXEC_SUMMARY_MIN_FIELDS"],
+    "A.nb_review.status": ["MDCG_A1_EXEC_SUMMARY_MIN_FIELDS"],
+    "A.period_change.changed": ["MDCG_A1_EXEC_SUMMARY_MIN_FIELDS"],
+    "A.period_change.justification": ["MDCG_A1_EXEC_SUMMARY_MIN_FIELDS"],
+    "A.period_change.impact_on_comparability": ["MDCG_A1_EXEC_SUMMARY_MIN_FIELDS"],
+    "A.benefit_risk.conclusion_flag": ["MDCG_A1_EXEC_SUMMARY_MIN_FIELDS", "MDCG_A1_BENEFIT_RISK"],
+    "A.benefit_risk.high_level_summary": ["MDCG_A1_EXEC_SUMMARY_MIN_FIELDS", "MDCG_A1_BENEFIT_RISK"],
+
+    "B.device.product_name": ["MDCG_A1_DEVICE_DESCRIPTION_INTENDED_USE"],
+    "B.device.implantable": ["MDCG_A1_DEVICE_DESCRIPTION_INTENDED_USE"],
+    "B.classification.eu_mdr.class": ["MDCG_A1_DEVICE_DESCRIPTION_INTENDED_USE"],
+    "B.classification.eu_mdr.tech_doc_number": ["MDCG_A1_DEVICE_DESCRIPTION_INTENDED_USE"],
+    "B.classification.eu_mdr.rule": ["MDCG_A1_DEVICE_DESCRIPTION_INTENDED_USE"],
+    "B.classification.uk.class": ["MDCG_A1_DEVICE_DESCRIPTION_INTENDED_USE"],
+    "B.classification.uk.conformity_assessment_details": ["MDCG_A1_DEVICE_DESCRIPTION_INTENDED_USE"],
+    "B.classification.uk.rule": ["MDCG_A1_DEVICE_DESCRIPTION_INTENDED_USE"],
+    "B.timeline.eu.first_declaration_of_conformity": ["MDCG_A1_DEVICE_DESCRIPTION_INTENDED_USE"],
+    "B.timeline.eu.first_ec_eu_certificate": ["MDCG_A1_DEVICE_DESCRIPTION_INTENDED_USE"],
+    "B.timeline.eu.first_ce_marking": ["MDCG_A1_DEVICE_DESCRIPTION_INTENDED_USE"],
+    "B.timeline.uk.first_date_certification_or_doc": ["MDCG_A1_DEVICE_DESCRIPTION_INTENDED_USE"],
+    "B.timeline.uk.first_ce_marking": ["MDCG_A1_DEVICE_DESCRIPTION_INTENDED_USE"],
+    "B.timeline.uk.first_market_placement": ["MDCG_A1_DEVICE_DESCRIPTION_INTENDED_USE"],
+    "B.obligation_status.market_status": ["MDCG_A1_DEVICE_DESCRIPTION_INTENDED_USE"],
+    "B.description.device_description": ["MDCG_A1_DEVICE_DESCRIPTION_INTENDED_USE"],
+    "B.description.intended_purpose_use": ["MDCG_A1_DEVICE_DESCRIPTION_INTENDED_USE"],
+    "B.description.indications": ["MDCG_A1_DEVICE_DESCRIPTION_INTENDED_USE"],
+    "B.description.contraindications": ["MDCG_A1_DEVICE_DESCRIPTION_INTENDED_USE"],
+    "B.description.target_populations": ["MDCG_A1_DEVICE_DESCRIPTION_INTENDED_USE"],
+    "B.mdr_breakdown.basic_udi_dis": ["MDCG_A1_DEVICE_DESCRIPTION_INTENDED_USE"],
+    "B.mdr_breakdown.changes_from_previous_psur": ["MDCG_A1_DEVICE_DESCRIPTION_INTENDED_USE"],
+
+    "C.sales.methodology.criteria_selected": ["MDCG_A1_SALES_VOLUME"],
+    "C.sales.table1_annual_units_by_region": ["MDCG_A1_SALES_VOLUME"],
+    "C.exposure.estimated_patients_exposed.justification": ["MDCG_A1_SALES_VOLUME"],
+    "C.exposure.population_characteristics": ["MDCG_A1_SALES_VOLUME"],
+
+    "D.serious_incidents.summary": ["MDCG_A1_SERIOUS_INCIDENTS"],
+    "D.serious_incidents.table2_imdrf_problem_by_region": ["MDCG_A1_SERIOUS_INCIDENTS"],
+    "D.serious_incidents.table3_investigation_findings_by_region_over_time": ["MDCG_A1_SERIOUS_INCIDENTS"],
+    "D.serious_incidents.table4_health_impact_by_investigation_conclusion": ["MDCG_A1_SERIOUS_INCIDENTS"],
+    "D.serious_incidents.new_incident_types": ["MDCG_A1_SERIOUS_INCIDENTS"],
+
+    "E.customer_feedback.summary": ["MDCG_A1_SERIOUS_INCIDENTS"],
+    "E.customer_feedback.table6_feedback_by_type_and_source": ["MDCG_A1_SERIOUS_INCIDENTS"],
+
+    "F.complaints.rate_calculation.method_and_justification": ["MDCG_A1_TREND_REPORTING"],
+    "F.complaints.table7_rate_by_harm_and_device_problem": ["MDCG_A1_TREND_REPORTING"],
+
+    "G.trend_reporting.summary": ["MDCG_A1_TREND_REPORTING"],
+    "H.fsca.summary": ["MDCG_A1_SERIOUS_INCIDENTS"],
+    "I.capa.summary": ["MDCG_A1_SERIOUS_INCIDENTS"],
+    "J.literature_review.summary": ["MDCG_A1_LITERATURE_REVIEW"],
+    "K.external_databases_registries.summary": ["MDCG_A1_LITERATURE_REVIEW"],
+    "L.pmcf.summary": ["MDCG_A1_PMCF_SUMMARY"],
+    "M.findings_conclusions.overall_conclusions": ["MDCG_A1_BENEFIT_RISK"],
+    "M.findings_conclusions.benefit_risk_acceptability_statement": ["MDCG_A1_BENEFIT_RISK"],
+    "M.findings_conclusions.actions_recommended_or_taken": ["MDCG_A1_BENEFIT_RISK"]
+  },
+  "citation_catalog": {
+    "MDCG_2022_21_ANNEX_I_COVER_MIN": "MDCG 2022-21 Annex I - Cover page minimum fields",
+    "MDCG_2022_21_ANNEX_I_EXEC_SUMMARY": "MDCG 2022-21 Annex I - Executive summary content",
+    "MDCG_2022_21_ANNEX_I_DEVICE_DESCRIPTION": "MDCG 2022-21 Annex I - Device description (Art 86.1)",
+    "MDCG_2022_21_ANNEX_I_SALES": "MDCG 2022-21 Annex I - Sales volume data",
+    "MDCG_2022_21_ANNEX_I_INCIDENTS": "MDCG 2022-21 Annex I - Serious incidents",
+    "MDCG_2022_21_ANNEX_I_TRENDS": "MDCG 2022-21 Annex I - Trend reporting",
+    "MDCG_2022_21_ANNEX_I_PMCF": "MDCG 2022-21 Annex I - PMCF summary",
+    "MDCG_2022_21_ANNEX_I_LITERATURE": "MDCG 2022-21 Annex I - Literature review",
+    "MDCG_2022_21_ANNEX_I_BENEFIT_RISK": "MDCG 2022-21 Annex I - Benefit-risk conclusions",
+    "UK_PMS_WI_3_WORKING_DAYS": "UK PMS Work Instruction - 3 working days availability"
+  }
+}

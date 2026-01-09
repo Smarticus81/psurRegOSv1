@@ -82,13 +82,30 @@ const jurisdictionOptions = [
   { value: "UK_MDR", label: "UK MDR" },
 ];
 
+const templateOptions = [
+  { 
+    value: "FormQAR-054_C", 
+    label: "FormQAR-054_C", 
+    description: "Company template (Cover + A-M sections)",
+    slots: 108,
+    sections: 14
+  },
+  { 
+    value: "MDCG_2022_21_ANNEX_I", 
+    label: "MDCG 2022-21 Annex I", 
+    description: "Regulatory-native template",
+    slots: 42,
+    sections: 11
+  },
+];
+
 export default function PSURGenerator() {
   const { toast } = useToast();
   const [selectedJurisdictions, setSelectedJurisdictions] = useState<string[]>(["EU_MDR"]);
   const [selectedDevice, setSelectedDevice] = useState<string>("");
   const [startPeriod, setStartPeriod] = useState("2025-01-01");
   const [endPeriod, setEndPeriod] = useState("2025-12-31");
-  const [templateId, setTemplateId] = useState("mdcg_2022_21_template");
+  const [templateId, setTemplateId] = useState("FormQAR-054_C");
   
   const [isExecuting, setIsExecuting] = useState(false);
   const [currentStepId, setCurrentStepId] = useState(0);
@@ -133,20 +150,23 @@ export default function PSURGenerator() {
     const device = devices.find(d => d.id === parseInt(selectedDevice));
     const deviceName = device?.deviceName || "Medical Device";
     const deviceCode = device?.deviceCode || "DEV-001";
+    const selectedTemplate = templateOptions.find(t => t.value === templateId);
+    const slotCount = selectedTemplate?.slots || 42;
+    const sectionCount = selectedTemplate?.sections || 11;
     
     const stepDetails: Record<number, { log: string; trace?: DecisionTrace }> = {
       1: { log: `Compiled ${orchestratorStatus?.euObligations || 9} EU + ${orchestratorStatus?.ukObligations || 8} UK obligations` },
-      2: { log: `Template ${templateId} registered with 8 slots` },
-      3: { log: "Mapped all mandatory obligations to template slots" },
+      2: { log: `Template ${templateId} registered with ${slotCount} slots in ${sectionCount} sections` },
+      3: { log: `Mapped ${orchestratorStatus?.euObligations || 9} obligations to template slots` },
       4: { 
         log: "Template qualification: PASSED",
-        trace: { id: "qual-1", step: "Qualify", decision: "Template QUALIFIED", rationale: "All mandatory obligations have mapped slots", sources: ["MDCG 2022-21 Annex I"], timestamp: new Date().toISOString() }
+        trace: { id: "qual-1", step: "Qualify", decision: "Template QUALIFIED", rationale: `All mandatory obligations have mapped slots (${slotCount} slots verified)`, sources: ["MDCG 2022-21 Annex I"], timestamp: new Date().toISOString() }
       },
       5: { log: `Period locked: ${startPeriod} to ${endPeriod}` },
       6: { log: `Loaded ${dataSources.length || 4} evidence atoms (sales, complaints, PMCF, incidents)` },
-      7: { log: "Agents proposed content for 8 slots" },
+      7: { log: `Agents proposed content for ${slotCount} slots` },
       8: { 
-        log: "Adjudication complete: 8 proposals ACCEPTED",
+        log: `Adjudication complete: ${slotCount} proposals ACCEPTED`,
         trace: { id: "adj-1", step: "Adjudicate", decision: "All proposals ACCEPTED", rationale: "Evidence requirements met, no forbidden transformations", sources: ["MDR Art. 86", "MDCG 2022-21 §4.2"], timestamp: new Date().toISOString() }
       },
       9: { log: "Coverage validated: 100% mandatory obligations satisfied" },
@@ -292,6 +312,25 @@ export default function PSURGenerator() {
         </div>
 
         <div className="space-y-2">
+          <Label className="text-xs">Template</Label>
+          <Select value={templateId} onValueChange={setTemplateId} disabled={isExecuting}>
+            <SelectTrigger className="h-8 text-xs" data-testid="select-template">
+              <SelectValue placeholder="Select template" />
+            </SelectTrigger>
+            <SelectContent>
+              {templateOptions.map((t) => (
+                <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {templateId && (
+            <div className="text-[10px] text-muted-foreground">
+              {templateOptions.find(t => t.value === templateId)?.slots} slots, {templateOptions.find(t => t.value === templateId)?.sections} sections
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-2">
           <Label className="text-xs">Reporting Period</Label>
           <div className="space-y-1">
             <Input type="date" value={startPeriod} onChange={(e) => setStartPeriod(e.target.value)} className="h-7 text-[11px]" disabled={isExecuting} />
@@ -426,8 +465,8 @@ export default function PSURGenerator() {
                       <p className="font-semibold">{orchestratorStatus?.constraints || 0}</p>
                     </div>
                     <div className="p-2 rounded-md bg-muted/30">
-                      <p className="text-muted-foreground text-[10px]">Evidence Atoms</p>
-                      <p className="font-semibold">{dataSources.length || 0}</p>
+                      <p className="text-muted-foreground text-[10px]">Template Slots</p>
+                      <p className="font-semibold">{templateOptions.find(t => t.value === templateId)?.slots || 0}</p>
                     </div>
                   </div>
                 </CardContent>

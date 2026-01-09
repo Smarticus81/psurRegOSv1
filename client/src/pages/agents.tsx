@@ -247,10 +247,8 @@ export default function PSURGenerator() {
       
       try {
         if (i === 1) {
-          const qualifyResponse = await apiRequest("POST", "/api/orchestrator/qualify", { templateId });
-          if (qualifyResponse.ok) {
-            addLogMessage(`    Template qualification: VERIFIED`);
-          }
+          await apiRequest("POST", "/api/orchestrator/qualify", { templateId });
+          addLogMessage(`    Template qualification: VERIFIED`);
         }
         
         if (i === 2) {
@@ -266,18 +264,15 @@ export default function PSURGenerator() {
             qualificationStatus: "passed",
             status: "in_progress",
           });
-          if (caseResponse.ok) {
-            const caseData = await caseResponse.json();
-            psurCaseId = caseData.id;
-            addLogMessage(`    PSUR Case ID: ${psurCaseId} persisted`);
-          }
+          const caseData = await caseResponse.json();
+          psurCaseId = caseData.id;
+          addLogMessage(`    PSUR Case ID: ${psurCaseId} persisted`);
         }
         
         if (i === 3 && psurCaseId) {
           const evidenceTypes = ["sales", "complaints", "incidents", "fsca", "pmcf", "literature"];
-          let atomCount = 0;
           for (const evType of evidenceTypes) {
-            const atomResponse = await apiRequest("POST", "/api/evidence-atoms", {
+            await apiRequest("POST", "/api/evidence-atoms", {
               psurCaseId,
               evidenceType: evType,
               sourceSystem: `${evType}_system`,
@@ -287,16 +282,14 @@ export default function PSURGenerator() {
               recordCount: Math.floor(Math.random() * 100) + 10,
               provenance: { source: evType, extractedBy: "orchestrator" },
             });
-            if (atomResponse.ok) atomCount++;
           }
-          addLogMessage(`    ${atomCount} evidence atoms persisted`);
+          addLogMessage(`    ${evidenceTypes.length} evidence atoms persisted`);
         }
         
         if (i === 4 && psurCaseId) {
           const sampleSlots = ["cover.manufacturer", "exec_summary.benefit_risk", "device_description.intended_purpose", "sales_data.volume", "pms_data.incidents"];
-          let proposalCount = 0;
           for (const slotId of sampleSlots) {
-            const proposalResponse = await apiRequest("POST", "/api/slot-proposals", {
+            await apiRequest("POST", "/api/slot-proposals", {
               psurCaseId,
               slotId,
               templateId,
@@ -306,30 +299,25 @@ export default function PSURGenerator() {
               obligationIds: ["MDCG_A1_COVER_MIN_FIELDS"],
               status: "pending",
             });
-            if (proposalResponse.ok) proposalCount++;
           }
-          addLogMessage(`    ${proposalCount} slot proposals created`);
+          addLogMessage(`    ${sampleSlots.length} slot proposals created`);
         }
         
         if (i === 5 && psurCaseId) {
           const proposalsResponse = await fetch(`/api/slot-proposals?psurCaseId=${psurCaseId}`);
-          if (proposalsResponse.ok) {
-            const proposals = await proposalsResponse.json();
-            let acceptedCount = 0;
-            for (const proposal of proposals) {
-              const updateResponse = await apiRequest("PATCH", `/api/slot-proposals/${proposal.id}`, {
-                status: "accepted",
-                adjudicatedAt: new Date().toISOString(),
-                adjudicationResult: { verdict: "ACCEPTED", reason: "Evidence requirements met" },
-              });
-              if (updateResponse.ok) acceptedCount++;
-            }
-            addLogMessage(`    ${acceptedCount} proposals adjudicated as ACCEPTED`);
+          const proposals = await proposalsResponse.json();
+          for (const proposal of proposals) {
+            await apiRequest("PATCH", `/api/slot-proposals/${proposal.id}`, {
+              status: "accepted",
+              adjudicatedAt: new Date().toISOString(),
+              adjudicationResult: { verdict: "ACCEPTED", reason: "Evidence requirements met" },
+            });
           }
+          addLogMessage(`    ${proposals.length} proposals adjudicated as ACCEPTED`);
         }
         
         if (i === 6 && psurCaseId) {
-          const coverageResponse = await apiRequest("POST", "/api/coverage-reports", {
+          await apiRequest("POST", "/api/coverage-reports", {
             psurCaseId,
             templateId,
             totalObligations: totalObs,
@@ -341,13 +329,11 @@ export default function PSURGenerator() {
             coveragePercent: "100",
             passed: true,
           });
-          if (coverageResponse.ok) {
-            addLogMessage(`    Coverage report persisted`);
-          }
+          addLogMessage(`    Coverage report persisted`);
         }
         
         if (i === 8 && psurCaseId) {
-          const bundleResponse = await apiRequest("POST", "/api/audit-bundles", {
+          await apiRequest("POST", "/api/audit-bundles", {
             psurCaseId,
             bundleReference: `AUDIT-${psurRef}`,
             traceJsonlPath: `/exports/${psurRef}/trace.jsonl`,
@@ -356,13 +342,18 @@ export default function PSURGenerator() {
             qualificationReportPath: `/exports/${psurRef}/qualification.json`,
             metadata: { generatedAt: new Date().toISOString(), template: templateId },
           });
-          if (bundleResponse.ok) {
-            addLogMessage(`    Audit bundle persisted`);
-          }
+          addLogMessage(`    Audit bundle persisted`);
         }
       } catch (err) {
         console.error(`Step ${i} error:`, err);
-        addLogMessage(`    Warning: Backend operation incomplete`);
+        const errorMsg = err instanceof Error ? err.message : "Unknown error";
+        addLogMessage(`    ERROR: ${errorMsg}`);
+        if (i <= 2) {
+          setStepStatuses(prev => ({ ...prev, [i]: "failed" }));
+          setIsExecuting(false);
+          toast({ title: "Workflow Failed", description: `Step ${i} failed: ${errorMsg}`, variant: "destructive" });
+          return;
+        }
       }
       
       if (stepDetails[i].subLogs) {

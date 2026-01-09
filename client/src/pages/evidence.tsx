@@ -31,6 +31,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import type { Device, EvidenceUpload, EvidenceAtom, PSURCase } from "@shared/schema";
+import { EVIDENCE_DEFINITIONS, type EvidenceDefinition } from "@shared/schema";
 
 interface EvidenceCoverage {
   psurCaseId?: number;
@@ -53,9 +54,30 @@ interface EvidenceListResponse {
   coverageByType: Record<string, { count: number; periodStart: string | null; periodEnd: string | null }>;
 }
 
-const EVIDENCE_TYPES = [
-  { value: "sales_volume", label: "Sales Volume", description: "Unit sales and distribution data" },
-  { value: "complaint_record", label: "Complaint Records", description: "Customer complaints and investigations" },
+// Derive evidence types from shared registry for UI display
+const EVIDENCE_TYPES = EVIDENCE_DEFINITIONS.map(def => ({
+  value: def.type,
+  label: def.label,
+  description: def.description,
+  section: def.sections.join("/"),
+  tier: def.tier,
+  isAggregated: def.isAggregated,
+}));
+
+const PSUR_SECTIONS = [
+  { id: "A", name: "Administrative & Cover" },
+  { id: "B", name: "Executive Summary" },
+  { id: "C", name: "Sales & Population" },
+  { id: "D", name: "Serious Incidents" },
+  { id: "E", name: "Non-Serious Incidents" },
+  { id: "F", name: "Complaints Analysis" },
+  { id: "G", name: "Trend Analysis" },
+  { id: "H", name: "FSCA Summary" },
+  { id: "I", name: "CAPA Status" },
+  { id: "J", name: "Literature Review" },
+  { id: "K", name: "Database Queries" },
+  { id: "L", name: "PMCF Results" },
+  { id: "M", name: "Conclusions" },
 ];
 
 export default function EvidencePage() {
@@ -219,9 +241,12 @@ export default function EvidencePage() {
                       <SelectContent>
                         {EVIDENCE_TYPES.map((type) => (
                           <SelectItem key={type.value} value={type.value}>
-                            <div className="flex flex-col">
-                              <span>{type.label}</span>
-                              <span className="text-[10px] text-muted-foreground">{type.description}</span>
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 w-8 justify-center">{type.section}</Badge>
+                              <div className="flex flex-col">
+                                <span className="text-sm">{type.label}</span>
+                                <span className="text-[10px] text-muted-foreground">{type.description}</span>
+                              </div>
                             </div>
                           </SelectItem>
                         ))}
@@ -452,7 +477,7 @@ export default function EvidencePage() {
                                 <div>
                                   <p className="text-muted-foreground text-[10px] mb-1">Normalized Data</p>
                                   <pre className="bg-muted/50 rounded p-2 text-[10px] overflow-x-auto">
-                                    {JSON.stringify(atom.normalizedData as Record<string, unknown>, null, 2)}
+                                    {JSON.stringify(atom.normalizedData, null, 2)}
                                   </pre>
                                 </div>
                               )}
@@ -460,7 +485,7 @@ export default function EvidencePage() {
                                 <div>
                                   <p className="text-muted-foreground text-[10px] mb-1">Provenance</p>
                                   <pre className="bg-muted/50 rounded p-2 text-[10px] overflow-x-auto">
-                                    {JSON.stringify(atom.provenance as Record<string, unknown>, null, 2)}
+                                    {JSON.stringify(atom.provenance, null, 2)}
                                   </pre>
                                 </div>
                               )}
@@ -499,26 +524,51 @@ export default function EvidencePage() {
                         <span className="text-xs text-muted-foreground">{coverage.totalAtoms} total atoms</span>
                       </div>
 
-                      <div className="space-y-2">
-                        <h4 className="text-xs font-medium">Coverage by Type</h4>
-                        {Object.entries(coverage.coverageByType).map(([type, data]) => (
-                          <div key={type} className="flex items-center justify-between p-2 rounded-md bg-muted/30">
-                            <div className="flex items-center gap-2">
-                              {data.count > 0 ? (
-                                <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                              ) : (
-                                <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                              )}
-                              <span className="text-xs font-medium">{type}</span>
+                      <div className="space-y-3">
+                        <h4 className="text-xs font-medium">Coverage by PSUR Section</h4>
+                        {PSUR_SECTIONS.map(section => {
+                          const sectionTypes = EVIDENCE_TYPES.filter(t => t.section === section.id || t.section.includes(section.id));
+                          const coveredTypes = sectionTypes.filter(t => coverage.coverageByType[t.value]?.count > 0);
+                          const sectionReady = sectionTypes.length > 0 && coveredTypes.length === sectionTypes.length;
+                          const hasPartial = coveredTypes.length > 0 && coveredTypes.length < sectionTypes.length;
+                          
+                          return (
+                            <div key={section.id} className="border rounded-md p-2">
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-2">
+                                  <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 w-6 justify-center">{section.id}</Badge>
+                                  <span className="text-xs font-medium">{section.name}</span>
+                                </div>
+                                {sectionReady ? (
+                                  <Badge className="bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-200 text-[9px]">
+                                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                                    Ready
+                                  </Badge>
+                                ) : hasPartial ? (
+                                  <Badge variant="outline" className="bg-amber-50 dark:bg-amber-950/30 border-amber-200 text-amber-800 dark:text-amber-200 text-[9px]">Partial</Badge>
+                                ) : (
+                                  <Badge variant="outline" className="text-muted-foreground text-[9px]">No data</Badge>
+                                )}
+                              </div>
+                              <div className="flex flex-wrap gap-1">
+                                {sectionTypes.map(t => {
+                                  const data = coverage.coverageByType[t.value];
+                                  const hasCoverage = data?.count > 0;
+                                  return (
+                                    <Badge 
+                                      key={t.value} 
+                                      variant={hasCoverage ? "default" : "outline"} 
+                                      className={`text-[9px] ${hasCoverage ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-200' : 'text-muted-foreground'}`}
+                                    >
+                                      {t.label.replace(' Records', '').replace(' Data', '')}
+                                      {hasCoverage && ` (${data.count})`}
+                                    </Badge>
+                                  );
+                                })}
+                              </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <Badge variant="secondary" className="text-[10px]">{data.count} atoms</Badge>
-                              {data.inPeriod > 0 && (
-                                <Badge variant="outline" className="text-[10px] bg-emerald-50 dark:bg-emerald-950/30">{data.inPeriod} in-period</Badge>
-                              )}
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
 
                       {coverage.missingMandatoryTypes.length > 0 && (

@@ -42,6 +42,15 @@ Preferred communication style: Simple, everyday language.
 - **Agent Executions**: Audit trail for AI agent workflow runs
 - **Generated Documents**: Output documents with metadata and review status
 - **GRKB Entries**: Structured regulatory knowledge base entries
+- **Evidence Atoms**: Immutable evidence records with full provenance tracking
+
+### Evidence Definitions Registry
+The system uses a shared evidence registry (`EVIDENCE_DEFINITIONS` in `shared/schema.ts`) as a single source of truth for all evidence types:
+- **15 Evidence Types**: manufacturer_master_data, device_master_data, psur_case_record, sales_volume, population_estimate, exposure_model, incident_record, incidents, complaint_record, complaints, fsca, capa, literature, registry, pmcf
+- **Raw→Aggregated Mapping**: incident_record→incidents, complaint_record→complaints (raw records satisfy aggregated slot requirements)
+- **Section Mapping**: Each type maps to PSUR sections A-M (e.g., incident_record → D, E, G, M)
+- **Tier System**: 0=admin, 1=sales/population, 2=safety, 3=external, 4=conclusions
+- **Parser Types**: "dedicated" for structured parsing, "generic" for flexible key-value ingestion
 
 ### Agent Architecture
 - **AI Provider**: Anthropic Claude via SDK

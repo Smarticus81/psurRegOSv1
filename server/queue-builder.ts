@@ -1,4 +1,32 @@
 import type { QueueSlotItem, EvidenceAtom, SlotProposal } from "@shared/schema";
+import { 
+  EVIDENCE_DEFINITIONS, 
+  getEvidenceDefinition, 
+  evidenceTypeSatisfies,
+  getTypesContributingTo,
+  RAW_TO_AGGREGATED_MAP,
+  type EvidenceDefinition 
+} from "@shared/schema";
+
+// Validate all slot evidence types are in the shared registry
+const VALID_EVIDENCE_TYPES = new Set(EVIDENCE_DEFINITIONS.map(d => d.type));
+
+function validateSlotEvidenceTypes(slots: SlotDefinition[], context: string): void {
+  for (const slot of slots) {
+    for (const evidenceType of slot.evidence_types) {
+      if (evidenceType && !VALID_EVIDENCE_TYPES.has(evidenceType)) {
+        console.warn(`[Queue-Builder] Invalid evidence type "${evidenceType}" in slot ${slot.slot_id} (${context}). Not in shared registry.`);
+      }
+    }
+  }
+}
+
+// Get evidence metadata from registry for enhanced coverage calculation
+function getEvidenceMetadata(type: string): { tier: number; isAggregated: boolean; sections: string[] } | null {
+  const def = getEvidenceDefinition(type);
+  if (!def) return null;
+  return { tier: def.tier, isAggregated: def.isAggregated, sections: def.sections };
+}
 
 interface SlotDefinition {
   slot_id: string;
@@ -208,8 +236,27 @@ const OBLIGATIONS: Record<string, ObligationDefinition> = {
   "FORMQAR_M_CONCLUSIONS": { obligation_id: "FORMQAR_M_CONCLUSIONS", requirement_level: "MUST", jurisdictions: ["EU_MDR", "UK_MDR"] },
 };
 
+// Validate slots at module initialization to catch misalignments early
+let slotsValidated = false;
 function getSlotDefinitions(profileId: string): SlotDefinition[] {
-  return profileId === "FormQAR-054_C" ? FORMQAR_SLOTS : ANNEX_I_SLOTS;
+  const slots = profileId === "FormQAR-054_C" ? FORMQAR_SLOTS : ANNEX_I_SLOTS;
+  
+  if (!slotsValidated) {
+    validateSlotEvidenceTypes(ANNEX_I_SLOTS, "ANNEX_I_SLOTS");
+    validateSlotEvidenceTypes(FORMQAR_SLOTS, "FORMQAR_SLOTS");
+    slotsValidated = true;
+  }
+  
+  return slots;
+}
+
+// Check if any available evidence type satisfies a required type (with raw→aggregated mapping)
+function hasEvidenceSatisfyingType(requiredType: string, availableTypes: Set<string>): boolean {
+  const typesArray = Array.from(availableTypes);
+  for (const availableType of typesArray) {
+    if (evidenceTypeSatisfies(availableType, requiredType)) return true;
+  }
+  return false;
 }
 
 function computeSlotScore(
@@ -231,7 +278,8 @@ function computeSlotScore(
   const unlocksDependencies = slot.slot_id.includes("sales") || slot.slot_id.includes("exposure") || slot.slot_id.includes("population");
   if (unlocksDependencies) score += 30;
   
-  const hasAllEvidence = slot.evidence_types.every(et => availableEvidenceTypes.has(et));
+  // Use raw→aggregated mapping for evidence satisfaction
+  const hasAllEvidence = slot.evidence_types.every(et => hasEvidenceSatisfyingType(et, availableEvidenceTypes));
   if (hasAllEvidence) score += 25;
   else score -= 50;
   
@@ -322,6 +370,25 @@ export function buildCoverageSlotQueue(input: QueueBuilderInput): CoverageSlotQu
     }
   }
   
+  // Seed aggregated types from raw data (raw→aggregated mapping)
+  // When raw records exist, they contribute to aggregated type requirements
+  for (const [rawType, aggregatedType] of Object.entries(RAW_TO_AGGREGATED_MAP)) {
+    if (availableEvidenceTypes.has(rawType) && !availableEvidenceTypes.has(aggregatedType)) {
+      // Raw data exists but aggregated key not set - add aggregated availability 
+      availableEvidenceTypes.add(aggregatedType);
+      
+      if (inPeriodEvidenceTypes.has(rawType)) {
+        inPeriodEvidenceTypes.add(aggregatedType);
+      }
+      
+      // Copy coverage from raw to aggregated
+      const rawCoverage = evidenceCoverageMap.get(rawType);
+      if (rawCoverage && !evidenceCoverageMap.has(aggregatedType)) {
+        evidenceCoverageMap.set(aggregatedType, rawCoverage);
+      }
+    }
+  }
+  
   const filledSlotIds = new Set<string>();
   const satisfiedObligationIds = new Set<string>();
   for (const proposal of input.acceptedProposals) {
@@ -363,9 +430,10 @@ export function buildCoverageSlotQueue(input: QueueBuilderInput): CoverageSlotQu
   
   const queue: QueueSlotItem[] = scoredSlots.map((item, index) => {
     const slot = item.slot;
-    const missingEvidence = slot.evidence_types.filter(et => !availableEvidenceTypes.has(et));
-    const availableEvidence = slot.evidence_types.filter(et => availableEvidenceTypes.has(et));
-    const inPeriodEvidence = slot.evidence_types.filter(et => inPeriodEvidenceTypes.has(et));
+    // Use raw→aggregated mapping for evidence satisfaction
+    const missingEvidence = slot.evidence_types.filter(et => !hasEvidenceSatisfyingType(et, availableEvidenceTypes));
+    const availableEvidence = slot.evidence_types.filter(et => hasEvidenceSatisfyingType(et, availableEvidenceTypes));
+    const inPeriodEvidence = slot.evidence_types.filter(et => hasEvidenceSatisfyingType(et, inPeriodEvidenceTypes));
     
     let periodCheck: "pass" | "partial" | "fail" | "unknown" = "unknown";
     if (slot.evidence_types.length === 0) {
@@ -391,14 +459,33 @@ export function buildCoverageSlotQueue(input: QueueBuilderInput): CoverageSlotQu
       };
     });
     
-    const evidenceCoverageDetails = slot.evidence_types.map(et => ({
-      type: et,
-      available: availableEvidenceTypes.has(et),
-      inPeriod: inPeriodEvidenceTypes.has(et),
-      coverage: evidenceCoverageMap.get(et)?.coverage || "none",
-      atomCount: evidenceCoverageMap.get(et)?.total || 0,
-      inPeriodCount: evidenceCoverageMap.get(et)?.inPeriod || 0,
-    }));
+    const evidenceCoverageDetails = slot.evidence_types.map(et => {
+      // Check if required type is satisfied by any available type (including raw→aggregated)
+      const available = hasEvidenceSatisfyingType(et, availableEvidenceTypes);
+      const inPeriod = hasEvidenceSatisfyingType(et, inPeriodEvidenceTypes);
+      
+      // Get coverage from direct type or contributing types
+      let coverageInfo = evidenceCoverageMap.get(et);
+      if (!coverageInfo) {
+        const contributingTypes = getTypesContributingTo(et);
+        for (const ct of contributingTypes) {
+          const ctInfo = evidenceCoverageMap.get(ct);
+          if (ctInfo) {
+            coverageInfo = ctInfo;
+            break;
+          }
+        }
+      }
+      
+      return {
+        type: et,
+        available,
+        inPeriod,
+        coverage: coverageInfo?.coverage || "none",
+        atomCount: coverageInfo?.total || 0,
+        inPeriodCount: coverageInfo?.inPeriod || 0,
+      };
+    });
     
     return {
       queue_rank: index + 1,

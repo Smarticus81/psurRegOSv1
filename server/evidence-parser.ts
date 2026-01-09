@@ -10,7 +10,7 @@ import {
 
 export interface ParsedRecord {
   data: Record<string, unknown>;
-  normalizedData: SalesVolumeAtomData | ComplaintRecordAtomData | null;
+  normalizedData: Record<string, unknown> | null;
   validationErrors: string[];
   isValid: boolean;
   rowIndex: number;
@@ -247,6 +247,312 @@ export function parseComplaintRecord(row: Record<string, unknown>, rowIndex: num
   };
 }
 
+const INCIDENT_COLUMN_MAPPINGS: Record<string, string[]> = {
+  incidentId: ["incident_id", "incidentid", "id", "case_id", "reference", "event_id", "report_number"],
+  deviceCode: ["device_code", "devicecode", "sku", "product_code", "udi"],
+  incidentDate: ["incident_date", "incidentdate", "date", "event_date", "occurrence_date"],
+  description: ["description", "incident_description", "details", "summary", "narrative"],
+  severity: ["severity", "seriousness", "harm_level", "outcome"],
+  reportedTo: ["reported_to", "reportedto", "authority", "regulator", "notified_to"],
+  patientOutcome: ["patient_outcome", "patientoutcome", "outcome", "harm", "injury"],
+  deviceMalfunction: ["device_malfunction", "malfunction", "failure_mode"],
+  country: ["country", "country_code", "region"],
+  serious: ["serious", "is_serious", "reportable"],
+};
+
+const FSCA_COLUMN_MAPPINGS: Record<string, string[]> = {
+  fscaId: ["fsca_id", "fscaid", "id", "reference", "action_number"],
+  deviceCode: ["device_code", "devicecode", "sku", "product_code"],
+  actionType: ["action_type", "actiontype", "type", "fsca_type"],
+  initiationDate: ["initiation_date", "initiationdate", "start_date", "date"],
+  completionDate: ["completion_date", "completiondate", "end_date", "closed_date"],
+  description: ["description", "summary", "details", "action_description"],
+  affectedUnits: ["affected_units", "affectedunits", "units_affected", "quantity"],
+  status: ["status", "fsca_status", "action_status"],
+  country: ["country", "countries", "region"],
+};
+
+const CAPA_COLUMN_MAPPINGS: Record<string, string[]> = {
+  capaId: ["capa_id", "capaid", "id", "reference", "capa_number"],
+  type: ["type", "capa_type", "action_type"],
+  initiationDate: ["initiation_date", "initiationdate", "open_date", "created_date"],
+  dueDate: ["due_date", "duedate", "target_date"],
+  completionDate: ["completion_date", "completiondate", "closed_date"],
+  description: ["description", "summary", "details", "issue"],
+  rootCause: ["root_cause", "rootcause", "cause"],
+  correctiveAction: ["corrective_action", "correctiveaction", "action", "resolution"],
+  status: ["status", "capa_status"],
+  effectiveness: ["effectiveness", "verification", "effective"],
+};
+
+const LITERATURE_COLUMN_MAPPINGS: Record<string, string[]> = {
+  referenceId: ["reference_id", "referenceid", "id", "pubmed_id", "doi"],
+  title: ["title", "article_title", "publication_title"],
+  authors: ["authors", "author", "author_list"],
+  publicationDate: ["publication_date", "publicationdate", "date", "pub_date"],
+  journal: ["journal", "source", "publication"],
+  abstract: ["abstract", "summary", "description"],
+  relevance: ["relevance", "relevance_score", "applicable"],
+  deviceRelated: ["device_related", "devicerelated", "related"],
+  safetySignal: ["safety_signal", "safetysignal", "signal", "finding"],
+};
+
+const PMCF_COLUMN_MAPPINGS: Record<string, string[]> = {
+  studyId: ["study_id", "studyid", "id", "protocol_id"],
+  studyName: ["study_name", "studyname", "title", "protocol_title"],
+  studyType: ["study_type", "studytype", "type", "design"],
+  startDate: ["start_date", "startdate", "initiation_date"],
+  endDate: ["end_date", "enddate", "completion_date"],
+  status: ["status", "study_status"],
+  enrolledSubjects: ["enrolled_subjects", "enrolledsubjects", "n", "sample_size", "subjects"],
+  findings: ["findings", "results", "outcomes", "summary"],
+  deviceCode: ["device_code", "devicecode", "product_code"],
+};
+
+const REGISTRY_COLUMN_MAPPINGS: Record<string, string[]> = {
+  registryName: ["registry_name", "registryname", "database", "source"],
+  queryDate: ["query_date", "querydate", "search_date", "date"],
+  searchTerms: ["search_terms", "searchterms", "query", "keywords"],
+  resultsCount: ["results_count", "resultscount", "hits", "count"],
+  relevantFindings: ["relevant_findings", "relevantfindings", "findings", "results"],
+  deviceCode: ["device_code", "devicecode", "product_code"],
+};
+
+const GENERIC_EVIDENCE_TYPES = [
+  "manufacturer_master_data",
+  "device_master_data", 
+  "psur_case_record",
+  "population_estimate",
+  "exposure_model",
+  "trend_metrics",
+  "benefit_risk",
+];
+
+export function parseIncidentRecord(row: Record<string, unknown>, rowIndex: number): ParsedRecord {
+  const errors: string[] = [];
+  
+  const incidentId = findMappedColumn(row, "incidentId", INCIDENT_COLUMN_MAPPINGS);
+  const deviceCode = findMappedColumn(row, "deviceCode", INCIDENT_COLUMN_MAPPINGS);
+  const incidentDate = parseDate(findMappedColumn(row, "incidentDate", INCIDENT_COLUMN_MAPPINGS));
+  const description = findMappedColumn(row, "description", INCIDENT_COLUMN_MAPPINGS);
+  const severity = findMappedColumn(row, "severity", INCIDENT_COLUMN_MAPPINGS);
+  const reportedTo = findMappedColumn(row, "reportedTo", INCIDENT_COLUMN_MAPPINGS);
+  const patientOutcome = findMappedColumn(row, "patientOutcome", INCIDENT_COLUMN_MAPPINGS);
+  const deviceMalfunction = findMappedColumn(row, "deviceMalfunction", INCIDENT_COLUMN_MAPPINGS);
+  const country = findMappedColumn(row, "country", INCIDENT_COLUMN_MAPPINGS);
+  const serious = parseBoolean(findMappedColumn(row, "serious", INCIDENT_COLUMN_MAPPINGS));
+
+  if (!incidentId) errors.push("Missing required field: incidentId");
+  if (!deviceCode) errors.push("Missing required field: deviceCode");
+  if (!incidentDate) errors.push("Missing or invalid incidentDate");
+  if (!description) errors.push("Missing required field: description");
+
+  const normalizedData = errors.length === 0 ? {
+    incidentId: String(incidentId),
+    deviceCode: String(deviceCode),
+    incidentDate: incidentDate!,
+    description: String(description),
+    severity: severity ? String(severity) : undefined,
+    reportedTo: reportedTo ? String(reportedTo) : undefined,
+    patientOutcome: patientOutcome ? String(patientOutcome) : undefined,
+    deviceMalfunction: deviceMalfunction ? String(deviceMalfunction) : undefined,
+    country: country ? String(country) : undefined,
+    serious: serious ?? undefined,
+  } : null;
+
+  return { data: row, normalizedData, validationErrors: errors, isValid: errors.length === 0, rowIndex };
+}
+
+export function parseFSCARecord(row: Record<string, unknown>, rowIndex: number): ParsedRecord {
+  const errors: string[] = [];
+  
+  const fscaId = findMappedColumn(row, "fscaId", FSCA_COLUMN_MAPPINGS);
+  const deviceCode = findMappedColumn(row, "deviceCode", FSCA_COLUMN_MAPPINGS);
+  const actionType = findMappedColumn(row, "actionType", FSCA_COLUMN_MAPPINGS);
+  const initiationDate = parseDate(findMappedColumn(row, "initiationDate", FSCA_COLUMN_MAPPINGS));
+  const completionDate = parseDate(findMappedColumn(row, "completionDate", FSCA_COLUMN_MAPPINGS));
+  const description = findMappedColumn(row, "description", FSCA_COLUMN_MAPPINGS);
+  const affectedUnits = parseNumber(findMappedColumn(row, "affectedUnits", FSCA_COLUMN_MAPPINGS));
+  const status = findMappedColumn(row, "status", FSCA_COLUMN_MAPPINGS);
+  const country = findMappedColumn(row, "country", FSCA_COLUMN_MAPPINGS);
+
+  if (!fscaId) errors.push("Missing required field: fscaId");
+  if (!deviceCode) errors.push("Missing required field: deviceCode");
+  if (!actionType) errors.push("Missing required field: actionType");
+  if (!initiationDate) errors.push("Missing or invalid initiationDate");
+
+  const normalizedData = errors.length === 0 ? {
+    fscaId: String(fscaId),
+    deviceCode: String(deviceCode),
+    actionType: String(actionType),
+    initiationDate: initiationDate!,
+    completionDate: completionDate || undefined,
+    description: description ? String(description) : undefined,
+    affectedUnits: affectedUnits || undefined,
+    status: status ? String(status) : undefined,
+    country: country ? String(country) : undefined,
+  } : null;
+
+  return { data: row, normalizedData, validationErrors: errors, isValid: errors.length === 0, rowIndex };
+}
+
+export function parseCAPARecord(row: Record<string, unknown>, rowIndex: number): ParsedRecord {
+  const errors: string[] = [];
+  
+  const capaId = findMappedColumn(row, "capaId", CAPA_COLUMN_MAPPINGS);
+  const type = findMappedColumn(row, "type", CAPA_COLUMN_MAPPINGS);
+  const initiationDate = parseDate(findMappedColumn(row, "initiationDate", CAPA_COLUMN_MAPPINGS));
+  const dueDate = parseDate(findMappedColumn(row, "dueDate", CAPA_COLUMN_MAPPINGS));
+  const completionDate = parseDate(findMappedColumn(row, "completionDate", CAPA_COLUMN_MAPPINGS));
+  const description = findMappedColumn(row, "description", CAPA_COLUMN_MAPPINGS);
+  const rootCause = findMappedColumn(row, "rootCause", CAPA_COLUMN_MAPPINGS);
+  const correctiveAction = findMappedColumn(row, "correctiveAction", CAPA_COLUMN_MAPPINGS);
+  const status = findMappedColumn(row, "status", CAPA_COLUMN_MAPPINGS);
+  const effectiveness = findMappedColumn(row, "effectiveness", CAPA_COLUMN_MAPPINGS);
+
+  if (!capaId) errors.push("Missing required field: capaId");
+  if (!description) errors.push("Missing required field: description");
+
+  const normalizedData = errors.length === 0 ? {
+    capaId: String(capaId),
+    type: type ? String(type) : undefined,
+    initiationDate: initiationDate || undefined,
+    dueDate: dueDate || undefined,
+    completionDate: completionDate || undefined,
+    description: String(description),
+    rootCause: rootCause ? String(rootCause) : undefined,
+    correctiveAction: correctiveAction ? String(correctiveAction) : undefined,
+    status: status ? String(status) : undefined,
+    effectiveness: effectiveness ? String(effectiveness) : undefined,
+  } : null;
+
+  return { data: row, normalizedData, validationErrors: errors, isValid: errors.length === 0, rowIndex };
+}
+
+export function parseLiteratureRecord(row: Record<string, unknown>, rowIndex: number): ParsedRecord {
+  const errors: string[] = [];
+  
+  const referenceId = findMappedColumn(row, "referenceId", LITERATURE_COLUMN_MAPPINGS);
+  const title = findMappedColumn(row, "title", LITERATURE_COLUMN_MAPPINGS);
+  const authors = findMappedColumn(row, "authors", LITERATURE_COLUMN_MAPPINGS);
+  const publicationDate = parseDate(findMappedColumn(row, "publicationDate", LITERATURE_COLUMN_MAPPINGS));
+  const journal = findMappedColumn(row, "journal", LITERATURE_COLUMN_MAPPINGS);
+  const abstract_ = findMappedColumn(row, "abstract", LITERATURE_COLUMN_MAPPINGS);
+  const relevance = findMappedColumn(row, "relevance", LITERATURE_COLUMN_MAPPINGS);
+  const deviceRelated = parseBoolean(findMappedColumn(row, "deviceRelated", LITERATURE_COLUMN_MAPPINGS));
+  const safetySignal = findMappedColumn(row, "safetySignal", LITERATURE_COLUMN_MAPPINGS);
+
+  if (!referenceId && !title) errors.push("Missing required field: referenceId or title");
+
+  const normalizedData = errors.length === 0 ? {
+    referenceId: referenceId ? String(referenceId) : undefined,
+    title: title ? String(title) : undefined,
+    authors: authors ? String(authors) : undefined,
+    publicationDate: publicationDate || undefined,
+    journal: journal ? String(journal) : undefined,
+    abstract: abstract_ ? String(abstract_) : undefined,
+    relevance: relevance ? String(relevance) : undefined,
+    deviceRelated: deviceRelated ?? undefined,
+    safetySignal: safetySignal ? String(safetySignal) : undefined,
+  } : null;
+
+  return { data: row, normalizedData, validationErrors: errors, isValid: errors.length === 0, rowIndex };
+}
+
+export function parsePMCFRecord(row: Record<string, unknown>, rowIndex: number): ParsedRecord {
+  const errors: string[] = [];
+  
+  const studyId = findMappedColumn(row, "studyId", PMCF_COLUMN_MAPPINGS);
+  const studyName = findMappedColumn(row, "studyName", PMCF_COLUMN_MAPPINGS);
+  const studyType = findMappedColumn(row, "studyType", PMCF_COLUMN_MAPPINGS);
+  const startDate = parseDate(findMappedColumn(row, "startDate", PMCF_COLUMN_MAPPINGS));
+  const endDate = parseDate(findMappedColumn(row, "endDate", PMCF_COLUMN_MAPPINGS));
+  const status = findMappedColumn(row, "status", PMCF_COLUMN_MAPPINGS);
+  const enrolledSubjects = parseNumber(findMappedColumn(row, "enrolledSubjects", PMCF_COLUMN_MAPPINGS));
+  const findings = findMappedColumn(row, "findings", PMCF_COLUMN_MAPPINGS);
+  const deviceCode = findMappedColumn(row, "deviceCode", PMCF_COLUMN_MAPPINGS);
+
+  if (!studyId && !studyName) errors.push("Missing required field: studyId or studyName");
+
+  const normalizedData = errors.length === 0 ? {
+    studyId: studyId ? String(studyId) : undefined,
+    studyName: studyName ? String(studyName) : undefined,
+    studyType: studyType ? String(studyType) : undefined,
+    startDate: startDate || undefined,
+    endDate: endDate || undefined,
+    status: status ? String(status) : undefined,
+    enrolledSubjects: enrolledSubjects || undefined,
+    findings: findings ? String(findings) : undefined,
+    deviceCode: deviceCode ? String(deviceCode) : undefined,
+  } : null;
+
+  return { data: row, normalizedData, validationErrors: errors, isValid: errors.length === 0, rowIndex };
+}
+
+export function parseRegistryRecord(row: Record<string, unknown>, rowIndex: number): ParsedRecord {
+  const errors: string[] = [];
+  
+  const registryName = findMappedColumn(row, "registryName", REGISTRY_COLUMN_MAPPINGS);
+  const queryDate = parseDate(findMappedColumn(row, "queryDate", REGISTRY_COLUMN_MAPPINGS));
+  const searchTerms = findMappedColumn(row, "searchTerms", REGISTRY_COLUMN_MAPPINGS);
+  const resultsCount = parseNumber(findMappedColumn(row, "resultsCount", REGISTRY_COLUMN_MAPPINGS));
+  const relevantFindings = findMappedColumn(row, "relevantFindings", REGISTRY_COLUMN_MAPPINGS);
+  const deviceCode = findMappedColumn(row, "deviceCode", REGISTRY_COLUMN_MAPPINGS);
+
+  if (!registryName) errors.push("Missing required field: registryName");
+
+  const normalizedData = errors.length === 0 ? {
+    registryName: String(registryName),
+    queryDate: queryDate || undefined,
+    searchTerms: searchTerms ? String(searchTerms) : undefined,
+    resultsCount: resultsCount || undefined,
+    relevantFindings: relevantFindings ? String(relevantFindings) : undefined,
+    deviceCode: deviceCode ? String(deviceCode) : undefined,
+  } : null;
+
+  return { data: row, normalizedData, validationErrors: errors, isValid: errors.length === 0, rowIndex };
+}
+
+export function parseGenericRecord(
+  row: Record<string, unknown>, 
+  rowIndex: number, 
+  evidenceType: string,
+  options?: { periodStart?: string; periodEnd?: string }
+): ParsedRecord {
+  const normalizedData: Record<string, unknown> = {};
+  
+  for (const [key, value] of Object.entries(row)) {
+    if (value !== null && value !== undefined && value !== "") {
+      const normalizedKey = normalizeColumnName(key);
+      if (typeof value === "string") {
+        const dateVal = parseDate(value);
+        const numVal = parseNumber(value);
+        if (dateVal && value.match(/\d{4}[-\/]\d{2}[-\/]\d{2}/)) {
+          normalizedData[normalizedKey] = dateVal;
+        } else if (numVal !== null && !isNaN(numVal)) {
+          normalizedData[normalizedKey] = numVal;
+        } else {
+          normalizedData[normalizedKey] = value;
+        }
+      } else {
+        normalizedData[normalizedKey] = value;
+      }
+    }
+  }
+  
+  if (options?.periodStart) normalizedData.periodStart = options.periodStart;
+  if (options?.periodEnd) normalizedData.periodEnd = options.periodEnd;
+  normalizedData._evidenceType = evidenceType;
+
+  return {
+    data: row,
+    normalizedData,
+    validationErrors: [],
+    isValid: true,
+    rowIndex,
+  };
+}
+
 export function parseCSV(content: string): Record<string, unknown>[] {
   const lines = content.split(/\r?\n/).filter(line => line.trim());
   if (lines.length < 2) return [];
@@ -336,8 +642,22 @@ export function parseEvidenceFile(
         start: options.periodStart,
         end: options.periodEnd,
       } : undefined);
-    } else if (evidenceType === "complaint_record") {
+    } else if (evidenceType === "complaint_record" || evidenceType === "complaints") {
       parsed = parseComplaintRecord(row, i + 1);
+    } else if (evidenceType === "incident_record" || evidenceType === "incidents") {
+      parsed = parseIncidentRecord(row, i + 1);
+    } else if (evidenceType === "fsca") {
+      parsed = parseFSCARecord(row, i + 1);
+    } else if (evidenceType === "capa") {
+      parsed = parseCAPARecord(row, i + 1);
+    } else if (evidenceType === "literature") {
+      parsed = parseLiteratureRecord(row, i + 1);
+    } else if (evidenceType === "pmcf") {
+      parsed = parsePMCFRecord(row, i + 1);
+    } else if (evidenceType === "registry") {
+      parsed = parseRegistryRecord(row, i + 1);
+    } else if (GENERIC_EVIDENCE_TYPES.includes(evidenceType)) {
+      parsed = parseGenericRecord(row, i + 1, evidenceType, options);
     } else {
       parsed = {
         data: row,

@@ -1,0 +1,286 @@
+STEP 1 — Compile and freeze the regulatory rules (one-time per version)
+
+Goal: Turn law into executable truth.
+
+You already dropped the DSL in. Now you:
+
+psur dsl compile dsl/examples/combined.dsl --out data/compiled/combined.json
+
+
+What this does:
+
+Freezes EU MDR + MDCG 2022-21 + UK rules into a machine-enforceable obligation graph
+
+Creates a versioned regulatory baseline (this matters later in audits)
+
+📌 Outcome you should see:
+
+A compiled obligations file
+
+A compiled constraint rules file
+
+Zero ambiguity about “what the PSUR must contain”
+
+This is now your regulatory ground truth.
+
+STEP 2 — Register the company’s PSUR template
+
+Goal: Separate format from compliance.
+
+You (or the company) take their Word PSUR template and convert it into a Template Schema:
+
+{
+  "template_id": "Zymot-PSUR-v1",
+  "slots": [
+    { "slot_id": "S1", "path": "1. Executive Summary", "type": "narrative", "required": true },
+    { "slot_id": "S4", "path": "4. Sales & Usage", "type": "table", "required": true },
+    { "slot_id": "S6", "path": "6. PMCF Summary", "type": "narrative", "required": true },
+    { "slot_id": "S8", "path": "8. Benefit-Risk Evaluation", "type": "narrative", "required": true }
+  ]
+}
+
+
+Register it:
+
+psur template register template_schema.json
+
+
+Important mental shift:
+
+The template has zero authority
+
+It is just empty containers (“slots”)
+
+STEP 3 — Map legal obligations to template slots (this is the spine)
+
+Goal: Prove the template can legally carry a PSUR.
+
+You create an Obligation → Slot Mapping:
+
+{
+  "template_id": "Zymot-PSUR-v1",
+  "mappings": [
+    {
+      "obligation_id": "EU.PSUR.CONTENT.SALES_AND_POPULATION",
+      "slot_ids": ["S4"],
+      "render_rules": ["tabulate", "summarize_only"]
+    },
+    {
+      "obligation_id": "EU.PSUR.CONTENT.PMCF_MAIN_FINDINGS",
+      "slot_ids": ["S6"],
+      "render_rules": ["summarize_only"]
+    },
+    {
+      "obligation_id": "EU.PSUR.CONTENT.BENEFIT_RISK_CONCLUSIONS",
+      "slot_ids": ["S8"],
+      "render_rules": ["summarize_only", "cite_evidence_atoms"]
+    }
+  ]
+}
+
+
+Register it:
+
+psur mapping register mapping.json
+
+STEP 4 — QUALIFY the template (this is a hard gate)
+
+Goal: Prove—formally—that the template meets MDR + MDCG + UK.
+
+psur template qualify --template Zymot-PSUR-v1 --compiled data/compiled/combined.json
+
+
+One of two things happens:
+
+✅ PASS
+
+You get a coverage report showing:
+
+Every mandatory obligation is mapped
+
+No illegal slot types
+
+No missing PSUR elements
+
+Only now is generation allowed.
+
+❌ FAIL
+
+You get a defect list like:
+
+“Missing mandatory obligation: EU.PSUR.CONTENT.POPULATION_ESTIMATE”
+
+“Slot S3 incompatible with obligation requiring table output”
+
+This is gold—you fix the template or mapping before writing anything.
+
+STEP 5 — Register the PSUR period and enforce contiguity
+
+Goal: Lock time (regulators care deeply about this).
+
+psur psur-period register \
+  --psur-ref ZYMOT-PSUR-001 \
+  --start 2023-01-01 \
+  --end 2024-12-31
+
+
+The orchestrator now enforces:
+
+No gaps vs prior PSURs
+
+No overlaps
+
+Schedule compliance (annual vs biennial depending on class & jurisdiction)
+
+Time is now immutable.
+
+STEP 6 — Load PMS evidence (this is where reality enters)
+
+Goal: Feed the system facts, not stories.
+
+You now register EvidenceAtoms:
+
+Sales data
+
+Complaints
+
+Serious incidents
+
+Trend reports
+
+PMCF summaries
+
+Literature reviews
+
+CAPAs / FSCAs
+
+Example:
+
+psur evidence add evidence/sales_2023_2024.json
+psur evidence add evidence/complaints.json
+psur evidence add evidence/pmcf_summary.json
+
+
+Rules enforced automatically:
+
+Evidence is immutable
+
+Evidence is timestamped
+
+Evidence is tied to device + PSUR period
+
+Evidence is jurisdiction-tagged (EU/UK)
+
+No evidence = no content later.
+
+STEP 7 — Agents propose content (they do NOT “write a PSUR”)
+
+Goal: Generate candidate content slot by slot.
+
+Example: PMCF agent submits a proposal:
+
+psur proposal submit proposals/pmcf_slot_S6.json
+
+
+The proposal contains:
+
+Slot ID
+
+Narrative text
+
+Evidence atom references
+
+Claimed transformations (e.g., “summarize”)
+
+Claimed regulatory basis
+
+Agents are now powerless—they can only propose.
+
+STEP 8 — The orchestrator adjudicates (this is the heart)
+
+Goal: Enforce compliance mechanically.
+
+psur proposal adjudicate PROP-001
+
+
+The orchestrator checks:
+
+Are all required evidence types present?
+
+Is evidence within PSUR period?
+
+Are transformations allowed?
+
+Are forbidden actions attempted?
+
+Are EU/UK obligations satisfied?
+
+Results:
+
+ACCEPTED
+
+Slot content is stored
+
+Atomic trace nodes are generated automatically
+
+REJECTED
+
+Exact rule broken
+
+Exact obligation violated
+
+Exact evidence missing
+
+No vague errors. No judgment calls.
+
+STEP 9 — Repeat until all mandatory obligations are satisfied
+
+You keep doing:
+
+Evidence → Proposal → Adjudication
+
+Until:
+
+Every mandatory obligation has at least one accepted slot payload
+
+Only then can the PSUR exist.
+
+STEP 10 — Render the PSUR (presentation only)
+
+Goal: Produce the human-facing document.
+
+psur render --template Zymot-PSUR-v1 --psur-ref ZYMOT-PSUR-001 --out psur.md
+
+
+Important:
+
+Rendering uses only accepted content
+
+Nothing unadjudicated can leak in
+
+Formatting is cosmetic, not legal
+
+You now have a complete PSUR.
+
+STEP 11 — Export the trace bundle (this is your armor)
+
+Goal: Make audits trivial.
+
+psur trace export --psur-ref ZYMOT-PSUR-001 --out trace.jsonl
+
+
+This file proves:
+
+Why every paragraph exists
+
+Which evidence supports it
+
+Which obligation required it
+
+Who/what generated it
+
+When it was accepted
+
+This is what lets you say, calmly:
+
+“Show me the question, I’ll show you the trace.”

@@ -1333,6 +1333,7 @@ export async function registerRoutes(
       }
 
       const { isDeterministicSupported, runDeterministicGenerator } = await import("./deterministic-generators");
+      const { buildCoverageSlotQueue } = await import("./queue-builder");
       
       if (!isDeterministicSupported(slotId)) {
         return res.status(400).json({ 
@@ -1350,13 +1351,83 @@ export async function registerRoutes(
       
       const result = runDeterministicGenerator(slotId, evidenceAtoms, psurCase, psurCase.templateId);
       
+      // GENERATION FAILURE - return with error details
       if (!result.success) {
         return res.status(422).json({
+          success: false,
           error: "Deterministic generation failed",
           details: result.error,
-          slotId: result.slotId
+          errorDetails: result.errorDetails,
+          slotId: result.slotId,
+          proposalId: result.proposalId,
+          agentId: result.agentId,
         });
       }
+
+      // ADJUDICATION ENFORCEMENT: Reject if evidence_atom_ids is empty
+      if (result.evidenceAtomIds.length === 0) {
+        return res.status(422).json({
+          success: false,
+          error: "Adjudication rejected: No evidence atoms",
+          adjudicationResult: {
+            decision: "rejected",
+            reason: "evidence_atom_ids is empty - slot requires in-period evidence",
+            rejectedAt: new Date().toISOString(),
+          },
+          slotId: result.slotId,
+          proposalId: result.proposalId,
+          agentId: result.agentId,
+        });
+      }
+
+      // ADJUDICATION ENFORCEMENT: Verify all evidence atoms are in-period
+      const periodStart = new Date(psurCase.startPeriod);
+      const periodEnd = new Date(psurCase.endPeriod);
+      const outOfPeriodAtoms: number[] = [];
+      
+      for (const atomId of result.evidenceAtomIds) {
+        const atom = evidenceAtoms.find(a => a.id === atomId);
+        if (atom) {
+          const atomData = atom.data as Record<string, unknown>;
+          const complaintDateRaw = atomData.complaintDate;
+          if (complaintDateRaw) {
+            const complaintDate = new Date(complaintDateRaw as string);
+            if (complaintDate < periodStart || complaintDate > periodEnd) {
+              outOfPeriodAtoms.push(atomId);
+            }
+          }
+        }
+      }
+
+      if (outOfPeriodAtoms.length > 0) {
+        return res.status(422).json({
+          success: false,
+          error: "Adjudication rejected: Out-of-period evidence atoms detected",
+          adjudicationResult: {
+            decision: "rejected",
+            reason: `${outOfPeriodAtoms.length} evidence atoms are outside the PSUR period`,
+            outOfPeriodAtomIds: outOfPeriodAtoms,
+            rejectedAt: new Date().toISOString(),
+          },
+          slotId: result.slotId,
+          proposalId: result.proposalId,
+          periodStart: periodStart.toISOString(),
+          periodEnd: periodEnd.toISOString(),
+        });
+      }
+
+      // Build adjudication result
+      const adjudicationResult = autoAdjudicate ? {
+        decision: "accepted" as const,
+        adjudicatedAt: new Date().toISOString(),
+        autoAdjudicated: true,
+        reason: "Deterministic generation - no AI inference",
+        agentId: result.agentId,
+        contentHash: result.contentHash,
+        evidenceAtomCount: result.evidenceAtomIds.length,
+        periodStart: periodStart.toISOString(),
+        periodEnd: periodEnd.toISOString(),
+      } : null;
 
       const proposalData = {
         psurCaseId,
@@ -1370,32 +1441,112 @@ export async function registerRoutes(
         obligationIds: result.claimedObligationIds,
         confidenceScore: "1.0",
         status: autoAdjudicate ? "accepted" : "pending",
-        adjudicationResult: autoAdjudicate ? {
-          decision: "accepted",
-          adjudicatedAt: new Date().toISOString(),
-          autoAdjudicated: true,
-          reason: "Deterministic generation - no AI inference",
-          agentId: result.agentId,
-          contentHash: result.contentHash,
-        } : null,
+        adjudicationResult,
         adjudicatedAt: autoAdjudicate ? new Date() : null
       };
 
+      // PERSIST the SlotProposal
       const proposal = await storage.createSlotProposal(proposalData);
 
+      // RECOMPUTE COVERAGE after acceptance
+      let coverageSummary = null;
+      let coverageDelta = null;
+      
+      if (autoAdjudicate) {
+        // Get all accepted proposals for this PSUR case
+        const allProposals = await storage.getSlotProposals(psurCaseId);
+        const acceptedProposals = allProposals.filter(p => p.status === "accepted");
+        
+        // Build coverage queue to get updated coverage summary
+        const coverageOutput = buildCoverageSlotQueue({
+          psurReference: psurCase.psurReference,
+          profileId: psurCase.templateId,
+          jurisdictions: psurCase.jurisdictions || [],
+          evidenceAtoms,
+          acceptedProposals,
+          periodStart,
+          periodEnd,
+        });
+        
+        coverageSummary = {
+          mandatory_remaining: coverageOutput.coverageSummary.mandatoryObligationsRemaining,
+          required_slots_remaining: coverageOutput.coverageSummary.requiredSlotsRemaining,
+          satisfied_obligations_count: coverageOutput.coverageSummary.mandatoryObligationsSatisfied,
+          mandatory_total: coverageOutput.coverageSummary.mandatoryObligationsTotal,
+          required_slots_total: coverageOutput.coverageSummary.requiredSlotsTotal,
+          required_slots_filled: coverageOutput.coverageSummary.requiredSlotsFilled,
+        };
+        
+        // Calculate delta (coverage before vs after this proposal)
+        const proposalsBefore = acceptedProposals.filter(p => p.id !== proposal.id);
+        const coverageBefore = buildCoverageSlotQueue({
+          psurReference: psurCase.psurReference,
+          profileId: psurCase.templateId,
+          jurisdictions: psurCase.jurisdictions || [],
+          evidenceAtoms,
+          acceptedProposals: proposalsBefore,
+          periodStart,
+          periodEnd,
+        });
+        
+        coverageDelta = {
+          obligations_satisfied_delta: coverageOutput.coverageSummary.mandatoryObligationsSatisfied - coverageBefore.coverageSummary.mandatoryObligationsSatisfied,
+          slots_filled_delta: coverageOutput.coverageSummary.requiredSlotsFilled - coverageBefore.coverageSummary.requiredSlotsFilled,
+        };
+      }
+
+      // FULL DEBUG PAYLOAD
       res.status(201).json({
         success: true,
         proposalId: result.proposalId,
-        proposal,
+        
+        // Full proposal JSON
+        proposal: {
+          id: proposal.id,
+          psurCaseId: proposal.psurCaseId,
+          slotId: proposal.slotId,
+          templateId: proposal.templateId,
+          content: result.content,
+          evidenceAtomIds: proposal.evidenceAtomIds,
+          claimedObligationIds: proposal.claimedObligationIds,
+          methodStatement: proposal.methodStatement,
+          transformations: proposal.transformations,
+          obligationIds: proposal.obligationIds,
+          confidenceScore: proposal.confidenceScore,
+          status: proposal.status,
+          createdAt: proposal.createdAt,
+          adjudicatedAt: proposal.adjudicatedAt,
+        },
+        
+        // Adjudication result with reasons
+        adjudicationResult: adjudicationResult ? {
+          ...adjudicationResult,
+          proposalAccepted: true,
+        } : { decision: "pending", proposalAccepted: false },
+        
+        // Generation result details
         generationResult: {
           contentType: result.contentType,
           contentHash: result.contentHash,
           evidenceAtomCount: result.evidenceAtomIds.length,
+          evidenceAtomIds: result.evidenceAtomIds,
           methodStatement: result.methodStatement,
           transformationsUsed: result.transformationsUsed,
           agentId: result.agentId,
-          autoAdjudicated: autoAdjudicate
-        }
+          autoAdjudicated: autoAdjudicate,
+        },
+        
+        // Coverage summary after persistence
+        coverageSummary,
+        coverageDelta,
+        
+        // Period context
+        periodContext: {
+          periodStart: periodStart.toISOString(),
+          periodEnd: periodEnd.toISOString(),
+          totalEvidenceAtoms: evidenceAtoms.length,
+          inPeriodEvidenceAtoms: result.evidenceAtomIds.length,
+        },
       });
     } catch (error) {
       console.error("Deterministic generation error:", error);

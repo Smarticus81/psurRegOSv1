@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -12,6 +12,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { Link } from "wouter";
+import { useToast } from "@/hooks/use-toast";
 import type { GeneratedDocument } from "@shared/schema";
 
 export default function Documents() {
@@ -63,33 +64,14 @@ export default function Documents() {
             ))}
           </div>
         )}
-
-        <Card>
-          <CardHeader className="py-3 px-4">
-            <CardTitle className="text-sm font-medium">Review Checklist</CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4 pt-0">
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {reviewChecklistItems.map((item, idx) => (
-                <div key={idx} className="flex items-start gap-2 p-2 rounded-md bg-muted/30">
-                  <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-medium text-muted-foreground">
-                    {idx + 1}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium">{item.title}</p>
-                    <p className="text-[10px] text-muted-foreground truncate">{item.description}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </div>
   );
 }
 
 function DocumentRow({ doc }: { doc: GeneratedDocument }) {
+  const { toast } = useToast();
+  
   const statusColors: Record<string, string> = {
     approved: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300",
     rejected: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
@@ -102,6 +84,35 @@ function DocumentRow({ doc }: { doc: GeneratedDocument }) {
     : doc.reviewStatus === "rejected" 
     ? AlertCircle 
     : Clock;
+
+  const handlePreview = () => {
+    if (doc.filePath) {
+      window.open(`/api/documents/${doc.id}/download`, "_blank");
+    } else {
+      toast({ 
+        title: "Preview unavailable", 
+        description: "Document content not yet available",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleDownload = async () => {
+    if (doc.filePath) {
+      const link = document.createElement("a");
+      link.href = `/api/documents/${doc.id}/download`;
+      link.download = `${doc.title || "document"}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } else {
+      toast({ 
+        title: "Download unavailable", 
+        description: "Document file not yet available",
+        variant: "destructive"
+      });
+    }
+  };
 
   return (
     <Card className="hover-elevate" data-testid={`card-document-${doc.id}`}>
@@ -128,10 +139,20 @@ function DocumentRow({ doc }: { doc: GeneratedDocument }) {
             </div>
           </div>
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" data-testid={`button-preview-${doc.id}`}>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={handlePreview}
+              data-testid={`button-preview-${doc.id}`}
+            >
               <Eye className="h-4 w-4" />
             </Button>
-            <Button variant="ghost" size="icon" data-testid={`button-download-${doc.id}`}>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={handleDownload}
+              data-testid={`button-download-${doc.id}`}
+            >
               <Download className="h-4 w-4" />
             </Button>
           </div>
@@ -140,11 +161,3 @@ function DocumentRow({ doc }: { doc: GeneratedDocument }) {
     </Card>
   );
 }
-
-const reviewChecklistItems = [
-  { title: "Data Accuracy", description: "Spot-check data points against sources" },
-  { title: "Regulatory Compliance", description: "All required sections present" },
-  { title: "Narrative Quality", description: "Analysis is objective and appropriate" },
-  { title: "Citation Traceability", description: "Claims supported by references" },
-  { title: "Completeness", description: "No placeholder text or missing info" },
-];

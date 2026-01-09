@@ -2,6 +2,8 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { createHash } from "crypto";
 import multer from "multer";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { storage } from "./storage";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
 import { 
@@ -397,6 +399,36 @@ export async function registerRoutes(
       res.status(201).json(doc);
     } catch (error) {
       res.status(500).json({ error: "Failed to create document" });
+    }
+  });
+
+  app.get("/api/documents/:id/download", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const doc = await storage.getDocument(id);
+      if (!doc) {
+        return res.status(404).json({ error: "Document not found" });
+      }
+      if (!doc.filePath) {
+        return res.status(404).json({ error: "Document file not available" });
+      }
+      
+      // Check if filePath is a URL (object storage) or local path
+      if (doc.filePath.startsWith("http")) {
+        res.redirect(doc.filePath);
+      } else {
+        const fullPath = path.resolve(doc.filePath);
+        
+        if (!fs.existsSync(fullPath)) {
+          return res.status(404).json({ error: "Document file not found on disk" });
+        }
+        
+        res.setHeader("Content-Disposition", `attachment; filename="${doc.title || "document"}.pdf"`);
+        res.setHeader("Content-Type", "application/pdf");
+        fs.createReadStream(fullPath).pipe(res);
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to download document" });
     }
   });
 

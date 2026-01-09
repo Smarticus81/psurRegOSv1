@@ -126,13 +126,14 @@ export default function PSURGenerator() {
   });
 
   const startExecutionMutation = useMutation({
-    mutationFn: async (data: { deviceId?: number; jurisdictions: string[]; startPeriod?: string; endPeriod?: string }) => {
+    mutationFn: async (data: { deviceId?: number; jurisdictions: string[]; startPeriod?: string; endPeriod?: string; templateId?: string }) => {
       return apiRequest("POST", "/api/agent-executions", {
         agentType: "psur",
         deviceId: data.deviceId,
         jurisdictions: data.jurisdictions,
         startPeriod: data.startPeriod ? new Date(data.startPeriod).toISOString() : undefined,
         endPeriod: data.endPeriod ? new Date(data.endPeriod).toISOString() : undefined,
+        templateId: data.templateId,
         status: "running",
       });
     },
@@ -241,6 +242,7 @@ export default function PSURGenerator() {
       jurisdictions: selectedJurisdictions,
       startPeriod,
       endPeriod,
+      templateId,
     });
   };
 

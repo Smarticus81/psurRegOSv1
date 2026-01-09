@@ -163,6 +163,7 @@ export const agentExecutions = pgTable("agent_executions", {
   pmsPlanNumber: text("pms_plan_number"), // For quick start lookup
   previousPsurNumber: text("previous_psur_number"), // For quick start lookup
   partNumbers: text("part_numbers").array(), // Device part numbers for the surveillance
+  templateId: text("template_id"), // Template to use: FormQAR-054_C or MDCG_2022_21_ANNEX_I
   startPeriod: timestamp("start_period"),
   endPeriod: timestamp("end_period"),
   steps: jsonb("steps").default(sql`'[]'::jsonb`), // Array of step objects

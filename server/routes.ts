@@ -626,51 +626,98 @@ export async function registerRoutes(
     try {
       const file = req.file;
       if (!file) {
-        return res.status(400).json({ error: "No file uploaded" });
+        return res.status(400).json({ 
+          error: "No file uploaded",
+          totalRows: 0,
+          sourceColumns: [],
+          sampleRows: [],
+          missingRequiredColumns: [],
+          recommendedMapping: {},
+          sheetNames: [],
+          selectedSheet: "",
+          fileFormat: "unknown",
+          requiredFields: [],
+        });
       }
 
-      const { evidence_type } = req.body;
+      const { evidence_type, selected_sheet } = req.body;
       if (!evidence_type) {
-        return res.status(400).json({ error: "evidence_type is required" });
+        return res.status(400).json({ 
+          error: "evidence_type is required",
+          totalRows: 0,
+          sourceColumns: [],
+          sampleRows: [],
+          missingRequiredColumns: [],
+          recommendedMapping: {},
+          sheetNames: [],
+          selectedSheet: "",
+          fileFormat: "unknown",
+          requiredFields: [],
+        });
       }
 
-      const parseResult = parseFileBuffer(file.buffer, file.originalname);
+      const parseResult = parseFileBuffer(file.buffer, file.originalname, selected_sheet);
+      
       if (!parseResult.success) {
         return res.status(400).json({
           error: "Failed to parse file",
           details: parseResult.errors,
+          totalRows: 0,
+          sourceColumns: parseResult.columns || [],
+          sampleRows: [],
+          missingRequiredColumns: [],
+          recommendedMapping: {},
+          sheetNames: parseResult.sheetNames || [],
+          selectedSheet: parseResult.sheetName || "",
+          fileFormat: parseResult.fileType || "unknown",
+          requiredFields: [],
         });
       }
 
-      const mappingDetection = detectColumnMappings(parseResult.columns, evidence_type);
+      const mappingDetection = detectColumnMappings(parseResult.columns || [], evidence_type);
       const existingProfiles = await storage.getColumnMappingProfiles(evidence_type);
 
-      const sampleRows = parseResult.rows.slice(0, 5);
+      const sampleRows = (parseResult.rows || []).slice(0, 5);
+      const sourceColumns = parseResult.columns || [];
+      
+      const missingRequiredColumns = (mappingDetection.requiredFields || []).filter(
+        (field: string) => !mappingDetection.autoMapped[field]
+      );
 
       res.json({
         success: true,
-        fileType: parseResult.fileType,
-        sheetName: parseResult.sheetName,
-        totalRows: parseResult.rows.length,
-        columns: parseResult.columns,
-        sampleData: sampleRows,
-        mapping: {
-          autoMapped: mappingDetection.autoMapped,
-          unmapped: mappingDetection.unmapped,
-          requiredFields: mappingDetection.requiredFields,
-          optionalFields: mappingDetection.optionalFields,
-        },
+        totalRows: parseResult.rows?.length || 0,
+        sourceColumns,
+        sampleRows,
+        missingRequiredColumns,
+        recommendedMapping: mappingDetection.autoMapped || {},
+        sheetNames: parseResult.sheetNames || [],
+        selectedSheet: parseResult.sheetName || "",
+        fileFormat: parseResult.fileType || "unknown",
+        requiredFields: mappingDetection.requiredFields || [],
+        suggestedMappings: mappingDetection.autoMapped || {},
         existingProfiles: existingProfiles.map(p => ({
           id: p.id,
           name: p.name,
           usageCount: p.usageCount,
           columnMappings: p.columnMappings,
         })),
-        warnings: parseResult.errors,
+        warnings: parseResult.errors || [],
       });
     } catch (error) {
       console.error("File analysis error:", error);
-      res.status(500).json({ error: "Failed to analyze file" });
+      res.status(500).json({ 
+        error: "Failed to analyze file",
+        totalRows: 0,
+        sourceColumns: [],
+        sampleRows: [],
+        missingRequiredColumns: [],
+        recommendedMapping: {},
+        sheetNames: [],
+        selectedSheet: "",
+        fileFormat: "unknown",
+        requiredFields: [],
+      });
     }
   });
 
@@ -709,7 +756,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "No file uploaded" });
       }
 
-      const { evidence_type, device_scope_id, psur_case_id, source_system, extraction_notes, period_start, period_end, device_code } = req.body;
+      const { evidence_type, device_scope_id, psur_case_id, source_system, extraction_notes, period_start, period_end, device_code, jurisdiction } = req.body;
 
       if (!evidence_type) {
         return res.status(400).json({ error: "evidence_type is required" });
@@ -753,6 +800,7 @@ export async function registerRoutes(
         uploadedBy: "system",
         parserVersion: "1.1.0",
         extractionTimestamp: new Date().toISOString(),
+        jurisdiction: jurisdiction || "EU",
       };
 
       const fileParseResult = parseFileBuffer(file.buffer, file.originalname);

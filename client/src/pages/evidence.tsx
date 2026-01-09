@@ -45,6 +45,10 @@ interface ColumnAnalysis {
   sampleRows: Record<string, unknown>[];
   fileFormat: string;
   totalRows: number;
+  sheetNames: string[];
+  selectedSheet: string;
+  missingRequiredColumns: string[];
+  recommendedMapping: Record<string, string>;
 }
 
 interface MappingProfile {
@@ -122,6 +126,9 @@ export default function EvidencePage() {
   const [columnMappings, setColumnMappings] = useState<Record<string, string>>({});
   const [newProfileName, setNewProfileName] = useState("");
   const [selectedProfileId, setSelectedProfileId] = useState<number | null>(null);
+  const [selectedSheet, setSelectedSheet] = useState<string>("");
+  const [fileBuffer, setFileBuffer] = useState<File | null>(null);
+  const [jurisdiction, setJurisdiction] = useState<string>("EU");
 
   const { data: devices = [] } = useQuery<Device[]>({ queryKey: ["/api/devices"] });
   const { data: psurCases = [] } = useQuery<PSURCase[]>({ queryKey: ["/api/psur-cases"] });
@@ -154,10 +161,13 @@ export default function EvidencePage() {
     setColumnMappings({});
     setNewProfileName("");
     setSelectedProfileId(null);
+    setSelectedSheet("");
+    setFileBuffer(null);
   };
 
-  const handleAnalyzeFile = async () => {
-    if (!selectedFile || !evidenceType) {
+  const handleAnalyzeFile = async (sheetOverride?: string) => {
+    const fileToAnalyze = selectedFile || fileBuffer;
+    if (!fileToAnalyze || !evidenceType) {
       toast({ title: "Missing required fields", description: "Please select a file and evidence type", variant: "destructive" });
       return;
     }
@@ -165,8 +175,67 @@ export default function EvidencePage() {
     setIsAnalyzing(true);
     try {
       const formData = new FormData();
-      formData.append("file", selectedFile);
+      formData.append("file", fileToAnalyze);
       formData.append("evidence_type", evidenceType);
+      if (sheetOverride || selectedSheet) {
+        formData.append("selected_sheet", sheetOverride || selectedSheet);
+      }
+
+      const response = await fetch("/api/evidence/analyze", {
+        method: "POST",
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      const analysis: ColumnAnalysis = {
+        sourceColumns: result.sourceColumns || [],
+        suggestedMappings: result.suggestedMappings || result.recommendedMapping || {},
+        requiredFields: result.requiredFields || [],
+        sampleRows: result.sampleRows || [],
+        fileFormat: result.fileFormat || "unknown",
+        totalRows: result.totalRows || 0,
+        sheetNames: result.sheetNames || [],
+        selectedSheet: result.selectedSheet || "",
+        missingRequiredColumns: result.missingRequiredColumns || [],
+        recommendedMapping: result.recommendedMapping || {},
+      };
+
+      if (!response.ok) {
+        toast({ title: "Analysis failed", description: result.error || "Failed to analyze file", variant: "destructive" });
+        return;
+      }
+
+      if (analysis.sourceColumns.length === 0) {
+        toast({ title: "No columns found", description: "The file appears to be empty or has no valid headers", variant: "destructive" });
+        return;
+      }
+
+      setFileBuffer(fileToAnalyze);
+      setColumnAnalysis(analysis);
+      setColumnMappings(analysis.suggestedMappings);
+      setSelectedSheet(analysis.selectedSheet);
+      setWizardStep(2);
+    } catch (error) {
+      toast({ title: "Analysis failed", description: "An error occurred during file analysis", variant: "destructive" });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handleSheetChange = async (newSheet: string) => {
+    const fileToAnalyze = selectedFile || fileBuffer;
+    if (!fileToAnalyze || !evidenceType) {
+      toast({ title: "Missing required fields", description: "Please select a file and evidence type", variant: "destructive" });
+      return;
+    }
+
+    setIsAnalyzing(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", fileToAnalyze);
+      formData.append("evidence_type", evidenceType);
+      formData.append("selected_sheet", newSheet);
 
       const response = await fetch("/api/evidence/analyze", {
         method: "POST",
@@ -176,15 +245,33 @@ export default function EvidencePage() {
       const result = await response.json();
 
       if (!response.ok) {
-        toast({ title: "Analysis failed", description: result.error || "Failed to analyze file", variant: "destructive" });
+        toast({ title: "Sheet analysis failed", description: result.error || "Failed to analyze sheet", variant: "destructive" });
         return;
       }
 
-      setColumnAnalysis(result);
-      setColumnMappings(result.suggestedMappings || {});
-      setWizardStep(2);
+      const analysis: ColumnAnalysis = {
+        sourceColumns: result.sourceColumns || [],
+        suggestedMappings: result.suggestedMappings || result.recommendedMapping || {},
+        requiredFields: result.requiredFields || [],
+        sampleRows: result.sampleRows || [],
+        fileFormat: result.fileFormat || "unknown",
+        totalRows: result.totalRows || 0,
+        sheetNames: result.sheetNames || [],
+        selectedSheet: result.selectedSheet || "",
+        missingRequiredColumns: result.missingRequiredColumns || [],
+        recommendedMapping: result.recommendedMapping || {},
+      };
+
+      if (analysis.sourceColumns.length === 0) {
+        toast({ title: "No columns found", description: `Sheet "${newSheet}" appears to be empty or has no valid headers`, variant: "destructive" });
+        return;
+      }
+
+      setSelectedSheet(newSheet);
+      setColumnAnalysis(analysis);
+      setColumnMappings(analysis.suggestedMappings);
     } catch (error) {
-      toast({ title: "Analysis failed", description: "An error occurred during file analysis", variant: "destructive" });
+      toast({ title: "Sheet analysis failed", description: "An error occurred during sheet analysis", variant: "destructive" });
     } finally {
       setIsAnalyzing(false);
     }
@@ -241,6 +328,7 @@ export default function EvidencePage() {
       formData.append("evidence_type", evidenceType);
       if (deviceScopeId && deviceScopeId !== "__all__") formData.append("device_scope_id", deviceScopeId);
       if (psurCaseId && psurCaseId !== "__none__") formData.append("psur_case_id", psurCaseId);
+      if (jurisdiction) formData.append("jurisdiction", jurisdiction);
       if (sourceSystem) formData.append("source_system", sourceSystem);
       if (extractionNotes) formData.append("extraction_notes", extractionNotes);
       if (periodStart) formData.append("period_start", periodStart);
@@ -422,7 +510,23 @@ export default function EvidencePage() {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="space-y-2">
+                          <Label className="text-xs">Jurisdiction</Label>
+                          <Select value={jurisdiction} onValueChange={setJurisdiction}>
+                            <SelectTrigger className="h-9" data-testid="select-jurisdiction">
+                              <SelectValue placeholder="Select jurisdiction" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="EU">EU MDR</SelectItem>
+                              <SelectItem value="UK">UK MDR</SelectItem>
+                              <SelectItem value="US">FDA (US)</SelectItem>
+                              <SelectItem value="Canada">Health Canada</SelectItem>
+                              <SelectItem value="Australia">TGA (Australia)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
                         <div className="space-y-2">
                           <Label className="text-xs">Device Scope</Label>
                           <Select value={deviceScopeId} onValueChange={setDeviceScopeId}>
@@ -479,7 +583,7 @@ export default function EvidencePage() {
 
                       <Button 
                         className="w-full" 
-                        onClick={handleAnalyzeFile}
+                        onClick={() => handleAnalyzeFile()}
                         disabled={isAnalyzing || !selectedFile || !evidenceType}
                         data-testid="button-analyze"
                       >
@@ -490,7 +594,7 @@ export default function EvidencePage() {
                     </>
                   )}
 
-                  {wizardStep === 2 && columnAnalysis && (
+                  {wizardStep === 2 && columnAnalysis && (columnAnalysis.sourceColumns.length > 0) && (
                     <>
                       <div className="flex items-center justify-between">
                         <div>
@@ -501,6 +605,26 @@ export default function EvidencePage() {
                         </div>
                         <Badge variant="outline" className="text-[10px]">{columnAnalysis.fileFormat}</Badge>
                       </div>
+
+                      {columnAnalysis.sheetNames.length > 1 && (
+                        <div className="space-y-2">
+                          <Label className="text-xs">Sheet</Label>
+                          <Select 
+                            value={selectedSheet} 
+                            onValueChange={handleSheetChange}
+                            disabled={isAnalyzing}
+                          >
+                            <SelectTrigger className="h-8" data-testid="select-sheet">
+                              <SelectValue placeholder="Select sheet" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {columnAnalysis.sheetNames.map((sheet) => (
+                                <SelectItem key={sheet} value={sheet}>{sheet}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
 
                       {mappingProfiles.length > 0 && (
                         <div className="space-y-2">
@@ -618,10 +742,14 @@ export default function EvidencePage() {
                             <span className="text-xs text-muted-foreground">Evidence Type</span>
                             <Badge variant="secondary" className="text-[10px]">{evidenceType}</Badge>
                           </div>
-                          {columnAnalysis && (
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-muted-foreground">Jurisdiction</span>
+                            <Badge variant="outline" className="text-[10px]">{jurisdiction}</Badge>
+                          </div>
+                          {(columnAnalysis?.totalRows ?? 0) > 0 && (
                             <div className="flex items-center justify-between">
                               <span className="text-xs text-muted-foreground">Rows</span>
-                              <span className="text-xs font-medium">{columnAnalysis.totalRows}</span>
+                              <span className="text-xs font-medium">{columnAnalysis?.totalRows ?? 0}</span>
                             </div>
                           )}
                           {periodStart && periodEnd && (
@@ -687,11 +815,11 @@ export default function EvidencePage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-4 pt-0 space-y-4">
-                  {wizardStep === 2 && columnAnalysis && columnAnalysis.sampleRows.length > 0 ? (
+                  {wizardStep === 2 && (columnAnalysis?.sampleRows ?? []).length > 0 ? (
                     <ScrollArea className="h-[320px]">
                       <div className="space-y-2">
                         <p className="text-[10px] text-muted-foreground">Sample rows from your file:</p>
-                        {columnAnalysis.sampleRows.slice(0, 5).map((row, idx) => (
+                        {(columnAnalysis?.sampleRows ?? []).slice(0, 5).map((row, idx) => (
                           <div key={idx} className="bg-muted/30 rounded p-2 space-y-1">
                             {Object.entries(row).slice(0, 6).map(([key, value]) => (
                               <div key={key} className="flex items-start gap-2 text-[10px]">

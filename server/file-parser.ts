@@ -10,14 +10,31 @@ export interface FileParseResult {
   columns: string[];
   errors: string[];
   fileType: "csv" | "xlsx";
-  sheetName?: string;
+  sheetName: string;
+  sheetNames: string[];
 }
 
-export function parseFileBuffer(buffer: Buffer, filename: string): FileParseResult {
+export interface ColumnAnalysisResult {
+  totalRows: number;
+  sourceColumns: string[];
+  sampleRows: Record<string, unknown>[];
+  missingRequiredColumns: string[];
+  recommendedMapping: Record<string, string>;
+  sheetNames: string[];
+  selectedSheet: string;
+  fileFormat: string;
+  requiredFields: string[];
+}
+
+export function parseFileBuffer(
+  buffer: Buffer, 
+  filename: string, 
+  selectedSheet?: string
+): FileParseResult {
   const ext = filename.toLowerCase().split(".").pop();
   
   if (ext === "xlsx" || ext === "xls") {
-    return parseExcelBuffer(buffer);
+    return parseExcelBuffer(buffer, selectedSheet);
   } else if (ext === "csv") {
     return parseCsvBuffer(buffer);
   } else {
@@ -27,24 +44,32 @@ export function parseFileBuffer(buffer: Buffer, filename: string): FileParseResu
       columns: [],
       errors: [`Unsupported file type: ${ext}. Use CSV or XLSX.`],
       fileType: "csv",
+      sheetName: "",
+      sheetNames: [],
     };
   }
 }
 
-function parseExcelBuffer(buffer: Buffer): FileParseResult {
+function parseExcelBuffer(buffer: Buffer, selectedSheet?: string): FileParseResult {
   try {
     const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
-    const sheetName = workbook.SheetNames[0];
+    const sheetNames = workbook.SheetNames || [];
     
-    if (!sheetName) {
+    if (sheetNames.length === 0) {
       return {
         success: false,
         rows: [],
         columns: [],
         errors: ["No sheets found in Excel file"],
         fileType: "xlsx",
+        sheetName: "",
+        sheetNames: [],
       };
     }
+    
+    const sheetName = selectedSheet && sheetNames.includes(selectedSheet) 
+      ? selectedSheet 
+      : sheetNames[0];
     
     const worksheet = workbook.Sheets[sheetName];
     const jsonData = XLSX.utils.sheet_to_json<ParsedRow>(worksheet, { 
@@ -57,9 +82,10 @@ function parseExcelBuffer(buffer: Buffer): FileParseResult {
         success: false,
         rows: [],
         columns: [],
-        errors: ["No data found in Excel file"],
+        errors: [`No data found in sheet "${sheetName}"`],
         fileType: "xlsx",
         sheetName,
+        sheetNames,
       };
     }
     
@@ -72,6 +98,7 @@ function parseExcelBuffer(buffer: Buffer): FileParseResult {
       errors: [],
       fileType: "xlsx",
       sheetName,
+      sheetNames,
     };
   } catch (error) {
     return {
@@ -80,6 +107,8 @@ function parseExcelBuffer(buffer: Buffer): FileParseResult {
       columns: [],
       errors: [`Failed to parse Excel file: ${error instanceof Error ? error.message : "Unknown error"}`],
       fileType: "xlsx",
+      sheetName: "",
+      sheetNames: [],
     };
   }
 }
@@ -96,6 +125,8 @@ function parseCsvBuffer(buffer: Buffer): FileParseResult {
         columns: [],
         errors: ["Empty CSV file"],
         fileType: "csv",
+        sheetName: "Sheet1",
+        sheetNames: ["Sheet1"],
       };
     }
     
@@ -129,6 +160,8 @@ function parseCsvBuffer(buffer: Buffer): FileParseResult {
       columns,
       errors,
       fileType: "csv",
+      sheetName: "Sheet1",
+      sheetNames: ["Sheet1"],
     };
   } catch (error) {
     return {
@@ -137,6 +170,8 @@ function parseCsvBuffer(buffer: Buffer): FileParseResult {
       columns: [],
       errors: [`Failed to parse CSV file: ${error instanceof Error ? error.message : "Unknown error"}`],
       fileType: "csv",
+      sheetName: "",
+      sheetNames: [],
     };
   }
 }

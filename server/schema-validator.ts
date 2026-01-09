@@ -66,6 +66,7 @@ export interface ProvenanceInput {
   uploadedBy?: string;
   parserVersion?: string;
   extractionTimestamp?: string;
+  jurisdiction?: string;
 }
 
 export interface EvidenceAtomOutput {

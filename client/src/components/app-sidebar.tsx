@@ -1,9 +1,7 @@
 import { useLocation, Link } from "wouter";
 import {
-  LayoutDashboard,
   Cpu,
   FileText,
-  Upload,
   Settings,
   Activity,
   Box,
@@ -33,11 +31,6 @@ const pmsNavItems = [
     url: "/evidence",
     icon: Database,
     badge: "New",
-  },
-  {
-    title: "Data Inputs",
-    url: "/data",
-    icon: Upload,
   },
   {
     title: "PSUR Generator",

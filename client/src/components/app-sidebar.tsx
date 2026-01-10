@@ -5,6 +5,7 @@ import {
   Activity,
   Box,
   Database,
+  FileText,
 } from "lucide-react";
 import {
   Sidebar,
@@ -26,16 +27,20 @@ const pmsNavItems = [
     icon: Box,
   },
   {
-    title: "Evidence",
-    url: "/evidence",
-    icon: Database,
+    title: "PSUR Workflow",
+    url: "/psur",
+    icon: FileText,
     badge: "New",
   },
   {
-    title: "PSUR Generator",
+    title: "Evidence",
+    url: "/evidence",
+    icon: Database,
+  },
+  {
+    title: "Agent Studio",
     url: "/agents",
     icon: Cpu,
-    badge: "Live",
   },
 ];
 

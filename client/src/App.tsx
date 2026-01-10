@@ -16,11 +16,13 @@ import GRKB from "@/pages/grkb";
 import Instructions from "@/pages/instructions";
 import Settings from "@/pages/settings";
 import Evidence from "@/pages/evidence";
+import PSURWorkflow from "@/pages/psur-workflow";
 
 function Router() {
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
+      <Route path="/psur" component={PSURWorkflow} />
       <Route path="/companies" component={Companies} />
       <Route path="/companies/:id" component={Companies} />
       <Route path="/agents" component={Agents} />

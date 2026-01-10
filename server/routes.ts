@@ -850,6 +850,14 @@ export async function registerRoutes(
         return Object.entries(row).map(([k, v]) => `${k}:${v}`).join(",");
       }).join("\n");
 
+      // TEMPORARY DEBUG - remove after
+      console.log("PARSE DEBUG", {
+        evidenceType,
+        rowCount: rows.length,
+        sampleRowKeys: rows.length > 0 ? Object.keys(rows[0]) : [],
+        sampleRow: rows.length > 0 ? rows[0] : null,
+      });
+
       const parseResult = parseEvidenceFile(fileContent, evidenceType, {
         periodStart: period_start,
         periodEnd: period_end,

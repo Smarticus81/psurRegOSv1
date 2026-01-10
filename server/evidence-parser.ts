@@ -53,13 +53,13 @@ const SALES_COLUMN_MAPPINGS: Record<string, string[]> = {
 
 const COMPLAINT_COLUMN_MAPPINGS: Record<string, string[]> = {
   complaintId: ["complaint_id", "complaintid", "id", "case_id", "reference", "ticket_id"],
-  deviceCode: ["device_code", "devicecode", "sku", "part_number", "product_code"],
+  deviceCode: ["device_code", "devicecode", "sku", "part_number", "product_code", "basic_udi_di", "catalog_number"],
   productName: ["product_name", "productname", "device_name", "item_name"],
-  complaintDate: ["complaint_date", "complaintdate", "date", "reported_date", "received_date", "created_date"],
+  complaintDate: ["complaint_date", "complaintdate", "date", "reported_date", "received_date", "created_date", "event_date", "eventdate"],
   reportedBy: ["reported_by", "reportedby", "reporter", "customer", "source"],
-  description: ["description", "complaint_description", "details", "summary", "issue", "problem"],
-  category: ["category", "type", "complaint_type", "issue_type"],
-  severity: ["severity", "priority", "risk_level", "criticality"],
+  description: ["description", "complaint_description", "details", "summary", "issue", "problem", "narrative_summary", "narrative"],
+  category: ["category", "type", "complaint_type", "issue_type", "event_type"],
+  severity: ["severity", "priority", "risk_level", "criticality", "seriousness"],
   deviceRelated: ["device_related", "devicerelated", "product_related", "is_device_related"],
   patientInjury: ["patient_injury", "patientinjury", "injury", "harm", "patient_harm"],
   investigationStatus: ["investigation_status", "status", "case_status", "investigation"],
@@ -206,16 +206,16 @@ export function parseComplaintRecord(row: Record<string, unknown>, rowIndex: num
 
   let severity: "low" | "medium" | "high" | "critical" | undefined;
   if (severityRaw) {
-    const sev = String(severityRaw).toLowerCase();
+    const sev = String(severityRaw).toLowerCase().replace(/_/g, " ");
     if (["low", "medium", "high", "critical"].includes(sev)) {
       severity = sev as "low" | "medium" | "high" | "critical";
-    } else if (["1", "minor"].includes(sev)) {
+    } else if (["1", "minor", "non serious", "non_serious", "unknown"].includes(sev)) {
       severity = "low";
     } else if (["2", "moderate"].includes(sev)) {
       severity = "medium";
-    } else if (["3", "major", "serious"].includes(sev)) {
+    } else if (["3", "major", "serious", "serious incident", "serious_incident"].includes(sev)) {
       severity = "high";
-    } else if (["4", "severe", "life-threatening"].includes(sev)) {
+    } else if (["4", "severe", "life-threatening", "life threatening"].includes(sev)) {
       severity = "critical";
     }
   }
@@ -677,6 +677,22 @@ export function parseEvidenceFile(
 
   if (invalidRecords > 0) {
     warnings.push(`${invalidRecords} records failed validation and will be rejected`);
+    
+    // Collect first few validation errors for debugging
+    const failedRecords = parsedRecords.filter(r => !r.isValid).slice(0, 5);
+    for (const record of failedRecords) {
+      if (record.validationErrors.length > 0) {
+        errors.push(`Row ${record.rowIndex}: ${record.validationErrors.join(", ")}`);
+      }
+    }
+    if (invalidRecords > 5) {
+      errors.push(`...and ${invalidRecords - 5} more records with validation errors`);
+    }
+  }
+
+  // If no valid records, report the issue clearly
+  if (validRecords === 0 && invalidRecords > 0) {
+    errors.unshift(`All ${invalidRecords} records failed validation. Check column mappings and required fields.`);
   }
 
   return {

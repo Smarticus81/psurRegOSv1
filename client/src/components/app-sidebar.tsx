@@ -25,17 +25,19 @@ const pmsNavItems = [
     title: "Device Portfolio",
     url: "/",
     icon: Box,
-  },
-  {
-    title: "PSUR Workflow",
-    url: "/psur",
-    icon: FileText,
-    badge: "New",
+    step: 1,
   },
   {
     title: "Evidence",
     url: "/evidence",
     icon: Database,
+    step: 2,
+  },
+  {
+    title: "PSUR Workflow",
+    url: "/psur",
+    icon: FileText,
+    step: 3,
   },
   {
     title: "Agent Studio",
@@ -70,7 +72,7 @@ export function AppSidebar() {
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>PMS Management</SidebarGroupLabel>
+          <SidebarGroupLabel>PSUR Workflow</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {pmsNavItems.map((item) => (
@@ -80,13 +82,13 @@ export function AppSidebar() {
                     isActive={location === item.url}
                   >
                     <Link href={item.url} data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, '-')}`}>
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.title}</span>
-                      {item.badge && (
-                        <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
-                          {item.badge}
+                      {item.step && (
+                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-muted text-[10px] font-medium text-muted-foreground">
+                          {item.step}
                         </span>
                       )}
+                      <item.icon className="h-4 w-4" />
+                      <span>{item.title}</span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>

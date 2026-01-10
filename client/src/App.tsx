@@ -11,7 +11,6 @@ import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/dashboard";
 import Companies from "@/pages/companies";
 import Agents from "@/pages/agents";
-import Documents from "@/pages/documents";
 import DataLayer from "@/pages/data-layer";
 import GRKB from "@/pages/grkb";
 import Instructions from "@/pages/instructions";
@@ -25,7 +24,6 @@ function Router() {
       <Route path="/companies" component={Companies} />
       <Route path="/companies/:id" component={Companies} />
       <Route path="/agents" component={Agents} />
-      <Route path="/documents" component={Documents} />
       <Route path="/data" component={DataLayer} />
       <Route path="/grkb" component={GRKB} />
       <Route path="/evidence" component={Evidence} />

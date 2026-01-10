@@ -1,7 +1,6 @@
 import { useLocation, Link } from "wouter";
 import {
   Cpu,
-  FileText,
   Settings,
   Activity,
   Box,
@@ -37,11 +36,6 @@ const pmsNavItems = [
     url: "/agents",
     icon: Cpu,
     badge: "Live",
-  },
-  {
-    title: "Documents",
-    url: "/documents",
-    icon: FileText,
   },
 ];
 

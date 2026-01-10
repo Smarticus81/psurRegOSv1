@@ -47,6 +47,12 @@ export interface SlotMetadata {
 export const DETERMINISTIC_SUPPORTED_SLOTS = new Set([
   "F.11.complaints_by_region_severity",
   "PSUR.COMPLAINTS.SUMMARY_BY_REGION_SERIOUSNESS",
+  "C.02.sales_table",
+  "sales.volume_table",
+  "D.01.incidents_summary",
+  "incidents.by_region_severity",
+  "H.01.fsca_summary",
+  "fsca.summary_table",
 ]);
 
 export function isDeterministicSupported(slotId: string): boolean {
@@ -482,6 +488,270 @@ export function generateComplaintsByRegionSeriousness(
   };
 }
 
+export function generateSalesVolumeTable(
+  salesAtoms: EvidenceAtom[],
+  psurCase: PSURCase,
+  slotMetadata: SlotMetadata
+): DeterministicGeneratorResult {
+  const slotId = "sales.volume_table";
+  const agentId = "DeterministicSlotGenerator:v1";
+  
+  const periodStart = dateOnly(psurCase.startPeriod);
+  const periodEnd = dateOnly(psurCase.endPeriod);
+  
+  if (salesAtoms.length === 0) {
+    return {
+      success: false,
+      slotId,
+      proposalId: generateProposalId(),
+      contentType: "table",
+      content: null,
+      contentHash: "",
+      evidenceAtomIds: [],
+      methodStatement: "",
+      claimedObligationIds: slotMetadata.obligationIds,
+      transformationsUsed: slotMetadata.allowedTransformations,
+      agentId,
+      error: "No sales_volume evidence atoms available",
+    };
+  }
+
+  const tableRows: Array<Record<string, string | number>> = [];
+  const usedAtomIds: number[] = [];
+  let totalUnits = 0;
+
+  for (const atom of salesAtoms) {
+    const data = (atom.normalizedData || atom.data) as Record<string, unknown>;
+    const region = String(data.region || data.country || data.market || "Global");
+    const units = Number(data.units || data.quantity || data.volume || 0);
+    const period = String(data.period || data.reportingPeriod || `${periodStart} - ${periodEnd}`);
+    
+    tableRows.push({ region, units, period });
+    totalUnits += units;
+    usedAtomIds.push(atom.id);
+  }
+
+  tableRows.push({ region: "TOTAL", units: totalUnits, period: `${periodStart} to ${periodEnd}` });
+
+  const tableContent: TableContent = {
+    headers: ["region", "units", "period"],
+    rows: tableRows,
+    summary: `Sales volume data from ${salesAtoms.length} evidence atoms for reporting period ${periodStart} to ${periodEnd}. Total units: ${totalUnits}.`,
+  };
+
+  const methodStatement = `Aggregated ${salesAtoms.length} sales_volume evidence atoms. Extracted region/units/period fields. No interpolation or AI inference applied.`;
+
+  return {
+    success: true,
+    slotId,
+    proposalId: generateProposalId(),
+    contentType: "table",
+    content: tableContent,
+    contentHash: sha256Json(tableContent),
+    evidenceAtomIds: usedAtomIds,
+    methodStatement,
+    claimedObligationIds: slotMetadata.obligationIds,
+    transformationsUsed: slotMetadata.allowedTransformations,
+    agentId,
+  };
+}
+
+export function generateIncidentsByRegionSeverity(
+  incidentAtoms: EvidenceAtom[],
+  psurCase: PSURCase,
+  slotMetadata: SlotMetadata
+): DeterministicGeneratorResult {
+  const slotId = "incidents.by_region_severity";
+  const agentId = "DeterministicSlotGenerator:v1";
+  
+  const periodStart = dateOnly(psurCase.startPeriod);
+  const periodEnd = dateOnly(psurCase.endPeriod);
+  
+  if (incidentAtoms.length === 0) {
+    return {
+      success: false,
+      slotId,
+      proposalId: generateProposalId(),
+      contentType: "table",
+      content: null,
+      contentHash: "",
+      evidenceAtomIds: [],
+      methodStatement: "",
+      claimedObligationIds: slotMetadata.obligationIds,
+      transformationsUsed: slotMetadata.allowedTransformations,
+      agentId,
+      error: "No incident_record evidence atoms available",
+    };
+  }
+
+  const inPeriodAtoms: EvidenceAtom[] = [];
+  for (const atom of incidentAtoms) {
+    const data = (atom.normalizedData || atom.data) as Record<string, unknown>;
+    const incidentDate = dateOnly(data.incidentDate || data.eventDate || data.date);
+    if (incidentDate && inPeriod(incidentDate, periodStart, periodEnd)) {
+      inPeriodAtoms.push(atom);
+    }
+  }
+
+  if (inPeriodAtoms.length === 0) {
+    return {
+      success: false,
+      slotId,
+      proposalId: generateProposalId(),
+      contentType: "table",
+      content: null,
+      contentHash: "",
+      evidenceAtomIds: incidentAtoms.map(a => a.id),
+      methodStatement: "",
+      claimedObligationIds: slotMetadata.obligationIds,
+      transformationsUsed: slotMetadata.allowedTransformations,
+      agentId,
+      error: `No incident records found within PSUR period ${periodStart} to ${periodEnd}`,
+    };
+  }
+
+  const groupedCounts: Record<string, Record<string, number>> = {};
+  const regionsSet = new Set<string>();
+  const severitiesSet = new Set<string>();
+
+  for (const atom of inPeriodAtoms) {
+    const data = (atom.normalizedData || atom.data) as Record<string, unknown>;
+    const region = String(data.region || data.country || "Unknown");
+    const severity = String(data.severity || data.seriousness || "unclassified");
+    
+    regionsSet.add(region);
+    severitiesSet.add(severity);
+    
+    if (!groupedCounts[region]) groupedCounts[region] = {};
+    groupedCounts[region][severity] = (groupedCounts[region][severity] || 0) + 1;
+  }
+
+  const regions = Array.from(regionsSet).sort();
+  const severities = Array.from(severitiesSet).sort();
+
+  const tableRows: Array<Record<string, string | number>> = [];
+  for (const region of regions) {
+    const row: Record<string, string | number> = { region };
+    let rowTotal = 0;
+    for (const severity of severities) {
+      const count = groupedCounts[region]?.[severity] || 0;
+      row[severity] = count;
+      rowTotal += count;
+    }
+    row["total"] = rowTotal;
+    tableRows.push(row);
+  }
+
+  const totalsRow: Record<string, string | number> = { region: "TOTAL" };
+  let grandTotal = 0;
+  for (const severity of severities) {
+    let severityTotal = 0;
+    for (const region of regions) {
+      severityTotal += groupedCounts[region]?.[severity] || 0;
+    }
+    totalsRow[severity] = severityTotal;
+    grandTotal += severityTotal;
+  }
+  totalsRow["total"] = grandTotal;
+  tableRows.push(totalsRow);
+
+  const headers = ["region", ...severities, "total"];
+
+  const tableContent: TableContent = {
+    headers,
+    rows: tableRows,
+    summary: `Cross-tabulation of ${inPeriodAtoms.length} incidents by region and severity for ${periodStart} to ${periodEnd}.`,
+  };
+
+  const methodStatement = `Filtered ${incidentAtoms.length} incident_record atoms by date within PSUR period. Grouped by region × severity. ${incidentAtoms.length - inPeriodAtoms.length} excluded as out-of-period. No AI inference.`;
+
+  return {
+    success: true,
+    slotId,
+    proposalId: generateProposalId(),
+    contentType: "table",
+    content: tableContent,
+    contentHash: sha256Json(tableContent),
+    evidenceAtomIds: inPeriodAtoms.map(a => a.id),
+    methodStatement,
+    claimedObligationIds: slotMetadata.obligationIds,
+    transformationsUsed: slotMetadata.allowedTransformations,
+    agentId,
+  };
+}
+
+export function generateFSCASummaryTable(
+  fscaAtoms: EvidenceAtom[],
+  psurCase: PSURCase,
+  slotMetadata: SlotMetadata
+): DeterministicGeneratorResult {
+  const slotId = "fsca.summary_table";
+  const agentId = "DeterministicSlotGenerator:v1";
+  
+  const periodStart = dateOnly(psurCase.startPeriod);
+  const periodEnd = dateOnly(psurCase.endPeriod);
+  
+  if (fscaAtoms.length === 0) {
+    return {
+      success: false,
+      slotId,
+      proposalId: generateProposalId(),
+      contentType: "table",
+      content: null,
+      contentHash: "",
+      evidenceAtomIds: [],
+      methodStatement: "",
+      claimedObligationIds: slotMetadata.obligationIds,
+      transformationsUsed: slotMetadata.allowedTransformations,
+      agentId,
+      error: "No fsca evidence atoms available",
+    };
+  }
+
+  const tableRows: Array<Record<string, string | number>> = [];
+  const usedAtomIds: number[] = [];
+
+  for (const atom of fscaAtoms) {
+    const data = (atom.normalizedData || atom.data) as Record<string, unknown>;
+    const fscaRef = String(data.fscaReference || data.referenceNumber || data.id || `FSCA-${atom.id}`);
+    const actionType = String(data.actionType || data.type || "Unspecified");
+    const status = String(data.status || "Open");
+    const initiationDate = dateOnly(data.initiationDate || data.date || data.startDate);
+    const affectedRegions = String(data.affectedRegions || data.regions || data.countries || "Global");
+    
+    tableRows.push({
+      fscaReference: fscaRef,
+      actionType,
+      status,
+      initiationDate: initiationDate || "N/A",
+      affectedRegions,
+    });
+    usedAtomIds.push(atom.id);
+  }
+
+  const tableContent: TableContent = {
+    headers: ["fscaReference", "actionType", "status", "initiationDate", "affectedRegions"],
+    rows: tableRows,
+    summary: `Summary of ${fscaAtoms.length} Field Safety Corrective Actions for reporting period ${periodStart} to ${periodEnd}.`,
+  };
+
+  const methodStatement = `Listed ${fscaAtoms.length} FSCA evidence atoms. Extracted reference, action type, status, initiation date, and affected regions. No interpolation or AI inference.`;
+
+  return {
+    success: true,
+    slotId,
+    proposalId: generateProposalId(),
+    contentType: "table",
+    content: tableContent,
+    contentHash: sha256Json(tableContent),
+    evidenceAtomIds: usedAtomIds,
+    methodStatement,
+    claimedObligationIds: slotMetadata.obligationIds,
+    transformationsUsed: slotMetadata.allowedTransformations,
+    agentId,
+  };
+}
+
 export function runDeterministicGenerator(
   slotId: string,
   evidenceAtoms: EvidenceAtom[],
@@ -520,6 +790,27 @@ export function runDeterministicGenerator(
         a => a.evidenceType === "complaint_record"
       );
       return generateComplaintsByRegionSeriousness(complaintAtoms, psurCase, slotMetadata);
+    }
+    case "C.02.sales_table":
+    case "sales.volume_table": {
+      const salesAtoms = evidenceAtoms.filter(
+        a => a.evidenceType === "sales_volume"
+      );
+      return generateSalesVolumeTable(salesAtoms, psurCase, slotMetadata);
+    }
+    case "D.01.incidents_summary":
+    case "incidents.by_region_severity": {
+      const incidentAtoms = evidenceAtoms.filter(
+        a => a.evidenceType === "incident_record"
+      );
+      return generateIncidentsByRegionSeverity(incidentAtoms, psurCase, slotMetadata);
+    }
+    case "H.01.fsca_summary":
+    case "fsca.summary_table": {
+      const fscaAtoms = evidenceAtoms.filter(
+        a => a.evidenceType === "fsca"
+      );
+      return generateFSCASummaryTable(fscaAtoms, psurCase, slotMetadata);
     }
     default:
       return {

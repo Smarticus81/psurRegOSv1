@@ -1,9 +1,7 @@
 import { useLocation, Link } from "wouter";
 import {
-  Cpu,
   Settings,
   Activity,
-  Box,
   Database,
   FileText,
 } from "lucide-react";
@@ -20,36 +18,23 @@ import {
   SidebarFooter,
 } from "@/components/ui/sidebar";
 
-const pmsNavItems = [
+const workflowNavItems = [
   {
-    title: "Device Portfolio",
-    url: "/",
-    icon: Box,
-    step: 1,
+    title: "PSUR Workflow",
+    url: "/psur",
+    icon: FileText,
   },
   {
     title: "Evidence",
     url: "/evidence",
     icon: Database,
-    step: 2,
-  },
-  {
-    title: "PSUR Workflow",
-    url: "/psur",
-    icon: FileText,
-    step: 3,
-  },
-  {
-    title: "Agent Studio",
-    url: "/agents",
-    icon: Cpu,
   },
 ];
 
 const systemNavItems = [
   {
-    title: "Settings",
-    url: "/settings",
+    title: "Admin",
+    url: "/admin",
     icon: Settings,
   },
 ];
@@ -66,27 +51,22 @@ export function AppSidebar() {
           </div>
           <div className="flex flex-col">
             <span className="font-medium text-sm tracking-tight">RegulatoryOS</span>
-            <span className="text-[10px] text-muted-foreground/70">PMS Compliance</span>
+            <span className="text-[10px] text-muted-foreground/70">PSUR Engine</span>
           </div>
         </div>
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>PSUR Workflow</SidebarGroupLabel>
+          <SidebarGroupLabel>Workflow</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {pmsNavItems.map((item) => (
+              {workflowNavItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
                     asChild
                     isActive={location === item.url}
                   >
                     <Link href={item.url} data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, '-')}`}>
-                      {item.step && (
-                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-muted text-[10px] font-medium text-muted-foreground">
-                          {item.step}
-                        </span>
-                      )}
                       <item.icon className="h-4 w-4" />
                       <span>{item.title}</span>
                     </Link>

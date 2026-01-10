@@ -50,6 +50,7 @@ import {
 import { EVIDENCE_DEFINITIONS } from "@shared/schema";
 import { loadTemplate as loadTemplateOld, getTemplateDirsDebugInfo } from "./template-loader";
 import { loadTemplate, listTemplates } from "./src/templateStore";
+import { normalizeEvidenceAtoms, normalizeSlotProposals } from "./src/normalizers";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
@@ -1437,6 +1438,14 @@ export async function registerRoutes(
 
       const evidenceAtoms = await storage.getEvidenceAtoms(psurCaseId);
       
+      // Normalize atoms before validation (Step 3)
+      const normalizedAtoms = normalizeEvidenceAtoms(evidenceAtoms, {
+        deviceCode: "UNKNOWN_DEVICE",
+        periodStart: psurCase.startPeriod.toISOString(),
+        periodEnd: psurCase.endPeriod.toISOString(),
+      });
+      console.log("[DEBUG] atom sample", normalizedAtoms?.[0]);
+      
       const result = runDeterministicGenerator(slotId, evidenceAtoms, psurCase, psurCase.templateId);
       
       // GENERATION FAILURE - return with error details
@@ -1521,8 +1530,11 @@ export async function registerRoutes(
         periodEnd: periodEnd.toISOString(),
       } : null;
 
-      const proposalData = {
+      // Normalize proposals before validation (Step 4)
+      const template = loadTemplate(psurCase.templateId);
+      const rawProposal = {
         psurCaseId,
+        psurRef: psurCase.psurReference,
         slotId: result.slotId,
         templateId: psurCase.templateId,
         content: JSON.stringify(result.content),
@@ -1535,6 +1547,14 @@ export async function registerRoutes(
         status: autoAdjudicate ? "accepted" : "pending",
         adjudicationResult,
         adjudicatedAt: autoAdjudicate ? new Date() : null
+      };
+      const [normalizedProposal] = normalizeSlotProposals([rawProposal], template);
+      console.log("[DEBUG] proposal sample", normalizedProposal);
+      
+      const proposalData = {
+        ...normalizedProposal,
+        psurCaseId,
+        templateId: psurCase.templateId,
       };
 
       // PERSIST the SlotProposal

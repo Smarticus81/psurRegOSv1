@@ -133,6 +133,7 @@ export const FORMQAR_SLOTS: SlotDefinition[] = [
   { slot_id: "F.09.severity_distribution", slot_path: "F / Complaints / Severity Distribution", slot_type: "table", requiredness: "required", obligation_ids: ["FORMQAR_F_COMPLAINTS"], evidence_types: ["complaint_record"], allowed_transformations: ["tabulate", "aggregate"], trace_granularity: "cell", dependencies: ["F.01.complaints_overview"], acceptance_criteria: ["High/Medium/Low severity breakdown."], tier: 2, recommended_agents: ["ComplaintsTableAgent"] },
   { slot_id: "F.10.complaints_absence", slot_path: "F / Complaints / No Complaints Statement", slot_type: "narrative", requiredness: "conditional", obligation_ids: ["FORMQAR_F_COMPLAINTS"], evidence_types: [], allowed_transformations: ["cite"], trace_granularity: "paragraph", dependencies: [], acceptance_criteria: ["If no complaints: explicit statement."], tier: 2, recommended_agents: ["ComplaintsAgent"] },
   { slot_id: "F.11.complaints_by_region_severity", slot_path: "F / Complaints / By Region and Severity Table", slot_type: "table", requiredness: "required", obligation_ids: ["FORMQAR_F_COMPLAINTS"], evidence_types: ["complaint_record"], allowed_transformations: ["tabulate", "aggregate"], trace_granularity: "cell", dependencies: ["F.01.complaints_overview"], acceptance_criteria: ["Cross-tabulation of region vs severity.", "Counts grouped by (region, seriousness)."], tier: 2, recommended_agents: ["DeterministicComplaintsAgent"] },
+  { slot_id: "PSUR.COMPLAINTS.SUMMARY_BY_REGION_SERIOUSNESS", slot_path: "F / Complaints / By Region and Seriousness Table", slot_type: "table", requiredness: "required", obligation_ids: ["FORMQAR_F_COMPLAINTS", "EU.PSUR.CONTENT.COMPLAINT_SUMMARY"], evidence_types: ["complaint_record"], allowed_transformations: ["tabulate", "aggregate"], trace_granularity: "cell", dependencies: [], acceptance_criteria: ["Cross-tabulation of region vs seriousness (serious_incident, non_serious, unknown).", "Uses normalizedData.complaintDate for period filtering.", "Maps severity→seriousness: high/critical→serious_incident, low/medium→non_serious."], tier: 2, recommended_agents: ["DeterministicComplaintsAgent"] },
 
   // ==================== SECTION G: TREND ANALYSIS (8 slots) ====================
   { slot_id: "G.01.trend_methodology", slot_path: "G / Trend Analysis / Statistical Methodology", slot_type: "narrative", requiredness: "required", obligation_ids: ["EU.PSUR.CONTENT.TREND_REPORTING", "FORMQAR_G_TRENDS"], evidence_types: ["complaint_record", "incident_record"], allowed_transformations: ["summarize"], trace_granularity: "paragraph", dependencies: [], acceptance_criteria: ["Statistical methods stated."], tier: 2, recommended_agents: ["TrendAnalysisAgent"] },
@@ -241,7 +242,9 @@ const OBLIGATIONS: Record<string, ObligationDefinition> = {
 let slotsValidated = false;
 
 export function getSlotDefinitionsForTemplate(profileId: string): SlotDefinition[] {
-  const slots = profileId === "FormQAR-054_C" ? FORMQAR_SLOTS : ANNEX_I_SLOTS;
+  const normalizedId = profileId.toUpperCase().replace(/-/g, "_");
+  const isFormQar = normalizedId.includes("FORMQAR") || normalizedId.includes("054_C");
+  const slots = isFormQar ? FORMQAR_SLOTS : ANNEX_I_SLOTS;
   
   if (!slotsValidated) {
     validateSlotEvidenceTypes(ANNEX_I_SLOTS, "ANNEX_I_SLOTS");
@@ -253,7 +256,9 @@ export function getSlotDefinitionsForTemplate(profileId: string): SlotDefinition
 }
 
 function getSlotDefinitions(profileId: string): SlotDefinition[] {
-  const slots = profileId === "FormQAR-054_C" ? FORMQAR_SLOTS : ANNEX_I_SLOTS;
+  const normalizedId = profileId.toUpperCase().replace(/-/g, "_");
+  const isFormQar = normalizedId.includes("FORMQAR") || normalizedId.includes("054_C");
+  const slots = isFormQar ? FORMQAR_SLOTS : ANNEX_I_SLOTS;
   
   if (!slotsValidated) {
     validateSlotEvidenceTypes(ANNEX_I_SLOTS, "ANNEX_I_SLOTS");

@@ -45,10 +45,19 @@ export interface SlotMetadata {
 
 export const DETERMINISTIC_SUPPORTED_SLOTS = new Set([
   "F.11.complaints_by_region_severity",
+  "PSUR.COMPLAINTS.SUMMARY_BY_REGION_SERIOUSNESS",
 ]);
 
 export function isDeterministicSupported(slotId: string): boolean {
   return DETERMINISTIC_SUPPORTED_SLOTS.has(slotId);
+}
+
+function mapSeverityToSeriousness(severity: string | undefined | null): string {
+  if (!severity) return "unknown";
+  const s = severity.toLowerCase();
+  if (s === "high" || s === "critical") return "serious_incident";
+  if (s === "low" || s === "medium") return "non_serious";
+  return "unknown";
 }
 
 export function getSlotMetadata(slotId: string, templateId: string): SlotMetadata | null {
@@ -259,12 +268,200 @@ export function generateComplaintsByRegionSeverity(
   };
 }
 
+export function generateComplaintsByRegionSeriousness(
+  complaintAtoms: EvidenceAtom[],
+  psurCase: PSURCase,
+  slotMetadata: SlotMetadata
+): DeterministicGeneratorResult & { debug?: Record<string, unknown> } {
+  const slotId = "PSUR.COMPLAINTS.SUMMARY_BY_REGION_SERIOUSNESS";
+  const agentId = "DeterministicSlotGenerator:v1";
+  
+  const periodStart = normalizeToDate(psurCase.startPeriod);
+  const periodEnd = normalizeToDate(psurCase.endPeriod);
+  
+  if (!periodStart || !periodEnd) {
+    return {
+      success: false,
+      slotId,
+      proposalId: generateProposalId(),
+      contentType: "table",
+      content: null,
+      contentHash: "",
+      evidenceAtomIds: [],
+      methodStatement: "",
+      claimedObligationIds: slotMetadata.obligationIds,
+      transformationsUsed: slotMetadata.allowedTransformations,
+      agentId,
+      error: "Invalid PSUR period dates",
+      debug: {
+        totalAtoms: complaintAtoms.length,
+        periodStart: String(psurCase.startPeriod),
+        periodEnd: String(psurCase.endPeriod),
+      },
+    };
+  }
+  
+  if (complaintAtoms.length === 0) {
+    return {
+      success: false,
+      slotId,
+      proposalId: generateProposalId(),
+      contentType: "table",
+      content: null,
+      contentHash: "",
+      evidenceAtomIds: [],
+      methodStatement: "",
+      claimedObligationIds: slotMetadata.obligationIds,
+      transformationsUsed: slotMetadata.allowedTransformations,
+      agentId,
+      error: "No complaint_record evidence atoms available",
+      debug: {
+        totalAtoms: 0,
+        inPeriodAtoms: 0,
+        periodStart: formatDateSafe(periodStart),
+        periodEnd: formatDateSafe(periodEnd),
+      },
+    };
+  }
+
+  const inPeriodAtoms: EvidenceAtom[] = [];
+  const outOfPeriodAtoms: EvidenceAtom[] = [];
+  
+  for (const atom of complaintAtoms) {
+    const normalizedData = atom.normalizedData as Record<string, unknown> | null;
+    if (!normalizedData) {
+      outOfPeriodAtoms.push(atom);
+      continue;
+    }
+    
+    const complaintDateRaw = normalizedData.complaintDate;
+    const atomDate = normalizeToDate(complaintDateRaw);
+    
+    if (!atomDate) {
+      outOfPeriodAtoms.push(atom);
+      continue;
+    }
+    
+    if (atomDate >= periodStart && atomDate <= periodEnd) {
+      inPeriodAtoms.push(atom);
+    } else {
+      outOfPeriodAtoms.push(atom);
+    }
+  }
+
+  if (inPeriodAtoms.length === 0) {
+    return {
+      success: false,
+      slotId,
+      proposalId: generateProposalId(),
+      contentType: "table",
+      content: null,
+      contentHash: "",
+      evidenceAtomIds: complaintAtoms.map(a => a.id),
+      methodStatement: "",
+      claimedObligationIds: slotMetadata.obligationIds,
+      transformationsUsed: slotMetadata.allowedTransformations,
+      agentId,
+      error: `No complaint records found within PSUR period`,
+      debug: {
+        totalAtoms: complaintAtoms.length,
+        inPeriodAtoms: 0,
+        periodStart: formatDateSafe(periodStart),
+        periodEnd: formatDateSafe(periodEnd),
+      },
+    };
+  }
+
+  const groupedCounts: Record<string, Record<string, number>> = {};
+  const regionsSet = new Set<string>();
+  const seriousnessSet = new Set<string>();
+
+  for (const atom of inPeriodAtoms) {
+    const normalizedData = atom.normalizedData as Record<string, unknown>;
+    const region = (normalizedData.region as string) || (normalizedData.country as string) || "Unknown";
+    const severity = normalizedData.severity as string | undefined;
+    const seriousness = mapSeverityToSeriousness(severity);
+    
+    regionsSet.add(region);
+    seriousnessSet.add(seriousness);
+    
+    if (!groupedCounts[region]) {
+      groupedCounts[region] = {};
+    }
+    groupedCounts[region][seriousness] = (groupedCounts[region][seriousness] || 0) + 1;
+  }
+
+  const regions = Array.from(regionsSet).sort();
+  const seriousnessValues = ["serious_incident", "non_serious", "unknown"].filter(s => seriousnessSet.has(s));
+
+  const tableRows: Array<Record<string, string | number>> = [];
+  
+  for (const region of regions) {
+    const row: Record<string, string | number> = { region };
+    let rowTotal = 0;
+    for (const seriousness of seriousnessValues) {
+      const count = groupedCounts[region]?.[seriousness] || 0;
+      row[seriousness] = count;
+      rowTotal += count;
+    }
+    row["total"] = rowTotal;
+    tableRows.push(row);
+  }
+
+  const totalsRow: Record<string, string | number> = { region: "TOTAL" };
+  let grandTotal = 0;
+  for (const seriousness of seriousnessValues) {
+    let seriousnessTotal = 0;
+    for (const region of regions) {
+      seriousnessTotal += groupedCounts[region]?.[seriousness] || 0;
+    }
+    totalsRow[seriousness] = seriousnessTotal;
+    grandTotal += seriousnessTotal;
+  }
+  totalsRow["total"] = grandTotal;
+  tableRows.push(totalsRow);
+
+  const headers = ["region", ...seriousnessValues, "total"];
+
+  const tableContent: TableContent = {
+    headers,
+    rows: tableRows,
+    summary: `Cross-tabulation of ${inPeriodAtoms.length} complaints by region and seriousness for reporting period ${formatDateSafe(periodStart)} to ${formatDateSafe(periodEnd)}.`,
+  };
+
+  const methodStatement = `Deterministic aggregation of ${inPeriodAtoms.length} complaint_record evidence atoms. ` +
+    `Each record was filtered by normalizedData.complaintDate within PSUR period [${formatDateSafe(periodStart)}, ${formatDateSafe(periodEnd)}]. ` +
+    `Severity was mapped to seriousness: high/critical→serious_incident, low/medium→non_serious, else→unknown. ` +
+    `Records grouped by (region) × (seriousness). ${outOfPeriodAtoms.length} records excluded as out-of-period. ` +
+    `No interpolation, estimation, or AI inference was applied.`;
+
+  return {
+    success: true,
+    slotId,
+    proposalId: generateProposalId(),
+    contentType: "table",
+    content: tableContent,
+    contentHash: sha256Json(tableContent),
+    evidenceAtomIds: inPeriodAtoms.map(a => a.id),
+    methodStatement,
+    claimedObligationIds: slotMetadata.obligationIds,
+    transformationsUsed: slotMetadata.allowedTransformations,
+    agentId,
+    debug: {
+      totalAtoms: complaintAtoms.length,
+      inPeriodAtoms: inPeriodAtoms.length,
+      periodStart: formatDateSafe(periodStart),
+      periodEnd: formatDateSafe(periodEnd),
+    },
+  };
+}
+
 export function runDeterministicGenerator(
   slotId: string,
   evidenceAtoms: EvidenceAtom[],
   psurCase: PSURCase,
   templateId: string
-): DeterministicGeneratorResult {
+): DeterministicGeneratorResult & { debug?: Record<string, unknown> } {
   const slotMetadata = getSlotMetadata(slotId, templateId);
   const agentId = "DeterministicSlotGenerator:v1";
   
@@ -291,6 +488,12 @@ export function runDeterministicGenerator(
         a => a.evidenceType === "complaint_record"
       );
       return generateComplaintsByRegionSeverity(complaintAtoms, psurCase, slotMetadata);
+    }
+    case "PSUR.COMPLAINTS.SUMMARY_BY_REGION_SERIOUSNESS": {
+      const complaintAtoms = evidenceAtoms.filter(
+        a => a.evidenceType === "complaint_record"
+      );
+      return generateComplaintsByRegionSeriousness(complaintAtoms, psurCase, slotMetadata);
     }
     default:
       return {

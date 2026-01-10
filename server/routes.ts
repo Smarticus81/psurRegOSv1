@@ -1380,7 +1380,7 @@ export async function registerRoutes(
       if (!isDeterministicSupported(slotId)) {
         return res.status(400).json({ 
           error: `Slot ${slotId} does not support deterministic generation`,
-          supportedSlots: ["F.11.complaints_by_region_severity"]
+          supportedSlots: ["F.11.complaints_by_region_severity", "PSUR.COMPLAINTS.SUMMARY_BY_REGION_SERIOUSNESS"]
         });
       }
 
@@ -1446,8 +1446,8 @@ export async function registerRoutes(
       for (const atomId of result.evidenceAtomIds) {
         const atom = evidenceAtoms.find(a => a.id === atomId);
         if (atom) {
-          const atomData = atom.data as Record<string, unknown>;
-          const complaintDateRaw = atomData.complaintDate;
+          const normalizedData = atom.normalizedData as Record<string, unknown> | null;
+          const complaintDateRaw = normalizedData?.complaintDate;
           if (complaintDateRaw) {
             const complaintDate = new Date(complaintDateRaw as string);
             if (complaintDate < periodStart || complaintDate > periodEnd) {
@@ -1611,6 +1611,9 @@ export async function registerRoutes(
           totalEvidenceAtoms: evidenceAtoms.length,
           inPeriodEvidenceAtoms: result.evidenceAtomIds.length,
         },
+        
+        // Debug output from generator
+        debug: (result as { debug?: Record<string, unknown> }).debug || null,
       });
     } catch (error) {
       console.error("Deterministic generation error:", error);

@@ -48,7 +48,8 @@ import {
   normalizeSalesVolumeRow,
 } from "./evidence/normalize";
 import { EVIDENCE_DEFINITIONS } from "@shared/schema";
-import { loadTemplate, getTemplateDirsDebugInfo } from "./template-loader";
+import { loadTemplate as loadTemplateOld, getTemplateDirsDebugInfo } from "./template-loader";
+import { loadTemplate, listTemplates } from "./src/templateStore";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
@@ -69,15 +70,19 @@ export async function registerRoutes(
 
   registerObjectStorageRoutes(app);
 
-  // Template debug endpoints
+  // Template endpoints
+  app.get("/api/templates", (_req, res) => {
+    res.json({ templates: listTemplates() });
+  });
+
   app.get("/api/templates/debug", (_req, res) => {
     res.json(getTemplateDirsDebugInfo());
   });
 
-  app.get("/api/templates/test/:id", (req, res) => {
+  app.get("/api/templates/:id", (req, res) => {
     try {
       const t = loadTemplate(req.params.id);
-      res.json({ ok: true, template_id: t.template_id, slots: t.slots?.length ?? 0 });
+      res.json({ ok: true, template_id: t.template_id, slotCount: t.slots.length });
     } catch (e: any) {
       res.status(e?.status || 500).json({ ok: false, error: e?.message || String(e) });
     }
@@ -557,11 +562,17 @@ export async function registerRoutes(
 
   app.post("/api/orchestrator/qualify", async (req, res) => {
     try {
-      const { templateId } = req.body;
-      if (!templateId) {
-        return res.status(400).json({ error: "Template ID required" });
+      const templateIdRaw = req.body?.templateId || req.body?.template || req.body?.template_id;
+      
+      // FORCE template loading through templateStore (single source of truth)
+      let template;
+      try {
+        template = loadTemplate(templateIdRaw);
+      } catch (e: any) {
+        return res.status(e?.status || 500).json({ error: e?.message || String(e) });
       }
-      const result = await qualifyTemplate(templateId);
+      
+      const result = await qualifyTemplate(template.template_id);
       if (result.success) {
         res.json(result.data);
       } else {

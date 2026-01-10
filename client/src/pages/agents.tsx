@@ -867,7 +867,7 @@ export default function PSURGenerator() {
                                 <span className="text-xs font-medium flex-1 truncate">{item.slotId}</span>
                                 <Badge variant="outline" className="text-[9px]">T{item.tier}</Badge>
                                 <Badge variant="secondary" className="text-[9px]">P:{item.priority}</Badge>
-                                {item.evidenceRequirements.missingEvidenceTypes.length > 0 && (
+                                {item.evidenceRequirements?.missingEvidenceTypes?.length > 0 && (
                                   <AlertCircle className="h-3 w-3 text-amber-500 shrink-0" />
                                 )}
                               </div>
@@ -878,7 +878,7 @@ export default function PSURGenerator() {
                                     <div>
                                       <p className="text-[10px] text-muted-foreground mb-1">Obligations</p>
                                       <div className="flex flex-wrap gap-1">
-                                        {item.mappedObligations.map((ob, i) => (
+                                        {(item.mappedObligations || []).map((ob, i) => (
                                           <Badge key={i} variant="outline" className="text-[8px]">{ob}</Badge>
                                         ))}
                                       </div>
@@ -892,10 +892,10 @@ export default function PSURGenerator() {
                                   <div>
                                     <p className="text-[10px] text-muted-foreground mb-1">Evidence</p>
                                     <div className="flex flex-wrap gap-1">
-                                      {item.evidenceRequirements.availableEvidenceTypes.map((ev, i) => (
+                                      {(item.evidenceRequirements?.availableEvidenceTypes || []).map((ev, i) => (
                                         <Badge key={i} variant="secondary" className="text-[8px] bg-emerald-100 dark:bg-emerald-900/30">{ev}</Badge>
                                       ))}
-                                      {item.evidenceRequirements.missingEvidenceTypes.map((ev, i) => (
+                                      {(item.evidenceRequirements?.missingEvidenceTypes || []).map((ev, i) => (
                                         <Badge key={i} variant="secondary" className="text-[8px] bg-red-100 dark:bg-red-900/30">{ev}</Badge>
                                       ))}
                                     </div>
@@ -904,17 +904,17 @@ export default function PSURGenerator() {
                                   <div>
                                     <p className="text-[10px] text-muted-foreground mb-1">Allowed Transforms</p>
                                     <div className="flex flex-wrap gap-1">
-                                      {item.generationContract.allowedTransformations.map((tr, i) => (
+                                      {(item.generationContract?.allowedTransformations || []).map((tr, i) => (
                                         <Badge key={i} variant="outline" className="text-[8px]">{tr}</Badge>
                                       ))}
                                     </div>
                                   </div>
                                   
-                                  {item.dependencies.length > 0 && (
+                                  {(item.dependencies?.length || 0) > 0 && (
                                     <div>
                                       <p className="text-[10px] text-muted-foreground mb-1">Dependencies</p>
                                       <div className="flex flex-wrap gap-1">
-                                        {item.dependencies.map((dep, i) => (
+                                        {(item.dependencies || []).map((dep, i) => (
                                           <Badge key={i} variant="outline" className="text-[8px]">{dep}</Badge>
                                         ))}
                                       </div>
@@ -929,7 +929,7 @@ export default function PSURGenerator() {
                                           e.stopPropagation();
                                           handleDeterministicGenerate(item.slotId);
                                         }}
-                                        disabled={generatingSlots.has(item.slotId) || item.evidenceRequirements.availableEvidenceTypes.length === 0}
+                                        disabled={generatingSlots.has(item.slotId) || (item.evidenceRequirements?.availableEvidenceTypes?.length || 0) === 0}
                                         className="text-[10px] h-7"
                                         data-testid={`btn-generate-deterministic-${item.slotId}`}
                                       >

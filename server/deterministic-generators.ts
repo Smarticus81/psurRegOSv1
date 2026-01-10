@@ -52,9 +52,20 @@ export function isDeterministicSupported(slotId: string): boolean {
   return DETERMINISTIC_SUPPORTED_SLOTS.has(slotId);
 }
 
-function mapSeverityToSeriousness(severity: string | undefined | null): string {
-  if (!severity) return "unknown";
-  const s = severity.toLowerCase();
+function dateOnly(s: string | Date | unknown): string {
+  if (s instanceof Date) {
+    return s.toISOString().slice(0, 10);
+  }
+  return String(s || "").slice(0, 10);
+}
+
+function inPeriod(d: string, start: string, end: string): boolean {
+  const x = dateOnly(d);
+  return x >= start && x <= end;
+}
+
+function severityToSeriousness(sev: unknown): "serious_incident" | "non_serious" | "unknown" {
+  const s = String(sev || "").trim().toLowerCase();
   if (s === "high" || s === "critical") return "serious_incident";
   if (s === "low" || s === "medium") return "non_serious";
   return "unknown";
@@ -276,10 +287,10 @@ export function generateComplaintsByRegionSeriousness(
   const slotId = "PSUR.COMPLAINTS.SUMMARY_BY_REGION_SERIOUSNESS";
   const agentId = "DeterministicSlotGenerator:v1";
   
-  const periodStart = normalizeToDate(psurCase.startPeriod);
-  const periodEnd = normalizeToDate(psurCase.endPeriod);
+  const periodStart = dateOnly(psurCase.startPeriod);
+  const periodEnd = dateOnly(psurCase.endPeriod);
   
-  if (!periodStart || !periodEnd) {
+  if (!periodStart || !periodEnd || periodStart.length !== 10 || periodEnd.length !== 10) {
     return {
       success: false,
       slotId,
@@ -318,8 +329,8 @@ export function generateComplaintsByRegionSeriousness(
       debug: {
         totalAtoms: 0,
         inPeriodAtoms: 0,
-        periodStart: formatDateSafe(periodStart),
-        periodEnd: formatDateSafe(periodEnd),
+        periodStart,
+        periodEnd,
       },
     };
   }
@@ -334,18 +345,11 @@ export function generateComplaintsByRegionSeriousness(
       continue;
     }
     
-    const complaintDateRaw = normalizedData.complaintDate;
-    const atomDate = normalizeToDate(complaintDateRaw);
-    
-    if (!atomDate) {
+    const complaintDate = normalizedData.complaintDate as string;
+    if (!complaintDate || !inPeriod(complaintDate, periodStart, periodEnd)) {
       outOfPeriodAtoms.push(atom);
-      continue;
-    }
-    
-    if (atomDate >= periodStart && atomDate <= periodEnd) {
-      inPeriodAtoms.push(atom);
     } else {
-      outOfPeriodAtoms.push(atom);
+      inPeriodAtoms.push(atom);
     }
   }
 
@@ -366,8 +370,8 @@ export function generateComplaintsByRegionSeriousness(
       debug: {
         totalAtoms: complaintAtoms.length,
         inPeriodAtoms: 0,
-        periodStart: formatDateSafe(periodStart),
-        periodEnd: formatDateSafe(periodEnd),
+        periodStart,
+        periodEnd,
       },
     };
   }
@@ -380,7 +384,7 @@ export function generateComplaintsByRegionSeriousness(
     const normalizedData = atom.normalizedData as Record<string, unknown>;
     const region = (normalizedData.region as string) || (normalizedData.country as string) || "Unknown";
     const severity = normalizedData.severity as string | undefined;
-    const seriousness = mapSeverityToSeriousness(severity);
+    const seriousness = severityToSeriousness(severity);
     
     regionsSet.add(region);
     seriousnessSet.add(seriousness);
@@ -426,14 +430,14 @@ export function generateComplaintsByRegionSeriousness(
   const tableContent: TableContent = {
     headers,
     rows: tableRows,
-    summary: `Cross-tabulation of ${inPeriodAtoms.length} complaints by region and seriousness for reporting period ${formatDateSafe(periodStart)} to ${formatDateSafe(periodEnd)}.`,
+    summary: `Cross-tabulation of ${inPeriodAtoms.length} complaints by region and seriousness for reporting period ${periodStart} to ${periodEnd}.`,
   };
 
-  const methodStatement = `Deterministic aggregation of ${inPeriodAtoms.length} complaint_record evidence atoms. ` +
-    `Each record was filtered by normalizedData.complaintDate within PSUR period [${formatDateSafe(periodStart)}, ${formatDateSafe(periodEnd)}]. ` +
-    `Severity was mapped to seriousness: high/critical→serious_incident, low/medium→non_serious, else→unknown. ` +
-    `Records grouped by (region) × (seriousness). ${outOfPeriodAtoms.length} records excluded as out-of-period. ` +
-    `No interpolation, estimation, or AI inference was applied.`;
+  const methodStatement = 
+    `Filtered complaint EvidenceAtoms by normalizedData.complaintDate within PSUR period ` +
+    `(${periodStart} to ${periodEnd}) and counted by region + mapped seriousness (from severity). ` +
+    `Severity→seriousness: high/critical→serious_incident, low/medium→non_serious, else→unknown. ` +
+    `${outOfPeriodAtoms.length} records excluded as out-of-period. No interpolation or AI inference.`;
 
   return {
     success: true,
@@ -450,8 +454,8 @@ export function generateComplaintsByRegionSeriousness(
     debug: {
       totalAtoms: complaintAtoms.length,
       inPeriodAtoms: inPeriodAtoms.length,
-      periodStart: formatDateSafe(periodStart),
-      periodEnd: formatDateSafe(periodEnd),
+      periodStart,
+      periodEnd,
     },
   };
 }

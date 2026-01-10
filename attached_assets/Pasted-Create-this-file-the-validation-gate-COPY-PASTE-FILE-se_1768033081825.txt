@@ -1,0 +1,111 @@
+Create this file (the validation gate)
+COPY/PASTE FILE: server/src/strictGate.ts
+// FILE: server/src/strictGate.ts
+// This file is the ONE TRUE GATE for schema validation.
+// Anything that passes through here gets normalized first, then Zod-validated.
+
+import { normalizeEvidenceAtoms, normalizeSlotProposals } from "./normalizers";
+
+// IMPORTANT: adjust these imports to match where your Zod schemas live.
+// In many Replit builds, schemas are in server/src/schemas or server/src/shared/schemas.
+import { EvidenceAtomZ } from "./schemas/evidenceAtom";
+import { SlotProposalZ } from "./schemas/slotProposal";
+
+export function strictParseEvidenceAtoms(
+  rawAtoms: any[],
+  ctx: { deviceCode?: string; periodStart?: string; periodEnd?: string }
+) {
+  const normalized = normalizeEvidenceAtoms(rawAtoms, ctx);
+  // Zod validation happens ONLY on normalized objects
+  return EvidenceAtomZ.array().parse(normalized);
+}
+
+export function strictParseSlotProposals(rawProposals: any[], template: any) {
+  const normalized = normalizeSlotProposals(rawProposals, template);
+  // Zod validation happens ONLY on normalized objects
+  return SlotProposalZ.array().parse(normalized);
+}
+
+Step B) Patch your orchestrator route to use the gate
+
+You have a file where the 8-step workflow runs (often server/routes.ts or server/src/routes.ts).
+
+COPY/PASTE SNIPPET (replace the Step 3 atom validation)
+
+Find the place where you currently do something like:
+
+EvidenceAtomZ.array().parse(atoms)
+
+
+Replace that whole parse call with:
+
+import { strictParseEvidenceAtoms } from "./strictGate";
+
+
+…and then:
+
+atoms = strictParseEvidenceAtoms(atoms, {
+  deviceCode: device?.deviceCode || device?.code || "UNKNOWN_DEVICE",
+  periodStart,
+  periodEnd,
+});
+
+console.log("[STRICT] atoms validated:", atoms.length);
+console.log("[STRICT] atom sample:", atoms[0]);
+
+COPY/PASTE SNIPPET (replace the Step 4 proposal validation)
+
+Find the place where you currently do something like:
+
+SlotProposalZ.array().parse(proposals)
+
+
+Replace that parse call with:
+
+import { strictParseSlotProposals } from "./strictGate";
+
+
+…and then:
+
+proposals = strictParseSlotProposals(proposals, template);
+
+console.log("[STRICT] proposals validated:", proposals.length);
+console.log("[STRICT] proposal sample:", proposals[0]);
+
+Step C) Fix the “108 ACCEPTED but 0 accepted” count bug
+COPY/PASTE SNIPPET (right after adjudication is applied)
+const accepted = proposals.filter((p: any) => (p.adjudication || p.decision || p.status) === "ACCEPTED").length;
+const rejected = proposals.filter((p: any) => (p.adjudication || p.decision || p.status) === "REJECTED").length;
+console.log(`[FIXED COUNT] Adjudication: ${accepted} ACCEPTED, ${rejected} REJECTED`);
+
+One IMPORTANT NOTE (do this or it won’t compile)
+
+In server/src/strictGate.ts, these two imports must match your actual paths:
+
+import { EvidenceAtomZ } from "./schemas/evidenceAtom";
+import { SlotProposalZ } from "./schemas/slotProposal";
+
+
+If your schemas file is named differently (common ones):
+
+server/src/schemas.ts
+
+server/src/shared/schema.ts
+
+server/src/schema/evidence.ts
+
+Then change ONLY those two import lines to match your project.
+
+Everything else stays exactly as-is.
+
+After you paste this, your log should stop showing:
+
+atomId undefined
+
+contentHash undefined
+
+proposal evidenceAtomIds must NOT have fewer than 1 items
+
+proposal claimedObligationIds must NOT have fewer than 1 items
+
+Because the gate forcibly injects them BEFORE Zod ever sees the object.

@@ -387,20 +387,9 @@ export default function PSURGenerator() {
         }
         
         if (i === 3 && psurCaseId) {
-          const evidenceTypes = ["sales", "complaints", "incidents", "fsca", "pmcf", "literature"];
-          for (const evType of evidenceTypes) {
-            await apiRequest("POST", "/api/evidence-atoms", {
-              psurCaseId,
-              evidenceType: evType,
-              sourceSystem: `${evType}_system`,
-              extractDate: new Date().toISOString(),
-              periodStart: new Date(startPeriod).toISOString(),
-              periodEnd: new Date(endPeriod).toISOString(),
-              recordCount: Math.floor(Math.random() * 100) + 10,
-              provenance: { source: evType, extractedBy: "orchestrator" },
-            });
-          }
-          addLogMessage(`    ${evidenceTypes.length} evidence atoms persisted`);
+          const existingAtoms = await fetch(`/api/evidence-atoms?psurCaseId=${psurCaseId}`);
+          const atomsData = await existingAtoms.json();
+          addLogMessage(`    ${atomsData.length || 0} evidence atoms found for PSUR case`);
         }
         
         if (i === 4 && psurCaseId) {
@@ -410,21 +399,7 @@ export default function PSURGenerator() {
           const queueData = await queueResponse.json();
           setCoverageQueue(queueData);
           addLogMessage(`    Coverage queue built: ${queueData.queue?.length || 0} slots prioritized`);
-          
-          const sampleSlots = ["cover.manufacturer", "exec_summary.benefit_risk", "device_description.intended_purpose", "sales_data.volume", "pms_data.incidents"];
-          for (const slotId of sampleSlots) {
-            await apiRequest("POST", "/api/slot-proposals", {
-              psurCaseId,
-              slotId,
-              templateId,
-              content: `Generated content for ${slotId}`,
-              evidenceAtomIds: [],
-              transformations: ["summarize"],
-              obligationIds: ["MDCG_A1_COVER_MIN_FIELDS"],
-              status: "pending",
-            });
-          }
-          addLogMessage(`    ${sampleSlots.length} slot proposals created`);
+          addLogMessage(`    Slot proposals will be generated via deterministic generators`);
         }
         
         if (i === 5 && psurCaseId) {

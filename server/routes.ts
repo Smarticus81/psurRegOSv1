@@ -51,6 +51,7 @@ import { EVIDENCE_DEFINITIONS } from "@shared/schema";
 import { loadTemplate as loadTemplateOld, getTemplateDirsDebugInfo } from "./template-loader";
 import { loadTemplate, listTemplates } from "./src/templateStore";
 import { normalizeEvidenceAtoms, normalizeSlotProposals } from "./src/normalizers";
+import { strictParseEvidenceAtoms, strictParseSlotProposals } from "./src/strictGate";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 

@@ -58,13 +58,21 @@ The system uses a shared evidence registry (`EVIDENCE_DEFINITIONS` in `shared/sc
 - **Batch Processing**: Rate-limited concurrent processing with retry logic
 - **Chat Integration**: Conversation-based AI interactions with message history
 
+### Application Routes (Simplified)
+The application has 3 core routes only:
+- `/psur` - PSUR Workflow (8-step orchestration)
+- `/evidence` - Evidence Management (upload, atoms, coverage)
+- `/admin` - Admin (company profile + device registry)
+
 ### File Structure Convention
 - `client/src/`: React frontend application
+- `client/src/pages/`: Page components (psur-workflow.tsx, evidence.tsx, admin.tsx)
 - `server/`: Express backend with API routes
 - `shared/`: Shared TypeScript types and database schema
 - `server/replit_integrations/`: Pre-built integration modules (chat, batch processing, object storage)
 - `server/src/services/`: Backend services (evidenceStore, etc.)
 - `server/src/schemas/`: Zod validation schemas for DTOs
+- `server/deterministic-generators.ts`: Slot generators for deterministic PSUR content
 
 ### Orchestrator Workflow Design (8 Steps)
 **Key Principle**: Pre-ingestion + Deterministic Generation. Evidence must be uploaded before workflow execution.

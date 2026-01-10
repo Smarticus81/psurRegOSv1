@@ -491,9 +491,9 @@ export function generateComplaintsByRegionSeriousness(
 export function generateSalesVolumeTable(
   salesAtoms: EvidenceAtom[],
   psurCase: PSURCase,
-  slotMetadata: SlotMetadata
+  slotMetadata: SlotMetadata,
+  originalSlotId: string
 ): DeterministicGeneratorResult {
-  const slotId = "sales.volume_table";
   const agentId = "DeterministicSlotGenerator:v1";
   
   const periodStart = dateOnly(psurCase.startPeriod);
@@ -502,7 +502,7 @@ export function generateSalesVolumeTable(
   if (salesAtoms.length === 0) {
     return {
       success: false,
-      slotId,
+      slotId: originalSlotId,
       proposalId: generateProposalId(),
       contentType: "table",
       content: null,
@@ -513,17 +513,37 @@ export function generateSalesVolumeTable(
       transformationsUsed: slotMetadata.allowedTransformations,
       agentId,
       error: "No sales_volume evidence atoms available",
+      errorDetails: {
+        totalAtoms: 0,
+        filteredOutAtoms: 0,
+        periodStart,
+        periodEnd,
+        reason: "No sales_volume evidence atoms have been ingested for this PSUR case",
+      },
     };
   }
 
   const tableRows: Array<Record<string, string | number>> = [];
   const usedAtomIds: number[] = [];
+  const skippedAtoms: number[] = [];
   let totalUnits = 0;
 
   for (const atom of salesAtoms) {
     const data = (atom.normalizedData || atom.data) as Record<string, unknown>;
+    const unitsRaw = data.units ?? data.quantity ?? data.volume;
+    
+    if (unitsRaw === undefined || unitsRaw === null) {
+      skippedAtoms.push(atom.id);
+      continue;
+    }
+    
+    const units = Number(unitsRaw);
+    if (isNaN(units)) {
+      skippedAtoms.push(atom.id);
+      continue;
+    }
+    
     const region = String(data.region || data.country || data.market || "Global");
-    const units = Number(data.units || data.quantity || data.volume || 0);
     const period = String(data.period || data.reportingPeriod || `${periodStart} - ${periodEnd}`);
     
     tableRows.push({ region, units, period });
@@ -531,19 +551,43 @@ export function generateSalesVolumeTable(
     usedAtomIds.push(atom.id);
   }
 
+  if (usedAtomIds.length === 0) {
+    return {
+      success: false,
+      slotId: originalSlotId,
+      proposalId: generateProposalId(),
+      contentType: "table",
+      content: null,
+      contentHash: "",
+      evidenceAtomIds: salesAtoms.map(a => a.id),
+      methodStatement: "",
+      claimedObligationIds: slotMetadata.obligationIds,
+      transformationsUsed: slotMetadata.allowedTransformations,
+      agentId,
+      error: "No sales_volume atoms with valid units/quantity field",
+      errorDetails: {
+        totalAtoms: salesAtoms.length,
+        filteredOutAtoms: skippedAtoms.length,
+        periodStart,
+        periodEnd,
+        reason: `All ${salesAtoms.length} sales_volume atoms are missing required 'units' or 'quantity' field`,
+      },
+    };
+  }
+
   tableRows.push({ region: "TOTAL", units: totalUnits, period: `${periodStart} to ${periodEnd}` });
 
   const tableContent: TableContent = {
     headers: ["region", "units", "period"],
     rows: tableRows,
-    summary: `Sales volume data from ${salesAtoms.length} evidence atoms for reporting period ${periodStart} to ${periodEnd}. Total units: ${totalUnits}.`,
+    summary: `Sales volume data from ${usedAtomIds.length} evidence atoms for reporting period ${periodStart} to ${periodEnd}. Total units: ${totalUnits}.`,
   };
 
-  const methodStatement = `Aggregated ${salesAtoms.length} sales_volume evidence atoms. Extracted region/units/period fields. No interpolation or AI inference applied.`;
+  const methodStatement = `Aggregated ${usedAtomIds.length} sales_volume evidence atoms. Extracted region/units/period fields. ${skippedAtoms.length} atoms skipped due to missing/invalid units field. No interpolation or AI inference applied.`;
 
   return {
     success: true,
-    slotId,
+    slotId: originalSlotId,
     proposalId: generateProposalId(),
     contentType: "table",
     content: tableContent,
@@ -556,12 +600,12 @@ export function generateSalesVolumeTable(
   };
 }
 
-export function generateIncidentsByRegionSeverity(
+export function generateIncidentsByRegionSeriousness(
   incidentAtoms: EvidenceAtom[],
   psurCase: PSURCase,
-  slotMetadata: SlotMetadata
+  slotMetadata: SlotMetadata,
+  originalSlotId: string
 ): DeterministicGeneratorResult {
-  const slotId = "incidents.by_region_severity";
   const agentId = "DeterministicSlotGenerator:v1";
   
   const periodStart = dateOnly(psurCase.startPeriod);
@@ -570,7 +614,7 @@ export function generateIncidentsByRegionSeverity(
   if (incidentAtoms.length === 0) {
     return {
       success: false,
-      slotId,
+      slotId: originalSlotId,
       proposalId: generateProposalId(),
       contentType: "table",
       content: null,
@@ -581,22 +625,33 @@ export function generateIncidentsByRegionSeverity(
       transformationsUsed: slotMetadata.allowedTransformations,
       agentId,
       error: "No incident_record evidence atoms available",
+      errorDetails: {
+        totalAtoms: 0,
+        filteredOutAtoms: 0,
+        periodStart,
+        periodEnd,
+        reason: "No incident_record evidence atoms have been ingested for this PSUR case",
+      },
     };
   }
 
   const inPeriodAtoms: EvidenceAtom[] = [];
+  const outOfPeriodAtoms: EvidenceAtom[] = [];
+  
   for (const atom of incidentAtoms) {
     const data = (atom.normalizedData || atom.data) as Record<string, unknown>;
     const incidentDate = dateOnly(data.incidentDate || data.eventDate || data.date);
     if (incidentDate && inPeriod(incidentDate, periodStart, periodEnd)) {
       inPeriodAtoms.push(atom);
+    } else {
+      outOfPeriodAtoms.push(atom);
     }
   }
 
   if (inPeriodAtoms.length === 0) {
     return {
       success: false,
-      slotId,
+      slotId: originalSlotId,
       proposalId: generateProposalId(),
       contentType: "table",
       content: null,
@@ -606,36 +661,44 @@ export function generateIncidentsByRegionSeverity(
       claimedObligationIds: slotMetadata.obligationIds,
       transformationsUsed: slotMetadata.allowedTransformations,
       agentId,
-      error: `No incident records found within PSUR period ${periodStart} to ${periodEnd}`,
+      error: `No incident records found within PSUR period`,
+      errorDetails: {
+        totalAtoms: incidentAtoms.length,
+        filteredOutAtoms: outOfPeriodAtoms.length,
+        periodStart,
+        periodEnd,
+        reason: `All ${incidentAtoms.length} incident records are outside the reporting period`,
+      },
     };
   }
 
   const groupedCounts: Record<string, Record<string, number>> = {};
   const regionsSet = new Set<string>();
-  const severitiesSet = new Set<string>();
+  const seriousnessSet = new Set<string>();
 
   for (const atom of inPeriodAtoms) {
     const data = (atom.normalizedData || atom.data) as Record<string, unknown>;
     const region = String(data.region || data.country || "Unknown");
-    const severity = String(data.severity || data.seriousness || "unclassified");
+    const severity = data.severity as string | undefined;
+    const seriousness = severityToSeriousness(severity);
     
     regionsSet.add(region);
-    severitiesSet.add(severity);
+    seriousnessSet.add(seriousness);
     
     if (!groupedCounts[region]) groupedCounts[region] = {};
-    groupedCounts[region][severity] = (groupedCounts[region][severity] || 0) + 1;
+    groupedCounts[region][seriousness] = (groupedCounts[region][seriousness] || 0) + 1;
   }
 
   const regions = Array.from(regionsSet).sort();
-  const severities = Array.from(severitiesSet).sort();
+  const seriousnessValues = ["serious_incident", "non_serious", "unknown"].filter(s => seriousnessSet.has(s));
 
   const tableRows: Array<Record<string, string | number>> = [];
   for (const region of regions) {
     const row: Record<string, string | number> = { region };
     let rowTotal = 0;
-    for (const severity of severities) {
-      const count = groupedCounts[region]?.[severity] || 0;
-      row[severity] = count;
+    for (const seriousness of seriousnessValues) {
+      const count = groupedCounts[region]?.[seriousness] || 0;
+      row[seriousness] = count;
       rowTotal += count;
     }
     row["total"] = rowTotal;
@@ -644,30 +707,30 @@ export function generateIncidentsByRegionSeverity(
 
   const totalsRow: Record<string, string | number> = { region: "TOTAL" };
   let grandTotal = 0;
-  for (const severity of severities) {
-    let severityTotal = 0;
+  for (const seriousness of seriousnessValues) {
+    let seriousnessTotal = 0;
     for (const region of regions) {
-      severityTotal += groupedCounts[region]?.[severity] || 0;
+      seriousnessTotal += groupedCounts[region]?.[seriousness] || 0;
     }
-    totalsRow[severity] = severityTotal;
-    grandTotal += severityTotal;
+    totalsRow[seriousness] = seriousnessTotal;
+    grandTotal += seriousnessTotal;
   }
   totalsRow["total"] = grandTotal;
   tableRows.push(totalsRow);
 
-  const headers = ["region", ...severities, "total"];
+  const headers = ["region", ...seriousnessValues, "total"];
 
   const tableContent: TableContent = {
     headers,
     rows: tableRows,
-    summary: `Cross-tabulation of ${inPeriodAtoms.length} incidents by region and severity for ${periodStart} to ${periodEnd}.`,
+    summary: `Cross-tabulation of ${inPeriodAtoms.length} incidents by region and seriousness for ${periodStart} to ${periodEnd}.`,
   };
 
-  const methodStatement = `Filtered ${incidentAtoms.length} incident_record atoms by date within PSUR period. Grouped by region × severity. ${incidentAtoms.length - inPeriodAtoms.length} excluded as out-of-period. No AI inference.`;
+  const methodStatement = `Filtered ${incidentAtoms.length} incident_record atoms by date within PSUR period (${periodStart} to ${periodEnd}). Grouped by region × seriousness (severity mapped: high/critical→serious_incident, low/medium→non_serious, else→unknown). ${outOfPeriodAtoms.length} excluded as out-of-period. No AI inference.`;
 
   return {
     success: true,
-    slotId,
+    slotId: originalSlotId,
     proposalId: generateProposalId(),
     contentType: "table",
     content: tableContent,
@@ -683,9 +746,9 @@ export function generateIncidentsByRegionSeverity(
 export function generateFSCASummaryTable(
   fscaAtoms: EvidenceAtom[],
   psurCase: PSURCase,
-  slotMetadata: SlotMetadata
+  slotMetadata: SlotMetadata,
+  originalSlotId: string
 ): DeterministicGeneratorResult {
-  const slotId = "fsca.summary_table";
   const agentId = "DeterministicSlotGenerator:v1";
   
   const periodStart = dateOnly(psurCase.startPeriod);
@@ -694,7 +757,7 @@ export function generateFSCASummaryTable(
   if (fscaAtoms.length === 0) {
     return {
       success: false,
-      slotId,
+      slotId: originalSlotId,
       proposalId: generateProposalId(),
       contentType: "table",
       content: null,
@@ -705,6 +768,13 @@ export function generateFSCASummaryTable(
       transformationsUsed: slotMetadata.allowedTransformations,
       agentId,
       error: "No fsca evidence atoms available",
+      errorDetails: {
+        totalAtoms: 0,
+        filteredOutAtoms: 0,
+        periodStart,
+        periodEnd,
+        reason: "No fsca evidence atoms have been ingested for this PSUR case",
+      },
     };
   }
 
@@ -739,7 +809,7 @@ export function generateFSCASummaryTable(
 
   return {
     success: true,
-    slotId,
+    slotId: originalSlotId,
     proposalId: generateProposalId(),
     contentType: "table",
     content: tableContent,
@@ -796,21 +866,21 @@ export function runDeterministicGenerator(
       const salesAtoms = evidenceAtoms.filter(
         a => a.evidenceType === "sales_volume"
       );
-      return generateSalesVolumeTable(salesAtoms, psurCase, slotMetadata);
+      return generateSalesVolumeTable(salesAtoms, psurCase, slotMetadata, slotId);
     }
     case "D.01.incidents_summary":
     case "incidents.by_region_severity": {
       const incidentAtoms = evidenceAtoms.filter(
         a => a.evidenceType === "incident_record"
       );
-      return generateIncidentsByRegionSeverity(incidentAtoms, psurCase, slotMetadata);
+      return generateIncidentsByRegionSeriousness(incidentAtoms, psurCase, slotMetadata, slotId);
     }
     case "H.01.fsca_summary":
     case "fsca.summary_table": {
       const fscaAtoms = evidenceAtoms.filter(
         a => a.evidenceType === "fsca"
       );
-      return generateFSCASummaryTable(fscaAtoms, psurCase, slotMetadata);
+      return generateFSCASummaryTable(fscaAtoms, psurCase, slotMetadata, slotId);
     }
     default:
       return {

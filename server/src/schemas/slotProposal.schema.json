@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SlotProposal",
+  "type": "object",
+  "required": [
+    "proposalId",
+    "psurRef",
+    "slotId",
+    "content",
+    "evidenceAtomIds",
+    "claimedObligationIds",
+    "methodStatement",
+    "createdAt"
+  ],
+  "properties": {
+    "proposalId": { "type": "string", "minLength": 8 },
+    "psurRef": { "type": "string", "minLength": 5 },
+    "slotId": { "type": "string", "minLength": 5 },
+    "content": { "type": "string", "minLength": 1 },
+    "evidenceAtomIds": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 5 }
+    },
+    "claimedObligationIds": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 5 }
+    },
+    "methodStatement": { "type": "string", "minLength": 10 },
+    "transformations": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "createdAt": { "type": "string", "minLength": 10 }
+  },
+  "additionalProperties": true
+}

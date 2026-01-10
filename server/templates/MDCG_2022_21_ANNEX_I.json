@@ -3,28 +3,20 @@
   "name": "MDCG 2022-21 Annex I PSUR Profile",
   "version": "1.0.0",
   "jurisdiction_scope": ["EU_MDR"],
-
   "slots": [
     {
       "slot_id": "MDCG.ANNEXI.ADMIN",
       "title": "Administrative and Device Identification",
-      "evidence_requirements": {
-        "required_types": []
-      }
+      "evidence_requirements": { "required_types": [] }
     },
     {
       "slot_id": "PSUR.COMPLAINTS.SUMMARY_BY_REGION_SERIOUSNESS",
       "title": "Summary of complaints by region and seriousness",
-      "evidence_requirements": {
-        "required_types": ["complaint_record"]
-      }
+      "evidence_requirements": { "required_types": ["complaint_record"] }
     }
   ],
-
   "mapping": {
-    "MDCG.ANNEXI.ADMIN": [
-      "MDCG.2022-21.ANNEX_I.ADMIN"
-    ],
+    "MDCG.ANNEXI.ADMIN": ["MDCG.2022-21.ANNEX_I.ADMIN"],
     "PSUR.COMPLAINTS.SUMMARY_BY_REGION_SERIOUSNESS": [
       "MDCG.2022-21.ANNEX_I.SAFETY.COMPLAINTS",
       "EU.MDR.ANNEX_III.1.1.COMPLAINT_TRENDS"

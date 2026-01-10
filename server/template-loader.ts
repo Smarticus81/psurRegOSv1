@@ -5,8 +5,11 @@ const TEMPLATE_ID_ALIASES: Record<string, string> = {
   "FORMQAR_054_C": "FormQAR-054_C",
   "formqar_054_c": "FormQAR-054_C",
   "FormQAR_054_C": "FormQAR-054_C",
+  "FormQAR-054_C": "FormQAR-054_C",
+  "MDCG_2022_21": "MDCG_2022_21_ANNEX_I",
   "MDCG_2022_21_ANNEX_I": "MDCG_2022_21_ANNEX_I",
   "mdcg_2022_21_annex_i": "MDCG_2022_21_ANNEX_I",
+  "mdcg_2022_21": "MDCG_2022_21_ANNEX_I",
 };
 
 function resolveTemplateFilename(templateId: string): string {

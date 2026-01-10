@@ -39,9 +39,14 @@ import {
   hasSchemaFor,
   validateSlotProposal,
   validateSlotProposalForAdjudication,
+  validateWithAjv,
   type ProvenanceInput,
   type SlotProposalInput
 } from "./schema-validator";
+import {
+  normalizeComplaintRecordRow,
+  normalizeSalesVolumeRow,
+} from "./evidence/normalize";
 import { EVIDENCE_DEFINITIONS } from "@shared/schema";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
@@ -761,14 +766,6 @@ export async function registerRoutes(
 
   app.post("/api/evidence/upload", upload.single("file"), async (req, res) => {
     try {
-      // TEMPORARY DEBUG - remove after
-      console.log("UPLOAD DEBUG", {
-        bodyKeys: Object.keys(req.body || {}),
-        file: req.file
-          ? { originalname: req.file.originalname, mimetype: req.file.mimetype, size: req.file.size }
-          : null,
-      });
-
       // Required field validation
       const evidenceType = req.body?.evidence_type || req.body?.evidenceType;
       if (!evidenceType) {
@@ -846,103 +843,115 @@ export async function registerRoutes(
         await storage.incrementMappingProfileUsage(mappingProfileId);
       }
 
-      const fileContent = rows.map(row => {
-        return Object.entries(row).map(([k, v]) => `${k}:${v}`).join(",");
-      }).join("\n");
-
-      // TEMPORARY DEBUG - remove after
-      console.log("PARSE DEBUG", {
-        evidenceType,
-        rowCount: rows.length,
-        sampleRowKeys: rows.length > 0 ? Object.keys(rows[0]) : [],
-        sampleRow: rows.length > 0 ? rows[0] : null,
-      });
-
-      const parseResult = parseEvidenceFile(fileContent, evidenceType, {
-        periodStart: period_start,
-        periodEnd: period_end,
-      }, rows);
-
-      if (!parseResult.success) {
-        await storage.updateEvidenceUpload(evidenceUpload.id, {
-          status: "failed",
-          processingErrors: { errors: parseResult.errors },
-        });
-        return res.status(400).json({
-          error: "Failed to parse file",
-          details: parseResult.errors,
-          upload: evidenceUpload,
-        });
-      }
-
       const validAtoms: any[] = [];
-      const rejectedRecords: Array<{ rowIndex: number; errors: Array<{ path: string; message: string }> }> = [];
+      const rejectedRecords: Array<{ 
+        rowIndex: number; 
+        errors: Array<{ path: string; message: string }>; 
+        row: Record<string, unknown>;
+      }> = [];
 
-      for (const record of parseResult.records) {
-        if (!record.isValid || !record.normalizedData) {
-          rejectedRecords.push({ 
-            rowIndex: record.rowIndex, 
-            errors: record.validationErrors.map(e => ({ path: "/", message: e }))
+      const deviceRef = {
+        deviceCode: device_code || "UNKNOWN",
+        deviceName: undefined,
+        udiDi: undefined,
+      };
+
+      const psurPeriod = {
+        periodStart: period_start || new Date().toISOString().slice(0, 10),
+        periodEnd: period_end || new Date().toISOString().slice(0, 10),
+      };
+
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        let atom: any;
+        let normalizationErrors: string[] = [];
+
+        if (evidenceType === "complaint_record") {
+          const result = normalizeComplaintRecordRow({
+            row,
+            deviceRef,
+            psurPeriod,
+            provenance,
+          });
+          atom = result.atom;
+          normalizationErrors = result.errors;
+        } else if (evidenceType === "sales_volume") {
+          const result = normalizeSalesVolumeRow({
+            row,
+            deviceRef,
+            psurPeriod,
+            provenance,
+          });
+          atom = result.atom;
+          normalizationErrors = result.errors;
+        } else {
+          rejectedRecords.push({
+            rowIndex: i + 1,
+            errors: [{ path: "/", message: `Unsupported evidence type: ${evidenceType}` }],
+            row,
           });
           continue;
         }
 
-        const normalizedPayload = record.normalizedData as Record<string, unknown>;
-        const deviceCodeFromData = normalizedPayload.deviceCode as string | undefined;
-        
-        const { atom, errors } = buildEvidenceAtom(
-          {
-            atomType: evidenceType,
-            payload: normalizedPayload,
-            deviceRef: device_code || deviceCodeFromData ? {
-              deviceCode: (device_code || deviceCodeFromData) as string,
-              deviceId: device_scope_id ? parseInt(device_scope_id) : undefined,
-            } : undefined,
-            psurPeriod: period_start && period_end ? {
-              psurCaseId: psur_case_id ? parseInt(psur_case_id) : undefined,
-              periodStart: period_start,
-              periodEnd: period_end,
-            } : undefined,
-          },
-          provenance
-        );
-
-        if (errors.length > 0) {
-          rejectedRecords.push({ rowIndex: record.rowIndex, errors });
-        } else {
-          validAtoms.push({
-            atomId: atom.atomId,
-            psurCaseId: psur_case_id ? parseInt(psur_case_id) : null,
-            uploadId: evidenceUpload.id,
-            evidenceType: evidenceType,
-            sourceSystem: source_system || "manual_upload",
-            extractDate: new Date(),
-            contentHash: atom.contentHash,
-            recordCount: 1,
-            periodStart: period_start ? new Date(period_start) : null,
-            periodEnd: period_end ? new Date(period_end) : null,
-            deviceScopeId: device_scope_id ? parseInt(device_scope_id) : null,
-            deviceRef: atom.deviceRef || null,
-            data: record.data,
-            normalizedData: normalizedPayload,
-            provenance: {
-              ...provenance,
-              atomId: atom.atomId,
-              version: atom.version,
-              deviceRef: atom.deviceRef,
-              psurPeriod: atom.psurPeriod,
-            },
-            validationErrors: null,
-            status: "valid",
-            version: 1,
+        if (normalizationErrors.length > 0) {
+          rejectedRecords.push({
+            rowIndex: i + 1,
+            errors: normalizationErrors.map(e => ({ path: "/", message: e })),
+            row,
           });
+          continue;
         }
+
+        const schemaName = evidenceType === "complaint_record" 
+          ? "evidence_atom.complaint_record.schema.json"
+          : "evidence_atom.sales_volume.schema.json";
+        
+        const schemaValidation = validateWithAjv(schemaName, {
+          atomType: atom.atomType,
+          payload: atom.payload,
+        });
+
+        if (!schemaValidation.ok) {
+          rejectedRecords.push({
+            rowIndex: i + 1,
+            errors: schemaValidation.errors,
+            row,
+          });
+          continue;
+        }
+
+        validAtoms.push({
+          atomId: atom.atomId,
+          psurCaseId: psur_case_id ? parseInt(psur_case_id) : null,
+          uploadId: evidenceUpload.id,
+          evidenceType: evidenceType,
+          sourceSystem: source_system || "manual_upload",
+          extractDate: new Date(),
+          contentHash: atom.contentHash,
+          recordCount: 1,
+          periodStart: period_start ? new Date(period_start) : null,
+          periodEnd: period_end ? new Date(period_end) : null,
+          deviceScopeId: device_scope_id ? parseInt(device_scope_id) : null,
+          deviceRef: atom.deviceRef || null,
+          data: row,
+          normalizedData: atom.payload,
+          provenance: {
+            ...provenance,
+            atomId: atom.atomId,
+            version: atom.version,
+            deviceRef: atom.deviceRef,
+            psurPeriod: atom.psurPeriod,
+          },
+          validationErrors: null,
+          status: "valid",
+          version: 1,
+        });
       }
 
       if (rejectedRecords.length > 0 && validAtoms.length === 0) {
         await storage.updateEvidenceUpload(evidenceUpload.id, {
           status: "rejected",
-          recordsParsed: parseResult.records.length,
+          recordsParsed: rows.length,
           recordsRejected: rejectedRecords.length,
           processingErrors: { 
             schemaValidationFailed: true,
@@ -953,7 +962,11 @@ export async function registerRoutes(
         return res.status(400).json({
           error: "All records failed schema validation",
           rejectedCount: rejectedRecords.length,
-          sampleErrors: rejectedRecords.slice(0, 3),
+          sampleErrors: rejectedRecords.slice(0, 3).map(r => ({
+            rowIndex: r.rowIndex,
+            ajvErrors: r.errors,
+            row: r.row,
+          })),
           upload: await storage.getEvidenceUpload(evidenceUpload.id),
         });
       }
@@ -965,7 +978,7 @@ export async function registerRoutes(
       await storage.updateEvidenceUpload(evidenceUpload.id, {
         status: validAtoms.length > 0 ? "completed" : "rejected",
         atomsCreated: createdAtoms.length,
-        recordsParsed: parseResult.records.length,
+        recordsParsed: rows.length,
         recordsRejected: rejectedRecords.length,
         processingErrors: rejectedRecords.length > 0 ? {
           schemaValidationFailed: true,
@@ -979,7 +992,7 @@ export async function registerRoutes(
       res.status(201).json({
         upload: updatedUpload,
         summary: {
-          totalRecords: parseResult.records.length,
+          totalRecords: rows.length,
           validRecords: validAtoms.length,
           rejectedRecords: rejectedRecords.length,
           atomsCreated: createdAtoms.length,

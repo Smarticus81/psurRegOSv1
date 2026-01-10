@@ -257,6 +257,30 @@ export function getAvailableSchemaTypes(): string[] {
   return Object.keys(typeSchemaMap);
 }
 
+export function validateWithAjv(schemaName: string, data: unknown): {
+  ok: boolean;
+  errors: Array<{ path: string; message: string; keyword?: string }>;
+} {
+  const validate = ajv.getSchema(schemaName);
+  if (!validate) {
+    return { ok: false, errors: [{ path: "", message: `Schema not found: ${schemaName}` }] };
+  }
+  
+  const valid = validate(data);
+  if (valid) {
+    return { ok: true, errors: [] };
+  }
+  
+  return {
+    ok: false,
+    errors: (validate.errors || []).map(e => ({
+      path: e.instancePath || "/",
+      message: e.message || "validation error",
+      keyword: e.keyword,
+    }))
+  };
+}
+
 export function hasSchemaFor(atomType: string): boolean {
   return atomType in typeSchemaMap;
 }

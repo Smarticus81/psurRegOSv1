@@ -326,8 +326,20 @@ export default function EvidencePage() {
       const formData = new FormData();
       formData.append("file", selectedFile);
       formData.append("evidence_type", evidenceType);
-      if (deviceScopeId && deviceScopeId !== "__all__") formData.append("device_scope_id", deviceScopeId);
-      if (psurCaseId && psurCaseId !== "__none__") formData.append("psur_case_id", psurCaseId);
+      if (deviceScopeId && deviceScopeId !== "__all__") {
+        formData.append("device_scope_id", deviceScopeId);
+        const selectedDeviceObj = devices.find(d => d.id.toString() === deviceScopeId);
+        if (selectedDeviceObj?.deviceCode) {
+          formData.append("device_code", selectedDeviceObj.deviceCode);
+        }
+      }
+      if (psurCaseId && psurCaseId !== "__none__") {
+        formData.append("psur_case_id", psurCaseId);
+        const selectedCase = psurCases.find(c => c.id.toString() === psurCaseId);
+        if (selectedCase?.psurReference) {
+          formData.append("psur_ref", selectedCase.psurReference);
+        }
+      }
       if (jurisdiction) formData.append("jurisdiction", jurisdiction);
       if (sourceSystem) formData.append("source_system", sourceSystem);
       if (extractionNotes) formData.append("extraction_notes", extractionNotes);

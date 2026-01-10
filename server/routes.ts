@@ -52,6 +52,13 @@ import { loadTemplate as loadTemplateOld, getTemplateDirsDebugInfo } from "./tem
 import { loadTemplate, listTemplates } from "./src/templateStore";
 import { normalizeEvidenceAtoms, normalizeSlotProposals } from "./src/normalizers";
 import { strictParseEvidenceAtoms, strictParseSlotProposals } from "./src/strictGate";
+import {
+  coerceEvidenceType as coerceEvType,
+  makeAtomId,
+  makeContentHash,
+  persistEvidenceAtoms,
+  type EvidenceAtom as EvidenceAtomRecord,
+} from "./src/services/evidenceStore";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
@@ -1005,13 +1012,36 @@ export async function registerRoutes(
         });
       }
 
-      const createdAtoms = validAtoms.length > 0 
-        ? await storage.createEvidenceAtomsBatch(validAtoms)
-        : [];
+      let persistResult = { inserted: 0, atomIds: [] as string[] };
+      if (validAtoms.length > 0 && psur_case_id) {
+        const atomRecords: EvidenceAtomRecord[] = validAtoms.map((a) => ({
+          atomId: a.atomId,
+          evidenceType: a.evidenceType,
+          contentHash: a.contentHash,
+          normalizedData: a.normalizedData,
+          provenance: {
+            uploadId: a.uploadId,
+            sourceFile: a.provenance?.sourceFile || file.originalname,
+            uploadedAt: a.provenance?.uploadedAt || new Date().toISOString(),
+            deviceRef: { deviceCode: device_code || "UNKNOWN" },
+            psurPeriod: { periodStart: period_start, periodEnd: period_end },
+            extractDate: a.provenance?.extractionTimestamp?.slice(0, 10),
+          },
+        }));
+        
+        persistResult = await persistEvidenceAtoms({
+          psurCaseId: parseInt(psur_case_id),
+          deviceCode: device_code || "UNKNOWN",
+          periodStart: period_start || new Date().toISOString().slice(0, 10),
+          periodEnd: period_end || new Date().toISOString().slice(0, 10),
+          uploadId: evidenceUpload.id,
+          atoms: atomRecords,
+        });
+      }
 
       await storage.updateEvidenceUpload(evidenceUpload.id, {
         status: validAtoms.length > 0 ? "completed" : "rejected",
-        atomsCreated: createdAtoms.length,
+        atomsCreated: persistResult.inserted,
         recordsParsed: rows.length,
         recordsRejected: rejectedRecords.length,
         processingErrors: rejectedRecords.length > 0 ? {
@@ -1029,10 +1059,10 @@ export async function registerRoutes(
           totalRecords: rows.length,
           validRecords: validAtoms.length,
           rejectedRecords: rejectedRecords.length,
-          atomsCreated: createdAtoms.length,
+          atomsCreated: persistResult.inserted,
+          atomIds: persistResult.atomIds,
           sourceFileSha256,
         },
-        atoms: createdAtoms,
         validationErrors: rejectedRecords.length > 0 ? rejectedRecords.slice(0, 5) : undefined,
       });
     } catch (error) {

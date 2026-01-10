@@ -1,5 +1,6 @@
 import type { EvidenceAtom, PSURCase } from "@shared/schema";
 import { FORMQAR_SLOTS, getSlotDefinitionsForTemplate } from "./queue-builder";
+import { loadTemplate } from "./template-loader";
 import crypto from "crypto";
 
 export interface DeterministicGeneratorResult {
@@ -72,13 +73,34 @@ function severityToSeriousness(sev: unknown): "serious_incident" | "non_serious"
 }
 
 export function getSlotMetadata(slotId: string, templateId: string): SlotMetadata | null {
-  const slots = getSlotDefinitionsForTemplate(templateId);
-  const slotDef = slots.find(s => s.slot_id === slotId);
-  if (!slotDef) return null;
-  return {
-    obligationIds: slotDef.obligation_ids,
-    allowedTransformations: slotDef.allowed_transformations,
-  };
+  try {
+    const template = loadTemplate(templateId);
+    const obligationIds = template.mapping[slotId] || [];
+    const slotDef = template.slots?.find((s: { slot_id: string }) => s.slot_id === slotId);
+    
+    if (obligationIds.length === 0 && !slotDef) {
+      const slots = getSlotDefinitionsForTemplate(templateId);
+      const fallbackSlot = slots.find(s => s.slot_id === slotId);
+      if (!fallbackSlot) return null;
+      return {
+        obligationIds: fallbackSlot.obligation_ids,
+        allowedTransformations: fallbackSlot.allowed_transformations,
+      };
+    }
+    
+    return {
+      obligationIds,
+      allowedTransformations: ["tabulate", "aggregate"],
+    };
+  } catch {
+    const slots = getSlotDefinitionsForTemplate(templateId);
+    const slotDef = slots.find(s => s.slot_id === slotId);
+    if (!slotDef) return null;
+    return {
+      obligationIds: slotDef.obligation_ids,
+      allowedTransformations: slotDef.allowed_transformations,
+    };
+  }
 }
 
 function normalizeToDate(value: unknown): Date | null {

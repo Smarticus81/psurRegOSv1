@@ -1,0 +1,35 @@
+{
+  "template_id": "FormQAR-054_C",
+  "name": "FormQAR-054_C PSUR Template",
+  "version": "1.0.0",
+  "jurisdiction_scope": ["EU_MDR", "UK"],
+
+  "slots": [
+    {
+      "slot_id": "PSUR.COVER",
+      "title": "Administrative Information",
+      "evidence_requirements": {
+        "required_types": []
+      }
+    },
+    {
+      "slot_id": "PSUR.COMPLAINTS.SUMMARY_BY_REGION_SERIOUSNESS",
+      "title": "Summary of complaints by region and seriousness",
+      "evidence_requirements": {
+        "required_types": ["complaint_record"]
+      }
+    }
+  ],
+
+  "mapping": {
+    "PSUR.COVER": [
+      "EU.MDR.ANNEX_III.1.1",
+      "UK.MDR.PMS.PSUR.ADMIN"
+    ],
+    "PSUR.COMPLAINTS.SUMMARY_BY_REGION_SERIOUSNESS": [
+      "EU.MDR.ANNEX_III.1.1.COMPLAINT_TRENDS",
+      "MDCG.2022-21.ANNEX_I.SAFETY.COMPLAINTS",
+      "UK.MDR.PMS.PSUR.SAFETY.COMPLAINTS"
+    ]
+  }
+}

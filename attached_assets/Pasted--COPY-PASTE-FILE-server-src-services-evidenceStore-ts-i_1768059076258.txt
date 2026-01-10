@@ -1,0 +1,132 @@
+// COPY/PASTE FILE: server/src/services/evidenceStore.ts
+import crypto from "crypto";
+
+export type EvidenceType =
+  | "sales_volume"
+  | "complaint_record"
+  | "serious_incident"
+  | "fsca"
+  | "pmcf"
+  | "literature";
+
+export type EvidenceAtom = {
+  atomId: string;
+  evidenceType: EvidenceType;
+  contentHash: string;
+  normalizedData: any;
+  provenance: {
+    uploadId: number;
+    sourceFile: string;
+    uploadedAt: string;
+    deviceRef: { deviceCode: string };
+    psurPeriod: { periodStart: string; periodEnd: string };
+    extractDate?: string;
+    mapping?: any;
+    filters?: any;
+  };
+};
+
+function sha256Hex(input: string) {
+  return crypto.createHash("sha256").update(input).digest("hex");
+}
+
+export function makeContentHash(normalizedData: any) {
+  return sha256Hex(JSON.stringify(normalizedData));
+}
+
+export function makeAtomId(evidenceType: EvidenceType, normalizedData: any) {
+  return `${evidenceType}:${sha256Hex(JSON.stringify(normalizedData)).slice(0, 12)}`;
+}
+
+export function coerceEvidenceType(raw: string): EvidenceType {
+  const v = (raw || "").trim();
+
+  if (v === "sales" || v === "sales_volume") return "sales_volume";
+  if (v === "complaints" || v === "complaint_record") return "complaint_record";
+  if (v === "serious_incidents" || v === "serious_incident") return "serious_incident";
+  if (v === "fsca") return "fsca";
+  if (v === "pmcf") return "pmcf";
+  if (v === "literature") return "literature";
+
+  throw new Error(
+    `Unsupported evidence_type: ${raw}. Supported types: sales_volume, complaint_record, serious_incident, fsca, pmcf, literature`
+  );
+}
+
+export async function ensureEvidenceTable(db: any) {
+  await db.run(`
+    CREATE TABLE IF NOT EXISTS evidence_atoms (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      psurCaseId INTEGER NOT NULL,
+      psurRef TEXT NOT NULL,
+      deviceCode TEXT NOT NULL,
+      periodStart TEXT NOT NULL,
+      periodEnd TEXT NOT NULL,
+      evidenceType TEXT NOT NULL,
+      atomId TEXT NOT NULL,
+      contentHash TEXT NOT NULL,
+      normalizedData TEXT NOT NULL,
+      provenance TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      UNIQUE(psurCaseId, atomId)
+    )
+  `);
+  await db.run(`CREATE INDEX IF NOT EXISTS idx_evidence_atoms_case ON evidence_atoms(psurCaseId)`);
+}
+
+export async function persistEvidenceAtoms(params: {
+  db: any;
+  psurCaseId: number;
+  psurRef: string;
+  deviceCode: string;
+  periodStart: string;
+  periodEnd: string;
+  atoms: EvidenceAtom[];
+}) {
+  const { db, psurCaseId, psurRef, deviceCode, periodStart, periodEnd, atoms } = params;
+
+  await ensureEvidenceTable(db);
+
+  const now = new Date().toISOString();
+
+  for (const a of atoms) {
+    await db.run(
+      `
+      INSERT OR IGNORE INTO evidence_atoms
+      (psurCaseId, psurRef, deviceCode, periodStart, periodEnd, evidenceType, atomId, contentHash, normalizedData, provenance, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        psurCaseId,
+        psurRef,
+        deviceCode,
+        periodStart,
+        periodEnd,
+        a.evidenceType,
+        a.atomId,
+        a.contentHash,
+        JSON.stringify(a.normalizedData),
+        JSON.stringify(a.provenance),
+        now,
+      ]
+    );
+  }
+
+  return { inserted: atoms.length };
+}
+
+export async function listEvidenceAtomsByCase(db: any, psurCaseId: number): Promise<EvidenceAtom[]> {
+  await ensureEvidenceTable(db);
+
+  const rows = await db.all(`SELECT * FROM evidence_atoms WHERE psurCaseId = ? ORDER BY id ASC`, [
+    psurCaseId,
+  ]);
+
+  return rows.map((r: any) => ({
+    atomId: r.atomId,
+    evidenceType: r.evidenceType,
+    contentHash: r.contentHash,
+    normalizedData: JSON.parse(r.normalizedData),
+    provenance: JSON.parse(r.provenance),
+  }));
+}

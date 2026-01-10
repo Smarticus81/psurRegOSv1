@@ -3,9 +3,15 @@ import { db } from "../../db";
 import { evidenceAtoms } from "@shared/schema";
 import { eq } from "drizzle-orm";
 
-export type EvidenceType = "sales_volume" | "complaint_record" | "serious_incident" | "fsca" | "pmcf" | "literature";
+export type EvidenceType =
+  | "sales_volume"
+  | "complaint_record"
+  | "serious_incident"
+  | "fsca"
+  | "pmcf"
+  | "literature";
 
-export type EvidenceAtomRecord = {
+export type EvidenceAtom = {
   atomId: string;
   evidenceType: EvidenceType;
   contentHash: string;
@@ -21,6 +27,8 @@ export type EvidenceAtomRecord = {
     filters?: any;
   };
 };
+
+export type EvidenceAtomRecord = EvidenceAtom;
 
 function sha256Hex(input: string): string {
   return crypto.createHash("sha256").update(input).digest("hex");

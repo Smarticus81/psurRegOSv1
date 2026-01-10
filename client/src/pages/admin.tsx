@@ -138,8 +138,7 @@ export default function Admin() {
       companyId: company.id,
       deviceName: formData.get("deviceName") as string,
       deviceCode: formData.get("deviceCode") as string,
-      deviceClass: formData.get("deviceClass") as string,
-      riskLevel: formData.get("riskLevel") as string || "medium",
+      riskClass: formData.get("riskClass") as string,
     });
   };
 
@@ -300,7 +299,7 @@ export default function Admin() {
                       </div>
                       <div className="flex items-center gap-2">
                         <Badge variant="outline" className="text-xs">
-                          {device.deviceClass}
+                          {device.riskClass}
                         </Badge>
                         <Button
                           variant="ghost"
@@ -348,28 +347,15 @@ export default function Admin() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="deviceClass">Device Class</Label>
-                <Select name="deviceClass" defaultValue="Class IIa">
-                  <SelectTrigger data-testid="select-device-class">
+                <Label htmlFor="riskClass">Risk Class</Label>
+                <Select name="riskClass" defaultValue="Class IIa">
+                  <SelectTrigger data-testid="select-risk-class">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     {DEVICE_CLASS_OPTIONS.map((c) => (
                       <SelectItem key={c} value={c}>{c}</SelectItem>
                     ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="riskLevel">Risk Level</Label>
-                <Select name="riskLevel" defaultValue="medium">
-                  <SelectTrigger data-testid="select-risk-level">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="low">Low</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="high">High</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

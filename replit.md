@@ -63,6 +63,25 @@ The system uses a shared evidence registry (`EVIDENCE_DEFINITIONS` in `shared/sc
 - `server/`: Express backend with API routes
 - `shared/`: Shared TypeScript types and database schema
 - `server/replit_integrations/`: Pre-built integration modules (chat, batch processing, object storage)
+- `server/src/services/`: Backend services (evidenceStore, etc.)
+- `server/src/schemas/`: Zod validation schemas for DTOs
+
+### Orchestrator Workflow Design (8 Steps)
+**Key Principle**: Pre-ingestion + Deterministic Generation. Evidence must be uploaded before workflow execution.
+
+1. **Step 1 - Template Qualification**: Validates template structure
+2. **Step 2 - PSUR Case Creation**: Persists case record to DB
+3. **Step 3 - Evidence Validation**: Fetches existing atoms from DB (no in-memory creation). Uses `storage.getEvidenceAtoms(psurCaseId)` or `listEvidenceAtomsByCase()`
+4. **Step 4 - Coverage Queue Build**: Builds prioritized slot queue, triggers deterministic generators for proposal creation with real evidence linkage
+5. **Step 5 - Adjudication**: Reviews and accepts/rejects proposals
+6. **Step 6 - Coverage Report**: Generates coverage metrics
+7. **Step 7 - Document Assembly**: Compiles final PSUR document
+8. **Step 8 - Audit Bundle**: Persists traceability records
+
+**Evidence Flow**: 
+- Upload via `/api/evidence/upload` → Parse → Validate → Persist to `evidence_atoms` table
+- Workflow Step 3 reads from DB only (never creates demo atoms)
+- Deterministic generators receive DB atoms via `storage.getEvidenceAtoms()`
 
 ## External Dependencies
 

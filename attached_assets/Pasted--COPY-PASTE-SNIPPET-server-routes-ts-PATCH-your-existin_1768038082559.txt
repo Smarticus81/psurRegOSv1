@@ -1,0 +1,69 @@
+// COPY/PASTE SNIPPET: server/routes.ts  (PATCH your existing POST /api/evidence/upload handler)
+//
+// Goal: accept evidence_type "complaints" and "sales", map to canonical,
+// generate atomId/contentHash if missing, and persist to DB with psurCaseId.
+// This makes Step 3 deterministic and DB-backed.
+
+import { coerceEvidenceType, makeAtomId, makeContentHash, persistEvidenceAtoms } from "./src/services/evidenceStore"; // adjust import path if needed
+
+app.post("/api/evidence/upload", async (req, res) => {
+  try {
+    const db = req.app.locals.db; // assumes you store db here (common in these Replit apps)
+
+    const {
+      psurCaseId,
+      psurRef,
+      deviceCode,
+      periodStart,
+      periodEnd,
+      evidence_type, // from UI
+      rows,          // normalized rows array from your parser
+      uploadId,
+      sourceFile,
+    } = req.body;
+
+    if (!psurCaseId || !psurRef || !deviceCode || !periodStart || !periodEnd) {
+      return res.status(400).json({ error: "Missing required fields: psurCaseId, psurRef, deviceCode, periodStart, periodEnd" });
+    }
+    if (!evidence_type) {
+      return res.status(400).json({ error: "Missing required field: evidence_type" });
+    }
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return res.status(400).json({ error: "Missing required field: rows (non-empty array)" });
+    }
+
+    const evidenceType = coerceEvidenceType(evidence_type);
+    const uploadedAt = new Date().toISOString();
+
+    const atoms = rows.map((normalizedData: any) => {
+      const atomId = makeAtomId(evidenceType, normalizedData);
+      const contentHash = makeContentHash(normalizedData);
+
+      return {
+        atomId,
+        evidenceType,
+        contentHash,
+        normalizedData,
+        provenance: {
+          uploadId: Number(uploadId ?? 0),
+          sourceFile: String(sourceFile ?? "upload"),
+          uploadedAt,
+          deviceRef: { deviceCode },
+          psurPeriod: { periodStart, periodEnd },
+          extractDate: uploadedAt.slice(0, 10),
+        },
+      };
+    });
+
+    await persistEvidenceAtoms({ db, psurCaseId: Number(psurCaseId), psurRef, deviceCode, periodStart, periodEnd, atoms });
+
+    return res.json({
+      ok: true,
+      evidenceType,
+      atomCount: atoms.length,
+      sampleAtom: atoms[0],
+    });
+  } catch (e: any) {
+    return res.status(400).json({ error: e?.message || "Upload failed" });
+  }
+});

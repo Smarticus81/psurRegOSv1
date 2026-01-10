@@ -59,6 +59,8 @@ import {
   persistEvidenceAtoms,
   type EvidenceAtom as EvidenceAtomRecord,
 } from "./src/services/evidenceStore";
+import { runOrchestratorWorkflow, getWorkflowResultForCase } from "./src/orchestrator/workflowRunner";
+import { orchestratorRunRequestSchema } from "@shared/schema";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
@@ -595,6 +597,43 @@ export async function registerRoutes(
       });
     } catch (error) {
       res.status(500).json({ error: "Failed to qualify template" });
+    }
+  });
+
+  app.post("/api/orchestrator/run", async (req, res) => {
+    try {
+      const parsed = orchestratorRunRequestSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ 
+          error: "Invalid request", 
+          details: parsed.error.errors.map(e => `${e.path.join(".")}: ${e.message}`),
+        });
+      }
+      
+      const result = await runOrchestratorWorkflow(parsed.data);
+      res.json(result);
+    } catch (error: any) {
+      console.error("[POST /api/orchestrator/run] Error:", error);
+      res.status(500).json({ error: error.message || "Failed to run workflow" });
+    }
+  });
+
+  app.get("/api/orchestrator/cases/:psurCaseId", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      if (isNaN(psurCaseId)) {
+        return res.status(400).json({ error: "Invalid psurCaseId" });
+      }
+      
+      const result = await getWorkflowResultForCase(psurCaseId);
+      if (!result) {
+        return res.status(404).json({ error: "PSUR case not found" });
+      }
+      
+      res.json(result);
+    } catch (error: any) {
+      console.error("[GET /api/orchestrator/cases/:psurCaseId] Error:", error);
+      res.status(500).json({ error: error.message || "Failed to get workflow state" });
     }
   });
 

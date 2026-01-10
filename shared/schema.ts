@@ -676,3 +676,99 @@ export const insertColumnMappingProfileSchema = createInsertSchema(columnMapping
 
 export type ColumnMappingProfile = typeof columnMappingProfiles.$inferSelect;
 export type InsertColumnMappingProfile = z.infer<typeof insertColumnMappingProfileSchema>;
+
+// ============== CANONICAL ORCHESTRATOR WORKFLOW TYPES ==============
+// Single source of truth for workflow state - UI renders from these types only
+
+export type WorkflowStepStatus = "NOT_STARTED" | "RUNNING" | "COMPLETED" | "FAILED" | "BLOCKED";
+
+export interface WorkflowScope {
+  templateId: "FormQAR-054_C" | "MDCG_2022_21_ANNEX_I";
+  jurisdictions: ("EU_MDR" | "UK_MDR")[];
+  deviceCode: string;
+  periodStart: string;
+  periodEnd: string;
+}
+
+export interface WorkflowCase {
+  psurCaseId: number;
+  psurRef: string;
+  version: number;
+}
+
+export interface WorkflowStepSummary {
+  [key: string]: string | number | boolean | string[] | undefined;
+}
+
+// Step 3: Evidence Ingest Report
+export interface EvidenceIngestReport {
+  uploadedAtoms: number;
+  linkedToCaseAtoms: number;
+  rejectedRows: number;
+  sampleErrors: string[];
+  byType: Record<string, number>;
+}
+
+// Step 5: Adjudication Report
+export interface AdjudicationReport {
+  acceptedCount: number;
+  rejectedCount: number;
+  acceptedProposalIds: string[];
+  rejected: Array<{ proposalId: string; reasons: string[] }>;
+}
+
+// Step 6: Coverage Report
+export interface CoverageReportData {
+  obligationsSatisfied: number;
+  obligationsTotal: number;
+  slotsFilled: number;
+  slotsTotal: number;
+  missingEvidenceTypes: string[];
+  coveragePercent: number;
+  passed: boolean;
+}
+
+// Step 8: Export Bundle Report
+export interface ExportBundleReport {
+  bundleFiles: string[];
+  downloadUrl?: string;
+}
+
+export interface WorkflowStep {
+  step: number;
+  name: string;
+  status: WorkflowStepStatus;
+  startedAt?: string;
+  endedAt?: string;
+  summary: WorkflowStepSummary;
+  report?: EvidenceIngestReport | AdjudicationReport | CoverageReportData | ExportBundleReport | Record<string, unknown>;
+  error?: string;
+}
+
+export interface KernelStatus {
+  euObligations: number;
+  ukObligations: number;
+  constraints: number;
+  templateSlots: number;
+}
+
+export interface OrchestratorWorkflowResult {
+  scope: WorkflowScope;
+  case: WorkflowCase;
+  steps: WorkflowStep[];
+  kernelStatus: KernelStatus;
+}
+
+// Request schema for POST /api/orchestrator/run
+export const orchestratorRunRequestSchema = z.object({
+  templateId: z.enum(["FormQAR-054_C", "MDCG_2022_21_ANNEX_I"]),
+  jurisdictions: z.array(z.enum(["EU_MDR", "UK_MDR"])).min(1),
+  deviceCode: z.string().min(1),
+  deviceId: z.number().int().positive(),
+  periodStart: z.string(),
+  periodEnd: z.string(),
+  psurCaseId: z.number().int().positive().optional(),
+  runSteps: z.array(z.number().int().min(1).max(8)).optional(),
+});
+
+export type OrchestratorRunRequest = z.infer<typeof orchestratorRunRequestSchema>;

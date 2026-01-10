@@ -48,6 +48,7 @@ import {
   normalizeSalesVolumeRow,
 } from "./evidence/normalize";
 import { EVIDENCE_DEFINITIONS } from "@shared/schema";
+import { loadTemplate, getTemplateDirsDebugInfo } from "./template-loader";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
@@ -67,6 +68,20 @@ export async function registerRoutes(
 ): Promise<Server> {
 
   registerObjectStorageRoutes(app);
+
+  // Template debug endpoints
+  app.get("/api/templates/debug", (_req, res) => {
+    res.json(getTemplateDirsDebugInfo());
+  });
+
+  app.get("/api/templates/test/:id", (req, res) => {
+    try {
+      const t = loadTemplate(req.params.id);
+      res.json({ ok: true, template_id: t.template_id, slots: t.slots?.length ?? 0 });
+    } catch (e: any) {
+      res.status(e?.status || 500).json({ ok: false, error: e?.message || String(e) });
+    }
+  });
 
   app.get("/api/companies", async (req, res) => {
     try {

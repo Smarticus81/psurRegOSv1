@@ -20,14 +20,14 @@ import {
 
 const workflowNavItems = [
   {
-    title: "PSUR Workflow",
-    url: "/psur",
-    icon: FileText,
-  },
-  {
     title: "Evidence",
     url: "/evidence",
     icon: Database,
+  },
+  {
+    title: "PSUR Workflow",
+    url: "/psur",
+    icon: FileText,
   },
 ];
 

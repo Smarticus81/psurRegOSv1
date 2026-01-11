@@ -139,7 +139,7 @@ function parseBoolean(value: unknown): boolean | null {
 
 export function parseSalesRecord(row: Record<string, unknown>, rowIndex: number, defaultPeriod?: { start: string; end: string }): ParsedRecord {
   const errors: string[] = [];
-  
+
   const deviceCode = findMappedColumn(row, "deviceCode", SALES_COLUMN_MAPPINGS);
   const productName = findMappedColumn(row, "productName", SALES_COLUMN_MAPPINGS);
   const quantity = parseNumber(findMappedColumn(row, "quantity", SALES_COLUMN_MAPPINGS));
@@ -182,7 +182,7 @@ export function parseSalesRecord(row: Record<string, unknown>, rowIndex: number,
 
 export function parseComplaintRecord(row: Record<string, unknown>, rowIndex: number): ParsedRecord {
   const errors: string[] = [];
-  
+
   const complaintId = findMappedColumn(row, "complaintId", COMPLAINT_COLUMN_MAPPINGS);
   const deviceCode = findMappedColumn(row, "deviceCode", COMPLAINT_COLUMN_MAPPINGS);
   const productName = findMappedColumn(row, "productName", COMPLAINT_COLUMN_MAPPINGS);
@@ -320,7 +320,7 @@ const REGISTRY_COLUMN_MAPPINGS: Record<string, string[]> = {
 
 const GENERIC_EVIDENCE_TYPES = [
   "manufacturer_master_data",
-  "device_master_data", 
+  "device_master_data",
   "psur_case_record",
   "population_estimate",
   "exposure_model",
@@ -330,7 +330,7 @@ const GENERIC_EVIDENCE_TYPES = [
 
 export function parseIncidentRecord(row: Record<string, unknown>, rowIndex: number): ParsedRecord {
   const errors: string[] = [];
-  
+
   const incidentId = findMappedColumn(row, "incidentId", INCIDENT_COLUMN_MAPPINGS);
   const deviceCode = findMappedColumn(row, "deviceCode", INCIDENT_COLUMN_MAPPINGS);
   const incidentDate = parseDate(findMappedColumn(row, "incidentDate", INCIDENT_COLUMN_MAPPINGS));
@@ -365,7 +365,7 @@ export function parseIncidentRecord(row: Record<string, unknown>, rowIndex: numb
 
 export function parseFSCARecord(row: Record<string, unknown>, rowIndex: number): ParsedRecord {
   const errors: string[] = [];
-  
+
   const fscaId = findMappedColumn(row, "fscaId", FSCA_COLUMN_MAPPINGS);
   const deviceCode = findMappedColumn(row, "deviceCode", FSCA_COLUMN_MAPPINGS);
   const actionType = findMappedColumn(row, "actionType", FSCA_COLUMN_MAPPINGS);
@@ -398,7 +398,7 @@ export function parseFSCARecord(row: Record<string, unknown>, rowIndex: number):
 
 export function parseCAPARecord(row: Record<string, unknown>, rowIndex: number): ParsedRecord {
   const errors: string[] = [];
-  
+
   const capaId = findMappedColumn(row, "capaId", CAPA_COLUMN_MAPPINGS);
   const type = findMappedColumn(row, "type", CAPA_COLUMN_MAPPINGS);
   const initiationDate = parseDate(findMappedColumn(row, "initiationDate", CAPA_COLUMN_MAPPINGS));
@@ -431,7 +431,7 @@ export function parseCAPARecord(row: Record<string, unknown>, rowIndex: number):
 
 export function parseLiteratureRecord(row: Record<string, unknown>, rowIndex: number): ParsedRecord {
   const errors: string[] = [];
-  
+
   const referenceId = findMappedColumn(row, "referenceId", LITERATURE_COLUMN_MAPPINGS);
   const title = findMappedColumn(row, "title", LITERATURE_COLUMN_MAPPINGS);
   const authors = findMappedColumn(row, "authors", LITERATURE_COLUMN_MAPPINGS);
@@ -461,7 +461,7 @@ export function parseLiteratureRecord(row: Record<string, unknown>, rowIndex: nu
 
 export function parsePMCFRecord(row: Record<string, unknown>, rowIndex: number): ParsedRecord {
   const errors: string[] = [];
-  
+
   const studyId = findMappedColumn(row, "studyId", PMCF_COLUMN_MAPPINGS);
   const studyName = findMappedColumn(row, "studyName", PMCF_COLUMN_MAPPINGS);
   const studyType = findMappedColumn(row, "studyType", PMCF_COLUMN_MAPPINGS);
@@ -491,7 +491,7 @@ export function parsePMCFRecord(row: Record<string, unknown>, rowIndex: number):
 
 export function parseRegistryRecord(row: Record<string, unknown>, rowIndex: number): ParsedRecord {
   const errors: string[] = [];
-  
+
   const registryName = findMappedColumn(row, "registryName", REGISTRY_COLUMN_MAPPINGS);
   const queryDate = parseDate(findMappedColumn(row, "queryDate", REGISTRY_COLUMN_MAPPINGS));
   const searchTerms = findMappedColumn(row, "searchTerms", REGISTRY_COLUMN_MAPPINGS);
@@ -514,13 +514,13 @@ export function parseRegistryRecord(row: Record<string, unknown>, rowIndex: numb
 }
 
 export function parseGenericRecord(
-  row: Record<string, unknown>, 
-  rowIndex: number, 
+  row: Record<string, unknown>,
+  rowIndex: number,
   evidenceType: string,
   options?: { periodStart?: string; periodEnd?: string }
 ): ParsedRecord {
   const normalizedData: Record<string, unknown> = {};
-  
+
   for (const [key, value] of Object.entries(row)) {
     if (value !== null && value !== undefined && value !== "") {
       const normalizedKey = normalizeColumnName(key);
@@ -539,7 +539,7 @@ export function parseGenericRecord(
       }
     }
   }
-  
+
   if (options?.periodStart) normalizedData.periodStart = options.periodStart;
   if (options?.periodEnd) normalizedData.periodEnd = options.periodEnd;
   normalizedData._evidenceType = evidenceType;
@@ -556,22 +556,22 @@ export function parseGenericRecord(
 export function parseCSV(content: string): Record<string, unknown>[] {
   const lines = content.split(/\r?\n/).filter(line => line.trim());
   if (lines.length < 2) return [];
-  
+
   const headerLine = lines[0];
   const headers = parseCSVLine(headerLine);
-  
+
   const records: Record<string, unknown>[] = [];
   for (let i = 1; i < lines.length; i++) {
     const values = parseCSVLine(lines[i]);
     if (values.length === 0 || values.every(v => !v.trim())) continue;
-    
+
     const record: Record<string, unknown> = {};
     for (let j = 0; j < headers.length; j++) {
       record[headers[j]] = values[j] || "";
     }
     records.push(record);
   }
-  
+
   return records;
 }
 
@@ -579,10 +579,10 @@ function parseCSVLine(line: string): string[] {
   const result: string[] = [];
   let current = "";
   let inQuotes = false;
-  
+
   for (let i = 0; i < line.length; i++) {
     const char = line[i];
-    
+
     if (char === '"') {
       if (inQuotes && line[i + 1] === '"') {
         current += '"';
@@ -598,7 +598,7 @@ function parseCSVLine(line: string): string[] {
     }
   }
   result.push(current.trim());
-  
+
   return result;
 }
 
@@ -619,7 +619,7 @@ export function parseEvidenceFile(
   const records = preParseRows || parseCSV(content);
   const errors: string[] = [];
   const warnings: string[] = [];
-  
+
   if (records.length === 0) {
     return {
       success: false,
@@ -633,11 +633,11 @@ export function parseEvidenceFile(
   }
 
   const parsedRecords: ParsedRecord[] = [];
-  
+
   for (let i = 0; i < records.length; i++) {
     const row = records[i];
     let parsed: ParsedRecord;
-    
+
     if (evidenceType === "sales_volume") {
       parsed = parseSalesRecord(row, i + 1, options?.periodStart && options?.periodEnd ? {
         start: options.periodStart,
@@ -668,7 +668,7 @@ export function parseEvidenceFile(
         rowIndex: i + 1,
       };
     }
-    
+
     parsedRecords.push(parsed);
   }
 
@@ -677,7 +677,7 @@ export function parseEvidenceFile(
 
   if (invalidRecords > 0) {
     warnings.push(`${invalidRecords} records failed validation and will be rejected`);
-    
+
     // Collect first few validation errors for debugging
     const failedRecords = parsedRecords.filter(r => !r.isValid).slice(0, 5);
     for (const record of failedRecords) {
@@ -710,7 +710,7 @@ export function createEvidenceAtomBatch(
   parseResult: ParseResult,
   uploadId: number,
   options: {
-    psurCaseId?: number;
+    psurCaseId: number; // REQUIRED: every atom must be linked to a PSUR case
     deviceScopeId?: number;
     sourceSystem: string;
     periodStart?: Date;
@@ -728,10 +728,10 @@ export function createEvidenceAtomBatch(
     }
 
     const contentHash = generateContentHash(record.normalizedData);
-    
+
     let atomPeriodStart = options.periodStart;
     let atomPeriodEnd = options.periodEnd;
-    
+
     if (parseResult.evidenceType === "sales_volume" && record.normalizedData) {
       const salesData = record.normalizedData as SalesVolumeAtomData;
       atomPeriodStart = new Date(salesData.periodStart);
@@ -743,10 +743,10 @@ export function createEvidenceAtomBatch(
     }
 
     const atomId = `${parseResult.evidenceType}:${contentHash}`;
-    
+
     const atom: Omit<InsertEvidenceAtom, "id" | "createdAt"> = {
       atomId,
-      psurCaseId: options.psurCaseId || null,
+      psurCaseId: options.psurCaseId, // REQUIRED - not nullable
       uploadId,
       evidenceType: parseResult.evidenceType,
       sourceSystem: options.sourceSystem,

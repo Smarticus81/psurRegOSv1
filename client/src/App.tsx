@@ -8,8 +8,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import NotFound from "@/pages/not-found";
-import Evidence from "@/pages/evidence";
-import PSURWorkflow from "@/pages/psur-workflow";
+import PsurWizard from "@/pages/psur-wizard";
 import Admin from "@/pages/admin";
 
 function Router() {
@@ -18,8 +17,7 @@ function Router() {
       <Route path="/">
         <Redirect to="/psur" />
       </Route>
-      <Route path="/psur" component={PSURWorkflow} />
-      <Route path="/evidence" component={Evidence} />
+      <Route path="/psur" component={PsurWizard} />
       <Route path="/admin" component={Admin} />
       <Route component={NotFound} />
     </Switch>

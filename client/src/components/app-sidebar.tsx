@@ -2,7 +2,6 @@ import { useLocation, Link } from "wouter";
 import {
   Settings,
   Activity,
-  Database,
   FileText,
 } from "lucide-react";
 import {
@@ -20,14 +19,10 @@ import {
 
 const workflowNavItems = [
   {
-    title: "Evidence",
-    url: "/evidence",
-    icon: Database,
-  },
-  {
-    title: "PSUR Workflow",
+    title: "PSUR Wizard",
     url: "/psur",
     icon: FileText,
+    description: "Create case → Upload evidence → Generate PSUR",
   },
 ];
 

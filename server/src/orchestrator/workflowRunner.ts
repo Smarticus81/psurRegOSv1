@@ -4,13 +4,18 @@ import { loadTemplate } from "../templateStore";
 import { listEvidenceAtomsByCase, EvidenceAtomRecord } from "../services/evidenceStore";
 import { ingestEvidenceStep } from "./steps/ingestEvidence";
 import { proposeSlotsStep, SlotProposalOutput } from "./steps/proposeSlots";
-import { listObligations, listConstraints, qualifyTemplate } from "../../orchestrator";
+import {
+  qualifyTemplateAgainstGrkb,
+  getObligations,
+  getConstraints,
+} from "../services/grkbService";
 import {
   psurCases,
   slotProposals,
   coverageReports,
   auditBundles,
   evidenceAtoms,
+  qualificationReports,
   WorkflowStep,
   WorkflowStepStatus,
   OrchestratorWorkflowResult,
@@ -44,17 +49,19 @@ function makeStep(step: number, status: WorkflowStepStatus = "NOT_STARTED"): Wor
   };
 }
 
-async function getKernelStatus(): Promise<KernelStatus> {
-  const obligations = await listObligations();
-  const constraints = await listConstraints();
-  
-  const euObs = (obligations.data || []).filter(o => o.jurisdiction === "EU_MDR").length;
-  const ukObs = (obligations.data || []).filter(o => o.jurisdiction === "UK_MDR").length;
-  
+/**
+ * Get kernel status from DB-backed GRKB.
+ * No longer uses Python orchestrator.
+ */
+async function getKernelStatus(jurisdictions: string[]): Promise<KernelStatus> {
+  const euObligations = await getObligations(["EU_MDR"], "PSUR");
+  const ukObligations = await getObligations(["UK_MDR"], "PSUR");
+  const constraints = await getConstraints(jurisdictions, "PSUR");
+
   return {
-    euObligations: euObs,
-    ukObligations: ukObs,
-    constraints: (constraints.data || []).length,
+    euObligations: euObligations.length,
+    ukObligations: ukObligations.length,
+    constraints: constraints.length,
     templateSlots: 0,
   };
 }
@@ -72,10 +79,10 @@ export interface RunWorkflowParams {
 
 export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promise<OrchestratorWorkflowResult> {
   const { templateId, jurisdictions, deviceCode, deviceId, periodStart, periodEnd, psurCaseId: existingCaseId, runSteps } = params;
-  
+
   const steps: WorkflowStep[] = Array.from({ length: 8 }, (_, i) => makeStep(i + 1));
   const stepsToRun = runSteps || [1, 2, 3, 4, 5, 6, 7, 8];
-  
+
   const scope: WorkflowScope = {
     templateId,
     jurisdictions,
@@ -83,33 +90,76 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
     periodStart,
     periodEnd,
   };
-  
+
   let psurCaseId = existingCaseId || 0;
   let psurRef = "";
   let version = 1;
   let template: any = null;
   let evidenceAtomsData: EvidenceAtomRecord[] = [];
   let slotProposalsData: SlotProposalOutput[] = [];
+  let qualificationBlocked = false;
 
   try {
+    // ==================== STEP 1: QUALIFY TEMPLATE ====================
+    // Uses DB-backed GRKB service - HARD FAIL if no obligations for jurisdiction
     if (stepsToRun.includes(1)) {
       steps[0].status = "RUNNING";
       steps[0].startedAt = new Date().toISOString();
-      
+
       try {
+        // Load template structure
         template = loadTemplate(templateId);
-        const slotCount = template.slots?.length || 0;
-        const mappingCount = Object.keys(template.mapping || {}).length;
-        
-        steps[0].status = "COMPLETED";
-        steps[0].endedAt = new Date().toISOString();
-        steps[0].summary = { slotCount, mappingCount, templateId };
-        steps[0].report = { 
-          status: "PASS",
-          slotCount,
-          mappingCount,
-          templateId: template.template_id,
-        };
+
+        // Qualify against GRKB obligations from DB
+        const qualReport = await qualifyTemplateAgainstGrkb(
+          templateId,
+          jurisdictions,
+          "PSUR",
+          template.slots || [],
+          template.mapping || {}
+        );
+
+        // Persist qualification report
+        await db.insert(qualificationReports).values({
+          psurCaseId: existingCaseId || null,
+          templateId,
+          jurisdictions,
+          status: qualReport.status,
+          slotCount: qualReport.slotCount,
+          mappingCount: qualReport.mappingCount,
+          mandatoryObligationsTotal: qualReport.mandatoryObligationsTotal,
+          mandatoryObligationsFound: qualReport.mandatoryObligationsFound,
+          missingObligations: qualReport.missingObligations,
+          constraints: qualReport.constraints,
+          blockingErrors: qualReport.blockingErrors,
+          validatedAt: new Date(),
+        }).onConflictDoNothing();
+
+        // Check qualification status
+        if (qualReport.status === "BLOCKED") {
+          steps[0].status = "BLOCKED";
+          steps[0].endedAt = new Date().toISOString();
+          steps[0].error = qualReport.blockingErrors.join("; ");
+          steps[0].summary = {
+            slotCount: qualReport.slotCount,
+            obligationsFound: qualReport.mandatoryObligationsFound,
+            status: "BLOCKED",
+          };
+          steps[0].report = qualReport;
+          qualificationBlocked = true;
+
+          // Do NOT throw - allow remaining steps to be marked as blocked
+        } else {
+          steps[0].status = "COMPLETED";
+          steps[0].endedAt = new Date().toISOString();
+          steps[0].summary = {
+            slotCount: qualReport.slotCount,
+            mappingCount: qualReport.mappingCount,
+            templateId,
+            obligationsCount: qualReport.mandatoryObligationsTotal,
+          };
+          steps[0].report = qualReport;
+        }
       } catch (e: any) {
         steps[0].status = "FAILED";
         steps[0].endedAt = new Date().toISOString();
@@ -123,7 +173,7 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
     if (stepsToRun.includes(2)) {
       steps[1].status = "RUNNING";
       steps[1].startedAt = new Date().toISOString();
-      
+
       try {
         if (existingCaseId) {
           const existingCase = await storage.getPSURCase(existingCaseId);
@@ -149,7 +199,7 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
           psurRef = newCase.psurReference;
           version = newCase.version;
         }
-        
+
         steps[1].status = "COMPLETED";
         steps[1].endedAt = new Date().toISOString();
         steps[1].summary = { psurCaseId, psurRef };
@@ -172,15 +222,15 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
     if (stepsToRun.includes(3)) {
       steps[2].status = "RUNNING";
       steps[2].startedAt = new Date().toISOString();
-      
+
       try {
         evidenceAtomsData = await ingestEvidenceStep({ psurCaseId });
-        
+
         const byType: Record<string, number> = {};
         for (const atom of evidenceAtomsData) {
           byType[atom.evidenceType] = (byType[atom.evidenceType] || 0) + 1;
         }
-        
+
         const report: EvidenceIngestReport = {
           uploadedAtoms: evidenceAtomsData.length,
           linkedToCaseAtoms: evidenceAtomsData.length,
@@ -188,12 +238,12 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
           sampleErrors: [],
           byType,
         };
-        
+
         steps[2].status = "COMPLETED";
         steps[2].endedAt = new Date().toISOString();
         steps[2].summary = { linkedToCaseAtoms: report.linkedToCaseAtoms, byType: Object.keys(byType).join(", ") };
         steps[2].report = report;
-        
+
         if (report.linkedToCaseAtoms === 0) {
           steps[2].status = "BLOCKED";
           steps[2].error = "No evidence atoms linked to this case. Upload evidence before running workflow.";
@@ -207,7 +257,7 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
     }
 
     const hasEvidence = evidenceAtomsData.length > 0;
-    
+
     if (stepsToRun.includes(4)) {
       if (!hasEvidence && steps[2].status !== "COMPLETED") {
         steps[3].status = "BLOCKED";
@@ -215,17 +265,17 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
       } else {
         steps[3].status = "RUNNING";
         steps[3].startedAt = new Date().toISOString();
-        
+
         try {
           slotProposalsData = await proposeSlotsStep({
             psurCaseId,
-            template: { slots: template?.slots || [] },
+            templateId,
             evidenceAtoms: evidenceAtomsData,
           });
-          
+
           const withEvidence = slotProposalsData.filter(p => p.evidenceAtomIds.length > 0).length;
           const blocked = slotProposalsData.filter(p => p.evidenceAtomIds.length === 0).length;
-          
+
           for (const proposal of slotProposalsData) {
             await db.insert(slotProposals).values({
               psurCaseId,
@@ -240,7 +290,7 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
               rejectionReasons: proposal.evidenceAtomIds.length === 0 ? ["BLOCKED_MISSING_EVIDENCE"] : [],
             }).onConflictDoNothing();
           }
-          
+
           steps[3].status = "COMPLETED";
           steps[3].endedAt = new Date().toISOString();
           steps[3].summary = { totalProposals: slotProposalsData.length, withEvidence, blocked };
@@ -264,20 +314,20 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
       } else {
         steps[4].status = "RUNNING";
         steps[4].startedAt = new Date().toISOString();
-        
+
         try {
-          const acceptedProposals = slotProposalsData.filter(p => 
-            p.evidenceAtomIds.length >= 1 && 
-            p.claimedObligationIds.length >= 1 && 
+          const acceptedProposals = slotProposalsData.filter(p =>
+            p.evidenceAtomIds.length >= 1 &&
+            p.claimedObligationIds.length >= 1 &&
             p.methodStatement.length >= 10
           );
-          
-          const rejectedProposals = slotProposalsData.filter(p => 
-            p.evidenceAtomIds.length === 0 || 
-            p.claimedObligationIds.length === 0 || 
+
+          const rejectedProposals = slotProposalsData.filter(p =>
+            p.evidenceAtomIds.length === 0 ||
+            p.claimedObligationIds.length === 0 ||
             p.methodStatement.length < 10
           );
-          
+
           const report: AdjudicationReport = {
             acceptedCount: acceptedProposals.length,
             rejectedCount: rejectedProposals.length,
@@ -291,7 +341,7 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
               ],
             })),
           };
-          
+
           steps[4].status = "COMPLETED";
           steps[4].endedAt = new Date().toISOString();
           steps[4].summary = { acceptedCount: report.acceptedCount, rejectedCount: report.rejectedCount };
@@ -311,27 +361,25 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
       } else {
         steps[5].status = "RUNNING";
         steps[5].startedAt = new Date().toISOString();
-        
+
         try {
-          const obligations = await listObligations();
-          const totalObligations = (obligations.data || []).filter(o => 
-            jurisdictions.includes(o.jurisdiction as any)
-          ).length;
-          
+          const obligations = await getObligations(jurisdictions, "PSUR");
+          const totalObligations = obligations.length;
+
           const acceptedProposals = slotProposalsData.filter(p => p.evidenceAtomIds.length > 0);
           const satisfiedObligations = new Set(acceptedProposals.flatMap(p => p.claimedObligationIds)).size;
-          
+
           const totalSlots = template?.slots?.length || 0;
           const filledSlots = acceptedProposals.length;
-          
+
           const availableTypes = new Set<string>(evidenceAtomsData.map(a => a.evidenceType));
           const requiredTypesArr: string[] = template?.slots?.flatMap((s: any) => s.requiredEvidenceTypes || []) || [];
           const requiredTypes = new Set<string>(requiredTypesArr);
           const missingEvidenceTypes = Array.from(requiredTypes).filter(t => !availableTypes.has(t));
-          
+
           const coveragePercent = totalSlots > 0 ? Math.round((filledSlots / totalSlots) * 100) : 0;
           const passed = coveragePercent >= 80 && missingEvidenceTypes.length === 0;
-          
+
           const report: CoverageReportData = {
             obligationsSatisfied: satisfiedObligations,
             obligationsTotal: totalObligations,
@@ -341,7 +389,7 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
             coveragePercent,
             passed,
           };
-          
+
           await db.insert(coverageReports).values({
             psurCaseId,
             templateId,
@@ -354,11 +402,11 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
             coveragePercent: coveragePercent.toString(),
             passed,
           }).onConflictDoNothing();
-          
+
           steps[5].status = "COMPLETED";
           steps[5].endedAt = new Date().toISOString();
-          steps[5].summary = { 
-            coverage: `${filledSlots}/${totalSlots} slots`, 
+          steps[5].summary = {
+            coverage: `${filledSlots}/${totalSlots} slots`,
             obligations: `${satisfiedObligations}/${totalObligations}`,
             passed,
           };
@@ -378,7 +426,7 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
       } else {
         steps[6].status = "RUNNING";
         steps[6].startedAt = new Date().toISOString();
-        
+
         try {
           steps[6].status = "COMPLETED";
           steps[6].endedAt = new Date().toISOString();
@@ -403,10 +451,10 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
       } else {
         steps[7].status = "RUNNING";
         steps[7].startedAt = new Date().toISOString();
-        
+
         try {
           const bundleRef = `BUNDLE-${psurRef}-${Date.now().toString(36).toUpperCase()}`;
-          
+
           await db.insert(auditBundles).values({
             psurCaseId,
             bundleReference: bundleRef,
@@ -417,7 +465,7 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
             renderedDocumentPath: `bundles/${bundleRef}/psur.md`,
             metadata: { generatedAt: new Date().toISOString(), scope },
           }).onConflictDoNothing();
-          
+
           const report: ExportBundleReport = {
             bundleFiles: [
               "trace.jsonl",
@@ -428,9 +476,9 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
             ],
             downloadUrl: `/api/audit-bundles/${psurCaseId}/download`,
           };
-          
+
           await storage.updatePSURCase(psurCaseId, { status: "exported" });
-          
+
           steps[7].status = "COMPLETED";
           steps[7].endedAt = new Date().toISOString();
           steps[7].summary = { bundleRef, files: report.bundleFiles.length };
@@ -447,7 +495,7 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
     console.error("[WorkflowRunner] Error:", e);
   }
 
-  const kernelStatus = await getKernelStatus();
+  const kernelStatus = await getKernelStatus(jurisdictions);
   kernelStatus.templateSlots = template?.slots?.length || 0;
 
   return {
@@ -465,25 +513,25 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
 export async function getWorkflowResultForCase(psurCaseId: number): Promise<OrchestratorWorkflowResult | null> {
   const psurCase = await storage.getPSURCase(psurCaseId);
   if (!psurCase) return null;
-  
-  const device = psurCase.leadingDeviceId 
+
+  const device = psurCase.leadingDeviceId
     ? await storage.getDevice(psurCase.leadingDeviceId)
     : null;
-  
+
   const atoms = await listEvidenceAtomsByCase(psurCaseId);
-  
+
   const proposals = await db.query.slotProposals.findMany({
     where: eq(slotProposals.psurCaseId, psurCaseId),
   });
-  
+
   const coverage = await db.query.coverageReports.findFirst({
     where: eq(coverageReports.psurCaseId, psurCaseId),
   });
-  
+
   const bundle = await db.query.auditBundles.findFirst({
     where: eq(auditBundles.psurCaseId, psurCaseId),
   });
-  
+
   const scope: WorkflowScope = {
     templateId: psurCase.templateId as any,
     jurisdictions: (psurCase.jurisdictions || []) as any,
@@ -491,28 +539,28 @@ export async function getWorkflowResultForCase(psurCaseId: number): Promise<Orch
     periodStart: psurCase.startPeriod.toISOString().split("T")[0],
     periodEnd: psurCase.endPeriod.toISOString().split("T")[0],
   };
-  
+
   const steps: WorkflowStep[] = [];
-  
+
   steps.push({
     step: 1,
     name: "Qualify Template",
     status: "COMPLETED",
     summary: { templateId: psurCase.templateId },
   });
-  
+
   steps.push({
     step: 2,
     name: "Create Case",
     status: "COMPLETED",
     summary: { psurCaseId: psurCase.id, psurRef: psurCase.psurReference },
   });
-  
+
   const byType: Record<string, number> = {};
   for (const atom of atoms) {
     byType[atom.evidenceType] = (byType[atom.evidenceType] || 0) + 1;
   }
-  
+
   steps.push({
     step: 3,
     name: "Ingest Evidence",
@@ -527,17 +575,17 @@ export async function getWorkflowResultForCase(psurCaseId: number): Promise<Orch
     } as EvidenceIngestReport,
     error: atoms.length === 0 ? "No evidence atoms linked to this case." : undefined,
   });
-  
+
   const acceptedProposals = proposals.filter(p => p.status === "accepted" || (p.evidenceAtomIds?.length || 0) > 0);
   const rejectedProposals = proposals.filter(p => p.status === "rejected" || (p.evidenceAtomIds?.length || 0) === 0);
-  
+
   steps.push({
     step: 4,
     name: "Build Queue & Propose",
     status: proposals.length > 0 ? "COMPLETED" : atoms.length > 0 ? "NOT_STARTED" : "BLOCKED",
     summary: { totalProposals: proposals.length, withEvidence: acceptedProposals.length },
   });
-  
+
   steps.push({
     step: 5,
     name: "Adjudicate",
@@ -550,13 +598,13 @@ export async function getWorkflowResultForCase(psurCaseId: number): Promise<Orch
       rejected: rejectedProposals.map(p => ({ proposalId: p.slotId, reasons: p.rejectionReasons || [] })),
     } as AdjudicationReport,
   });
-  
+
   steps.push({
     step: 6,
     name: "Coverage Report",
     status: coverage ? "COMPLETED" : "NOT_STARTED",
-    summary: coverage ? { 
-      coverage: `${coverage.filledSlots}/${coverage.totalSlots}`, 
+    summary: coverage ? {
+      coverage: `${coverage.filledSlots}/${coverage.totalSlots}`,
       passed: coverage.passed ?? false,
     } : {},
     report: coverage ? {
@@ -569,14 +617,14 @@ export async function getWorkflowResultForCase(psurCaseId: number): Promise<Orch
       passed: coverage.passed || false,
     } as CoverageReportData : undefined,
   });
-  
+
   steps.push({
     step: 7,
     name: "Render Document",
     status: bundle ? "COMPLETED" : "NOT_STARTED",
     summary: {},
   });
-  
+
   steps.push({
     step: 8,
     name: "Export Bundle",
@@ -593,8 +641,8 @@ export async function getWorkflowResultForCase(psurCaseId: number): Promise<Orch
       downloadUrl: `/api/audit-bundles/${psurCaseId}/download`,
     } as ExportBundleReport : undefined,
   });
-  
-  const kernelStatus = await getKernelStatus();
+
+  const kernelStatus = await getKernelStatus(psurCase.jurisdictions || []);
   let template;
   try {
     template = loadTemplate(psurCase.templateId);
@@ -602,7 +650,7 @@ export async function getWorkflowResultForCase(psurCaseId: number): Promise<Orch
   } catch {
     kernelStatus.templateSlots = 0;
   }
-  
+
   return {
     scope,
     case: {

@@ -6,9 +6,9 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { storage } from "./storage";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
-import { 
-  insertCompanySchema, 
-  insertDeviceSchema, 
+import {
+  insertCompanySchema,
+  insertDeviceSchema,
   insertPsurItemSchema,
   insertDataSourceSchema,
   insertAgentExecutionSchema,
@@ -30,9 +30,9 @@ import {
 import { buildCoverageSlotQueue } from "./queue-builder";
 import { parseEvidenceFile, createEvidenceAtomBatch } from "./evidence-parser";
 import { parseFileBuffer, detectColumnMappings, applyColumnMapping } from "./file-parser";
-import { 
-  computeFileSha256, 
-  computeContentHash, 
+import {
+  computeFileSha256,
+  computeContentHash,
   generateAtomId,
   validateEvidenceAtomPayload,
   buildEvidenceAtom,
@@ -60,6 +60,11 @@ import {
   type EvidenceAtom as EvidenceAtomRecord,
 } from "./src/services/evidenceStore";
 import { runOrchestratorWorkflow, getWorkflowResultForCase } from "./src/orchestrator/workflowRunner";
+import {
+  listGrkbEntries,
+  getObligations as getGrkbObligations,
+  getConstraints as getGrkbConstraints
+} from "./src/services/grkbService";
 import { orchestratorRunRequestSchema } from "@shared/schema";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
@@ -163,7 +168,7 @@ export async function registerRoutes(
   app.get("/api/devices", async (req, res) => {
     try {
       const companyId = req.query.companyId ? parseInt(req.query.companyId as string) : undefined;
-      const devices = companyId 
+      const devices = companyId
         ? await storage.getDevicesByCompany(companyId)
         : await storage.getDevices();
       res.json(devices);
@@ -227,7 +232,7 @@ export async function registerRoutes(
   app.get("/api/psur-items", async (req, res) => {
     try {
       const deviceId = req.query.deviceId ? parseInt(req.query.deviceId as string) : undefined;
-      const items = deviceId 
+      const items = deviceId
         ? await storage.getPSURItemsByDevice(deviceId)
         : await storage.getPSURItems();
       res.json(items);
@@ -265,7 +270,7 @@ export async function registerRoutes(
   app.get("/api/data-sources", async (req, res) => {
     try {
       const companyId = req.query.companyId ? parseInt(req.query.companyId as string) : undefined;
-      const sources = companyId 
+      const sources = companyId
         ? await storage.getDataSourcesByCompany(companyId)
         : await storage.getDataSources();
       res.json(sources);
@@ -472,17 +477,17 @@ export async function registerRoutes(
       if (!doc.filePath) {
         return res.status(404).json({ error: "Document file not available" });
       }
-      
+
       // Check if filePath is a URL (object storage) or local path
       if (doc.filePath.startsWith("http")) {
         res.redirect(doc.filePath);
       } else {
         const fullPath = path.resolve(doc.filePath);
-        
+
         if (!fs.existsSync(fullPath)) {
           return res.status(404).json({ error: "Document file not found on disk" });
         }
-        
+
         res.setHeader("Content-Disposition", `attachment; filename="${doc.title || "document"}.pdf"`);
         res.setHeader("Content-Type", "application/pdf");
         fs.createReadStream(fullPath).pipe(res);
@@ -516,8 +521,17 @@ export async function registerRoutes(
 
   app.get("/api/orchestrator/status", async (req, res) => {
     try {
-      const status = await getOrchestratorStatus();
-      res.json(status.data);
+      // Get counts from DB-backed GRKB
+      const euObligations = await getGrkbObligations(["EU_MDR"], "PSUR");
+      const ukObligations = await getGrkbObligations(["UK_MDR"], "PSUR");
+      const constraints = await getGrkbConstraints(["EU_MDR", "UK_MDR"], "PSUR");
+
+      res.json({
+        initialized: true,
+        euObligations: euObligations.length,
+        ukObligations: ukObligations.length,
+        constraints: constraints.length,
+      });
     } catch (error) {
       res.status(500).json({ error: "Failed to get orchestrator status" });
     }
@@ -574,7 +588,7 @@ export async function registerRoutes(
   app.post("/api/orchestrator/qualify", async (req, res) => {
     try {
       const templateIdRaw = req.body?.templateId || req.body?.template || req.body?.template_id;
-      
+
       // FORCE template loading through templateStore (single source of truth)
       let template;
       try {
@@ -582,12 +596,12 @@ export async function registerRoutes(
       } catch (e: any) {
         return res.status(e?.status || 500).json({ error: e?.message || String(e) });
       }
-      
+
       // Qualification is done directly in Node.js using templateStore
       // Template is valid if it loaded successfully with slots and mapping
       const slotCount = template.slots?.length || 0;
       const mappingCount = Object.keys(template.mapping || {}).length;
-      
+
       res.json({
         status: "PASS",
         template_id: template.template_id,
@@ -604,12 +618,12 @@ export async function registerRoutes(
     try {
       const parsed = orchestratorRunRequestSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ 
-          error: "Invalid request", 
+        return res.status(400).json({
+          error: "Invalid request",
           details: parsed.error.errors.map(e => `${e.path.join(".")}: ${e.message}`),
         });
       }
-      
+
       const result = await runOrchestratorWorkflow(parsed.data);
       res.json(result);
     } catch (error: any) {
@@ -624,12 +638,12 @@ export async function registerRoutes(
       if (isNaN(psurCaseId)) {
         return res.status(400).json({ error: "Invalid psurCaseId" });
       }
-      
+
       const result = await getWorkflowResultForCase(psurCaseId);
       if (!result) {
         return res.status(404).json({ error: "PSUR case not found" });
       }
-      
+
       res.json(result);
     } catch (error: any) {
       console.error("[GET /api/orchestrator/cases/:psurCaseId] Error:", error);
@@ -721,7 +735,7 @@ export async function registerRoutes(
     try {
       const file = req.file;
       if (!file) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: "No file uploaded",
           totalRows: 0,
           sourceColumns: [],
@@ -737,7 +751,7 @@ export async function registerRoutes(
 
       const { evidence_type, selected_sheet } = req.body;
       if (!evidence_type) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: "evidence_type is required",
           totalRows: 0,
           sourceColumns: [],
@@ -752,7 +766,7 @@ export async function registerRoutes(
       }
 
       const parseResult = parseFileBuffer(file.buffer, file.originalname, selected_sheet);
-      
+
       if (!parseResult.success) {
         return res.status(400).json({
           error: "Failed to parse file",
@@ -774,7 +788,7 @@ export async function registerRoutes(
 
       const sampleRows = (parseResult.rows || []).slice(0, 5);
       const sourceColumns = parseResult.columns || [];
-      
+
       const missingRequiredColumns = (mappingDetection.requiredFields || []).filter(
         (field: string) => !mappingDetection.autoMapped[field]
       );
@@ -801,7 +815,7 @@ export async function registerRoutes(
       });
     } catch (error) {
       console.error("File analysis error:", error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: "Failed to analyze file",
         totalRows: 0,
         sourceColumns: [],
@@ -846,7 +860,9 @@ export async function registerRoutes(
 
   app.post("/api/evidence/upload", upload.single("file"), async (req, res) => {
     try {
-      // Required field validation
+      // ═══════════════════════════════════════════════════════════════════════
+      // REQUIRED FIELD VALIDATION (Industry-ready: all uploads must be linked to a case)
+      // ═══════════════════════════════════════════════════════════════════════
       const evidenceType = req.body?.evidence_type || req.body?.evidenceType;
       if (!evidenceType) {
         return badRequest(res, "MISSING_EVIDENCE_TYPE", "evidence_type is required.");
@@ -856,11 +872,32 @@ export async function registerRoutes(
         return badRequest(res, "MISSING_FILE", "file is required.");
       }
 
+      // REQUIRED: psurCaseId - every upload must be linked to a PSUR case
+      const psurCaseId = req.body?.psur_case_id || req.body?.psurCaseId;
+      if (!psurCaseId) {
+        return badRequest(res, "MISSING_PSUR_CASE_ID",
+          "psur_case_id is required. Create a PSUR case first, then upload evidence for that case.");
+      }
+
+      // REQUIRED: deviceCode
+      const deviceCode = req.body?.device_code || req.body?.deviceCode;
+      if (!deviceCode) {
+        return badRequest(res, "MISSING_DEVICE_CODE", "device_code is required.");
+      }
+
+      // REQUIRED: periodStart and periodEnd
+      const periodStart = req.body?.period_start || req.body?.periodStart;
+      const periodEnd = req.body?.period_end || req.body?.periodEnd;
+      if (!periodStart || !periodEnd) {
+        return badRequest(res, "MISSING_PERIOD",
+          "period_start and period_end are required (YYYY-MM-DD format).");
+      }
+
       const file = req.file;
-      const { device_scope_id, psur_case_id, source_system, extraction_notes, period_start, period_end, device_code, jurisdiction } = req.body;
+      const { device_scope_id, source_system, extraction_notes, jurisdiction } = req.body;
 
       if (!hasSchemaFor(evidenceType)) {
-        return badRequest(res, "UNSUPPORTED_EVIDENCE_TYPE", 
+        return badRequest(res, "UNSUPPORTED_EVIDENCE_TYPE",
           `Unsupported evidence_type: ${evidenceType}. Supported types: sales_volume, complaint_record`,
           { providedType: evidenceType }
         );
@@ -879,12 +916,12 @@ export async function registerRoutes(
         sha256Hash: sourceFileSha256,
         evidenceType: evidenceType,
         deviceScopeId: device_scope_id ? parseInt(device_scope_id) : null,
-        psurCaseId: psur_case_id ? parseInt(psur_case_id) : null,
+        psurCaseId: parseInt(psurCaseId), // REQUIRED - not nullable
         uploadedBy: "system",
         sourceSystem: source_system || "manual_upload",
         extractionNotes: extraction_notes || null,
-        periodStart: period_start ? new Date(period_start) : null,
-        periodEnd: period_end ? new Date(period_end) : null,
+        periodStart: new Date(periodStart),
+        periodEnd: new Date(periodEnd),
         status: "processing",
         storagePath: null,
       });
@@ -924,21 +961,21 @@ export async function registerRoutes(
       }
 
       const validAtoms: any[] = [];
-      const rejectedRecords: Array<{ 
-        rowIndex: number; 
-        errors: Array<{ path: string; message: string }>; 
+      const rejectedRecords: Array<{
+        rowIndex: number;
+        errors: Array<{ path: string; message: string }>;
         row: Record<string, unknown>;
       }> = [];
 
       const deviceRef = {
-        deviceCode: device_code || "UNKNOWN",
+        deviceCode: deviceCode,
         deviceName: undefined,
         udiDi: undefined,
       };
 
       const psurPeriod = {
-        periodStart: period_start || new Date().toISOString().slice(0, 10),
-        periodEnd: period_end || new Date().toISOString().slice(0, 10),
+        periodStart: periodStart,
+        periodEnd: periodEnd,
       };
 
       for (let i = 0; i < rows.length; i++) {
@@ -982,10 +1019,10 @@ export async function registerRoutes(
           continue;
         }
 
-        const schemaName = evidenceType === "complaint_record" 
+        const schemaName = evidenceType === "complaint_record"
           ? "evidence_atom.complaint_record.schema.json"
           : "evidence_atom.sales_volume.schema.json";
-        
+
         const schemaValidation = validateWithAjv(schemaName, {
           atomType: atom.atomType,
           payload: atom.payload,
@@ -1002,15 +1039,15 @@ export async function registerRoutes(
 
         validAtoms.push({
           atomId: atom.atomId,
-          psurCaseId: psur_case_id ? parseInt(psur_case_id) : null,
+          psurCaseId: parseInt(psurCaseId),
           uploadId: evidenceUpload.id,
           evidenceType: evidenceType,
           sourceSystem: source_system || "manual_upload",
           extractDate: new Date(),
           contentHash: atom.contentHash,
           recordCount: 1,
-          periodStart: period_start ? new Date(period_start) : null,
-          periodEnd: period_end ? new Date(period_end) : null,
+          periodStart: new Date(periodStart),
+          periodEnd: new Date(periodEnd),
           deviceScopeId: device_scope_id ? parseInt(device_scope_id) : null,
           deviceRef: atom.deviceRef || null,
           data: row,
@@ -1033,7 +1070,7 @@ export async function registerRoutes(
           status: "rejected",
           recordsParsed: rows.length,
           recordsRejected: rejectedRecords.length,
-          processingErrors: { 
+          processingErrors: {
             schemaValidationFailed: true,
             rejectedRecords: rejectedRecords.slice(0, 10),
           },
@@ -1052,7 +1089,7 @@ export async function registerRoutes(
       }
 
       let persistResult = { inserted: 0, atomIds: [] as string[] };
-      if (validAtoms.length > 0 && psur_case_id) {
+      if (validAtoms.length > 0) {
         const atomRecords: EvidenceAtomRecord[] = validAtoms.map((a) => ({
           atomId: a.atomId,
           evidenceType: a.evidenceType,
@@ -1062,17 +1099,17 @@ export async function registerRoutes(
             uploadId: a.uploadId,
             sourceFile: a.provenance?.sourceFile || file.originalname,
             uploadedAt: a.provenance?.uploadedAt || new Date().toISOString(),
-            deviceRef: { deviceCode: device_code || "UNKNOWN" },
-            psurPeriod: { periodStart: period_start, periodEnd: period_end },
+            deviceRef: { deviceCode: deviceCode },
+            psurPeriod: { periodStart: periodStart, periodEnd: periodEnd },
             extractDate: a.provenance?.extractionTimestamp?.slice(0, 10),
           },
         }));
-        
+
         persistResult = await persistEvidenceAtoms({
-          psurCaseId: parseInt(psur_case_id),
-          deviceCode: device_code || "UNKNOWN",
-          periodStart: period_start || new Date().toISOString().slice(0, 10),
-          periodEnd: period_end || new Date().toISOString().slice(0, 10),
+          psurCaseId: parseInt(psurCaseId),
+          deviceCode: deviceCode,
+          periodStart: periodStart,
+          periodEnd: periodEnd,
           uploadId: evidenceUpload.id,
           atoms: atomRecords,
         });
@@ -1116,7 +1153,7 @@ export async function registerRoutes(
       const evidenceType = req.query.evidenceType as string | undefined;
       const periodStart = req.query.periodStart ? new Date(req.query.periodStart as string) : undefined;
       const periodEnd = req.query.periodEnd ? new Date(req.query.periodEnd as string) : undefined;
-      
+
       let atoms;
       if (evidenceType) {
         atoms = await storage.getEvidenceAtomsByType(evidenceType, psurCaseId);
@@ -1127,23 +1164,23 @@ export async function registerRoutes(
       const mandatoryTypes = EVIDENCE_DEFINITIONS
         .filter(d => d.tier <= 2 && !d.isAggregated)
         .map(d => d.type);
-      
-      const typeCoverage: Record<string, { 
-        count: number; 
+
+      const typeCoverage: Record<string, {
+        count: number;
         inPeriod: number;
         outOfPeriod: number;
-        periodStart: Date | null; 
+        periodStart: Date | null;
         periodEnd: Date | null;
         label: string;
         tier: number;
       }> = {};
-      
+
       for (const def of EVIDENCE_DEFINITIONS) {
-        typeCoverage[def.type] = { 
-          count: 0, 
-          inPeriod: 0, 
-          outOfPeriod: 0, 
-          periodStart: null, 
+        typeCoverage[def.type] = {
+          count: 0,
+          inPeriod: 0,
+          outOfPeriod: 0,
+          periodStart: null,
           periodEnd: null,
           label: def.label,
           tier: def.tier
@@ -1153,11 +1190,11 @@ export async function registerRoutes(
       for (const atom of atoms) {
         if (!typeCoverage[atom.evidenceType]) {
           const def = EVIDENCE_DEFINITIONS.find(d => d.type === atom.evidenceType);
-          typeCoverage[atom.evidenceType] = { 
-            count: 0, 
-            inPeriod: 0, 
-            outOfPeriod: 0, 
-            periodStart: null, 
+          typeCoverage[atom.evidenceType] = {
+            count: 0,
+            inPeriod: 0,
+            outOfPeriod: 0,
+            periodStart: null,
             periodEnd: null,
             label: def?.label || atom.evidenceType,
             tier: def?.tier || 0
@@ -1194,7 +1231,7 @@ export async function registerRoutes(
 
       const presentTypes = Object.keys(typeCoverage).filter(t => typeCoverage[t].count > 0);
       const missingMandatoryTypes = mandatoryTypes.filter(t => !presentTypes.includes(t));
-      
+
       const coverageSummary = {
         totalAtoms: atoms.length,
         uniqueTypes: presentTypes.length,
@@ -1221,7 +1258,7 @@ export async function registerRoutes(
       const periodEnd = req.query.periodEnd ? new Date(req.query.periodEnd as string) : undefined;
 
       const allAtoms = await storage.getEvidenceAtoms(psurCaseId);
-      
+
       const mandatoryTypes = ["sales_volume", "complaint_record", "incident_record"];
       const coverageByType: Record<string, {
         count: number;
@@ -1238,7 +1275,7 @@ export async function registerRoutes(
         if (!coverageByType[atom.evidenceType]) {
           coverageByType[atom.evidenceType] = { count: 0, inPeriod: 0, outOfPeriod: 0, periodCoverage: { start: null, end: null } };
         }
-        
+
         coverageByType[atom.evidenceType].count++;
 
         if (periodStart && periodEnd && atom.periodStart && atom.periodEnd) {
@@ -1287,6 +1324,41 @@ export async function registerRoutes(
       });
     } catch (error) {
       res.status(500).json({ error: "Failed to compute evidence coverage" });
+    }
+  });
+
+  // ============== EVIDENCE ATOM COUNTS (for PSUR Wizard) ==============
+  // GET /api/evidence/atoms/counts?psur_case_id=12
+  // Returns totals and counts by evidenceType for this PSUR case.
+  app.get("/api/evidence/atoms/counts", async (req, res) => {
+    try {
+      const psurCaseId = req.query.psur_case_id ? parseInt(req.query.psur_case_id as string) : undefined;
+
+      if (!psurCaseId || isNaN(psurCaseId)) {
+        return res.status(400).json({
+          code: "MISSING_PSUR_CASE_ID",
+          message: "psur_case_id is required"
+        });
+      }
+
+      const atoms = await storage.getEvidenceAtoms(psurCaseId);
+
+      const byType: Record<string, number> = {};
+      let total = 0;
+
+      for (const atom of atoms) {
+        byType[atom.evidenceType] = (byType[atom.evidenceType] || 0) + 1;
+        total += 1;
+      }
+
+      res.json({
+        psurCaseId,
+        totals: { all: total },
+        byType,
+      });
+    } catch (error) {
+      console.error("[GET /api/evidence/atoms/counts] Error:", error);
+      res.status(500).json({ error: "Failed to get evidence atom counts" });
     }
   });
 
@@ -1352,7 +1424,7 @@ export async function registerRoutes(
 
       const validation = validateSlotProposal(proposalInput);
       if (!validation.valid) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: "Slot proposal validation failed",
           validationErrors: validation.errors,
           warnings: validation.warnings
@@ -1380,7 +1452,7 @@ export async function registerRoutes(
       if (!parsed.success) {
         return res.status(400).json({ error: parsed.error.errors });
       }
-      
+
       const proposal = await storage.createSlotProposal(parsed.data);
       res.status(201).json({
         proposal,
@@ -1472,16 +1544,16 @@ export async function registerRoutes(
   app.post("/api/slots/generate-deterministic", async (req, res) => {
     try {
       const { psurCaseId: rawPsurCaseId, psurRef, slotId, autoAdjudicate = true } = req.body;
-      
+
       if ((!rawPsurCaseId && !psurRef) || !slotId) {
         return res.status(400).json({ error: "psurCaseId (or psurRef) and slotId are required" });
       }
 
       const { isDeterministicSupported, runDeterministicGenerator } = await import("./deterministic-generators");
       const { buildCoverageSlotQueue } = await import("./queue-builder");
-      
+
       if (!isDeterministicSupported(slotId)) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: `Slot ${slotId} does not support deterministic generation`,
           supportedSlots: ["F.11.complaints_by_region_severity", "PSUR.COMPLAINTS.SUMMARY_BY_REGION_SERIOUSNESS"]
         });
@@ -1490,7 +1562,7 @@ export async function registerRoutes(
       // Resolve psurCaseId from psurRef if needed
       let psurCaseId = rawPsurCaseId;
       let psurCase;
-      
+
       if (psurRef && !rawPsurCaseId) {
         // Look up PSUR case by reference
         const allCases = await storage.getPSURCases();
@@ -1507,7 +1579,7 @@ export async function registerRoutes(
       }
 
       const evidenceAtoms = await storage.getEvidenceAtoms(psurCaseId);
-      
+
       // Normalize atoms before validation (Step 3)
       const normalizedAtoms = normalizeEvidenceAtoms(evidenceAtoms, {
         deviceCode: "UNKNOWN_DEVICE",
@@ -1515,9 +1587,9 @@ export async function registerRoutes(
         periodEnd: psurCase.endPeriod.toISOString(),
       });
       console.log("[DEBUG] atom sample", normalizedAtoms?.[0]);
-      
+
       const result = runDeterministicGenerator(slotId, evidenceAtoms, psurCase, psurCase.templateId);
-      
+
       // GENERATION FAILURE - return with error details
       if (!result.success) {
         return res.status(422).json({
@@ -1553,7 +1625,7 @@ export async function registerRoutes(
       const periodStart = new Date(psurCase.startPeriod);
       const periodEnd = new Date(psurCase.endPeriod);
       const outOfPeriodAtoms: number[] = [];
-      
+
       for (const atomId of result.evidenceAtomIds) {
         const atom = evidenceAtoms.find(a => a.id === atomId);
         if (atom) {
@@ -1620,7 +1692,7 @@ export async function registerRoutes(
       };
       const [normalizedProposal] = normalizeSlotProposals([rawProposal], template);
       console.log("[DEBUG] proposal sample", normalizedProposal);
-      
+
       const proposalData = {
         ...normalizedProposal,
         psurCaseId,
@@ -1633,12 +1705,12 @@ export async function registerRoutes(
       // RECOMPUTE COVERAGE after acceptance
       let coverageSummary = null;
       let coverageDelta = null;
-      
+
       if (autoAdjudicate) {
         // Get all accepted proposals for this PSUR case
         const allProposals = await storage.getSlotProposals(psurCaseId);
         const acceptedProposals = allProposals.filter(p => p.status === "accepted");
-        
+
         // Build coverage queue to get updated coverage summary
         const coverageOutput = buildCoverageSlotQueue({
           psurReference: psurCase.psurReference,
@@ -1649,7 +1721,7 @@ export async function registerRoutes(
           periodStart,
           periodEnd,
         });
-        
+
         coverageSummary = {
           mandatory_remaining: coverageOutput.coverageSummary.mandatoryObligationsRemaining,
           required_slots_remaining: coverageOutput.coverageSummary.requiredSlotsRemaining,
@@ -1658,7 +1730,7 @@ export async function registerRoutes(
           required_slots_total: coverageOutput.coverageSummary.requiredSlotsTotal,
           required_slots_filled: coverageOutput.coverageSummary.requiredSlotsFilled,
         };
-        
+
         // Calculate delta (coverage before vs after this proposal)
         const proposalsBefore = acceptedProposals.filter(p => p.id !== proposal.id);
         const coverageBefore = buildCoverageSlotQueue({
@@ -1670,7 +1742,7 @@ export async function registerRoutes(
           periodStart,
           periodEnd,
         });
-        
+
         coverageDelta = {
           obligations_satisfied_delta: coverageOutput.coverageSummary.mandatoryObligationsSatisfied - coverageBefore.coverageSummary.mandatoryObligationsSatisfied,
           slots_filled_delta: coverageOutput.coverageSummary.requiredSlotsFilled - coverageBefore.coverageSummary.requiredSlotsFilled,
@@ -1681,11 +1753,11 @@ export async function registerRoutes(
       res.status(201).json({
         success: true,
         proposalId: result.proposalId,
-        
+
         // Component-compatible fields
         adjudication: autoAdjudicate ? "ACCEPTED" : "PENDING",
         reasons: [], // Empty for accepted proposals
-        
+
         // Full proposal JSON
         proposal: {
           id: proposal.id,
@@ -1703,13 +1775,13 @@ export async function registerRoutes(
           createdAt: proposal.createdAt,
           adjudicatedAt: proposal.adjudicatedAt,
         },
-        
+
         // Adjudication result with reasons
         adjudicationResult: adjudicationResult ? {
           ...adjudicationResult,
           proposalAccepted: true,
         } : { decision: "pending", proposalAccepted: false },
-        
+
         // Generation result details
         generationResult: {
           contentType: result.contentType,
@@ -1721,11 +1793,11 @@ export async function registerRoutes(
           agentId: result.agentId,
           autoAdjudicated: autoAdjudicate,
         },
-        
+
         // Coverage summary after persistence
         coverageSummary,
         coverageDelta,
-        
+
         // Period context
         periodContext: {
           periodStart: periodStart.toISOString(),
@@ -1733,7 +1805,7 @@ export async function registerRoutes(
           totalEvidenceAtoms: evidenceAtoms.length,
           inPeriodEvidenceAtoms: result.evidenceAtomIds.length,
         },
-        
+
         // Debug output from generator
         debug: (result as { debug?: Record<string, unknown> }).debug || null,
       });
@@ -1836,15 +1908,15 @@ export async function registerRoutes(
       if (!psurCaseId) {
         return res.status(400).json({ error: "psurCaseId is required" });
       }
-      
+
       const psurCase = await storage.getPSURCase(psurCaseId);
       if (!psurCase) {
         return res.status(404).json({ error: "PSUR case not found" });
       }
-      
+
       const evidenceAtoms = await storage.getEvidenceAtoms(psurCaseId);
       const acceptedProposals = await storage.getSlotProposals(psurCaseId);
-      
+
       const queueOutput = buildCoverageSlotQueue({
         psurReference: psurCase.psurReference,
         profileId: psurCase.templateId,
@@ -1854,7 +1926,7 @@ export async function registerRoutes(
         periodStart: new Date(psurCase.startPeriod),
         periodEnd: new Date(psurCase.endPeriod),
       });
-      
+
       const savedQueue = await storage.createCoverageSlotQueue({
         psurCaseId,
         psurReference: queueOutput.psurReference,
@@ -1867,7 +1939,7 @@ export async function registerRoutes(
         requiredSlotsRemaining: queueOutput.coverageSummary.requiredSlotsRemaining,
         queue: queueOutput.queue,
       });
-      
+
       res.status(201).json({
         ...savedQueue,
         coverageSummary: queueOutput.coverageSummary,

@@ -1,5 +1,5 @@
 import { sql, relations } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp, boolean, jsonb, serial } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, boolean, jsonb, serial, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -294,6 +294,63 @@ export const insertGrkbEntrySchema = createInsertSchema(grkbEntries).omit({
 export type GRKBEntry = typeof grkbEntries.$inferSelect;
 export type InsertGRKBEntry = z.infer<typeof insertGrkbEntrySchema>;
 
+// ============== GRKB OBLIGATIONS (NEW - DB-backed source of truth) ==============
+// This is the new, properly structured GRKB table for Step 1 qualification
+export const grkbKindEnum = ["obligation", "constraint", "definition"] as const;
+export type GrkbKind = typeof grkbKindEnum[number];
+
+export const grkbObligations = pgTable("grkb_obligations", {
+  id: serial("id").primaryKey(),
+  obligationId: text("obligation_id").notNull(), // Stable unique identifier, e.g., "EU_MDR.PSUR.OBL.001"
+  jurisdiction: text("jurisdiction").notNull(), // EU_MDR, UK_MDR
+  artifactType: text("artifact_type").notNull(), // PSUR, CER, PMS_REPORT
+  templateId: text("template_id"), // Nullable: applies to specific template or all if null
+  kind: text("kind").notNull().default("obligation"), // obligation, constraint, definition
+  title: text("title").notNull(),
+  text: text("text").notNull(), // Full obligation text
+  sourceCitation: text("source_citation"), // e.g., "Article 86(1)", "MDCG 2022-21 Section 3.2"
+  version: text("version").notNull().default("1.0.0"),
+  effectiveFrom: timestamp("effective_from"),
+  mandatory: boolean("mandatory").notNull().default(true),
+  requiredEvidenceTypes: text("required_evidence_types").array().default(sql`ARRAY[]::text[]`),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const insertGrkbObligationSchema = createInsertSchema(grkbObligations).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type GrkbObligation = typeof grkbObligations.$inferSelect;
+export type InsertGrkbObligation = z.infer<typeof insertGrkbObligationSchema>;
+
+// ============== QUALIFICATION REPORTS ==============
+// Persisted result of Step 1 qualification
+export const qualificationReports = pgTable("qualification_reports", {
+  id: serial("id").primaryKey(),
+  psurCaseId: integer("psur_case_id").references(() => psurCases.id, { onDelete: "cascade" }),
+  templateId: text("template_id").notNull(),
+  jurisdictions: text("jurisdictions").array().default(sql`ARRAY[]::text[]`),
+  status: text("status").notNull(), // VERIFIED or BLOCKED
+  slotCount: integer("slot_count").notNull(),
+  mappingCount: integer("mapping_count").notNull(),
+  mandatoryObligationsTotal: integer("mandatory_obligations_total").notNull(),
+  mandatoryObligationsFound: integer("mandatory_obligations_found").notNull(),
+  missingObligations: jsonb("missing_obligations"), // Array of {jurisdiction, count, message}
+  constraints: integer("constraints").notNull(),
+  blockingErrors: text("blocking_errors").array().default(sql`ARRAY[]::text[]`),
+  validatedAt: timestamp("validated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const insertQualificationReportSchema = createInsertSchema(qualificationReports).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type QualificationReport = typeof qualificationReports.$inferSelect;
+export type InsertQualificationReport = z.infer<typeof insertQualificationReportSchema>;
+
 // ============== PSUR CASES ==============
 export const psurCaseStatusEnum = ["draft", "qualified", "in_progress", "rendered", "exported"] as const;
 export type PSURCaseStatus = typeof psurCaseStatusEnum[number];
@@ -329,30 +386,38 @@ export type InsertPSURCase = z.infer<typeof insertPsurCaseSchema>;
 export const evidenceUploadStatusEnum = ["pending", "processing", "completed", "failed", "rejected"] as const;
 export type EvidenceUploadStatus = typeof evidenceUploadStatusEnum[number];
 
-export const evidenceUploads = pgTable("evidence_uploads", {
-  id: serial("id").primaryKey(),
-  filename: text("filename").notNull(),
-  originalFilename: text("original_filename").notNull(),
-  mimeType: text("mime_type").notNull(),
-  fileSize: integer("file_size").notNull(),
-  sha256Hash: text("sha256_hash").notNull(),
-  evidenceType: text("evidence_type").notNull(),
-  deviceScopeId: integer("device_scope_id").references(() => devices.id),
-  psurCaseId: integer("psur_case_id").references(() => psurCases.id),
-  uploadedBy: text("uploaded_by").default("system"),
-  sourceSystem: text("source_system"),
-  extractionNotes: text("extraction_notes"),
-  periodStart: timestamp("period_start"),
-  periodEnd: timestamp("period_end"),
-  status: text("status").notNull().default("pending"),
-  processingErrors: jsonb("processing_errors"),
-  atomsCreated: integer("atoms_created").default(0),
-  recordsParsed: integer("records_parsed").default(0),
-  recordsRejected: integer("records_rejected").default(0),
-  storagePath: text("storage_path"),
-  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
-  processedAt: timestamp("processed_at"),
-});
+export const evidenceUploads = pgTable(
+  "evidence_uploads",
+  {
+    id: serial("id").primaryKey(),
+    filename: text("filename").notNull(),
+    originalFilename: text("original_filename").notNull(),
+    mimeType: text("mime_type").notNull(),
+    fileSize: integer("file_size").notNull(),
+    sha256Hash: text("sha256_hash").notNull(),
+    evidenceType: text("evidence_type").notNull(),
+    deviceScopeId: integer("device_scope_id").references(() => devices.id),
+    // REQUIRED: Every upload must be linked to a PSUR case
+    psurCaseId: integer("psur_case_id").notNull().references(() => psurCases.id, { onDelete: "cascade" }),
+    uploadedBy: text("uploaded_by").default("system"),
+    sourceSystem: text("source_system"),
+    extractionNotes: text("extraction_notes"),
+    periodStart: timestamp("period_start"),
+    periodEnd: timestamp("period_end"),
+    status: text("status").notNull().default("pending"),
+    processingErrors: jsonb("processing_errors"),
+    atomsCreated: integer("atoms_created").default(0),
+    recordsParsed: integer("records_parsed").default(0),
+    recordsRejected: integer("records_rejected").default(0),
+    storagePath: text("storage_path"),
+    createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+    processedAt: timestamp("processed_at"),
+  },
+  (t) => ({
+    // Index for fast lookups by PSUR case
+    caseIdx: index("evidence_uploads_case_idx").on(t.psurCaseId),
+  })
+);
 
 export const insertEvidenceUploadSchema = createInsertSchema(evidenceUploads).omit({
   id: true,
@@ -442,30 +507,40 @@ export function evidenceTypeSatisfies(availableType: string, requiredType: strin
 export const evidenceAtomStatusEnum = ["valid", "invalid", "superseded"] as const;
 export type EvidenceAtomStatus = typeof evidenceAtomStatusEnum[number];
 
-export const evidenceAtoms = pgTable("evidence_atoms", {
-  id: serial("id").primaryKey(),
-  atomId: text("atom_id").notNull(),
-  psurCaseId: integer("psur_case_id").references(() => psurCases.id, { onDelete: "cascade" }),
-  uploadId: integer("upload_id").references(() => evidenceUploads.id),
-  evidenceType: text("evidence_type").notNull(),
-  sourceSystem: text("source_system").notNull(),
-  extractDate: timestamp("extract_date").notNull(),
-  queryFilters: jsonb("query_filters"),
-  contentHash: text("content_hash").notNull(),
-  recordCount: integer("record_count"),
-  periodStart: timestamp("period_start"),
-  periodEnd: timestamp("period_end"),
-  deviceScopeId: integer("device_scope_id").references(() => devices.id),
-  deviceRef: jsonb("device_ref"),
-  data: jsonb("data").notNull(),
-  normalizedData: jsonb("normalized_data"),
-  provenance: jsonb("provenance").notNull(),
-  validationErrors: jsonb("validation_errors"),
-  status: text("status").notNull().default("valid"),
-  version: integer("version").notNull().default(1),
-  supersededBy: integer("superseded_by"),
-  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
-});
+export const evidenceAtoms = pgTable(
+  "evidence_atoms",
+  {
+    id: serial("id").primaryKey(),
+    atomId: text("atom_id").notNull(),
+    // REQUIRED: Every atom must be linked to a PSUR case
+    psurCaseId: integer("psur_case_id").notNull().references(() => psurCases.id, { onDelete: "cascade" }),
+    uploadId: integer("upload_id").references(() => evidenceUploads.id),
+    evidenceType: text("evidence_type").notNull(),
+    sourceSystem: text("source_system").notNull(),
+    extractDate: timestamp("extract_date").notNull(),
+    queryFilters: jsonb("query_filters"),
+    contentHash: text("content_hash").notNull(),
+    recordCount: integer("record_count"),
+    periodStart: timestamp("period_start"),
+    periodEnd: timestamp("period_end"),
+    deviceScopeId: integer("device_scope_id").references(() => devices.id),
+    deviceRef: jsonb("device_ref"),
+    data: jsonb("data").notNull(),
+    normalizedData: jsonb("normalized_data"),
+    provenance: jsonb("provenance").notNull(),
+    validationErrors: jsonb("validation_errors"),
+    status: text("status").notNull().default("valid"),
+    version: integer("version").notNull().default(1),
+    supersededBy: integer("superseded_by"),
+    createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  },
+  (t) => ({
+    // Index for fast lookups by PSUR case
+    caseIdx: index("evidence_atoms_case_idx").on(t.psurCaseId),
+    // Index for fast lookups by evidence type + case
+    typeCaseIdx: index("evidence_atoms_type_case_idx").on(t.evidenceType, t.psurCaseId),
+  })
+);
 
 export const insertEvidenceAtomSchema = createInsertSchema(evidenceAtoms).omit({
   id: true,
@@ -677,6 +752,101 @@ export const insertColumnMappingProfileSchema = createInsertSchema(columnMapping
 export type ColumnMappingProfile = typeof columnMappingProfiles.$inferSelect;
 export type InsertColumnMappingProfile = z.infer<typeof insertColumnMappingProfileSchema>;
 
+// ============== CANONICAL EVIDENCE TYPES ==============
+// Single source of truth for evidence types across the entire system
+export const CANONICAL_EVIDENCE_TYPES = {
+  SALES: "sales_volume",
+  COMPLAINT: "complaint_record",
+  SERIOUS_INCIDENT: "serious_incident_record",
+  FSCA: "fsca_record",
+  PMCF: "pmcf_result",
+  LITERATURE: "literature_result",
+} as const;
+
+export type CanonicalEvidenceType = typeof CANONICAL_EVIDENCE_TYPES[keyof typeof CANONICAL_EVIDENCE_TYPES];
+
+// ============== SLOT DEFINITIONS (Canonical Slot Catalog) ==============
+// DB is the canonical source of truth for slot contracts
+// Template JSON describes layout/structure; Slot Catalog defines evidence + obligation contracts
+export const slotDefinitions = pgTable(
+  "slot_definitions",
+  {
+    id: serial("id").primaryKey(),
+
+    // A stable canonical ID that code can refer to (deterministic)
+    slotId: text("slot_id").notNull(),
+
+    // Human readable
+    title: text("title").notNull(),
+    description: text("description").notNull(),
+
+    // Which template(s) it applies to
+    // e.g. "MDCG_2022_21_ANNEX_I", "FormQAR-054_C"
+    templateId: text("template_id").notNull(),
+
+    // Which jurisdictions it applies to (stored as JSONB array)
+    // e.g. ["EU_MDR"], ["EU_MDR","UK_MDR"]
+    jurisdictions: jsonb("jurisdictions").notNull().$type<string[]>(),
+
+    // Evidence requirements: canonical evidence types
+    // e.g. ["sales_volume"], ["complaint_record"]
+    requiredEvidenceTypes: jsonb("required_evidence_types").notNull().$type<string[]>(),
+
+    // If true, workflow must FAIL if evidence not available (industry-ready behavior)
+    hardRequireEvidence: boolean("hard_require_evidence").notNull().default(true),
+
+    // Minimum evidence atoms required (usually 1)
+    minAtoms: integer("min_atoms").notNull().default(1),
+
+    // For deterministic ordering in UI + orchestration
+    sortOrder: integer("sort_order").notNull().default(0),
+
+    createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  },
+  (t) => ({
+    slotIdUnique: uniqueIndex("slot_definitions_slot_id_uq").on(t.slotId, t.templateId),
+  })
+);
+
+export const insertSlotDefinitionSchema = createInsertSchema(slotDefinitions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type SlotDefinition = typeof slotDefinitions.$inferSelect;
+export type InsertSlotDefinition = z.infer<typeof insertSlotDefinitionSchema>;
+
+// ============== SLOT OBLIGATION LINKS ==============
+// Maps slots to their required regulatory obligations
+export const slotObligationLinks = pgTable(
+  "slot_obligation_links",
+  {
+    id: serial("id").primaryKey(),
+    templateId: text("template_id").notNull(),
+    slotId: text("slot_id").notNull(),
+
+    // Must match grkb_obligations.obligationId
+    obligationId: text("obligation_id").notNull(),
+
+    // Whether this link is mandatory for coverage
+    mandatory: boolean("mandatory").notNull().default(true),
+  },
+  (t) => ({
+    slotObligationUnique: uniqueIndex("slot_obligation_links_uq").on(
+      t.templateId,
+      t.slotId,
+      t.obligationId
+    ),
+  })
+);
+
+export const insertSlotObligationLinkSchema = createInsertSchema(slotObligationLinks).omit({
+  id: true,
+});
+
+export type SlotObligationLink = typeof slotObligationLinks.$inferSelect;
+export type InsertSlotObligationLink = z.infer<typeof insertSlotObligationLinkSchema>;
+
 // ============== CANONICAL ORCHESTRATOR WORKFLOW TYPES ==============
 // Single source of truth for workflow state - UI renders from these types only
 
@@ -734,6 +904,25 @@ export interface ExportBundleReport {
   downloadUrl?: string;
 }
 
+// Step 1: Qualification Report Data (for workflow result)
+export interface QualificationReportData {
+  status: "VERIFIED" | "BLOCKED";
+  templateId: string;
+  jurisdictions: string[];
+  slotCount: number;
+  mappingCount: number;
+  mandatoryObligationsTotal: number;
+  mandatoryObligationsFound: number;
+  missingObligations: {
+    jurisdiction: string;
+    count: number;
+    message: string;
+  }[];
+  constraints: number;
+  validatedAt: string;
+  blockingErrors: string[];
+}
+
 export interface WorkflowStep {
   step: number;
   name: string;
@@ -741,7 +930,7 @@ export interface WorkflowStep {
   startedAt?: string;
   endedAt?: string;
   summary: WorkflowStepSummary;
-  report?: EvidenceIngestReport | AdjudicationReport | CoverageReportData | ExportBundleReport | Record<string, unknown>;
+  report?: QualificationReportData | EvidenceIngestReport | AdjudicationReport | CoverageReportData | ExportBundleReport | Record<string, unknown>;
   error?: string;
 }
 

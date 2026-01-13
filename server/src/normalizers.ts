@@ -123,7 +123,7 @@ export function normalizeSlotProposals(
       proposalId,
       psurRef,
       slotId,
-      content: content || `[[DEMO CONTENT]] Slot ${slotId} content placeholder.`,
+      content: content || "", // Content generated dynamically by renderer from evidence atoms
       evidenceAtomIds: fixedEvidenceAtomIds,
       claimedObligationIds: fixedClaimedObligationIds,
       methodStatement,

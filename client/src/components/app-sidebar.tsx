@@ -3,6 +3,7 @@ import {
   Settings,
   Activity,
   FileText,
+  BookOpen,
 } from "lucide-react";
 import {
   Sidebar,
@@ -31,6 +32,11 @@ const systemNavItems = [
     title: "Admin",
     url: "/admin",
     icon: Settings,
+  },
+  {
+    title: "Instructions",
+    url: "/instructions",
+    icon: BookOpen,
   },
 ];
 

@@ -5,7 +5,6 @@ import multer from "multer";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { storage } from "./storage";
-import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
 import {
   insertCompanySchema,
   insertDeviceSchema,
@@ -18,6 +17,8 @@ import {
   insertSlotProposalSchema,
   insertCoverageReportSchema,
   insertAuditBundleSchema,
+  orchestratorRunRequestSchema,
+  CANONICAL_EVIDENCE_TYPES
 } from "@shared/schema";
 import {
   ensureOrchestratorInitialized,
@@ -48,8 +49,16 @@ import {
   normalizeSalesVolumeRow,
 } from "./evidence/normalize";
 import { EVIDENCE_DEFINITIONS } from "@shared/schema";
-import { loadTemplate as loadTemplateOld, getTemplateDirsDebugInfo } from "./template-loader";
-import { loadTemplate, listTemplates } from "./src/templateStore";
+import { getAllSamples } from "./sample-data";
+import { loadTemplate, listTemplates, getTemplateDirsDebugInfo, getAllRequiredEvidenceTypes } from "./src/templateStore";
+import { type EvidenceAtomData } from "./src/orchestrator/render/psurTableGenerator";
+import {
+  renderPsurFromTemplate,
+  type Template,
+  type SlotProposal as RendererSlotProposal,
+  type PsurCase as RendererPsurCase,
+  type QualificationReport,
+} from "./src/orchestrator/render/templateRenderer";
 import { normalizeEvidenceAtoms, normalizeSlotProposals } from "./src/normalizers";
 import { strictParseEvidenceAtoms, strictParseSlotProposals } from "./src/strictGate";
 import {
@@ -79,12 +88,77 @@ function badRequest(res: any, code: string, message: string, details?: any) {
   });
 }
 
+// Template-driven PSUR markdown generator
+function generatePsurMarkdown(
+  psurCase: any,
+  evidenceAtoms: any[],
+  proposals: any[],
+  qualificationReport: any
+): string {
+  // Load the actual template
+  let template: Template;
+  try {
+    template = loadTemplate(psurCase.templateId) as Template;
+  } catch (e) {
+    console.error("Failed to load template for PSUR rendering:", e);
+    // Fallback to minimal output
+    return `# PSUR ${psurCase.psurReference}\n\nError: Could not load template ${psurCase.templateId}`;
+  }
+  
+  // Convert DB evidence atoms to the format expected by renderer
+  const atomData: EvidenceAtomData[] = evidenceAtoms.map(a => ({
+    atomId: a.atomId,
+    evidenceType: a.evidenceType,
+    normalizedData: a.normalizedData || a.data,
+    provenance: a.provenance,
+  }));
+  
+  // Convert proposals to renderer format
+  const rendererProposals: RendererSlotProposal[] = proposals.map(p => ({
+    slotId: p.slotId,
+    status: p.status,
+    evidenceAtomIds: p.evidenceAtomIds,
+    claimedObligationIds: p.claimedObligationIds,
+    methodStatement: p.methodStatement,
+    transformations: p.transformations,
+    renderedText: p.renderedText,
+    gapJustification: p.gapJustification,
+  }));
+  
+  // Convert case to renderer format
+  const rendererCase: RendererPsurCase = {
+    id: psurCase.id,
+    psurReference: psurCase.psurReference,
+    templateId: psurCase.templateId,
+    jurisdictions: psurCase.jurisdictions || [],
+    startPeriod: psurCase.startPeriod,
+    endPeriod: psurCase.endPeriod,
+    status: psurCase.status,
+    version: psurCase.version,
+    deviceCode: psurCase.deviceCode,
+  };
+  
+  // Convert qualification report
+  const rendererQualReport: QualificationReport | null = qualificationReport ? {
+    status: qualificationReport.status,
+    templateId: qualificationReport.templateId,
+    slotCount: qualificationReport.slotCount,
+    mappingCount: qualificationReport.mappingCount,
+    mandatoryObligationsFound: qualificationReport.mandatoryObligationsFound,
+    mandatoryObligationsTotal: qualificationReport.mandatoryObligationsTotal,
+    constraints: qualificationReport.constraints,
+    validatedAt: qualificationReport.validatedAt,
+    missingObligations: qualificationReport.missingObligations,
+    blockingErrors: qualificationReport.blockingErrors,
+  } : null;
+  
+  return renderPsurFromTemplate(template, rendererCase, atomData, rendererProposals, rendererQualReport);
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-
-  registerObjectStorageRoutes(app);
 
   // Template endpoints
   app.get("/api/templates", (_req, res) => {
@@ -93,6 +167,18 @@ export async function registerRoutes(
 
   app.get("/api/templates/debug", (_req, res) => {
     res.json(getTemplateDirsDebugInfo());
+  });
+
+  // Template lint endpoint (must be before :id route)
+  app.get("/api/templates/:templateId/lint", async (req, res) => {
+    try {
+      const { lintTemplate } = await import("./src/templates/lintTemplates");
+      const templatePath = path.join(process.cwd(), "server", "templates", `${req.params.templateId}.json`);
+      const result = await lintTemplate(templatePath);
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message || String(e) });
+    }
   });
 
   app.get("/api/templates/:id", (req, res) => {
@@ -521,17 +607,13 @@ export async function registerRoutes(
 
   app.get("/api/orchestrator/status", async (req, res) => {
     try {
-      // Get counts from DB-backed GRKB
-      const euObligations = await getGrkbObligations(["EU_MDR"], "PSUR");
-      const ukObligations = await getGrkbObligations(["UK_MDR"], "PSUR");
-      const constraints = await getGrkbConstraints(["EU_MDR", "UK_MDR"], "PSUR");
+      // Report status from the Python compliance kernel (psur_orchestrator)
+      const result = await getOrchestratorStatus();
+      if (!result.success || !result.data) {
+        return res.status(500).json({ error: result.error || "Failed to get orchestrator status" });
+      }
 
-      res.json({
-        initialized: true,
-        euObligations: euObligations.length,
-        ukObligations: ukObligations.length,
-        constraints: constraints.length,
-      });
+      res.json(result.data);
     } catch (error) {
       res.status(500).json({ error: "Failed to get orchestrator status" });
     }
@@ -582,6 +664,28 @@ export async function registerRoutes(
       }
     } catch (error) {
       res.status(500).json({ error: "Failed to compile DSL" });
+    }
+  });
+
+  app.get("/api/templates/:templateId/requirements", async (req, res) => {
+    try {
+      const templateId = req.params.templateId;
+      
+      // Load template from JSON file (single source of truth)
+      const template = loadTemplate(templateId);
+      
+      // Extract all required evidence types from the template's slots
+      const requiredTypes = getAllRequiredEvidenceTypes(template);
+      
+      console.log(`[TemplateRequirements] Template '${templateId}' requires ${requiredTypes.length} evidence types:`, requiredTypes);
+      
+      res.json({ requiredEvidenceTypes: requiredTypes });
+    } catch (error: any) {
+      console.error(`[TemplateRequirements] Error loading template '${req.params.templateId}':`, error.message);
+      res.status(error.status || 500).json({ 
+        error: "Failed to get template requirements", 
+        details: error.message 
+      });
     }
   });
 
@@ -690,7 +794,15 @@ export async function registerRoutes(
       const psurCase = await storage.createPSURCase(parsed.data);
       res.status(201).json(psurCase);
     } catch (error) {
-      res.status(500).json({ error: "Failed to create PSUR case" });
+      console.error("[POST /api/psur-cases] Error:", error);
+      res.status(500).json({
+        error: "Failed to create PSUR case",
+        details:
+          process.env.NODE_ENV === "development"
+            ? (error as any)?.message || String(error)
+            : undefined,
+        code: process.env.NODE_ENV === "development" ? (error as any)?.code : undefined,
+      });
     }
   });
 
@@ -898,7 +1010,7 @@ export async function registerRoutes(
 
       if (!hasSchemaFor(evidenceType)) {
         return badRequest(res, "UNSUPPORTED_EVIDENCE_TYPE",
-          `Unsupported evidence_type: ${evidenceType}. Supported types: sales_volume, complaint_record`,
+          `Unsupported evidence_type: ${evidenceType}. Supported types: ${Object.values(CANONICAL_EVIDENCE_TYPES).join(", ")}`,
           { providedType: evidenceType }
         );
       }
@@ -967,101 +1079,46 @@ export async function registerRoutes(
         row: Record<string, unknown>;
       }> = [];
 
-      const deviceRef = {
-        deviceCode: deviceCode,
-        deviceName: undefined,
-        udiDi: undefined,
-      };
-
-      const psurPeriod = {
+      // Use centralized parser logic which supports all canonical evidence types
+      const parseResult = parseEvidenceFile("", evidenceType, {
         periodStart: periodStart,
         periodEnd: periodEnd,
-      };
+        defaultDeviceCode: deviceCode,
+      }, rows);
 
-      for (let i = 0; i < rows.length; i++) {
-        const row = rows[i];
-        let atom: any;
-        let normalizationErrors: string[] = [];
-
-        if (evidenceType === "complaint_record") {
-          const result = normalizeComplaintRecordRow({
-            row,
-            deviceRef,
-            psurPeriod,
-            provenance,
-          });
-          atom = result.atom;
-          normalizationErrors = result.errors;
-        } else if (evidenceType === "sales_volume") {
-          const result = normalizeSalesVolumeRow({
-            row,
-            deviceRef,
-            psurPeriod,
-            provenance,
-          });
-          atom = result.atom;
-          normalizationErrors = result.errors;
-        } else {
-          rejectedRecords.push({
-            rowIndex: i + 1,
-            errors: [{ path: "/", message: `Unsupported evidence type: ${evidenceType}` }],
-            row,
-          });
-          continue;
-        }
-
-        if (normalizationErrors.length > 0) {
-          rejectedRecords.push({
-            rowIndex: i + 1,
-            errors: normalizationErrors.map(e => ({ path: "/", message: e })),
-            row,
-          });
-          continue;
-        }
-
-        const schemaName = evidenceType === "complaint_record"
-          ? "evidence_atom.complaint_record.schema.json"
-          : "evidence_atom.sales_volume.schema.json";
-
-        const schemaValidation = validateWithAjv(schemaName, {
-          atomType: atom.atomType,
-          payload: atom.payload,
+      // Hard-fail if the file parses to zero records (e.g. header-only CSV)
+      if (!parseResult.records || parseResult.records.length === 0) {
+        await storage.updateEvidenceUpload(evidenceUpload.id, {
+          status: "rejected",
+          recordsParsed: 0,
+          recordsRejected: 0,
+          processingErrors: { errors: parseResult.errors },
+          processedAt: new Date(),
         });
+        return res.status(400).json({
+          error: "Failed to parse evidence file",
+          details: parseResult.errors,
+          upload: await storage.getEvidenceUpload(evidenceUpload.id),
+        });
+      }
 
-        if (!schemaValidation.ok) {
-          rejectedRecords.push({
-            rowIndex: i + 1,
-            errors: schemaValidation.errors,
-            row,
-          });
-          continue;
-        }
+      const batch = createEvidenceAtomBatch(parseResult, evidenceUpload.id, {
+        psurCaseId: parseInt(psurCaseId),
+        deviceScopeId: device_scope_id ? parseInt(device_scope_id) : undefined,
+        sourceSystem: source_system || "manual_upload",
+        periodStart: new Date(periodStart),
+        periodEnd: new Date(periodEnd)
+      });
 
-        validAtoms.push({
-          atomId: atom.atomId,
-          psurCaseId: parseInt(psurCaseId),
-          uploadId: evidenceUpload.id,
-          evidenceType: evidenceType,
-          sourceSystem: source_system || "manual_upload",
-          extractDate: new Date(),
-          contentHash: atom.contentHash,
-          recordCount: 1,
-          periodStart: new Date(periodStart),
-          periodEnd: new Date(periodEnd),
-          deviceScopeId: device_scope_id ? parseInt(device_scope_id) : null,
-          deviceRef: atom.deviceRef || null,
-          data: row,
-          normalizedData: atom.payload,
-          provenance: {
-            ...provenance,
-            atomId: atom.atomId,
-            version: atom.version,
-            deviceRef: atom.deviceRef,
-            psurPeriod: atom.psurPeriod,
-          },
-          validationErrors: null,
-          status: "valid",
-          version: 1,
+      for (const atom of batch.atoms) {
+        validAtoms.push(atom);
+      }
+
+      for (const r of batch.rejected) {
+        rejectedRecords.push({
+          rowIndex: r.rowIndex,
+          errors: r.validationErrors.map(e => ({ path: "/", message: e })),
+          row: r.data as Record<string, unknown>
         });
       }
 
@@ -1359,6 +1416,130 @@ export async function registerRoutes(
     } catch (error) {
       console.error("[GET /api/evidence/atoms/counts] Error:", error);
       res.status(500).json({ error: "Failed to get evidence atom counts" });
+    }
+  });
+
+  // ============== SAMPLE DATA ==============
+  app.get("/api/samples/download-all", async (req, res) => {
+    try {
+      const archiver = await import("archiver");
+      const archive = archiver.default("zip");
+      
+      res.setHeader("Content-Type", "application/zip");
+      res.setHeader("Content-Disposition", 'attachment; filename="psur_evidence_samples.zip"');
+      
+      archive.pipe(res);
+      
+      const samples = getAllSamples();
+      for (const sample of samples) {
+        archive.append(sample.content, { name: sample.filename });
+      }
+      
+      await archive.finalize();
+    } catch (error) {
+      console.error("Download samples error:", error);
+      res.status(500).json({ error: "Failed to download samples" });
+    }
+  });
+
+  app.post("/api/samples/load/:psurCaseId", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      const { templateId } = req.body;
+      
+      if (isNaN(psurCaseId)) return res.status(400).json({ error: "Invalid Case ID" });
+      
+      const psurCase = await storage.getPSURCase(psurCaseId);
+      if (!psurCase) return res.status(404).json({ error: "PSUR Case not found" });
+      
+      // Load template requirements
+      const template = loadTemplate(templateId || psurCase.templateId);
+      const requiredTypes = getAllRequiredEvidenceTypes(template);
+      
+      const allSamples = getAllSamples();
+      // Filter samples to only those required by the template
+      const relevantSamples = allSamples.filter(s => requiredTypes.includes(s.type));
+      
+      let totalAtoms = 0;
+      const createdTypes: string[] = [];
+      
+      for (const sample of relevantSamples) {
+        // Parse sample content
+        // We need to pass periodStart/End from case to make them valid
+        const parseResult = parseEvidenceFile(sample.content, sample.type, {
+          periodStart: psurCase.startPeriod.toISOString().split("T")[0],
+          periodEnd: psurCase.endPeriod.toISOString().split("T")[0],
+          defaultDeviceCode: "CM-PRO-001" // Sample device code
+        }, undefined); // No pre-parsed rows
+        
+        if (!parseResult.success) {
+          console.warn(`Failed to parse sample ${sample.filename}: ${parseResult.errors}`);
+          continue;
+        }
+        
+        // Create upload record for tracking
+        const upload = await storage.createEvidenceUpload({
+          filename: `SAMPLE_${sample.filename}`,
+          originalFilename: sample.filename,
+          mimeType: "text/csv",
+          fileSize: Buffer.byteLength(sample.content),
+          sha256Hash: createHash("sha256").update(sample.content).digest("hex"),
+          evidenceType: sample.type,
+          psurCaseId,
+          uploadedBy: "system_sample_loader",
+          sourceSystem: "SAMPLE_DATA",
+          periodStart: psurCase.startPeriod,
+          periodEnd: psurCase.endPeriod,
+          status: "completed",
+          recordsParsed: parseResult.records.length,
+          atomsCreated: parseResult.validRecords,
+          deviceScopeId: null,
+          extractionNotes: "Loaded from sample data",
+          storagePath: null
+        });
+        
+        const batch = createEvidenceAtomBatch(parseResult, upload.id, {
+          psurCaseId,
+          sourceSystem: "SAMPLE_DATA",
+          periodStart: psurCase.startPeriod,
+          periodEnd: psurCase.endPeriod,
+        });
+        
+        if (batch.atoms.length > 0) {
+           // Convert to EvidenceAtomRecord for persistence service
+           const atomRecords: EvidenceAtomRecord[] = batch.atoms.map(a => ({
+             atomId: a.atomId,
+             evidenceType: a.evidenceType,
+             contentHash: a.contentHash,
+             normalizedData: a.normalizedData,
+             provenance: {
+               uploadId: upload.id,
+               sourceFile: sample.filename,
+               uploadedAt: new Date().toISOString(),
+               deviceRef: { deviceCode: "CM-PRO-001" },
+               psurPeriod: { start: psurCase.startPeriod, end: psurCase.endPeriod }
+             }
+           }));
+
+           await persistEvidenceAtoms({
+             psurCaseId,
+             deviceCode: "CM-PRO-001",
+             periodStart: psurCase.startPeriod,
+             periodEnd: psurCase.endPeriod,
+             uploadId: upload.id,
+             atoms: atomRecords
+           });
+           
+           totalAtoms += batch.atoms.length;
+           createdTypes.push(sample.type);
+        }
+      }
+      
+      res.json({ success: true, atomsCreated: totalAtoms, typesLoaded: createdTypes });
+      
+    } catch (error: any) {
+      console.error("Load samples error:", error);
+      res.status(500).json({ error: "Failed to load samples", details: error.message });
     }
   });
 
@@ -1875,6 +2056,250 @@ export async function registerRoutes(
       res.status(201).json(bundle);
     } catch (error) {
       res.status(500).json({ error: "Failed to create audit bundle" });
+    }
+  });
+
+  // Download audit bundle as ZIP
+  app.get("/api/audit-bundles/:psurCaseId/download", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      
+      // Get the bundle record
+      const bundles = await storage.getAuditBundles(psurCaseId);
+      if (!bundles || bundles.length === 0) {
+        return res.status(404).json({ error: "Audit bundle not found for this case" });
+      }
+      const bundle = bundles[0];
+
+      // Get the PSUR case
+      const psurCase = await storage.getPSURCase(psurCaseId);
+      if (!psurCase) {
+        return res.status(404).json({ error: "PSUR case not found" });
+      }
+
+      // Get evidence atoms for this case
+      const evidenceAtoms = await storage.getEvidenceAtoms(psurCaseId);
+
+      // Get coverage slot queues
+      const coverageQueues = await storage.getCoverageSlotQueues(psurCaseId);
+      const latestCoverage = coverageQueues.length > 0 ? coverageQueues[0] : null;
+
+      // Get slot proposals for this case
+      const proposals = await storage.getSlotProposals(psurCaseId);
+      const acceptedProposals = proposals.filter(p => p.status === "accepted");
+
+      // Build the bundle files
+      const traceData = {
+        bundleReference: bundle.bundleReference,
+        psurCaseId: psurCaseId,
+        psurReference: psurCase.psurReference,
+        exportedAt: bundle.exportedAt,
+        events: [
+          { timestamp: psurCase.createdAt, event: "case_created", data: { psurReference: psurCase.psurReference } },
+          { timestamp: bundle.exportedAt, event: "bundle_exported", data: { bundleReference: bundle.bundleReference } },
+        ]
+      };
+
+      const coverageReport = latestCoverage ? {
+        psurCaseId,
+        psurReference: psurCase.psurReference,
+        profileId: latestCoverage.profileId,
+        mandatoryObligationsTotal: latestCoverage.mandatoryObligationsTotal,
+        mandatoryObligationsSatisfied: latestCoverage.mandatoryObligationsSatisfied,
+        mandatoryObligationsRemaining: latestCoverage.mandatoryObligationsRemaining,
+        requiredSlotsTotal: latestCoverage.requiredSlotsTotal,
+        requiredSlotsFilled: latestCoverage.requiredSlotsFilled,
+        requiredSlotsRemaining: latestCoverage.requiredSlotsRemaining,
+        queue: latestCoverage.queue,
+        generatedAt: latestCoverage.generatedAt,
+      } : {
+        psurCaseId,
+        psurReference: psurCase.psurReference,
+        message: "No coverage report available"
+      };
+
+      const evidenceRegister = {
+        psurCaseId,
+        psurReference: psurCase.psurReference,
+        totalAtoms: evidenceAtoms.length,
+        atoms: evidenceAtoms.map(a => ({
+          atomId: a.atomId,
+          evidenceType: a.evidenceType,
+          provenance: a.provenance,
+          createdAt: a.createdAt,
+        })),
+        byType: evidenceAtoms.reduce((acc: Record<string, number>, a) => {
+          acc[a.evidenceType] = (acc[a.evidenceType] || 0) + 1;
+          return acc;
+        }, {}),
+      };
+
+      // Fetch actual qualification report from database
+      const dbQualReport = await storage.getQualificationReport(psurCaseId);
+      const qualificationReport = dbQualReport ? {
+        psurCaseId,
+        psurReference: psurCase.psurReference,
+        templateId: dbQualReport.templateId,
+        jurisdictions: dbQualReport.jurisdictions,
+        status: dbQualReport.status,
+        slotCount: dbQualReport.slotCount,
+        mappingCount: dbQualReport.mappingCount,
+        mandatoryObligationsTotal: dbQualReport.mandatoryObligationsTotal,
+        mandatoryObligationsFound: dbQualReport.mandatoryObligationsFound,
+        missingObligations: dbQualReport.missingObligations,
+        constraints: dbQualReport.constraints,
+        blockingErrors: dbQualReport.blockingErrors,
+        validatedAt: dbQualReport.validatedAt,
+      } : {
+        psurCaseId,
+        psurReference: psurCase.psurReference,
+        templateId: psurCase.templateId,
+        jurisdictions: psurCase.jurisdictions,
+        status: "NO_QUALIFICATION_RUN",
+        mandatoryObligationsTotal: 0,
+        mandatoryObligationsFound: 0,
+        missingObligations: [],
+        blockingErrors: ["No qualification report found - run the workflow first"],
+      };
+
+      // Generate PSUR markdown document
+      const psurMarkdown = generatePsurMarkdown(psurCase, evidenceAtoms, proposals, qualificationReport);
+
+      // Generate PSUR Word document
+      let psurDocx: Buffer | null = null;
+      try {
+        const { generatePsurDocx } = await import("./src/orchestrator/render/renderPsurDocx");
+        psurDocx = await generatePsurDocx(psurCase, evidenceAtoms, proposals, qualificationReport);
+      } catch (e) {
+        console.error("Failed to generate DOCX:", e);
+      }
+
+      // Create ZIP file using archiver
+      const archiver = await import("archiver");
+      const archive = archiver.default("zip", { zlib: { level: 9 } });
+
+      res.setHeader("Content-Type", "application/zip");
+      res.setHeader("Content-Disposition", `attachment; filename="${bundle.bundleReference}.zip"`);
+
+      archive.pipe(res);
+
+      archive.append(JSON.stringify(traceData, null, 2), { name: "trace.jsonl" });
+      archive.append(JSON.stringify(coverageReport, null, 2), { name: "coverage_report.json" });
+      archive.append(JSON.stringify(evidenceRegister, null, 2), { name: "evidence_register.json" });
+      archive.append(JSON.stringify(qualificationReport, null, 2), { name: "qualification_report.json" });
+      archive.append(psurMarkdown, { name: "psur.md" });
+      
+      if (psurDocx) {
+        archive.append(psurDocx, { name: "psur.docx" });
+      }
+
+      await archive.finalize();
+    } catch (error: any) {
+      console.error("[GET /api/audit-bundles/:psurCaseId/download] Error:", error);
+      res.status(500).json({ error: "Failed to download audit bundle", details: error.message });
+    }
+  });
+
+  // Download just the Word document
+  app.get("/api/psur-cases/:psurCaseId/psur.docx", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      
+      const psurCase = await storage.getPSURCase(psurCaseId);
+      if (!psurCase) {
+        return res.status(404).json({ error: "PSUR case not found" });
+      }
+
+      const evidenceAtoms = await storage.getEvidenceAtoms(psurCaseId);
+      const proposals = await storage.getSlotProposals(psurCaseId);
+      const dbQualReport = await storage.getQualificationReport(psurCaseId);
+
+      const qualificationReport = dbQualReport ? {
+        psurCaseId,
+        psurReference: psurCase.psurReference,
+        templateId: dbQualReport.templateId,
+        jurisdictions: dbQualReport.jurisdictions,
+        status: dbQualReport.status,
+        slotCount: dbQualReport.slotCount,
+        mappingCount: dbQualReport.mappingCount,
+        mandatoryObligationsTotal: dbQualReport.mandatoryObligationsTotal,
+        mandatoryObligationsFound: dbQualReport.mandatoryObligationsFound,
+        missingObligations: dbQualReport.missingObligations,
+        constraints: dbQualReport.constraints,
+        blockingErrors: dbQualReport.blockingErrors,
+        validatedAt: dbQualReport.validatedAt,
+      } : {
+        psurCaseId,
+        psurReference: psurCase.psurReference,
+        templateId: psurCase.templateId,
+        jurisdictions: psurCase.jurisdictions,
+        status: "NO_QUALIFICATION_RUN",
+        mandatoryObligationsTotal: 0,
+        mandatoryObligationsFound: 0,
+        missingObligations: [],
+        blockingErrors: ["No qualification report found - run the workflow first"],
+      };
+
+      const { generatePsurDocx } = await import("./src/orchestrator/render/renderPsurDocx");
+      const psurDocx = await generatePsurDocx(psurCase, evidenceAtoms, proposals, qualificationReport);
+
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+      res.setHeader("Content-Disposition", `attachment; filename="PSUR-${psurCase.psurReference}.docx"`);
+      res.send(psurDocx);
+    } catch (error: any) {
+      console.error("[GET /api/psur-cases/:psurCaseId/psur.docx] Error:", error);
+      res.status(500).json({ error: "Failed to generate PSUR document", details: error.message });
+    }
+  });
+
+  // Download just the Markdown document
+  app.get("/api/psur-cases/:psurCaseId/psur.md", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      
+      const psurCase = await storage.getPSURCase(psurCaseId);
+      if (!psurCase) {
+        return res.status(404).json({ error: "PSUR case not found" });
+      }
+
+      const evidenceAtoms = await storage.getEvidenceAtoms(psurCaseId);
+      const proposals = await storage.getSlotProposals(psurCaseId);
+      const dbQualReport = await storage.getQualificationReport(psurCaseId);
+
+      const qualificationReport = dbQualReport ? {
+        psurCaseId,
+        psurReference: psurCase.psurReference,
+        templateId: dbQualReport.templateId,
+        jurisdictions: dbQualReport.jurisdictions,
+        status: dbQualReport.status,
+        slotCount: dbQualReport.slotCount,
+        mappingCount: dbQualReport.mappingCount,
+        mandatoryObligationsTotal: dbQualReport.mandatoryObligationsTotal,
+        mandatoryObligationsFound: dbQualReport.mandatoryObligationsFound,
+        missingObligations: dbQualReport.missingObligations,
+        constraints: dbQualReport.constraints,
+        blockingErrors: dbQualReport.blockingErrors,
+        validatedAt: dbQualReport.validatedAt,
+      } : {
+        psurCaseId,
+        psurReference: psurCase.psurReference,
+        templateId: psurCase.templateId,
+        jurisdictions: psurCase.jurisdictions,
+        status: "NO_QUALIFICATION_RUN",
+        mandatoryObligationsTotal: 0,
+        mandatoryObligationsFound: 0,
+        missingObligations: [],
+        blockingErrors: ["No qualification report found - run the workflow first"],
+      };
+
+      const psurMarkdown = generatePsurMarkdown(psurCase, evidenceAtoms, proposals, qualificationReport);
+
+      res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="PSUR-${psurCase.psurReference}.md"`);
+      res.send(psurMarkdown);
+    } catch (error: any) {
+      console.error("[GET /api/psur-cases/:psurCaseId/psur.md] Error:", error);
+      res.status(500).json({ error: "Failed to generate PSUR document", details: error.message });
     }
   });
 

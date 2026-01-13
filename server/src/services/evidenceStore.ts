@@ -1,17 +1,12 @@
 import crypto from "crypto";
 import { db } from "../../db";
-import { evidenceAtoms } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { evidenceAtoms, CANONICAL_EVIDENCE_TYPES } from "@shared/schema";
+import { and, eq } from "drizzle-orm";
 
-export type EvidenceType =
-  | "sales_volume"
-  | "complaint_record"
-  | "serious_incident"
-  | "fsca"
-  | "pmcf"
-  | "literature";
+export type EvidenceType = string;
 
 export type EvidenceAtom = {
+  id?: number; // DB ID (optional for in-memory atoms before persistence)
   atomId: string;
   evidenceType: EvidenceType;
   contentHash: string;
@@ -46,14 +41,14 @@ export function makeContentHash(normalizedData: any): string {
 export function coerceEvidenceType(raw: string): EvidenceType {
   const v = (raw || "").trim().toLowerCase();
 
-  if (v === "sales" || v === "sales_volume") return "sales_volume";
-  if (v === "complaints" || v === "complaint_record") return "complaint_record";
-  if (v === "serious_incidents" || v === "serious_incident" || v === "incidents") return "serious_incident";
-  if (v === "fsca" || v === "fsca_record") return "fsca";
-  if (v === "pmcf" || v === "pmcf_result") return "pmcf";
-  if (v === "literature" || v === "literature_result") return "literature";
+  if (v === "sales" || v === "sales_volume") return CANONICAL_EVIDENCE_TYPES.SALES;
+  if (v === "complaints" || v === "complaint_record") return CANONICAL_EVIDENCE_TYPES.COMPLAINT;
+  if (v === "serious_incidents" || v === "serious_incident" || v === "incidents" || v === "serious_incident_record") return CANONICAL_EVIDENCE_TYPES.SERIOUS_INCIDENT;
+  if (v === "fsca" || v === "fsca_record") return CANONICAL_EVIDENCE_TYPES.FSCA;
+  if (v === "pmcf" || v === "pmcf_result") return CANONICAL_EVIDENCE_TYPES.PMCF;
+  if (v === "literature" || v === "literature_result") return CANONICAL_EVIDENCE_TYPES.LITERATURE;
 
-  throw new Error(`Unsupported evidence_type: ${raw}. Supported types: sales_volume, complaint_record, serious_incident, fsca, pmcf, literature`);
+  throw new Error(`Unsupported evidence_type: ${raw}. Supported types: ${Object.values(CANONICAL_EVIDENCE_TYPES).join(", ")}`);
 }
 
 export async function persistEvidenceAtoms(params: {
@@ -70,7 +65,10 @@ export async function persistEvidenceAtoms(params: {
   
   for (const atom of atoms) {
     const existing = await db.query.evidenceAtoms.findFirst({
-      where: eq(evidenceAtoms.atomId, atom.atomId),
+      where: and(
+        eq(evidenceAtoms.atomId, atom.atomId),
+        eq(evidenceAtoms.psurCaseId, psurCaseId),
+      ),
     });
     
     if (!existing) {
@@ -105,6 +103,7 @@ export async function listEvidenceAtomsByCase(psurCaseId: number): Promise<Evide
   });
   
   return rows.map((r) => ({
+    id: r.id,
     atomId: r.atomId,
     evidenceType: r.evidenceType as EvidenceType,
     contentHash: r.contentHash,

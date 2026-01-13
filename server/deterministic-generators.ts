@@ -1,6 +1,6 @@
 import type { EvidenceAtom, PSURCase } from "@shared/schema";
 import { FORMQAR_SLOTS, getSlotDefinitionsForTemplate } from "./queue-builder";
-import { loadTemplate } from "./template-loader";
+import { loadTemplate } from "./src/templateStore";
 import crypto from "crypto";
 
 export interface DeterministicGeneratorResult {

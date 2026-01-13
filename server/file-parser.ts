@@ -50,6 +50,23 @@ export function parseFileBuffer(
   }
 }
 
+function isEffectivelyEmptyCell(v: unknown): boolean {
+  if (v === null || v === undefined) return true;
+  if (typeof v === "string") {
+    const s = v.trim().toLowerCase();
+    if (!s) return true;
+    // Treat common placeholders as empty so template/example rows don’t pass through
+    if (["n/a", "na", "none", "null", "-", "--"].includes(s)) return true;
+  }
+  return false;
+}
+
+function rowHasAnyRealValue(row: ParsedRow): boolean {
+  const values = Object.values(row || {});
+  if (values.length === 0) return false;
+  return values.some((v) => !isEffectivelyEmptyCell(v));
+}
+
 function parseExcelBuffer(buffer: Buffer, selectedSheet?: string): FileParseResult {
   try {
     const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
@@ -72,10 +89,13 @@ function parseExcelBuffer(buffer: Buffer, selectedSheet?: string): FileParseResu
       : sheetNames[0];
     
     const worksheet = workbook.Sheets[sheetName];
-    const jsonData = XLSX.utils.sheet_to_json<ParsedRow>(worksheet, { 
+    const jsonDataRaw = XLSX.utils.sheet_to_json<ParsedRow>(worksheet, { 
       raw: false,
       defval: null,
     });
+
+    // Drop completely empty rows (all null/empty/placeholder like "n/a")
+    const jsonData = jsonDataRaw.filter((row) => rowHasAnyRealValue(row));
     
     if (jsonData.length === 0) {
       return {
@@ -151,6 +171,10 @@ function parseCsvBuffer(buffer: Buffer): FileParseResult {
       for (let j = 0; j < columns.length; j++) {
         row[columns[j]] = values[j] || null;
       }
+
+      // Skip completely empty rows (all null/empty/placeholder like "n/a")
+      if (!rowHasAnyRealValue(row)) continue;
+
       rows.push(row);
     }
     

@@ -137,10 +137,15 @@ function parseBoolean(value: unknown): boolean | null {
   return null;
 }
 
-export function parseSalesRecord(row: Record<string, unknown>, rowIndex: number, defaultPeriod?: { start: string; end: string }): ParsedRecord {
+export function parseSalesRecord(
+  row: Record<string, unknown>,
+  rowIndex: number,
+  defaultPeriod?: { start: string; end: string },
+  defaultDeviceCode?: string
+): ParsedRecord {
   const errors: string[] = [];
 
-  const deviceCode = findMappedColumn(row, "deviceCode", SALES_COLUMN_MAPPINGS);
+  const deviceCode = findMappedColumn(row, "deviceCode", SALES_COLUMN_MAPPINGS) ?? defaultDeviceCode;
   const productName = findMappedColumn(row, "productName", SALES_COLUMN_MAPPINGS);
   const quantity = parseNumber(findMappedColumn(row, "quantity", SALES_COLUMN_MAPPINGS));
   const region = findMappedColumn(row, "region", SALES_COLUMN_MAPPINGS);
@@ -326,6 +331,52 @@ const GENERIC_EVIDENCE_TYPES = [
   "exposure_model",
   "trend_metrics",
   "benefit_risk",
+  // MDCG & FormQAR Types
+  "manufacturer_profile",
+  "device_registry_record",
+  "regulatory_certificate_record",
+  "sales_summary",
+  "complaint_summary",
+  "serious_incident_summary",
+  "trend_analysis",
+  "fsca_summary",
+  "capa_summary",
+  "pmcf_summary",
+  "literature_review_summary",
+  "external_db_summary",
+  "benefit_risk_assessment",
+  "ifu_extract",
+  "clinical_evaluation_extract",
+  "pms_plan_extract",
+  "change_control_record",
+  "previous_psur_extract",
+  "pms_activity_log",
+  "data_source_register",
+  "distribution_summary",
+  "usage_estimate",
+  "sales_by_region",
+  "vigilance_report",
+  "serious_incident_records_imdrf",
+  "complaints_by_region",
+  "signal_log",
+  "recall_record",
+  "ncr_record",
+  "literature_search_strategy",
+  "external_db_query_log",
+  "pmcf_report_extract",
+  "cer_extract",
+  "rmf_extract",
+  "pmcf_activity_record",
+  "rmf_change_log",
+  "cer_change_log",
+  "previous_psur_actions",
+  "notified_body_review_record",
+  "device_lifetime_record",
+  "uk_population_characteristics",
+  "complaints_by_type",
+  "customer_feedback_summary",
+  "labeling_change_log",
+  "psur_period_change_record"
 ];
 
 export function parseIncidentRecord(row: Record<string, unknown>, rowIndex: number): ParsedRecord {
@@ -363,11 +414,32 @@ export function parseIncidentRecord(row: Record<string, unknown>, rowIndex: numb
   return { data: row, normalizedData, validationErrors: errors, isValid: errors.length === 0, rowIndex };
 }
 
-export function parseFSCARecord(row: Record<string, unknown>, rowIndex: number): ParsedRecord {
+export function parseIncidentRecordWithDefaults(
+  row: Record<string, unknown>,
+  rowIndex: number,
+  defaultDeviceCode?: string
+): ParsedRecord {
+  const parsed = parseIncidentRecord(row, rowIndex);
+  if (!parsed.normalizedData) return parsed;
+  // If deviceCode was missing in-row, allow default from upload form
+  const nd = parsed.normalizedData as Record<string, unknown>;
+  if (!("deviceCode" in nd) || !nd.deviceCode) {
+    if (defaultDeviceCode) {
+      nd.deviceCode = defaultDeviceCode;
+    } else {
+      parsed.isValid = false;
+      parsed.validationErrors = [...parsed.validationErrors, "Missing required field: deviceCode"];
+      parsed.normalizedData = null;
+    }
+  }
+  return parsed;
+}
+
+export function parseFSCARecord(row: Record<string, unknown>, rowIndex: number, defaultDeviceCode?: string): ParsedRecord {
   const errors: string[] = [];
 
   const fscaId = findMappedColumn(row, "fscaId", FSCA_COLUMN_MAPPINGS);
-  const deviceCode = findMappedColumn(row, "deviceCode", FSCA_COLUMN_MAPPINGS);
+  const deviceCode = findMappedColumn(row, "deviceCode", FSCA_COLUMN_MAPPINGS) ?? defaultDeviceCode;
   const actionType = findMappedColumn(row, "actionType", FSCA_COLUMN_MAPPINGS);
   const initiationDate = parseDate(findMappedColumn(row, "initiationDate", FSCA_COLUMN_MAPPINGS));
   const completionDate = parseDate(findMappedColumn(row, "completionDate", FSCA_COLUMN_MAPPINGS));
@@ -613,6 +685,7 @@ export function parseEvidenceFile(
   options?: {
     periodStart?: string;
     periodEnd?: string;
+    defaultDeviceCode?: string;
   },
   preParseRows?: Record<string, unknown>[]
 ): ParseResult {
@@ -642,18 +715,18 @@ export function parseEvidenceFile(
       parsed = parseSalesRecord(row, i + 1, options?.periodStart && options?.periodEnd ? {
         start: options.periodStart,
         end: options.periodEnd,
-      } : undefined);
+      } : undefined, options?.defaultDeviceCode);
     } else if (evidenceType === "complaint_record" || evidenceType === "complaints") {
       parsed = parseComplaintRecord(row, i + 1);
-    } else if (evidenceType === "incident_record" || evidenceType === "incidents") {
-      parsed = parseIncidentRecord(row, i + 1);
-    } else if (evidenceType === "fsca") {
-      parsed = parseFSCARecord(row, i + 1);
-    } else if (evidenceType === "capa") {
+    } else if (evidenceType === "serious_incident_record" || evidenceType === "incident_record" || evidenceType === "incidents") {
+      parsed = parseIncidentRecordWithDefaults(row, i + 1, options?.defaultDeviceCode);
+    } else if (evidenceType === "fsca_record" || evidenceType === "fsca") {
+      parsed = parseFSCARecord(row, i + 1, options?.defaultDeviceCode);
+    } else if (evidenceType === "capa" || evidenceType === "capa_record") {
       parsed = parseCAPARecord(row, i + 1);
-    } else if (evidenceType === "literature") {
+    } else if (evidenceType === "literature_result" || evidenceType === "literature") {
       parsed = parseLiteratureRecord(row, i + 1);
-    } else if (evidenceType === "pmcf") {
+    } else if (evidenceType === "pmcf_result" || evidenceType === "pmcf") {
       parsed = parsePMCFRecord(row, i + 1);
     } else if (evidenceType === "registry") {
       parsed = parseRegistryRecord(row, i + 1);

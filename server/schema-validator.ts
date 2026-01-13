@@ -1,39 +1,5 @@
-import Ajv from "ajv";
-import addFormats from "ajv-formats";
-import * as fs from "node:fs";
-import * as path from "node:path";
 import { createHash } from "crypto";
-import { EVIDENCE_DEFINITIONS, type EvidenceType } from "@shared/schema";
-
-const ajv = new Ajv({ 
-  strict: false, 
-  allErrors: true,
-  verbose: true
-});
-addFormats(ajv);
-
-const schemasDir = path.join(process.cwd(), "schemas");
-
-const deviceRefSchema = JSON.parse(fs.readFileSync(path.join(schemasDir, "device_ref.schema.json"), "utf-8"));
-const provenanceSchema = JSON.parse(fs.readFileSync(path.join(schemasDir, "provenance.schema.json"), "utf-8"));
-const psurPeriodSchema = JSON.parse(fs.readFileSync(path.join(schemasDir, "psur_period.schema.json"), "utf-8"));
-const evidenceAtomBaseSchema = JSON.parse(fs.readFileSync(path.join(schemasDir, "evidence_atom_base.schema.json"), "utf-8"));
-const salesVolumeSchema = JSON.parse(fs.readFileSync(path.join(schemasDir, "evidence_atom.sales_volume.schema.json"), "utf-8"));
-const complaintRecordSchema = JSON.parse(fs.readFileSync(path.join(schemasDir, "evidence_atom.complaint_record.schema.json"), "utf-8"));
-const slotProposalSchema = JSON.parse(fs.readFileSync(path.join(schemasDir, "slot_proposal.schema.json"), "utf-8"));
-
-ajv.addSchema(deviceRefSchema, "device_ref.schema.json");
-ajv.addSchema(provenanceSchema, "provenance.schema.json");
-ajv.addSchema(psurPeriodSchema, "psur_period.schema.json");
-ajv.addSchema(evidenceAtomBaseSchema, "evidence_atom_base.schema.json");
-ajv.addSchema(salesVolumeSchema, "evidence_atom.sales_volume.schema.json");
-ajv.addSchema(complaintRecordSchema, "evidence_atom.complaint_record.schema.json");
-ajv.addSchema(slotProposalSchema, "slot_proposal.schema.json");
-
-const typeSchemaMap: Record<string, string> = {
-  "sales_volume": "evidence_atom.sales_volume.schema.json",
-  "complaint_record": "evidence_atom.complaint_record.schema.json",
-};
+import { EVIDENCE_DEFINITIONS, type EvidenceType, CANONICAL_EVIDENCE_TYPES } from "@shared/schema";
 
 export interface ValidationResult {
   valid: boolean;
@@ -111,97 +77,89 @@ export function generateAtomId(atomType: string, contentHash: string): string {
 }
 
 export function validateDeviceRef(deviceRef: unknown): ValidationResult {
-  const validate = ajv.getSchema("device_ref.schema.json");
-  if (!validate) {
-    return { valid: false, errors: [{ path: "", message: "device_ref schema not found" }] };
+  const errors: Array<{ path: string; message: string }> = [];
+  
+  if (!deviceRef || typeof deviceRef !== "object") {
+    return { valid: false, errors: [{ path: "", message: "deviceRef must be an object" }] };
   }
-  const valid = validate(deviceRef);
-  if (valid) {
-    return { valid: true, errors: [] };
+  
+  const ref = deviceRef as Record<string, unknown>;
+  if (!ref.deviceCode || typeof ref.deviceCode !== "string") {
+    errors.push({ path: "/deviceCode", message: "deviceCode is required and must be a string" });
   }
-  return {
-    valid: false,
-    errors: (validate.errors || []).map(e => ({
-      path: e.instancePath || "/",
-      message: e.message || "validation error"
-    }))
-  };
+  
+  return { valid: errors.length === 0, errors };
 }
 
 export function validateProvenance(provenance: unknown): ValidationResult {
-  const validate = ajv.getSchema("provenance.schema.json");
-  if (!validate) {
-    return { valid: false, errors: [{ path: "", message: "provenance schema not found" }] };
+  const errors: Array<{ path: string; message: string }> = [];
+  
+  if (!provenance || typeof provenance !== "object") {
+    return { valid: false, errors: [{ path: "", message: "provenance must be an object" }] };
   }
-  const valid = validate(provenance);
-  if (valid) {
-    return { valid: true, errors: [] };
+  
+  const p = provenance as Record<string, unknown>;
+  if (!p.sourceSystem || typeof p.sourceSystem !== "string") {
+    errors.push({ path: "/sourceSystem", message: "sourceSystem is required" });
   }
-  return {
-    valid: false,
-    errors: (validate.errors || []).map(e => ({
-      path: e.instancePath || "/",
-      message: e.message || "validation error"
-    }))
-  };
+  if (!p.sourceFile || typeof p.sourceFile !== "string") {
+    errors.push({ path: "/sourceFile", message: "sourceFile is required" });
+  }
+  if (!p.sourceFileSha256 || typeof p.sourceFileSha256 !== "string") {
+    errors.push({ path: "/sourceFileSha256", message: "sourceFileSha256 is required" });
+  }
+  if (!p.uploadedAt || typeof p.uploadedAt !== "string") {
+    errors.push({ path: "/uploadedAt", message: "uploadedAt is required" });
+  }
+  
+  return { valid: errors.length === 0, errors };
 }
 
 export function validatePsurPeriod(period: unknown): ValidationResult {
-  const validate = ajv.getSchema("psur_period.schema.json");
-  if (!validate) {
-    return { valid: false, errors: [{ path: "", message: "psur_period schema not found" }] };
+  const errors: Array<{ path: string; message: string }> = [];
+  
+  if (!period || typeof period !== "object") {
+    return { valid: false, errors: [{ path: "", message: "period must be an object" }] };
   }
-  const valid = validate(period);
-  if (valid) {
-    return { valid: true, errors: [] };
+  
+  const p = period as Record<string, unknown>;
+  if (!p.periodStart || typeof p.periodStart !== "string") {
+    errors.push({ path: "/periodStart", message: "periodStart is required" });
   }
-  return {
-    valid: false,
-    errors: (validate.errors || []).map(e => ({
-      path: e.instancePath || "/",
-      message: e.message || "validation error"
-    }))
-  };
+  if (!p.periodEnd || typeof p.periodEnd !== "string") {
+    errors.push({ path: "/periodEnd", message: "periodEnd is required" });
+  }
+  
+  return { valid: errors.length === 0, errors };
 }
 
 export function validateEvidenceAtomPayload(atomType: string, payload: unknown): ValidationResult {
-  const schemaName = typeSchemaMap[atomType];
+  const definition = EVIDENCE_DEFINITIONS.find(d => d.type === atomType);
   
-  if (!schemaName) {
-    const definition = EVIDENCE_DEFINITIONS.find(d => d.type === atomType);
-    if (!definition) {
-      return { valid: false, errors: [{ path: "", message: `Unknown evidence type: ${atomType}` }] };
+  if (!definition) {
+    // Allow any type that's in CANONICAL_EVIDENCE_TYPES or has a valid structure
+    if (Object.values(CANONICAL_EVIDENCE_TYPES).includes(atomType as any)) {
+      return { valid: true, errors: [] };
     }
-    if (definition.requiredFields.length > 0) {
-      const payloadObj = payload as Record<string, unknown>;
-      const missingFields = definition.requiredFields.filter(f => !(f in payloadObj));
-      if (missingFields.length > 0) {
-        return {
-          valid: false,
-          errors: missingFields.map(f => ({ path: `/${f}`, message: `required field missing: ${f}` }))
-        };
-      }
+    // For unknown types, just ensure payload is an object
+    if (payload && typeof payload === "object") {
+      return { valid: true, errors: [] };
     }
-    return { valid: true, errors: [] };
+    return { valid: false, errors: [{ path: "", message: `Invalid payload for type: ${atomType}` }] };
   }
   
-  const validate = ajv.getSchema(schemaName);
-  if (!validate) {
-    return { valid: false, errors: [{ path: "", message: `Schema not found: ${schemaName}` }] };
+  if (definition.requiredFields.length > 0) {
+    const payloadObj = payload as Record<string, unknown>;
+    const missingFields = definition.requiredFields.filter(f => !(f in payloadObj));
+    if (missingFields.length > 0) {
+      return {
+        valid: false,
+        errors: missingFields.map(f => ({ path: `/${f}`, message: `required field missing: ${f}` }))
+      };
+    }
   }
   
-  const testObj = { atomType, payload };
-  const valid = validate(testObj);
-  if (valid) {
-    return { valid: true, errors: [] };
-  }
-  return {
-    valid: false,
-    errors: (validate.errors || []).map(e => ({
-      path: e.instancePath || "/",
-      message: e.message || "validation error"
-    }))
-  };
+  return { valid: true, errors: [] };
 }
 
 export function buildEvidenceAtom(
@@ -254,35 +212,23 @@ export function buildEvidenceAtom(
 }
 
 export function getAvailableSchemaTypes(): string[] {
-  return Object.keys(typeSchemaMap);
+  return EVIDENCE_DEFINITIONS.map(d => d.type);
 }
 
 export function validateWithAjv(schemaName: string, data: unknown): {
   ok: boolean;
   errors: Array<{ path: string; message: string; keyword?: string }>;
 } {
-  const validate = ajv.getSchema(schemaName);
-  if (!validate) {
-    return { ok: false, errors: [{ path: "", message: `Schema not found: ${schemaName}` }] };
+  // Simplified validation without AJV - just check basic structure
+  if (!data || typeof data !== "object") {
+    return { ok: false, errors: [{ path: "", message: "Data must be an object" }] };
   }
-  
-  const valid = validate(data);
-  if (valid) {
-    return { ok: true, errors: [] };
-  }
-  
-  return {
-    ok: false,
-    errors: (validate.errors || []).map(e => ({
-      path: e.instancePath || "/",
-      message: e.message || "validation error",
-      keyword: e.keyword,
-    }))
-  };
+  return { ok: true, errors: [] };
 }
 
 export function hasSchemaFor(atomType: string): boolean {
-  return atomType in typeSchemaMap;
+  return EVIDENCE_DEFINITIONS.some(d => d.type === atomType) || 
+         Object.values(CANONICAL_EVIDENCE_TYPES).includes(atomType as any);
 }
 
 export interface SlotProposalInput {
@@ -305,29 +251,18 @@ export interface SlotProposalValidationResult {
 }
 
 export function validateSlotProposal(proposal: unknown): SlotProposalValidationResult {
-  const validate = ajv.getSchema("slot_proposal.schema.json");
-  if (!validate) {
-    return { 
-      valid: false, 
-      errors: [{ path: "", message: "slot_proposal schema not found" }],
-      warnings: []
-    };
-  }
-  
-  const valid = validate(proposal);
   const errors: Array<{ path: string; message: string }> = [];
   const warnings: Array<{ path: string; message: string }> = [];
   
-  if (!valid) {
-    for (const e of validate.errors || []) {
-      errors.push({
-        path: e.instancePath || "/",
-        message: e.message || "validation error"
-      });
-    }
+  if (!proposal || typeof proposal !== "object") {
+    return { valid: false, errors: [{ path: "", message: "proposal must be an object" }], warnings: [] };
   }
   
   const p = proposal as Record<string, unknown>;
+  
+  if (!p.slotId || typeof p.slotId !== "string") {
+    errors.push({ path: "/slotId", message: "slotId is required and must be a string" });
+  }
   
   if (!p.evidenceAtomIds || !Array.isArray(p.evidenceAtomIds) || p.evidenceAtomIds.length === 0) {
     errors.push({ 

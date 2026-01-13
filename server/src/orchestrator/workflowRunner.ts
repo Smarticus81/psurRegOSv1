@@ -1,14 +1,16 @@
 import { db } from "../../db";
 import { storage } from "../../storage";
-import { loadTemplate } from "../templateStore";
+import { loadTemplate, getSlots, getEffectiveMapping, getTemplateDefaults, type Template } from "../templateStore";
+import { lintTemplate, type LintResult } from "../templates/lintTemplates";
 import { listEvidenceAtomsByCase, EvidenceAtomRecord } from "../services/evidenceStore";
 import { ingestEvidenceStep } from "./steps/ingestEvidence";
-import { proposeSlotsStep, SlotProposalOutput } from "./steps/proposeSlots";
+import { proposeSlotsStep, SlotProposalOutput, ProposalStatus, getTraceGaps, areAllProposalsReady } from "./steps/proposeSlots";
 import {
   qualifyTemplateAgainstGrkb,
   getObligations,
   getConstraints,
 } from "../services/grkbService";
+import path from "path";
 import {
   psurCases,
   slotProposals,
@@ -77,6 +79,74 @@ export interface RunWorkflowParams {
   runSteps?: number[];
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// ADJUDICATION RULES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+interface AdjudicationResult {
+  accepted: SlotProposalOutput[];
+  rejected: { proposal: SlotProposalOutput; reasons: string[] }[];
+}
+
+/**
+ * Adjudicate proposals based on deterministic traceability rules:
+ * 
+ * ACCEPT if:
+ * - status == "READY" (has evidence for required types)
+ * - status == "NO_EVIDENCE_REQUIRED" (admin/TOC slots with empty required_types)
+ * - claimedObligationIds is non-empty
+ * - methodStatement length >= min_method_chars (default 10)
+ * 
+ * REJECT if:
+ * - status == "TRACE_GAP" (required_types non-empty BUT evidenceAtomIds empty)
+ * - claimedObligationIds is empty
+ * - methodStatement too short
+ */
+function adjudicateProposals(
+  proposals: SlotProposalOutput[],
+  minMethodChars: number = 10
+): AdjudicationResult {
+  const accepted: SlotProposalOutput[] = [];
+  const rejected: { proposal: SlotProposalOutput; reasons: string[] }[] = [];
+
+  for (const proposal of proposals) {
+    const reasons: string[] = [];
+
+    // RULE 1: Check proposal status
+    if (proposal.status === "TRACE_GAP") {
+      reasons.push(`TRACE_GAP: Required evidence types [${proposal.requiredTypes.join(", ")}] but no atoms found`);
+    }
+
+    // RULE 2: Check claimed obligations
+    if (proposal.claimedObligationIds.length === 0) {
+      reasons.push("Missing claimed obligation IDs");
+    }
+
+    // RULE 3: Check method statement length
+    if (proposal.methodStatement.length < minMethodChars) {
+      reasons.push(`Method statement too short (${proposal.methodStatement.length} chars, need ${minMethodChars})`);
+    }
+
+    // RULE 4: For READY status, verify evidence is present
+    if (proposal.status === "READY" && proposal.evidenceAtomIds.length === 0) {
+      reasons.push("Status is READY but no evidence atom IDs present");
+    }
+
+    // Accept or reject
+    if (reasons.length === 0) {
+      accepted.push(proposal);
+    } else {
+      rejected.push({ proposal, reasons });
+    }
+  }
+
+  return { accepted, rejected };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MAIN WORKFLOW
+// ═══════════════════════════════════════════════════════════════════════════════
+
 export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promise<OrchestratorWorkflowResult> {
   const { templateId, jurisdictions, deviceCode, deviceId, periodStart, periodEnd, psurCaseId: existingCaseId, runSteps } = params;
 
@@ -94,29 +164,50 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
   let psurCaseId = existingCaseId || 0;
   let psurRef = "";
   let version = 1;
-  let template: any = null;
+  let template: Template | null = null;
   let evidenceAtomsData: EvidenceAtomRecord[] = [];
   let slotProposalsData: SlotProposalOutput[] = [];
   let qualificationBlocked = false;
 
   try {
     // ==================== STEP 1: QUALIFY TEMPLATE ====================
-    // Uses DB-backed GRKB service - HARD FAIL if no obligations for jurisdiction
     if (stepsToRun.includes(1)) {
       steps[0].status = "RUNNING";
       steps[0].startedAt = new Date().toISOString();
 
       try {
-        // Load template structure
-        template = loadTemplate(templateId);
+        // 1a. Lint template JSON against strict Zod schema
+        const templatesDir = path.resolve(process.cwd(), "server", "templates");
+        const templatePath = path.join(templatesDir, `${templateId}.json`);
+        const lintResult: LintResult = await lintTemplate(templatePath);
+        
+        if (!lintResult.valid) {
+          const errorMsg = lintResult.errors.map(e => `[${e.code}] ${e.message}`).join("; ");
+          steps[0].status = "FAILED";
+          steps[0].endedAt = new Date().toISOString();
+          steps[0].error = `Template lint failed: ${errorMsg}`;
+          steps[0].summary = { templateId, lintErrors: lintResult.errors.length };
+          throw new Error(`Template '${templateId}' failed lint validation: ${errorMsg}`);
+        }
 
-        // Qualify against GRKB obligations from DB
+        // Log warnings but continue
+        if (lintResult.warnings.length > 0) {
+          console.warn(`[WorkflowRunner] Template lint warnings for ${templateId}:`, 
+            lintResult.warnings.map(w => w.message).join(", "));
+        }
+
+        // 1b. Load template structure (now guaranteed valid)
+        template = loadTemplate(templateId);
+        const effectiveSlots = getSlots(template);
+        const effectiveMapping = getEffectiveMapping(template);
+
+        // 1c. Qualify against GRKB obligations from DB
         const qualReport = await qualifyTemplateAgainstGrkb(
           templateId,
           jurisdictions,
           "PSUR",
-          template.slots || [],
-          template.mapping || {}
+          effectiveSlots,
+          effectiveMapping
         );
 
         // Persist qualification report
@@ -147,8 +238,6 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
           };
           steps[0].report = qualReport;
           qualificationBlocked = true;
-
-          // Do NOT throw - allow remaining steps to be marked as blocked
         } else {
           steps[0].status = "COMPLETED";
           steps[0].endedAt = new Date().toISOString();
@@ -170,6 +259,7 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
       template = loadTemplate(templateId);
     }
 
+    // ==================== STEP 2: CREATE CASE ====================
     if (stepsToRun.includes(2)) {
       steps[1].status = "RUNNING";
       steps[1].startedAt = new Date().toISOString();
@@ -219,12 +309,34 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
       }
     }
 
+    // ==================== STEP 3: INGEST EVIDENCE ====================
     if (stepsToRun.includes(3)) {
       steps[2].status = "RUNNING";
       steps[2].startedAt = new Date().toISOString();
 
       try {
-        evidenceAtomsData = await ingestEvidenceStep({ psurCaseId });
+        // Get required evidence types from template for negative evidence generation
+        let requiredTypes: string[] = [];
+        if (template) {
+          const slots = getSlots(template);
+          const typesSet = new Set<string>();
+          for (const slot of slots) {
+            const slotTypes = slot.evidence_requirements?.required_types || [];
+            for (const t of slotTypes) {
+              typesSet.add(t);
+            }
+          }
+          requiredTypes = Array.from(typesSet);
+        }
+        
+        evidenceAtomsData = await ingestEvidenceStep({ 
+          psurCaseId,
+          templateId,
+          requiredTypes,
+          periodStart,
+          periodEnd,
+          deviceCode,
+        });
 
         const byType: Record<string, number> = {};
         for (const atom of evidenceAtomsData) {
@@ -258,6 +370,7 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
 
     const hasEvidence = evidenceAtomsData.length > 0;
 
+    // ==================== STEP 4: BUILD QUEUE & PROPOSE ====================
     if (stepsToRun.includes(4)) {
       if (!hasEvidence && steps[2].status !== "COMPLETED") {
         steps[3].status = "BLOCKED";
@@ -273,31 +386,59 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
             evidenceAtoms: evidenceAtomsData,
           });
 
-          const withEvidence = slotProposalsData.filter(p => p.evidenceAtomIds.length > 0).length;
-          const blocked = slotProposalsData.filter(p => p.evidenceAtomIds.length === 0).length;
+          // Count by status
+          const readyCount = slotProposalsData.filter(p => p.status === "READY").length;
+          const traceGapCount = slotProposalsData.filter(p => p.status === "TRACE_GAP").length;
+          const noEvidenceRequiredCount = slotProposalsData.filter(p => p.status === "NO_EVIDENCE_REQUIRED").length;
 
+          // Persist proposals to database
           for (const proposal of slotProposalsData) {
+            const dbStatus = proposal.status === "READY" || proposal.status === "NO_EVIDENCE_REQUIRED" 
+              ? "pending" 
+              : "rejected";
+            
+            // Map string UUIDs to integer DB IDs
+            const mappedAtomIds: number[] = [];
+            for (const uuid of proposal.evidenceAtomIds) {
+                const atom = evidenceAtomsData.find(a => a.atomId === uuid);
+                if (atom && atom.id) {
+                    mappedAtomIds.push(atom.id);
+                }
+            }
+            
             await db.insert(slotProposals).values({
               psurCaseId,
               slotId: proposal.slotId,
               templateId,
               content: proposal.content,
-              evidenceAtomIds: proposal.evidenceAtomIds.length > 0 ? [1] : [],
+              evidenceAtomIds: mappedAtomIds,
               claimedObligationIds: proposal.claimedObligationIds,
               methodStatement: proposal.methodStatement,
               transformations: proposal.transformations,
-              status: proposal.evidenceAtomIds.length > 0 ? "pending" : "rejected",
-              rejectionReasons: proposal.evidenceAtomIds.length === 0 ? ["BLOCKED_MISSING_EVIDENCE"] : [],
+              status: dbStatus,
+              rejectionReasons: proposal.status === "TRACE_GAP" 
+                ? [`TRACE_GAP: Missing evidence for types [${proposal.requiredTypes.join(", ")}]`] 
+                : [],
             }).onConflictDoNothing();
           }
 
           steps[3].status = "COMPLETED";
           steps[3].endedAt = new Date().toISOString();
-          steps[3].summary = { totalProposals: slotProposalsData.length, withEvidence, blocked };
+          steps[3].summary = { 
+            totalProposals: slotProposalsData.length, 
+            ready: readyCount,
+            traceGaps: traceGapCount,
+            noEvidenceRequired: noEvidenceRequiredCount,
+          };
           steps[3].report = {
             totalProposals: slotProposalsData.length,
-            withEvidence,
-            blocked,
+            ready: readyCount,
+            traceGaps: traceGapCount,
+            noEvidenceRequired: noEvidenceRequiredCount,
+            traceGapSlots: getTraceGaps(slotProposalsData).map(p => ({
+              slotId: p.slotId,
+              requiredTypes: p.requiredTypes,
+            })),
           };
         } catch (e: any) {
           steps[3].status = "FAILED";
@@ -307,6 +448,7 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
       }
     }
 
+    // ==================== STEP 5: ADJUDICATE ====================
     if (stepsToRun.includes(5)) {
       if (steps[3].status === "BLOCKED" || steps[3].status === "FAILED") {
         steps[4].status = "BLOCKED";
@@ -316,31 +458,34 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
         steps[4].startedAt = new Date().toISOString();
 
         try {
-          const acceptedProposals = slotProposalsData.filter(p =>
-            p.evidenceAtomIds.length >= 1 &&
-            p.claimedObligationIds.length >= 1 &&
-            p.methodStatement.length >= 10
-          );
-
-          const rejectedProposals = slotProposalsData.filter(p =>
-            p.evidenceAtomIds.length === 0 ||
-            p.claimedObligationIds.length === 0 ||
-            p.methodStatement.length < 10
-          );
+          // Get template defaults for adjudication rules
+          const defaults = template ? getTemplateDefaults(template) : { min_method_chars: 10 };
+          
+          // Run adjudication with new rules
+          const adjudicationResult = adjudicateProposals(slotProposalsData, defaults.min_method_chars);
 
           const report: AdjudicationReport = {
-            acceptedCount: acceptedProposals.length,
-            rejectedCount: rejectedProposals.length,
-            acceptedProposalIds: acceptedProposals.map(p => p.proposalId),
-            rejected: rejectedProposals.map(p => ({
-              proposalId: p.proposalId,
-              reasons: [
-                ...(p.evidenceAtomIds.length === 0 ? ["Missing evidence atoms"] : []),
-                ...(p.claimedObligationIds.length === 0 ? ["Missing claimed obligation IDs"] : []),
-                ...(p.methodStatement.length < 10 ? ["Method statement too short"] : []),
-              ],
+            acceptedCount: adjudicationResult.accepted.length,
+            rejectedCount: adjudicationResult.rejected.length,
+            acceptedProposalIds: adjudicationResult.accepted.map(p => p.proposalId),
+            rejected: adjudicationResult.rejected.map(r => ({
+              proposalId: r.proposal.proposalId,
+              reasons: r.reasons,
             })),
           };
+
+          // Update proposal statuses in database
+          for (const accepted of adjudicationResult.accepted) {
+            await db.update(slotProposals)
+              .set({ status: "accepted" })
+              .where(eq(slotProposals.slotId, accepted.slotId));
+          }
+          
+          for (const { proposal, reasons } of adjudicationResult.rejected) {
+            await db.update(slotProposals)
+              .set({ status: "rejected", rejectionReasons: reasons })
+              .where(eq(slotProposals.slotId, proposal.slotId));
+          }
 
           steps[4].status = "COMPLETED";
           steps[4].endedAt = new Date().toISOString();
@@ -354,6 +499,7 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
       }
     }
 
+    // ==================== STEP 6: COVERAGE REPORT ====================
     if (stepsToRun.includes(6)) {
       if (steps[4].status === "BLOCKED" || steps[4].status === "FAILED") {
         steps[5].status = "BLOCKED";
@@ -366,14 +512,22 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
           const obligations = await getObligations(jurisdictions, "PSUR");
           const totalObligations = obligations.length;
 
-          const acceptedProposals = slotProposalsData.filter(p => p.evidenceAtomIds.length > 0);
+          // Use adjudicated accepted proposals
+          const acceptedProposals = slotProposalsData.filter(
+            p => p.status === "READY" || p.status === "NO_EVIDENCE_REQUIRED"
+          );
           const satisfiedObligations = new Set(acceptedProposals.flatMap(p => p.claimedObligationIds)).size;
 
-          const totalSlots = template?.slots?.length || 0;
+          // Get effective slots from template
+          const effectiveSlots = template ? getSlots(template) : [];
+          const totalSlots = effectiveSlots.length;
           const filledSlots = acceptedProposals.length;
 
+          // Calculate missing evidence types
           const availableTypes = new Set<string>(evidenceAtomsData.map(a => a.evidenceType));
-          const requiredTypesArr: string[] = template?.slots?.flatMap((s: any) => s.requiredEvidenceTypes || []) || [];
+          const requiredTypesArr: string[] = effectiveSlots.flatMap(
+            (s: any) => s.evidence_requirements?.required_types || []
+          );
           const requiredTypes = new Set<string>(requiredTypesArr);
           const missingEvidenceTypes = Array.from(requiredTypes).filter(t => !availableTypes.has(t));
 
@@ -398,7 +552,7 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
             missingObligations: [],
             totalSlots,
             filledSlots,
-            emptySlots: [],
+            emptySlots: missingEvidenceTypes,
             coveragePercent: coveragePercent.toString(),
             passed,
           }).onConflictDoNothing();
@@ -419,6 +573,7 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
       }
     }
 
+    // ==================== STEP 7: RENDER DOCUMENT ====================
     if (stepsToRun.includes(7)) {
       if (steps[5].status === "BLOCKED" || steps[5].status === "FAILED") {
         steps[6].status = "BLOCKED";
@@ -428,12 +583,14 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
         steps[6].startedAt = new Date().toISOString();
 
         try {
+          const effectiveSlots = template ? getSlots(template) : [];
+          
           steps[6].status = "COMPLETED";
           steps[6].endedAt = new Date().toISOString();
-          steps[6].summary = { documentType: "markdown", sections: template?.slots?.length || 0 };
+          steps[6].summary = { documentType: "markdown", sections: effectiveSlots.length };
           steps[6].report = {
             format: "markdown",
-            sections: template?.slots?.length || 0,
+            sections: effectiveSlots.length,
             filePath: `psur_${psurRef}.md`,
           };
         } catch (e: any) {
@@ -444,6 +601,7 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
       }
     }
 
+    // ==================== STEP 8: EXPORT BUNDLE ====================
     if (stepsToRun.includes(8)) {
       if (steps[6].status === "BLOCKED" || steps[6].status === "FAILED") {
         steps[7].status = "BLOCKED";
@@ -496,7 +654,9 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
   }
 
   const kernelStatus = await getKernelStatus(jurisdictions);
-  kernelStatus.templateSlots = template?.slots?.length || 0;
+  if (template) {
+    kernelStatus.templateSlots = getSlots(template).length;
+  }
 
   return {
     scope,
@@ -509,6 +669,10 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
     kernelStatus,
   };
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GET WORKFLOW RESULT FOR CASE
+// ═══════════════════════════════════════════════════════════════════════════════
 
 export async function getWorkflowResultForCase(psurCaseId: number): Promise<OrchestratorWorkflowResult | null> {
   const psurCase = await storage.getPSURCase(psurCaseId);
@@ -643,10 +807,10 @@ export async function getWorkflowResultForCase(psurCaseId: number): Promise<Orch
   });
 
   const kernelStatus = await getKernelStatus(psurCase.jurisdictions || []);
-  let template;
+  let template: Template | null = null;
   try {
     template = loadTemplate(psurCase.templateId);
-    kernelStatus.templateSlots = template?.slots?.length || 0;
+    kernelStatus.templateSlots = getSlots(template).length;
   } catch {
     kernelStatus.templateSlots = 0;
   }

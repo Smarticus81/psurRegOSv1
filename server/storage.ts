@@ -16,6 +16,7 @@ import {
   type AuditBundle, type InsertAuditBundle,
   type CoverageSlotQueue, type InsertCoverageSlotQueue,
   type ColumnMappingProfile, type InsertColumnMappingProfile,
+  type QualificationReport,
   users,
   companies,
   devices,
@@ -33,6 +34,8 @@ import {
   auditBundles,
   coverageSlotQueues,
   columnMappingProfiles,
+  slotDefinitions,
+  qualificationReports,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, inArray, sql } from "drizzle-orm";
@@ -122,6 +125,8 @@ export interface IStorage {
   createColumnMappingProfile(profile: InsertColumnMappingProfile): Promise<ColumnMappingProfile>;
   updateColumnMappingProfile(id: number, profile: Partial<InsertColumnMappingProfile>): Promise<ColumnMappingProfile | undefined>;
   incrementMappingProfileUsage(id: number): Promise<void>;
+
+  getTemplateRequirements(templateId: string): Promise<string[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -505,6 +510,42 @@ export class DatabaseStorage implements IStorage {
     await db.execute(
       sql`UPDATE column_mapping_profiles SET usage_count = usage_count + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ${id}`
     );
+  }
+
+  async getTemplateRequirements(templateId: string): Promise<string[]> {
+    const slots = await db.select({
+      requiredEvidenceTypes: slotDefinitions.requiredEvidenceTypes
+    })
+    .from(slotDefinitions)
+    .where(eq(slotDefinitions.templateId, templateId));
+
+    const types = new Set<string>();
+    for (const slot of slots) {
+      if (Array.isArray(slot.requiredEvidenceTypes)) {
+        for (const t of slot.requiredEvidenceTypes) {
+          types.add(t);
+        }
+      }
+    }
+    return Array.from(types);
+  }
+
+  async getQualificationReport(psurCaseId: number): Promise<QualificationReport | undefined> {
+    const [report] = await db.select()
+      .from(qualificationReports)
+      .where(eq(qualificationReports.psurCaseId, psurCaseId))
+      .orderBy(desc(qualificationReports.validatedAt))
+      .limit(1);
+    return report;
+  }
+
+  async getQualificationReportByTemplate(templateId: string): Promise<QualificationReport | undefined> {
+    const [report] = await db.select()
+      .from(qualificationReports)
+      .where(eq(qualificationReports.templateId, templateId))
+      .orderBy(desc(qualificationReports.validatedAt))
+      .limit(1);
+    return report;
   }
 }
 

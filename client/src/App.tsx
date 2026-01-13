@@ -10,6 +10,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import NotFound from "@/pages/not-found";
 import PsurWizard from "@/pages/psur-wizard";
 import Admin from "@/pages/admin";
+import Instructions from "@/pages/instructions";
 
 function Router() {
   return (
@@ -19,6 +20,7 @@ function Router() {
       </Route>
       <Route path="/psur" component={PsurWizard} />
       <Route path="/admin" component={Admin} />
+      <Route path="/instructions" component={Instructions} />
       <Route component={NotFound} />
     </Switch>
   );

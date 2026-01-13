@@ -47,13 +47,17 @@ export interface AdjudicationResult {
 const ORCHESTRATOR_DIR = path.join(process.cwd(), "psur_orchestrator");
 const PYTHON_CMD = "python";
 
-async function runOrchestratorCommand(
-  args: string[]
-): Promise<OrchestratorResult<string>> {
+type ProcResult = { code: number | null; stdout: string; stderr: string };
+
+async function runProcess(
+  command: string,
+  args: string[],
+  options: { cwd?: string; env?: NodeJS.ProcessEnv } = {},
+): Promise<ProcResult> {
   return new Promise((resolve) => {
-    const proc = spawn(PYTHON_CMD, ["-m", "psur_orchestrator.cli", ...args], {
-      cwd: ORCHESTRATOR_DIR,
-      env: { ...process.env },
+    const proc = spawn(command, args, {
+      cwd: options.cwd,
+      env: options.env,
     });
 
     let stdout = "";
@@ -68,15 +72,127 @@ async function runOrchestratorCommand(
     });
 
     proc.on("close", (code) => {
-      if (code === 0) {
-        resolve({ success: true, data: stdout });
-      } else {
-        resolve({ success: false, error: stderr || stdout });
-      }
+      resolve({ code, stdout, stderr });
     });
 
     proc.on("error", (err) => {
-      resolve({ success: false, error: err.message });
+      resolve({ code: 1, stdout: "", stderr: err.message });
+    });
+  });
+}
+
+let pythonDepsEnsured = false;
+let pythonDepsEnsureAttempted = false;
+
+async function ensureOrchestratorPythonDeps(): Promise<OrchestratorResult<void>> {
+  if (pythonDepsEnsured) return { success: true };
+  if (pythonDepsEnsureAttempted) {
+    return {
+      success: false,
+      error:
+        "Python dependencies for psur_orchestrator are not available (and auto-install already failed once).",
+    };
+  }
+
+  pythonDepsEnsureAttempted = true;
+
+  // Fast check: is lark importable?
+  const check = await runProcess(
+    PYTHON_CMD,
+    ["-c", "import lark"],
+    { cwd: ORCHESTRATOR_DIR, env: { ...process.env } },
+  );
+
+  if (check.code === 0) {
+    pythonDepsEnsured = true;
+    return { success: true };
+  }
+
+  console.log("[Orchestrator] Python deps missing; installing psur_orchestrator (editable)...");
+
+  // Install orchestrator + its deps into the current Python environment.
+  const install = await runProcess(
+    PYTHON_CMD,
+    [
+      "-m",
+      "pip",
+      "install",
+      "--disable-pip-version-check",
+      "--no-input",
+      "-e",
+      ".",
+    ],
+    { cwd: ORCHESTRATOR_DIR, env: { ...process.env } },
+  );
+
+  if (install.code !== 0) {
+    return {
+      success: false,
+      error: install.stderr || install.stdout || "Failed to install psur_orchestrator Python deps",
+    };
+  }
+
+  // Re-check import
+  const recheck = await runProcess(
+    PYTHON_CMD,
+    ["-c", "import lark"],
+    { cwd: ORCHESTRATOR_DIR, env: { ...process.env } },
+  );
+
+  if (recheck.code === 0) {
+    pythonDepsEnsured = true;
+    return { success: true };
+  }
+
+  return {
+    success: false,
+    error:
+      recheck.stderr ||
+      recheck.stdout ||
+      "psur_orchestrator deps install completed, but imports still failing",
+  };
+}
+
+async function runOrchestratorCommand(
+  args: string[]
+): Promise<OrchestratorResult<string>> {
+  return new Promise((resolve) => {
+    (async () => {
+      const deps = await ensureOrchestratorPythonDeps();
+      if (!deps.success) {
+        resolve({ success: false, error: deps.error });
+        return;
+      }
+
+      const proc = spawn(PYTHON_CMD, ["-m", "psur_orchestrator.cli", ...args], {
+        cwd: ORCHESTRATOR_DIR,
+        env: { ...process.env },
+      });
+
+      let stdout = "";
+      let stderr = "";
+
+      proc.stdout.on("data", (data) => {
+        stdout += data.toString();
+      });
+
+      proc.stderr.on("data", (data) => {
+        stderr += data.toString();
+      });
+
+      proc.on("close", (code) => {
+        if (code === 0) {
+          resolve({ success: true, data: stdout });
+        } else {
+          resolve({ success: false, error: stderr || stdout });
+        }
+      });
+
+      proc.on("error", (err) => {
+        resolve({ success: false, error: err.message });
+      });
+    })().catch((e) => {
+      resolve({ success: false, error: e?.message || "Unknown orchestrator error" });
     });
   });
 }

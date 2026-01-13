@@ -447,15 +447,15 @@ export const EVIDENCE_DEFINITIONS: EvidenceDefinition[] = [
   { type: "sales_volume", label: "Sales Volume", description: "Unit sales and distribution data by period", sections: ["C"], tier: 1, isAggregated: false, requiredFields: ["deviceCode", "quantity", "periodStart", "periodEnd"], parserType: "dedicated" },
   { type: "population_estimate", label: "Population Estimate", description: "Patient/user population calculations", sections: ["C"], tier: 1, isAggregated: true, requiredFields: [], parserType: "generic" },
   { type: "exposure_model", label: "Exposure Model", description: "Device exposure methodology and data", sections: ["C", "G"], tier: 1, isAggregated: true, requiredFields: [], parserType: "generic" },
-  { type: "incident_record", label: "Incident Records", description: "Serious and non-serious incident reports", sections: ["D", "E", "G", "M"], tier: 2, isAggregated: false, requiredFields: ["incidentId", "deviceCode", "incidentDate", "description"], parserType: "dedicated" },
+  { type: "serious_incident_record", label: "Incident Records", description: "Serious and non-serious incident reports", sections: ["D", "E", "G", "M"], tier: 2, isAggregated: false, requiredFields: ["incidentId", "deviceCode", "incidentDate", "description"], parserType: "dedicated" },
   { type: "incidents", label: "Incidents (Aggregated)", description: "Aggregated incident data and trends", sections: ["D", "E", "G", "M"], tier: 2, isAggregated: true, requiredFields: [], parserType: "dedicated" },
   { type: "complaint_record", label: "Complaint Records", description: "Customer complaints and investigations", sections: ["F", "G", "M"], tier: 2, isAggregated: false, requiredFields: ["complaintId", "deviceCode", "complaintDate", "description"], parserType: "dedicated" },
   { type: "complaints", label: "Complaints (Aggregated)", description: "Aggregated complaint data and analysis", sections: ["F", "G", "M"], tier: 2, isAggregated: true, requiredFields: [], parserType: "dedicated" },
-  { type: "fsca", label: "FSCA Records", description: "Field safety corrective actions", sections: ["H"], tier: 2, isAggregated: false, requiredFields: ["fscaId", "deviceCode", "actionType", "initiationDate"], parserType: "dedicated" },
+  { type: "fsca_record", label: "FSCA Records", description: "Field safety corrective actions", sections: ["H"], tier: 2, isAggregated: false, requiredFields: ["fscaId", "deviceCode", "actionType", "initiationDate"], parserType: "dedicated" },
   { type: "capa", label: "CAPA Records", description: "Corrective and preventive actions", sections: ["I"], tier: 2, isAggregated: false, requiredFields: ["capaId", "description"], parserType: "dedicated" },
-  { type: "literature", label: "Literature Evidence", description: "Published literature review data", sections: ["J", "M"], tier: 3, isAggregated: false, requiredFields: [], parserType: "dedicated" },
+  { type: "literature_result", label: "Literature Evidence", description: "Published literature review data", sections: ["J", "M"], tier: 3, isAggregated: false, requiredFields: [], parserType: "dedicated" },
   { type: "registry", label: "Registry/Database Data", description: "External database and registry queries", sections: ["K"], tier: 3, isAggregated: true, requiredFields: ["registryName"], parserType: "dedicated" },
-  { type: "pmcf", label: "PMCF Study Data", description: "Post-market clinical follow-up results", sections: ["L", "M"], tier: 3, isAggregated: true, requiredFields: [], parserType: "dedicated" },
+  { type: "pmcf_result", label: "PMCF Study Data", description: "Post-market clinical follow-up results", sections: ["L", "M"], tier: 3, isAggregated: true, requiredFields: [], parserType: "dedicated" },
 ];
 
 // Derive enum from registry for backwards compatibility
@@ -464,12 +464,12 @@ export type EvidenceType = typeof EVIDENCE_DEFINITIONS[number]["type"];
 
 // Raw → Aggregated mapping: when raw records exist, they contribute to aggregated type requirements
 export const RAW_TO_AGGREGATED_MAP: Record<string, string> = {
-  "incident_record": "incidents",
+  "serious_incident_record": "incidents",
   "complaint_record": "complaints",
 };
 
 export const AGGREGATED_TO_RAW_MAP: Record<string, string> = {
-  "incidents": "incident_record",
+  "incidents": "serious_incident_record",
   "complaints": "complaint_record",
 };
 

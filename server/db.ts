@@ -10,5 +10,16 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const connectionString = process.env.DATABASE_URL;
+
+// Supabase / managed Postgres commonly requires SSL; local dev typically does not.
+const shouldUseSsl =
+  !connectionString.includes("localhost") &&
+  !connectionString.includes("127.0.0.1") &&
+  !connectionString.includes("0.0.0.0");
+
+export const pool = new Pool({
+  connectionString,
+  ...(shouldUseSsl ? { ssl: { rejectUnauthorized: false } } : {}),
+});
 export const db = drizzle(pool, { schema });

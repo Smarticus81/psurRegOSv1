@@ -1,25 +1,589 @@
 {
   "template_id": "MDCG_2022_21_ANNEX_I",
-  "name": "MDCG 2022-21 Annex I PSUR Profile",
+  "name": "MDCG 2022-21 Annex I — Template for the PSUR (EU MDR)",
   "version": "1.0.0",
   "jurisdiction_scope": ["EU_MDR"],
+  "normative_basis": [
+    "EU.MDR.2017/745.ART86",
+    "EU.MDR.2017/745.ART83",
+    "EU.MDR.2017/745.ANNEX_III",
+    "MDCG.2022-21.ANNEX_I"
+  ],
+  "mandatory_obligation_ids": [
+    "EU.MDR.ART86.1.ADMIN",
+    "EU.MDR.ART86.1.CONCLUSIONS",
+    "EU.MDR.ART86.1.DEVICES_INTENDED_USE",
+    "EU.MDR.ART86.1.SALES_POPULATION_USAGE",
+    "EU.MDR.ART86.1.SERIOUS_INCIDENTS",
+    "EU.MDR.ART86.1.FSCA",
+    "EU.MDR.ART86.1.PMCF_MAIN_FINDINGS",
+    "EU.MDR.ART88.TREND_REPORTING",
+    "EU.MDR.ART83.PMS_SYSTEM",
+    "EU.MDR.ANNEX_III.COMPLAINTS_FEEDBACK",
+    "EU.MDR.ANNEX_III.LITERATURE_REVIEW",
+    "EU.MDR.ANNEX_III.EXTERNAL_DATABASES",
+    "EU.MDR.ANNEX_III.CORRECTIVE_PREVENTIVE_ACTIONS",
+    "EU.MDR.ANNEX_III.PMCF",
+    "EU.MDR.ANNEX_III.ACTIONS_TAKEN"
+  ],
+  "defaults": {
+    "require_traceability": true,
+    "require_method_statement": true,
+    "require_claimed_obligations": true,
+    "min_method_chars": 10,
+    "min_evidence_atoms": 1
+  },
   "slots": [
     {
-      "slot_id": "MDCG.ANNEXI.ADMIN",
-      "title": "Administrative and Device Identification",
-      "evidence_requirements": { "required_types": [] }
+      "slot_id": "MDCG.ANNEXI.COVER",
+      "title": "PSUR Cover Page",
+      "section_path": "Cover",
+      "slot_kind": "ADMIN",
+      "required": true,
+      "evidence_requirements": {
+        "required_types": ["device_registry_record", "manufacturer_profile", "regulatory_certificate_record"],
+        "min_atoms": 1,
+        "allow_empty_with_justification": false
+      },
+      "output_requirements": {
+        "renderer": "md",
+        "render_as": "cover_page"
+      }
     },
     {
-      "slot_id": "PSUR.COMPLAINTS.SUMMARY_BY_REGION_SERIOUSNESS",
-      "title": "Summary of complaints by region and seriousness",
-      "evidence_requirements": { "required_types": ["complaint_record"] }
+      "slot_id": "MDCG.ANNEXI.TOC",
+      "title": "Table of Contents",
+      "section_path": "FrontMatter",
+      "slot_kind": "ADMIN",
+      "required": true,
+      "evidence_requirements": {
+        "required_types": [],
+        "min_atoms": 0,
+        "allow_empty_with_justification": true
+      },
+      "output_requirements": {
+        "renderer": "md",
+        "render_as": "table_of_contents"
+      }
+    },
+    {
+      "slot_id": "MDCG.ANNEXI.EXEC_SUMMARY",
+      "title": "Executive Summary",
+      "section_path": "1 > Executive Summary",
+      "slot_kind": "NARRATIVE",
+      "required": true,
+      "evidence_requirements": {
+        "required_types": [
+          "sales_summary",
+          "complaint_summary",
+          "serious_incident_summary",
+          "trend_analysis",
+          "fsca_summary",
+          "capa_summary",
+          "pmcf_summary",
+          "literature_review_summary",
+          "external_db_summary",
+          "benefit_risk_assessment"
+        ],
+        "min_atoms": 1,
+        "allow_empty_with_justification": true
+      },
+      "output_requirements": {
+        "renderer": "md",
+        "render_as": "narrative"
+      }
+    },
+    {
+      "slot_id": "MDCG.ANNEXI.DEVICES_SCOPE",
+      "title": "Devices covered by the PSUR — scope and intended purpose (Article 86.1)",
+      "section_path": "2 > Device Description > Scope",
+      "slot_kind": "NARRATIVE",
+      "required": true,
+      "evidence_requirements": {
+        "required_types": ["device_registry_record", "ifu_extract", "clinical_evaluation_extract", "pms_plan_extract"],
+        "min_atoms": 1,
+        "allow_empty_with_justification": false
+      },
+      "output_requirements": {
+        "renderer": "md",
+        "render_as": "narrative"
+      }
+    },
+    {
+      "slot_id": "MDCG.ANNEXI.DEVICES_CHANGES",
+      "title": "Changes to scope vs previous PSUR (added/removed devices, Basic UDI-DI breakdown if applicable)",
+      "section_path": "2 > Device Description > Changes",
+      "slot_kind": "NARRATIVE",
+      "required": false,
+      "evidence_requirements": {
+        "required_types": ["device_registry_record", "change_control_record", "previous_psur_extract"],
+        "min_atoms": 0,
+        "allow_empty_with_justification": true
+      },
+      "output_requirements": {
+        "renderer": "md",
+        "render_as": "narrative"
+      }
+    },
+    {
+      "slot_id": "MDCG.ANNEXI.PMS_OVERVIEW",
+      "title": "Overview of PMS activities performed during the reporting period",
+      "section_path": "3 > PMS Activities",
+      "slot_kind": "NARRATIVE",
+      "required": true,
+      "evidence_requirements": {
+        "required_types": ["pms_plan_extract", "pms_activity_log", "data_source_register"],
+        "min_atoms": 1,
+        "allow_empty_with_justification": false
+      },
+      "output_requirements": {
+        "renderer": "md",
+        "render_as": "narrative"
+      }
+    },
+    {
+      "slot_id": "MDCG.ANNEXI.SALES_VOLUME_EXPOSURE",
+      "title": "Sales volume, population exposure and usage frequency (Article 86.1)",
+      "section_path": "4 > Exposure > Sales Volume",
+      "slot_kind": "NARRATIVE",
+      "required": true,
+      "evidence_requirements": {
+        "required_types": ["sales_summary", "distribution_summary", "usage_estimate"],
+        "min_atoms": 1,
+        "allow_empty_with_justification": false
+      },
+      "output_requirements": {
+        "renderer": "md",
+        "render_as": "narrative"
+      }
+    },
+    {
+      "slot_id": "MDCG.ANNEXI.SALES_TABLE",
+      "title": "Exposure table — units placed on market / exposure estimate (by region where available)",
+      "section_path": "4 > Exposure > Sales Table",
+      "slot_kind": "TABLE",
+      "required": true,
+      "evidence_requirements": {
+        "required_types": ["sales_by_region", "usage_estimate"],
+        "min_atoms": 1,
+        "allow_empty_with_justification": false
+      },
+      "output_requirements": {
+        "renderer": "md",
+        "render_as": "table",
+        "table_schema": {
+          "columns": [
+            { "name": "region", "type": "string" },
+            { "name": "units_sold", "type": "number" },
+            { "name": "estimated_users", "type": "number" },
+            { "name": "usage_frequency_estimate", "type": "string" }
+          ],
+          "primary_key": ["region"]
+        }
+      }
+    },
+    {
+      "slot_id": "MDCG.ANNEXI.SERIOUS_INCIDENTS_SUMMARY",
+      "title": "Summary of serious incidents (Article 86.1) — counts, severity, outcomes",
+      "section_path": "5 > Safety > Serious Incidents",
+      "slot_kind": "NARRATIVE",
+      "required": true,
+      "evidence_requirements": {
+        "required_types": ["serious_incident_summary", "vigilance_report"],
+        "min_atoms": 1,
+        "allow_empty_with_justification": true
+      },
+      "output_requirements": {
+        "renderer": "md",
+        "render_as": "narrative"
+      }
+    },
+    {
+      "slot_id": "MDCG.ANNEXI.SERIOUS_INCIDENTS_TABLE_IMDRF",
+      "title": "Serious incidents table — IMDRF coding breakdown (where available)",
+      "section_path": "5 > Safety > Serious Incidents > IMDRF Table",
+      "slot_kind": "TABLE",
+      "required": true,
+      "evidence_requirements": {
+        "required_types": ["serious_incident_records_imdrf"],
+        "min_atoms": 1,
+        "allow_empty_with_justification": true
+      },
+      "output_requirements": {
+        "renderer": "md",
+        "render_as": "table",
+        "table_schema": {
+          "columns": [
+            { "name": "imdrf_code", "type": "string" },
+            { "name": "event_term", "type": "string" },
+            { "name": "count", "type": "number" },
+            { "name": "regions_impacted", "type": "string" },
+            { "name": "patient_outcome", "type": "string" }
+          ],
+          "primary_key": ["imdrf_code", "event_term"]
+        }
+      }
+    },
+    {
+      "slot_id": "MDCG.ANNEXI.COMPLAINTS_SUMMARY",
+      "title": "Complaints and non-serious incidents — summary and key themes",
+      "section_path": "5 > Safety > Complaints",
+      "slot_kind": "NARRATIVE",
+      "required": true,
+      "evidence_requirements": {
+        "required_types": ["complaint_summary", "complaint_record"],
+        "min_atoms": 1,
+        "allow_empty_with_justification": true
+      },
+      "output_requirements": {
+        "renderer": "md",
+        "render_as": "narrative"
+      }
+    },
+    {
+      "slot_id": "MDCG.ANNEXI.COMPLAINTS_BY_REGION_SEVERITY_TABLE",
+      "title": "Complaints table — by region and seriousness",
+      "section_path": "5 > Safety > Complaints > By Region Table",
+      "slot_kind": "TABLE",
+      "required": true,
+      "evidence_requirements": {
+        "required_types": ["complaints_by_region", "sales_by_region"],
+        "min_atoms": 1,
+        "allow_empty_with_justification": true
+      },
+      "output_requirements": {
+        "renderer": "md",
+        "render_as": "table",
+        "table_schema": {
+          "columns": [
+            { "name": "region", "type": "string" },
+            { "name": "seriousness", "type": "string" },
+            { "name": "count", "type": "number" },
+            { "name": "rate_per_1000", "type": "number" }
+          ],
+          "primary_key": ["region", "seriousness"]
+        }
+      }
+    },
+    {
+      "slot_id": "MDCG.ANNEXI.TREND_REPORTING",
+      "title": "Trend reporting — statistically significant increases, signals, thresholds, rationale",
+      "section_path": "6 > Trend Reporting",
+      "slot_kind": "NARRATIVE",
+      "required": true,
+      "evidence_requirements": {
+        "required_types": ["trend_analysis", "signal_log", "complaint_record", "sales_summary"],
+        "min_atoms": 1,
+        "allow_empty_with_justification": true
+      },
+      "output_requirements": {
+        "renderer": "md",
+        "render_as": "narrative"
+      }
+    },
+    {
+      "slot_id": "MDCG.ANNEXI.TREND_TABLE",
+      "title": "Trend table — metric, baseline, current, threshold, conclusion",
+      "section_path": "6 > Trend Reporting > Trend Table",
+      "slot_kind": "TABLE",
+      "required": true,
+      "evidence_requirements": {
+        "required_types": ["trend_analysis"],
+        "min_atoms": 1,
+        "allow_empty_with_justification": true
+      },
+      "output_requirements": {
+        "renderer": "md",
+        "render_as": "table",
+        "table_schema": {
+          "columns": [
+            { "name": "metric", "type": "string" },
+            { "name": "baseline_rate", "type": "number" },
+            { "name": "current_rate", "type": "number" },
+            { "name": "threshold", "type": "number" },
+            { "name": "signal_detected", "type": "boolean" },
+            { "name": "conclusion", "type": "string" }
+          ],
+          "primary_key": ["metric"]
+        }
+      }
+    },
+    {
+      "slot_id": "MDCG.ANNEXI.FSCA_SUMMARY",
+      "title": "Field Safety Corrective Actions (FSCAs) — opened/closed, scope, effectiveness",
+      "section_path": "7 > FSCA",
+      "slot_kind": "NARRATIVE",
+      "required": true,
+      "evidence_requirements": {
+        "required_types": ["fsca_summary", "fsca_record", "recall_record"],
+        "min_atoms": 1,
+        "allow_empty_with_justification": true
+      },
+      "output_requirements": {
+        "renderer": "md",
+        "render_as": "narrative"
+      }
+    },
+    {
+      "slot_id": "MDCG.ANNEXI.FSCA_TABLE",
+      "title": "FSCA table — identifier, reason, dates, affected regions, status",
+      "section_path": "7 > FSCA > FSCA Table",
+      "slot_kind": "TABLE",
+      "required": true,
+      "evidence_requirements": {
+        "required_types": ["fsca_record"],
+        "min_atoms": 1,
+        "allow_empty_with_justification": true
+      },
+      "output_requirements": {
+        "renderer": "md",
+        "render_as": "table",
+        "table_schema": {
+          "columns": [
+            { "name": "fsca_id", "type": "string" },
+            { "name": "reason", "type": "string" },
+            { "name": "date_opened", "type": "string" },
+            { "name": "date_closed", "type": "string" },
+            { "name": "regions", "type": "string" },
+            { "name": "status", "type": "string" }
+          ],
+          "primary_key": ["fsca_id"]
+        }
+      }
+    },
+    {
+      "slot_id": "MDCG.ANNEXI.CAPA_SUMMARY",
+      "title": "Corrective and Preventive Actions (CAPA) — summary and linkage to PMS findings",
+      "section_path": "8 > CAPA",
+      "slot_kind": "NARRATIVE",
+      "required": true,
+      "evidence_requirements": {
+        "required_types": ["capa_summary", "capa_record", "ncr_record"],
+        "min_atoms": 1,
+        "allow_empty_with_justification": true
+      },
+      "output_requirements": {
+        "renderer": "md",
+        "render_as": "narrative"
+      }
+    },
+    {
+      "slot_id": "MDCG.ANNEXI.CAPA_TABLE",
+      "title": "CAPA table — identifier, trigger, root cause, actions, effectiveness, status",
+      "section_path": "8 > CAPA > CAPA Table",
+      "slot_kind": "TABLE",
+      "required": true,
+      "evidence_requirements": {
+        "required_types": ["capa_record"],
+        "min_atoms": 1,
+        "allow_empty_with_justification": true
+      },
+      "output_requirements": {
+        "renderer": "md",
+        "render_as": "table",
+        "table_schema": {
+          "columns": [
+            { "name": "capa_id", "type": "string" },
+            { "name": "trigger", "type": "string" },
+            { "name": "root_cause", "type": "string" },
+            { "name": "actions", "type": "string" },
+            { "name": "effectiveness", "type": "string" },
+            { "name": "status", "type": "string" }
+          ],
+          "primary_key": ["capa_id"]
+        }
+      }
+    },
+    {
+      "slot_id": "MDCG.ANNEXI.LITERATURE_REVIEW",
+      "title": "Scientific literature review — search strategy, results, relevant findings, conclusion",
+      "section_path": "9 > Literature Review",
+      "slot_kind": "NARRATIVE",
+      "required": true,
+      "evidence_requirements": {
+        "required_types": ["literature_review_summary", "literature_search_strategy"],
+        "min_atoms": 1,
+        "allow_empty_with_justification": false
+      },
+      "output_requirements": {
+        "renderer": "md",
+        "render_as": "narrative"
+      }
+    },
+    {
+      "slot_id": "MDCG.ANNEXI.EXTERNAL_DATABASES",
+      "title": "External databases/registries — query, hits, relevance, benchmarking, conclusion",
+      "section_path": "10 > External Databases",
+      "slot_kind": "NARRATIVE",
+      "required": true,
+      "evidence_requirements": {
+        "required_types": ["external_db_summary", "external_db_query_log"],
+        "min_atoms": 1,
+        "allow_empty_with_justification": false
+      },
+      "output_requirements": {
+        "renderer": "md",
+        "render_as": "narrative"
+      }
+    },
+    {
+      "slot_id": "MDCG.ANNEXI.PMCF_SUMMARY",
+      "title": "PMCF — activities, results, integration into CER/RMF (Article 86.1 main findings)",
+      "section_path": "11 > PMCF",
+      "slot_kind": "NARRATIVE",
+      "required": true,
+      "evidence_requirements": {
+        "required_types": ["pmcf_summary", "pmcf_report_extract", "cer_extract", "rmf_extract"],
+        "min_atoms": 1,
+        "allow_empty_with_justification": false
+      },
+      "output_requirements": {
+        "renderer": "md",
+        "render_as": "narrative"
+      }
+    },
+    {
+      "slot_id": "MDCG.ANNEXI.PMCF_TABLE",
+      "title": "PMCF table — activity, key findings, impact on safety/performance, updates required",
+      "section_path": "11 > PMCF > PMCF Table",
+      "slot_kind": "TABLE",
+      "required": true,
+      "evidence_requirements": {
+        "required_types": ["pmcf_activity_record"],
+        "min_atoms": 1,
+        "allow_empty_with_justification": true
+      },
+      "output_requirements": {
+        "renderer": "md",
+        "render_as": "table",
+        "table_schema": {
+          "columns": [
+            { "name": "pmcf_activity", "type": "string" },
+            { "name": "key_findings", "type": "string" },
+            { "name": "impact", "type": "string" },
+            { "name": "rmf_or_cer_update", "type": "string" },
+            { "name": "reference", "type": "string" }
+          ],
+          "primary_key": ["pmcf_activity"]
+        }
+      }
+    },
+    {
+      "slot_id": "MDCG.ANNEXI.BENEFIT_RISK_CONCLUSION",
+      "title": "Conclusions — benefit-risk determination (Article 86.1) and acceptability changes vs prior PSUR",
+      "section_path": "12 > Conclusions > Benefit-Risk",
+      "slot_kind": "NARRATIVE",
+      "required": true,
+      "evidence_requirements": {
+        "required_types": ["benefit_risk_assessment", "rmf_extract", "previous_psur_extract"],
+        "min_atoms": 1,
+        "allow_empty_with_justification": false
+      },
+      "output_requirements": {
+        "renderer": "md",
+        "render_as": "narrative"
+      }
+    },
+    {
+      "slot_id": "MDCG.ANNEXI.ACTIONS_TAKEN",
+      "title": "Actions taken — preventive/corrective actions, labeling/IFU changes, RMF/CER updates",
+      "section_path": "12 > Conclusions > Actions Taken",
+      "slot_kind": "NARRATIVE",
+      "required": true,
+      "evidence_requirements": {
+        "required_types": ["change_control_record", "capa_summary", "rmf_change_log", "cer_change_log"],
+        "min_atoms": 1,
+        "allow_empty_with_justification": true
+      },
+      "output_requirements": {
+        "renderer": "md",
+        "render_as": "narrative"
+      }
     }
   ],
   "mapping": {
-    "MDCG.ANNEXI.ADMIN": ["MDCG.2022-21.ANNEX_I.ADMIN"],
-    "PSUR.COMPLAINTS.SUMMARY_BY_REGION_SERIOUSNESS": [
-      "MDCG.2022-21.ANNEX_I.SAFETY.COMPLAINTS",
+    "MDCG.ANNEXI.COVER": [
+      "MDCG.2022-21.ANNEX_I.COVER",
+      "EU.MDR.ART86.1.ADMIN"
+    ],
+    "MDCG.ANNEXI.TOC": [
+      "MDCG.2022-21.ANNEX_I.COVER.TOC"
+    ],
+    "MDCG.ANNEXI.EXEC_SUMMARY": [
+      "MDCG.2022-21.ANNEX_I.EXEC_SUMMARY",
+      "EU.MDR.ART86.1.CONCLUSIONS"
+    ],
+    "MDCG.ANNEXI.DEVICES_SCOPE": [
+      "MDCG.2022-21.ANNEX_I.DEVICE_DESCRIPTION",
+      "EU.MDR.ART86.1.DEVICES_INTENDED_USE"
+    ],
+    "MDCG.ANNEXI.DEVICES_CHANGES": [
+      "MDCG.2022-21.ANNEX_I.SCOPE_CHANGES"
+    ],
+    "MDCG.ANNEXI.PMS_OVERVIEW": [
+      "EU.MDR.ART83.PMS_SYSTEM",
+      "EU.MDR.ANNEX_III.PMS_PLAN_SUMMARY"
+    ],
+    "MDCG.ANNEXI.SALES_VOLUME_EXPOSURE": [
+      "EU.MDR.ART86.1.SALES_POPULATION_USAGE"
+    ],
+    "MDCG.ANNEXI.SALES_TABLE": [
+      "EU.MDR.ART86.1.SALES_POPULATION_USAGE"
+    ],
+    "MDCG.ANNEXI.SERIOUS_INCIDENTS_SUMMARY": [
+      "EU.MDR.ART86.1.SERIOUS_INCIDENTS",
+      "MDCG.2022-21.ANNEX_I.SAFETY.SERIOUS_INCIDENTS"
+    ],
+    "MDCG.ANNEXI.SERIOUS_INCIDENTS_TABLE_IMDRF": [
+      "EU.MDR.ART86.1.SERIOUS_INCIDENTS"
+    ],
+    "MDCG.ANNEXI.COMPLAINTS_SUMMARY": [
+      "EU.MDR.ANNEX_III.COMPLAINTS_FEEDBACK",
+      "MDCG.2022-21.ANNEX_I.SAFETY.COMPLAINTS"
+    ],
+    "MDCG.ANNEXI.COMPLAINTS_BY_REGION_SEVERITY_TABLE": [
+      "EU.MDR.ANNEX_III.1.1.COMPLAINT_TRENDS",
+      "MDCG.2022-21.ANNEX_I.SAFETY.COMPLAINTS"
+    ],
+    "MDCG.ANNEXI.TREND_REPORTING": [
+      "EU.MDR.ART88.TREND_REPORTING",
       "EU.MDR.ANNEX_III.1.1.COMPLAINT_TRENDS"
+    ],
+    "MDCG.ANNEXI.TREND_TABLE": [
+      "EU.MDR.ART88.TREND_REPORTING"
+    ],
+    "MDCG.ANNEXI.FSCA_SUMMARY": [
+      "EU.MDR.ART86.1.FSCA",
+      "MDCG.2022-21.ANNEX_I.FSCA"
+    ],
+    "MDCG.ANNEXI.FSCA_TABLE": [
+      "EU.MDR.ART86.1.FSCA"
+    ],
+    "MDCG.ANNEXI.CAPA_SUMMARY": [
+      "EU.MDR.ANNEX_III.CORRECTIVE_PREVENTIVE_ACTIONS"
+    ],
+    "MDCG.ANNEXI.CAPA_TABLE": [
+      "EU.MDR.ANNEX_III.CORRECTIVE_PREVENTIVE_ACTIONS"
+    ],
+    "MDCG.ANNEXI.LITERATURE_REVIEW": [
+      "EU.MDR.ANNEX_III.LITERATURE_REVIEW"
+    ],
+    "MDCG.ANNEXI.EXTERNAL_DATABASES": [
+      "EU.MDR.ANNEX_III.EXTERNAL_DATABASES"
+    ],
+    "MDCG.ANNEXI.PMCF_SUMMARY": [
+      "EU.MDR.ART86.1.PMCF_MAIN_FINDINGS",
+      "EU.MDR.ANNEX_III.PMCF"
+    ],
+    "MDCG.ANNEXI.PMCF_TABLE": [
+      "EU.MDR.ART86.1.PMCF_MAIN_FINDINGS"
+    ],
+    "MDCG.ANNEXI.BENEFIT_RISK_CONCLUSION": [
+      "EU.MDR.ART86.1.CONCLUSIONS",
+      "MDCG.2022-21.ANNEX_I.CONCLUSIONS"
+    ],
+    "MDCG.ANNEXI.ACTIONS_TAKEN": [
+      "EU.MDR.ANNEX_III.ACTIONS_TAKEN"
     ]
   }
 }

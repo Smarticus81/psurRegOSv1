@@ -75,6 +75,7 @@ import {
   getConstraints as getGrkbConstraints
 } from "./src/services/grkbService";
 import { orchestratorRunRequestSchema } from "@shared/schema";
+import ingestionRoutes from "./src/parsers/ingestionRoutes";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
@@ -159,6 +160,9 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+
+  // Mount evidence ingestion routes
+  app.use("/api/ingest", ingestionRoutes);
 
   // Template endpoints
   app.get("/api/templates", (_req, res) => {
@@ -1416,6 +1420,54 @@ export async function registerRoutes(
     } catch (error) {
       console.error("[GET /api/evidence/atoms/counts] Error:", error);
       res.status(500).json({ error: "Failed to get evidence atom counts" });
+    }
+  });
+
+  // POST /api/evidence/atoms/batch - Create multiple atoms at once
+  app.post("/api/evidence/atoms/batch", async (req, res) => {
+    try {
+      const { atoms } = req.body;
+      
+      if (!Array.isArray(atoms) || atoms.length === 0) {
+        return res.status(400).json({ error: "atoms must be a non-empty array" });
+      }
+      
+      let created = 0;
+      const errors: Array<{ index: number; error: string }> = [];
+      
+      for (let i = 0; i < atoms.length; i++) {
+        const atom = atoms[i];
+        try {
+          const atomId = makeAtomId();
+          const contentHash = makeContentHash(atom.normalized_data || {});
+          
+          const record: EvidenceAtomRecord = {
+            atomId,
+            psurCaseId: atom.psur_case_id,
+            evidenceType: coerceEvType(atom.evidence_type),
+            deviceCode: atom.device_code,
+            periodStart: atom.period_start,
+            periodEnd: atom.period_end,
+            normalizedData: atom.normalized_data || {},
+            contentHash,
+            provenance: atom.provenance || {},
+          };
+          
+          await persistEvidenceAtoms([record]);
+          created++;
+        } catch (err: any) {
+          errors.push({ index: i, error: err?.message || String(err) });
+        }
+      }
+      
+      res.json({
+        success: true,
+        created,
+        errors: errors.length > 0 ? errors : undefined,
+      });
+    } catch (error: any) {
+      console.error("[POST /api/evidence/atoms/batch] Error:", error);
+      res.status(500).json({ error: error?.message || "Failed to create atoms" });
     }
   });
 

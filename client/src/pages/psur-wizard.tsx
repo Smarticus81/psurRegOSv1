@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { EvidenceIngestionPanel } from "@/components/evidence-ingestion-panel";
 
 // Generate human-readable labels from evidence type slugs
 function formatEvidenceType(type: string): string {
@@ -177,6 +178,9 @@ export default function PsurWizard() {
     const [runBusy, setRunBusy] = useState(false);
     const [runResult, setRunResult] = useState<RunWorkflowResponse | null>(null);
     const [runMsg, setRunMsg] = useState<string>("");
+    
+    // Ingestion panel toggle
+    const [showIngestionPanel, setShowIngestionPanel] = useState(false);
     
     // Dynamic evidence requirements
     const [requiredEvidenceTypes, setRequiredEvidenceTypes] = useState<string[]>([]);
@@ -552,6 +556,42 @@ export default function PsurWizard() {
                             <div className="text-sm text-red-600">Create a case in Step 1 first.</div>
                         ) : (
                             <>
+                                {/* Tabbed Evidence Upload */}
+                                <div className="border-b border-border mb-4">
+                                    <div className="flex gap-4">
+                                        <button
+                                            className={`pb-2 px-1 text-sm font-medium border-b-2 transition-colors ${
+                                                !showIngestionPanel
+                                                    ? "border-primary text-foreground"
+                                                    : "border-transparent text-muted-foreground hover:text-foreground"
+                                            }`}
+                                            onClick={() => setShowIngestionPanel(false)}
+                                        >
+                                            Manual Upload
+                                        </button>
+                                        <button
+                                            className={`pb-2 px-1 text-sm font-medium border-b-2 transition-colors ${
+                                                showIngestionPanel
+                                                    ? "border-primary text-foreground"
+                                                    : "border-transparent text-muted-foreground hover:text-foreground"
+                                            }`}
+                                            onClick={() => setShowIngestionPanel(true)}
+                                        >
+                                            Document Ingestion (AI)
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {showIngestionPanel ? (
+                                    <EvidenceIngestionPanel
+                                        psurCaseId={psurCaseId}
+                                        deviceCode={deviceCode}
+                                        periodStart={periodStart}
+                                        periodEnd={periodEnd}
+                                        onEvidenceCreated={refreshCounts}
+                                    />
+                                ) : (
+                                <>
                                 {/* Evidence Type Card Selector */}
                                 <div className="space-y-3">
                                     <div className="text-sm font-medium">Select Evidence Type</div>
@@ -733,6 +773,8 @@ export default function PsurWizard() {
                                         </div>
                                     )}
                                 </div>
+                                </>
+                                )}
                             </>
                         )}
                     </div>

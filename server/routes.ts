@@ -2820,7 +2820,7 @@ export async function registerRoutes(
   });
 
   // ============== DECISION TRACE API ==============
-  // Import decision trace service
+  // Import decision trace service with enhanced traceability features
   const {
     queryTraceEntries,
     getTraceSummary,
@@ -2829,6 +2829,10 @@ export async function registerRoutes(
     verifyTraceChain,
     exportTraceAsJsonl,
     exportTraceSummary,
+    exportAuditNarrative,
+    searchTraces,
+    queryTracesByObligation,
+    getObligationContext,
   } = await import("./src/services/decisionTraceService");
 
   // Get trace summary for a PSUR case
@@ -2961,6 +2965,224 @@ export async function registerRoutes(
     } catch (error: any) {
       console.error("[GET /api/psur-cases/:psurCaseId/trace/export] Error:", error);
       res.status(500).json({ error: "Failed to export trace", details: error.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // ENHANCED TRACEABILITY API - Natural Language & GRKB Integration
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  // Natural language search across trace entries
+  app.get("/api/psur-cases/:psurCaseId/trace/search", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      const searchText = req.query.q as string;
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+      
+      if (!searchText || searchText.trim().length === 0) {
+        return res.status(400).json({ error: "Search query 'q' is required" });
+      }
+      
+      const entries = await searchTraces(psurCaseId, searchText, limit);
+      
+      res.json({
+        psurCaseId,
+        searchQuery: searchText,
+        resultCount: entries.length,
+        results: entries.map(e => ({
+          sequenceNum: e.sequenceNum,
+          timestamp: e.eventTimestamp,
+          eventType: e.eventType,
+          entityType: e.entityType,
+          entityId: e.entityId,
+          decision: e.decision,
+          humanSummary: e.humanSummary,
+          regulatoryContext: e.regulatoryContext,
+          complianceAssertion: e.complianceAssertion,
+        })),
+      });
+    } catch (error: any) {
+      console.error("[GET /api/psur-cases/:psurCaseId/trace/search] Error:", error);
+      res.status(500).json({ error: "Failed to search traces", details: error.message });
+    }
+  });
+
+  // Query traces by GRKB obligation ID
+  app.get("/api/psur-cases/:psurCaseId/trace/obligation/:obligationId", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      const obligationId = req.params.obligationId;
+      
+      // Get obligation context from GRKB
+      const obligationContext = await getObligationContext(obligationId);
+      
+      // Get all traces related to this obligation
+      const entries = await queryTracesByObligation(psurCaseId, obligationId);
+      
+      res.json({
+        psurCaseId,
+        obligationId,
+        obligationContext: obligationContext ? {
+          title: obligationContext.title,
+          text: obligationContext.text,
+          sourceCitation: obligationContext.sourceCitation,
+          jurisdiction: obligationContext.jurisdiction,
+          mandatory: obligationContext.mandatory,
+        } : null,
+        traceCount: entries.length,
+        traces: entries.map(e => ({
+          sequenceNum: e.sequenceNum,
+          timestamp: e.eventTimestamp,
+          eventType: e.eventType,
+          entityType: e.entityType,
+          entityId: e.entityId,
+          decision: e.decision,
+          humanSummary: e.humanSummary,
+          complianceAssertion: e.complianceAssertion,
+        })),
+      });
+    } catch (error: any) {
+      console.error("[GET /api/psur-cases/:psurCaseId/trace/obligation/:obligationId] Error:", error);
+      res.status(500).json({ error: "Failed to query traces by obligation", details: error.message });
+    }
+  });
+
+  // Export plain-English audit narrative for regulatory review
+  app.get("/api/psur-cases/:psurCaseId/trace/narrative", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      const format = req.query.format as string || "text";
+      
+      const narrative = await exportAuditNarrative(psurCaseId);
+      
+      if (format === "download") {
+        res.setHeader("Content-Type", "text/plain; charset=utf-8");
+        res.setHeader("Content-Disposition", `attachment; filename="audit-narrative-${psurCaseId}.txt"`);
+        res.send(narrative);
+      } else if (format === "json") {
+        // Split into sections for structured consumption
+        const lines = narrative.split("\n");
+        const sections: { title: string; content: string[] }[] = [];
+        let currentSection: { title: string; content: string[] } | null = null;
+        
+        for (const line of lines) {
+          if (line.startsWith("## ")) {
+            if (currentSection) sections.push(currentSection);
+            currentSection = { title: line.replace("## ", ""), content: [] };
+          } else if (currentSection) {
+            currentSection.content.push(line);
+          }
+        }
+        if (currentSection) sections.push(currentSection);
+        
+        res.json({
+          psurCaseId,
+          generatedAt: new Date().toISOString(),
+          sections,
+          fullText: narrative,
+        });
+      } else {
+        res.setHeader("Content-Type", "text/plain; charset=utf-8");
+        res.send(narrative);
+      }
+    } catch (error: any) {
+      console.error("[GET /api/psur-cases/:psurCaseId/trace/narrative] Error:", error);
+      res.status(500).json({ error: "Failed to export audit narrative", details: error.message });
+    }
+  });
+
+  // Get human-readable timeline view of all decisions
+  app.get("/api/psur-cases/:psurCaseId/trace/timeline", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 100;
+      
+      const entries = await queryTraceEntries({
+        psurCaseId,
+        orderBy: "asc",
+        limit,
+      });
+      
+      const timeline = entries.map(e => ({
+        timestamp: e.eventTimestamp,
+        step: e.workflowStep,
+        event: e.eventType,
+        entity: e.entityType ? `${e.entityType}:${e.entityId}` : null,
+        decision: e.decision,
+        summary: e.humanSummary || `[${e.eventType}] ${e.decision || ""} - ${e.entityId || ""}`,
+        hasRegulatoryContext: !!e.regulatoryContext,
+        complianceStatus: e.complianceAssertion 
+          ? (e.complianceAssertion as any).riskLevel || "unknown"
+          : "not_applicable",
+      }));
+      
+      res.json({
+        psurCaseId,
+        eventCount: timeline.length,
+        timeline,
+      });
+    } catch (error: any) {
+      console.error("[GET /api/psur-cases/:psurCaseId/trace/timeline] Error:", error);
+      res.status(500).json({ error: "Failed to get trace timeline", details: error.message });
+    }
+  });
+
+  // Get compliance summary from traces
+  app.get("/api/psur-cases/:psurCaseId/trace/compliance-summary", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      
+      // Get all obligation-related traces
+      const obligationTraces = await queryTraceEntries({
+        psurCaseId,
+        eventTypes: ["OBLIGATION_SATISFIED", "OBLIGATION_UNSATISFIED"],
+        orderBy: "asc",
+      });
+      
+      const satisfied: string[] = [];
+      const unsatisfied: string[] = [];
+      const complianceDetails: Array<{
+        obligationId: string;
+        status: "satisfied" | "unsatisfied";
+        humanSummary: string | null;
+        sourceCitation: string | null;
+      }> = [];
+      
+      for (const entry of obligationTraces) {
+        const obligationId = entry.entityId;
+        if (!obligationId) continue;
+        
+        const status = entry.eventType === "OBLIGATION_SATISFIED" ? "satisfied" : "unsatisfied";
+        if (status === "satisfied") {
+          satisfied.push(obligationId);
+        } else {
+          unsatisfied.push(obligationId);
+        }
+        
+        const regCtx = entry.regulatoryContext as any;
+        complianceDetails.push({
+          obligationId,
+          status,
+          humanSummary: entry.humanSummary,
+          sourceCitation: regCtx?.sourceCitation || null,
+        });
+      }
+      
+      res.json({
+        psurCaseId,
+        totalObligations: satisfied.length + unsatisfied.length,
+        satisfiedCount: satisfied.length,
+        unsatisfiedCount: unsatisfied.length,
+        coveragePercent: satisfied.length + unsatisfied.length > 0
+          ? ((satisfied.length / (satisfied.length + unsatisfied.length)) * 100).toFixed(1)
+          : "0.0",
+        satisfiedObligations: satisfied,
+        unsatisfiedObligations: unsatisfied,
+        details: complianceDetails,
+      });
+    } catch (error: any) {
+      console.error("[GET /api/psur-cases/:psurCaseId/trace/compliance-summary] Error:", error);
+      res.status(500).json({ error: "Failed to get compliance summary", details: error.message });
     }
   });
 

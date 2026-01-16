@@ -351,10 +351,10 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
         steps[1].summary = { psurCaseId, psurRef };
         steps[1].report = { psurCaseId, psurRef, version, created: !existingCaseId };
         
-        // Update trace context with case ID and log case created
+        // Update trace context with case ID and log case created (enhanced with period context)
         if (traceCtx) {
           traceCtx = { ...traceCtx, psurCaseId };
-          const caseResult = await TraceEvents.caseCreated(traceCtx, psurRef, psurCaseId);
+          const caseResult = await TraceEvents.caseCreated(traceCtx, psurRef, psurCaseId, periodStart, periodEnd);
           traceCtx = caseResult.ctx;
           await markStepCompleted(psurCaseId, 2);
         }
@@ -425,10 +425,15 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
         steps[2].summary = { linkedToCaseAtoms: report.linkedToCaseAtoms, byType: Object.keys(byType).join(", ") };
         steps[2].report = report;
 
-        // Log evidence atoms created
+        // Log evidence atoms created with enhanced context
         if (traceCtx) {
           for (const atom of evidenceAtomsData) {
-            const isNegative = atom.normalizedData?.isNegativeEvidence === true;
+            const isNegative = (atom.normalizedData as any)?.isNegativeEvidence === true;
+            // Extract record count from normalized data if available
+            const normalizedData = atom.normalizedData as Record<string, any> | undefined;
+            const recordCount = normalizedData?.recordCount 
+              || (Array.isArray(normalizedData) ? normalizedData.length : 1);
+            
             if (isNegative) {
               const negResult = await TraceEvents.negativeEvidenceCreated(traceCtx, atom.atomId, atom.evidenceType);
               traceCtx = negResult.ctx;
@@ -437,7 +442,10 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
                 traceCtx, 
                 atom.atomId, 
                 atom.evidenceType, 
-                atom.provenance?.sourceFile
+                atom.provenance?.sourceFile,
+                recordCount,
+                periodStart,
+                periodEnd
               );
               traceCtx = atomResult.ctx;
             }
@@ -542,23 +550,37 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
             })),
           };
           
-          // Log slot proposals
+          // Log slot proposals with enhanced GRKB context
           if (traceCtx) {
+            // Build slot title map from template for human-readable traces
+            const slotTitleMap = new Map<string, string>();
+            if (template) {
+              const effectiveSlots = getSlots(template);
+              for (const slot of effectiveSlots) {
+                slotTitleMap.set(slot.slot_id, slot.title || slot.slot_id);
+              }
+            }
+            
             for (const proposal of slotProposalsData) {
+              const slotTitle = slotTitleMap.get(proposal.slotId) || proposal.slotId;
+              
+              // Use the async slotProposed that fetches GRKB context
               const proposalResult = await TraceEvents.slotProposed(
                 traceCtx,
                 proposal.slotId,
+                slotTitle,
                 proposal.status,
                 proposal.evidenceAtomIds,
                 proposal.claimedObligationIds
               );
               traceCtx = proposalResult.ctx;
               
-              // Log trace gaps
+              // Log trace gaps with slot title
               if (proposal.status === "TRACE_GAP") {
                 const gapResult = await TraceEvents.traceGapDetected(
                   traceCtx,
                   proposal.slotId,
+                  slotTitle,
                   proposal.requiredTypes
                 );
                 traceCtx = gapResult.ctx;
@@ -623,20 +645,41 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
           steps[4].summary = { acceptedCount: report.acceptedCount, rejectedCount: report.rejectedCount };
           steps[4].report = report;
           
-          // Log adjudication decisions
+          // Log adjudication decisions with enhanced GRKB context
           if (traceCtx) {
+            // Build slot title map from template
+            const slotTitleMap = new Map<string, string>();
+            if (template) {
+              const effectiveSlots = getSlots(template);
+              for (const slot of effectiveSlots) {
+                slotTitleMap.set(slot.slot_id, slot.title || slot.slot_id);
+              }
+            }
+            
             for (const accepted of adjudicationResult.accepted) {
+              const slotTitle = slotTitleMap.get(accepted.slotId) || accepted.slotId;
+              
+              // Use async slotAccepted that fetches GRKB context for obligations
               const acceptResult = await TraceEvents.slotAccepted(
                 traceCtx,
                 accepted.slotId,
+                slotTitle,
                 accepted.evidenceAtomIds,
-                ["Passed adjudication rules"]
+                accepted.claimedObligationIds,
+                ["Passed adjudication rules", `Evidence count: ${accepted.evidenceAtomIds.length}`, `Method statement verified`]
               );
               traceCtx = acceptResult.ctx;
             }
             
             for (const { proposal, reasons } of adjudicationResult.rejected) {
-              const rejectResult = await TraceEvents.slotRejected(traceCtx, proposal.slotId, reasons);
+              const slotTitle = slotTitleMap.get(proposal.slotId) || proposal.slotId;
+              const rejectResult = await TraceEvents.slotRejected(
+                traceCtx, 
+                proposal.slotId, 
+                slotTitle, 
+                reasons,
+                proposal.claimedObligationIds
+              );
               traceCtx = rejectResult.ctx;
             }
             await markStepCompleted(psurCaseId, 5);

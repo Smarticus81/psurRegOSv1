@@ -736,6 +736,24 @@ export const decisionTraceEntries = pgTable("decision_trace_entries", {
   entityId: text("entity_id"), // The ID of the entity being decided upon
   decision: text("decision"), // The outcome: "ACCEPT", "REJECT", "PASS", "FAIL", etc.
   
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ENHANCED TRACEABILITY FIELDS - Natural Language & GRKB Tie-back
+  // ═══════════════════════════════════════════════════════════════════════════
+  
+  // Human-readable summary for generalist understanding
+  humanSummary: text("human_summary"), // Plain English explanation of the decision
+  
+  // GRKB Regulatory Context - stores actual obligation text for audit trail
+  regulatoryContext: jsonb("regulatory_context"), // {obligationId, obligationText, sourceCitation, jurisdictions, mandatory}
+  
+  // Evidence Justification - explains why evidence satisfies the requirement
+  evidenceJustification: jsonb("evidence_justification"), // {requiredTypes, providedTypes, atomCount, periodCoverage, justificationNarrative}
+  
+  // Compliance Assertion - explicit statement of compliance status
+  complianceAssertion: jsonb("compliance_assertion"), // {satisfies[], doesNotSatisfy[], complianceStatement}
+  
+  // ═══════════════════════════════════════════════════════════════════════════
+  
   // Detailed data (JSON)
   inputData: jsonb("input_data"), // What went into the decision
   outputData: jsonb("output_data"), // What came out
@@ -761,7 +779,47 @@ export const decisionTraceEntries = pgTable("decision_trace_entries", {
   eventTypeIdx: index("decision_trace_event_type_idx").on(table.eventType),
   entityIdIdx: index("decision_trace_entity_id_idx").on(table.entityId),
   eventTimestampIdx: index("decision_trace_timestamp_idx").on(table.eventTimestamp),
+  // New indexes for enhanced queryability
+  humanSummaryIdx: index("decision_trace_human_summary_idx").on(table.humanSummary),
 }));
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ENHANCED TRACEABILITY TYPE DEFINITIONS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Regulatory context stored with each trace entry for GRKB tie-back
+export interface TraceRegulatoryContext {
+  obligationId: string;
+  obligationText: string;           // Full text from grkb_obligations.text
+  sourceCitation: string | null;    // e.g., "MDR Article 86(1)"
+  jurisdictions: string[];
+  mandatory: boolean;
+  requirementLevel?: "MUST" | "SHOULD" | "MAY";
+}
+
+// Evidence justification explaining why evidence satisfies requirements
+export interface TraceEvidenceJustification {
+  requiredEvidenceTypes: string[];
+  providedEvidenceTypes: string[];
+  atomCount: number;
+  inPeriodAtomCount?: number;
+  periodCoverage: "full" | "partial" | "none" | "not_applicable";
+  justificationNarrative: string;   // "15 complaint records covering Jan-Dec 2024"
+  atomSummaries?: Array<{
+    atomId: string;
+    evidenceType: string;
+    summary: string;
+  }>;
+}
+
+// Compliance assertion for explicit obligation satisfaction tracking
+export interface TraceComplianceAssertion {
+  satisfies: string[];              // Obligation IDs this decision satisfies
+  partiallySatisfies?: string[];    // Obligation IDs partially met
+  doesNotSatisfy: string[];         // Obligation IDs with gaps
+  complianceStatement: string;      // Plain English compliance explanation
+  riskLevel?: "low" | "medium" | "high" | "critical";
+}
 
 export const insertDecisionTraceEntrySchema = createInsertSchema(decisionTraceEntries).omit({
   id: true,

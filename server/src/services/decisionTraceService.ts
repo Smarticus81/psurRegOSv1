@@ -1,21 +1,29 @@
 /**
- * Decision Trace Service
+ * Decision Trace Service - Enhanced Traceability Edition
  * 
  * Provides comprehensive, auditable tracing of all PSUR workflow decisions.
- * Each trace entry is hash-verified and linked in a chain for integrity.
+ * Each trace entry is hash-verified, linked in a chain, and includes:
+ * - Human-readable summaries for generalist understanding
+ * - GRKB regulatory context with actual obligation text
+ * - Evidence justification explaining why evidence satisfies requirements
+ * - Compliance assertions for explicit obligation satisfaction tracking
  */
 
 import { db } from "../../db";
 import { 
   decisionTraceEntries, 
   decisionTraceSummaries,
+  grkbObligations,
   DecisionTraceEntry,
   InsertDecisionTraceEntry,
   DecisionTraceSummary,
   DecisionTraceEventType,
-  decisionTraceEventTypeEnum
+  decisionTraceEventTypeEnum,
+  TraceRegulatoryContext,
+  TraceEvidenceJustification,
+  TraceComplianceAssertion,
 } from "@shared/schema";
-import { eq, and, desc, asc, sql, inArray } from "drizzle-orm";
+import { eq, and, desc, asc, sql, inArray, ilike, or } from "drizzle-orm";
 import { createHash, randomUUID } from "crypto";
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -31,6 +39,7 @@ export interface TraceContext {
   previousHash: string | null;
 }
 
+// Enhanced trace event input with GRKB context and natural language support
 export interface TraceEventInput {
   eventType: DecisionTraceEventType;
   actor: string;
@@ -43,6 +52,12 @@ export interface TraceEventInput {
   relatedEntityIds?: string[];
   workflowStep?: number;
   parentTraceEntryId?: number;
+  
+  // Enhanced traceability fields
+  humanSummary?: string;
+  regulatoryContext?: TraceRegulatoryContext | TraceRegulatoryContext[];
+  evidenceJustification?: TraceEvidenceJustification;
+  complianceAssertion?: TraceComplianceAssertion;
 }
 
 export interface TraceQueryOptions {
@@ -51,11 +66,13 @@ export interface TraceQueryOptions {
   eventTypes?: DecisionTraceEventType[];
   entityType?: string;
   entityId?: string;
+  obligationId?: string;
   startTime?: Date;
   endTime?: Date;
   limit?: number;
   offset?: number;
   orderBy?: "asc" | "desc";
+  searchText?: string;  // Natural language search in humanSummary
 }
 
 export interface TraceChainValidation {
@@ -64,6 +81,268 @@ export interface TraceChainValidation {
   verifiedEntries: number;
   brokenAt?: number;
   error?: string;
+}
+
+// Obligation context from GRKB for enriched traces
+export interface ObligationContext {
+  obligationId: string;
+  title: string;
+  text: string;
+  sourceCitation: string | null;
+  jurisdiction: string;
+  mandatory: boolean;
+  requiredEvidenceTypes: string[];
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GRKB INTEGRATION - Fetch obligation context for traces
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Fetch GRKB obligation details for enriching trace entries
+ */
+export async function getObligationContext(obligationId: string): Promise<ObligationContext | null> {
+  const obligation = await db.query.grkbObligations.findFirst({
+    where: eq(grkbObligations.obligationId, obligationId),
+  });
+  
+  if (!obligation) return null;
+  
+  return {
+    obligationId: obligation.obligationId,
+    title: obligation.title,
+    text: obligation.text,
+    sourceCitation: obligation.sourceCitation,
+    jurisdiction: obligation.jurisdiction,
+    mandatory: obligation.mandatory,
+    requiredEvidenceTypes: obligation.requiredEvidenceTypes || [],
+  };
+}
+
+/**
+ * Fetch multiple GRKB obligation contexts
+ */
+export async function getObligationContexts(obligationIds: string[]): Promise<Map<string, ObligationContext>> {
+  if (obligationIds.length === 0) return new Map();
+  
+  const obligations = await db.select()
+    .from(grkbObligations)
+    .where(inArray(grkbObligations.obligationId, obligationIds));
+  
+  const contextMap = new Map<string, ObligationContext>();
+  for (const obl of obligations) {
+    contextMap.set(obl.obligationId, {
+      obligationId: obl.obligationId,
+      title: obl.title,
+      text: obl.text,
+      sourceCitation: obl.sourceCitation,
+      jurisdiction: obl.jurisdiction,
+      mandatory: obl.mandatory,
+      requiredEvidenceTypes: obl.requiredEvidenceTypes || [],
+    });
+  }
+  
+  return contextMap;
+}
+
+/**
+ * Build regulatory context for trace entry from GRKB obligation
+ */
+export function buildRegulatoryContext(obligation: ObligationContext): TraceRegulatoryContext {
+  return {
+    obligationId: obligation.obligationId,
+    obligationText: obligation.text,
+    sourceCitation: obligation.sourceCitation,
+    jurisdictions: [obligation.jurisdiction],
+    mandatory: obligation.mandatory,
+    requirementLevel: obligation.mandatory ? "MUST" : "SHOULD",
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// NATURAL LANGUAGE GENERATION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Generate human-readable summary for workflow started event
+ */
+export function generateWorkflowStartedSummary(templateId: string, jurisdictions: string[]): string {
+  const jurisdictionText = jurisdictions.length === 1 
+    ? jurisdictions[0].replace("_", " ") 
+    : jurisdictions.map(j => j.replace("_", " ")).join(" and ");
+  return `Started PSUR workflow for ${jurisdictionText} using template ${templateId}. The system will validate the template, ingest evidence, propose slot content, adjudicate proposals, compute coverage, render the document, and export the audit bundle.`;
+}
+
+/**
+ * Generate human-readable summary for template qualification
+ */
+export function generateTemplateQualifiedSummary(
+  templateId: string, 
+  slotCount: number, 
+  obligationsCount: number, 
+  jurisdictions: string[]
+): string {
+  return `Template ${templateId} passed qualification checks. Found ${slotCount} content slots mapped to ${obligationsCount} regulatory obligations across ${jurisdictions.join(", ")}. The template is ready for PSUR generation.`;
+}
+
+/**
+ * Generate human-readable summary for template blocked
+ */
+export function generateTemplateBlockedSummary(templateId: string, reasons: string[]): string {
+  return `Template ${templateId} failed qualification: ${reasons.join("; ")}. The workflow cannot proceed until these issues are resolved in the template configuration or GRKB database.`;
+}
+
+/**
+ * Generate human-readable summary for case created
+ */
+export function generateCaseCreatedSummary(psurRef: string, periodStart: string, periodEnd: string): string {
+  return `Created PSUR case ${psurRef} for reporting period ${periodStart} to ${periodEnd}. All evidence and decisions will be tracked against this case reference.`;
+}
+
+/**
+ * Generate human-readable summary for evidence atom created
+ */
+export function generateEvidenceAtomSummary(
+  atomId: string, 
+  evidenceType: string, 
+  recordCount?: number,
+  periodStart?: string,
+  periodEnd?: string
+): string {
+  const countText = recordCount ? ` containing ${recordCount} records` : "";
+  const periodText = periodStart && periodEnd ? ` for period ${periodStart} to ${periodEnd}` : "";
+  return `Ingested evidence atom ${atomId} of type "${evidenceType}"${countText}${periodText}. This evidence is now available for slot proposals.`;
+}
+
+/**
+ * Generate human-readable summary for negative evidence
+ */
+export function generateNegativeEvidenceSummary(evidenceType: string): string {
+  return `Created negative evidence record for "${evidenceType}" indicating no events of this type occurred during the reporting period. This is a valid "none reported" scenario with full traceability.`;
+}
+
+/**
+ * Generate human-readable summary for slot proposed
+ */
+export function generateSlotProposedSummary(
+  slotId: string,
+  slotTitle: string,
+  status: string,
+  evidenceCount: number,
+  obligationIds: string[]
+): string {
+  if (status === "READY") {
+    return `Proposed content for "${slotTitle}" (${slotId}) using ${evidenceCount} evidence atoms. This proposal claims to satisfy ${obligationIds.length} regulatory obligations: ${obligationIds.slice(0, 3).join(", ")}${obligationIds.length > 3 ? ` and ${obligationIds.length - 3} more` : ""}.`;
+  } else if (status === "TRACE_GAP") {
+    return `Unable to propose content for "${slotTitle}" (${slotId}) due to missing evidence. This represents a trace gap that must be resolved before the PSUR can be completed.`;
+  } else {
+    return `Proposed administrative content for "${slotTitle}" (${slotId}). No evidence required for this slot type.`;
+  }
+}
+
+/**
+ * Generate human-readable summary for trace gap
+ */
+export function generateTraceGapSummary(slotId: string, slotTitle: string, requiredTypes: string[]): string {
+  return `TRACE GAP DETECTED: Slot "${slotTitle}" (${slotId}) requires evidence of type(s): ${requiredTypes.join(", ")}. Upload the required evidence before proceeding to ensure complete regulatory compliance.`;
+}
+
+/**
+ * Generate human-readable summary for slot accepted
+ */
+export function generateSlotAcceptedSummary(
+  slotId: string,
+  slotTitle: string,
+  evidenceCount: number,
+  obligationsSatisfied: string[]
+): string {
+  return `ACCEPTED: "${slotTitle}" (${slotId}) passed adjudication with ${evidenceCount} supporting evidence atoms. This decision satisfies regulatory obligations: ${obligationsSatisfied.slice(0, 3).join(", ")}${obligationsSatisfied.length > 3 ? ` and ${obligationsSatisfied.length - 3} more` : ""}.`;
+}
+
+/**
+ * Generate human-readable summary for slot rejected
+ */
+export function generateSlotRejectedSummary(slotId: string, slotTitle: string, reasons: string[]): string {
+  return `REJECTED: "${slotTitle}" (${slotId}) failed adjudication. Reasons: ${reasons.join("; ")}. Review the evidence and slot requirements to resolve this issue.`;
+}
+
+/**
+ * Generate human-readable summary for obligation satisfied
+ */
+export function generateObligationSatisfiedSummary(
+  obligationId: string,
+  obligationTitle: string,
+  sourceCitation: string | null,
+  slotId: string
+): string {
+  const citationText = sourceCitation ? ` (${sourceCitation})` : "";
+  return `OBLIGATION SATISFIED: "${obligationTitle}"${citationText} has been met by content in slot ${slotId}. This regulatory requirement is now covered in the PSUR.`;
+}
+
+/**
+ * Generate human-readable summary for obligation unsatisfied
+ */
+export function generateObligationUnsatisfiedSummary(
+  obligationId: string,
+  obligationTitle: string,
+  sourceCitation: string | null,
+  reasons: string[]
+): string {
+  const citationText = sourceCitation ? ` (${sourceCitation})` : "";
+  return `OBLIGATION UNSATISFIED: "${obligationTitle}"${citationText} has not been met. Reasons: ${reasons.join("; ")}. This represents a compliance gap that should be addressed.`;
+}
+
+/**
+ * Generate human-readable summary for coverage computed
+ */
+export function generateCoverageComputedSummary(
+  satisfied: number,
+  total: number,
+  traceGaps: number
+): string {
+  const coveragePercent = total > 0 ? ((satisfied / total) * 100).toFixed(1) : "0.0";
+  const gapText = traceGaps > 0 ? ` with ${traceGaps} trace gap(s) requiring attention` : "";
+  return `Coverage report complete: ${satisfied} of ${total} regulatory obligations satisfied (${coveragePercent}%)${gapText}. ${parseFloat(coveragePercent) >= 80 ? "Coverage threshold met." : "Coverage below 80% threshold - review required."}`;
+}
+
+/**
+ * Generate human-readable summary for document rendered
+ */
+export function generateDocumentRenderedSummary(format: string, sections: number): string {
+  return `PSUR document rendered in ${format} format with ${sections} sections. The document is ready for export and review.`;
+}
+
+/**
+ * Generate human-readable summary for bundle exported
+ */
+export function generateBundleExportedSummary(bundleRef: string, files: string[]): string {
+  return `Audit bundle ${bundleRef} exported successfully containing ${files.length} files: ${files.join(", ")}. The complete decision trace is preserved for regulatory audit.`;
+}
+
+/**
+ * Generate human-readable summary for workflow completed
+ */
+export function generateWorkflowCompletedSummary(durationMs: number): string {
+  const seconds = (durationMs / 1000).toFixed(1);
+  return `PSUR workflow completed successfully in ${seconds} seconds. All decisions have been traced and the audit bundle is ready for submission.`;
+}
+
+/**
+ * Generate human-readable summary for workflow failed
+ */
+export function generateWorkflowFailedSummary(step: number, error: string): string {
+  const stepNames: Record<number, string> = {
+    1: "Template Qualification",
+    2: "Case Creation", 
+    3: "Evidence Ingestion",
+    4: "Slot Proposal",
+    5: "Adjudication",
+    6: "Coverage Report",
+    7: "Document Rendering",
+    8: "Bundle Export",
+  };
+  const stepName = stepNames[step] || `Step ${step}`;
+  return `WORKFLOW FAILED at ${stepName}: ${error}. Review the error and resolve before rerunning the workflow.`;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -83,6 +362,7 @@ function computeEntryHash(entry: Omit<InsertDecisionTraceEntry, "contentHash" | 
     entityType: entry.entityType,
     entityId: entry.entityId,
     decision: entry.decision,
+    humanSummary: entry.humanSummary,
     inputData: entry.inputData,
     outputData: entry.outputData,
     reasons: entry.reasons,
@@ -110,6 +390,7 @@ function verifyEntryHash(entry: DecisionTraceEntry): boolean {
     entityType: entry.entityType,
     entityId: entry.entityId,
     decision: entry.decision,
+    humanSummary: entry.humanSummary,
     inputData: entry.inputData as Record<string, unknown>,
     outputData: entry.outputData as Record<string, unknown>,
     reasons: entry.reasons as string[],
@@ -203,11 +484,11 @@ export async function resumeTrace(psurCaseId: number): Promise<TraceContext | nu
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// TRACE EVENT LOGGING
+// TRACE EVENT LOGGING - Enhanced with GRKB and Natural Language
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Log a trace event with hash verification
+ * Log a trace event with enhanced traceability features
  */
 export async function logTraceEvent(
   ctx: TraceContext,
@@ -216,7 +497,7 @@ export async function logTraceEvent(
   const sequenceNum = ctx.currentSequence + 1;
   const eventTimestamp = new Date();
   
-  // Build the entry (without hash first)
+  // Build the entry with enhanced fields
   const entryData: Omit<InsertDecisionTraceEntry, "contentHash" | "previousHash"> = {
     psurCaseId: ctx.psurCaseId,
     traceId: ctx.traceId,
@@ -227,6 +508,10 @@ export async function logTraceEvent(
     entityType: event.entityType || null,
     entityId: event.entityId || null,
     decision: event.decision || null,
+    humanSummary: event.humanSummary || null,
+    regulatoryContext: event.regulatoryContext || null,
+    evidenceJustification: event.evidenceJustification || null,
+    complianceAssertion: event.complianceAssertion || null,
     inputData: event.inputData || null,
     outputData: event.outputData || null,
     reasons: event.reasons || null,
@@ -364,11 +649,11 @@ export async function markWorkflowFailed(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// TRACE QUERYING
+// TRACE QUERYING - Enhanced with Natural Language and Obligation Search
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Query trace entries with filters
+ * Query trace entries with enhanced filters including natural language search
  */
 export async function queryTraceEntries(options: TraceQueryOptions): Promise<DecisionTraceEntry[]> {
   const conditions = [];
@@ -388,10 +673,14 @@ export async function queryTraceEntries(options: TraceQueryOptions): Promise<Dec
   if (options.entityId) {
     conditions.push(eq(decisionTraceEntries.entityId, options.entityId));
   }
+  // Natural language search in humanSummary
+  if (options.searchText) {
+    conditions.push(ilike(decisionTraceEntries.humanSummary, `%${options.searchText}%`));
+  }
   
   const query = db.select()
     .from(decisionTraceEntries)
-    .where(and(...conditions))
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(options.orderBy === "desc" 
       ? desc(decisionTraceEntries.sequenceNum) 
       : asc(decisionTraceEntries.sequenceNum)
@@ -400,6 +689,52 @@ export async function queryTraceEntries(options: TraceQueryOptions): Promise<Dec
     .offset(options.offset || 0);
   
   return query;
+}
+
+/**
+ * Query traces by obligation ID - finds all decisions related to a specific GRKB obligation
+ */
+export async function queryTracesByObligation(
+  psurCaseId: number,
+  obligationId: string
+): Promise<DecisionTraceEntry[]> {
+  // Find entries where the obligation is referenced in entityId or regulatoryContext
+  const entries = await db.select()
+    .from(decisionTraceEntries)
+    .where(and(
+      eq(decisionTraceEntries.psurCaseId, psurCaseId),
+      or(
+        eq(decisionTraceEntries.entityId, obligationId),
+        sql`${decisionTraceEntries.regulatoryContext}::jsonb @> ${JSON.stringify({ obligationId })}`
+      )
+    ))
+    .orderBy(asc(decisionTraceEntries.sequenceNum));
+  
+  return entries;
+}
+
+/**
+ * Natural language search across all trace entries
+ */
+export async function searchTraces(
+  psurCaseId: number,
+  searchText: string,
+  limit: number = 50
+): Promise<DecisionTraceEntry[]> {
+  const entries = await db.select()
+    .from(decisionTraceEntries)
+    .where(and(
+      eq(decisionTraceEntries.psurCaseId, psurCaseId),
+      or(
+        ilike(decisionTraceEntries.humanSummary, `%${searchText}%`),
+        ilike(decisionTraceEntries.decision, `%${searchText}%`),
+        ilike(decisionTraceEntries.entityId, `%${searchText}%`)
+      )
+    ))
+    .orderBy(asc(decisionTraceEntries.sequenceNum))
+    .limit(limit);
+  
+  return entries;
 }
 
 /**
@@ -419,16 +754,26 @@ export async function getEntityTrace(
 }
 
 /**
- * Get full decision chain for a slot
+ * Get full decision chain for a slot with GRKB context
  */
 export async function getSlotDecisionChain(slotId: string): Promise<{
   proposal: DecisionTraceEntry | null;
   adjudication: DecisionTraceEntry | null;
   evidenceLinks: DecisionTraceEntry[];
+  obligations: DecisionTraceEntry[];
 }> {
   const entries = await db.select()
     .from(decisionTraceEntries)
     .where(eq(decisionTraceEntries.entityId, slotId))
+    .orderBy(asc(decisionTraceEntries.sequenceNum));
+  
+  // Also find obligation entries that reference this slot
+  const obligationEntries = await db.select()
+    .from(decisionTraceEntries)
+    .where(and(
+      eq(decisionTraceEntries.entityType, "obligation"),
+      sql`${decisionTraceEntries.relatedEntityIds}::jsonb ? ${slotId}`
+    ))
     .orderBy(asc(decisionTraceEntries.sequenceNum));
   
   return {
@@ -439,6 +784,7 @@ export async function getSlotDecisionChain(slotId: string): Promise<{
     evidenceLinks: entries.filter(e => 
       e.eventType === "EVIDENCE_ATOM_CREATED" || (Array.isArray(e.relatedEntityIds) && e.relatedEntityIds.includes(slotId))
     ),
+    obligations: obligationEntries,
   };
 }
 
@@ -519,11 +865,11 @@ export async function verifyTraceChain(traceId: string): Promise<TraceChainValid
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// TRACE EXPORT
+// TRACE EXPORT - Enhanced with Natural Language Narrative
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Export complete trace as JSONL (one JSON object per line)
+ * Export complete trace as JSONL with enhanced fields
  */
 export async function exportTraceAsJsonl(psurCaseId: number): Promise<string> {
   const entries = await db.select()
@@ -538,6 +884,10 @@ export async function exportTraceAsJsonl(psurCaseId: number): Promise<string> {
     actor: e.actor,
     entity: e.entityType ? { type: e.entityType, id: e.entityId } : null,
     decision: e.decision,
+    humanSummary: e.humanSummary,
+    regulatoryContext: e.regulatoryContext,
+    evidenceJustification: e.evidenceJustification,
+    complianceAssertion: e.complianceAssertion,
     input: e.inputData,
     output: e.outputData,
     reasons: e.reasons,
@@ -555,7 +905,7 @@ export async function exportTraceAsJsonl(psurCaseId: number): Promise<string> {
 export async function exportTraceSummary(psurCaseId: number): Promise<{
   summary: DecisionTraceSummary | null;
   chainValidation: TraceChainValidation;
-  timeline: { timestamp: Date; event: string; decision?: string }[];
+  timeline: { timestamp: Date; event: string; decision?: string; humanSummary?: string }[];
 }> {
   const summary = await getTraceSummary(psurCaseId);
   
@@ -579,13 +929,126 @@ export async function exportTraceSummary(psurCaseId: number): Promise<{
     timestamp: e.eventTimestamp,
     event: e.eventType,
     decision: e.decision || undefined,
+    humanSummary: e.humanSummary || undefined,
   }));
   
   return { summary, chainValidation, timeline };
 }
 
+/**
+ * Export plain-English audit narrative for regulatory review
+ */
+export async function exportAuditNarrative(psurCaseId: number): Promise<string> {
+  const summary = await getTraceSummary(psurCaseId);
+  const entries = await queryTraceEntries({
+    psurCaseId,
+    orderBy: "asc",
+    limit: 1000,
+  });
+  
+  if (!summary || entries.length === 0) {
+    return "No audit trail available for this PSUR case.";
+  }
+  
+  const lines: string[] = [];
+  
+  // Header
+  lines.push("═══════════════════════════════════════════════════════════════════════════════");
+  lines.push("PSUR DECISION AUDIT NARRATIVE");
+  lines.push("═══════════════════════════════════════════════════════════════════════════════");
+  lines.push("");
+  lines.push(`Case ID: ${psurCaseId}`);
+  lines.push(`Trace ID: ${summary.traceId}`);
+  lines.push(`Status: ${summary.workflowStatus}`);
+  lines.push(`Total Decisions: ${summary.totalEvents}`);
+  lines.push(`Generated: ${new Date().toISOString()}`);
+  lines.push("");
+  lines.push("───────────────────────────────────────────────────────────────────────────────");
+  lines.push("DECISION TIMELINE");
+  lines.push("───────────────────────────────────────────────────────────────────────────────");
+  lines.push("");
+  
+  // Group entries by workflow step
+  const stepGroups = new Map<number, DecisionTraceEntry[]>();
+  for (const entry of entries) {
+    const step = entry.workflowStep || 0;
+    if (!stepGroups.has(step)) {
+      stepGroups.set(step, []);
+    }
+    stepGroups.get(step)!.push(entry);
+  }
+  
+  const stepNames: Record<number, string> = {
+    0: "Initialization",
+    1: "Template Qualification",
+    2: "Case Creation",
+    3: "Evidence Ingestion",
+    4: "Slot Proposal",
+    5: "Adjudication",
+    6: "Coverage Report",
+    7: "Document Rendering",
+    8: "Bundle Export",
+  };
+  
+  for (const [step, stepEntries] of Array.from(stepGroups.entries()).sort((a, b) => a[0] - b[0])) {
+    lines.push(`\n## Step ${step}: ${stepNames[step] || "Unknown"}`);
+    lines.push("");
+    
+    for (const entry of stepEntries) {
+      const timestamp = entry.eventTimestamp.toISOString().replace("T", " ").slice(0, 19);
+      
+      // Use humanSummary if available, otherwise generate from event data
+      let narrative = entry.humanSummary;
+      if (!narrative) {
+        narrative = `[${entry.eventType}] ${entry.decision || ""} - ${entry.entityType || ""}: ${entry.entityId || ""}`;
+      }
+      
+      lines.push(`[${timestamp}] ${narrative}`);
+      
+      // Include regulatory context if available
+      if (entry.regulatoryContext) {
+        const ctx = entry.regulatoryContext as TraceRegulatoryContext | TraceRegulatoryContext[];
+        const contexts = Array.isArray(ctx) ? ctx : [ctx];
+        for (const c of contexts) {
+          if (c.sourceCitation) {
+            lines.push(`  → Regulatory Basis: ${c.sourceCitation}`);
+          }
+        }
+      }
+      
+      // Include compliance assertion if available
+      if (entry.complianceAssertion) {
+        const assertion = entry.complianceAssertion as TraceComplianceAssertion;
+        if (assertion.complianceStatement) {
+          lines.push(`  → Compliance: ${assertion.complianceStatement}`);
+        }
+      }
+    }
+  }
+  
+  // Summary statistics
+  lines.push("");
+  lines.push("───────────────────────────────────────────────────────────────────────────────");
+  lines.push("SUMMARY STATISTICS");
+  lines.push("───────────────────────────────────────────────────────────────────────────────");
+  lines.push("");
+  lines.push(`Slots Accepted: ${summary.acceptedSlots}`);
+  lines.push(`Slots Rejected: ${summary.rejectedSlots}`);
+  lines.push(`Trace Gaps: ${summary.traceGaps}`);
+  lines.push(`Evidence Atoms: ${summary.evidenceAtoms}`);
+  lines.push(`Negative Evidence: ${summary.negativeEvidence}`);
+  lines.push(`Obligations Satisfied: ${summary.obligationsSatisfied}`);
+  lines.push(`Obligations Unsatisfied: ${summary.obligationsUnsatisfied}`);
+  lines.push("");
+  lines.push("═══════════════════════════════════════════════════════════════════════════════");
+  lines.push("END OF AUDIT NARRATIVE");
+  lines.push("═══════════════════════════════════════════════════════════════════════════════");
+  
+  return lines.join("\n");
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
-// CONVENIENCE FUNCTIONS FOR COMMON TRACE EVENTS
+// ENHANCED TRACE EVENTS - With GRKB Context and Natural Language
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const TraceEvents = {
@@ -595,6 +1058,7 @@ export const TraceEvents = {
       actor: "workflowRunner",
       workflowStep: 1,
       inputData: { templateId, jurisdictions },
+      humanSummary: generateWorkflowStartedSummary(templateId, jurisdictions),
     }),
 
   templateQualified: (ctx: TraceContext, step: number, qualReport: Record<string, unknown>) =>
@@ -606,6 +1070,12 @@ export const TraceEvents = {
       entityId: ctx.templateId,
       decision: "QUALIFIED",
       outputData: qualReport,
+      humanSummary: generateTemplateQualifiedSummary(
+        ctx.templateId || "",
+        (qualReport.slotCount as number) || 0,
+        (qualReport.obligationsTotal as number) || (qualReport.mandatoryObligationsTotal as number) || 0,
+        ctx.jurisdictions || []
+      ),
     }),
 
   templateBlocked: (ctx: TraceContext, step: number, reasons: string[]) =>
@@ -617,9 +1087,10 @@ export const TraceEvents = {
       entityId: ctx.templateId,
       decision: "BLOCKED",
       reasons,
+      humanSummary: generateTemplateBlockedSummary(ctx.templateId || "", reasons),
     }),
 
-  caseCreated: (ctx: TraceContext, psurRef: string, psurCaseId: number) =>
+  caseCreated: (ctx: TraceContext, psurRef: string, psurCaseId: number, periodStart?: string, periodEnd?: string) =>
     logTraceEvent(ctx, {
       eventType: "CASE_CREATED",
       actor: "createCase",
@@ -627,6 +1098,7 @@ export const TraceEvents = {
       entityType: "psur_case",
       entityId: String(psurCaseId),
       outputData: { psurReference: psurRef },
+      humanSummary: generateCaseCreatedSummary(psurRef, periodStart || "N/A", periodEnd || "N/A"),
     }),
 
   evidenceUploaded: (ctx: TraceContext, uploadId: number, filename: string, atomCount: number) =>
@@ -637,16 +1109,33 @@ export const TraceEvents = {
       entityType: "evidence_upload",
       entityId: String(uploadId),
       outputData: { filename, atomCount },
+      humanSummary: `Uploaded evidence file "${filename}" containing ${atomCount} evidence atoms for processing.`,
     }),
 
-  evidenceAtomCreated: (ctx: TraceContext, atomId: string, evidenceType: string, sourceFile?: string) =>
+  evidenceAtomCreated: (
+    ctx: TraceContext, 
+    atomId: string, 
+    evidenceType: string, 
+    sourceFile?: string,
+    recordCount?: number,
+    periodStart?: string,
+    periodEnd?: string
+  ) =>
     logTraceEvent(ctx, {
       eventType: "EVIDENCE_ATOM_CREATED",
       actor: "ingestEvidence",
       workflowStep: 3,
       entityType: "evidence_atom",
       entityId: atomId,
-      outputData: { evidenceType, sourceFile },
+      outputData: { evidenceType, sourceFile, recordCount },
+      humanSummary: generateEvidenceAtomSummary(atomId, evidenceType, recordCount, periodStart, periodEnd),
+      evidenceJustification: {
+        requiredEvidenceTypes: [evidenceType],
+        providedEvidenceTypes: [evidenceType],
+        atomCount: 1,
+        periodCoverage: periodStart && periodEnd ? "full" : "not_applicable",
+        justificationNarrative: `Evidence atom ${atomId} provides ${evidenceType} data${sourceFile ? ` from ${sourceFile}` : ""}.`,
+      },
     }),
 
   negativeEvidenceCreated: (ctx: TraceContext, atomId: string, evidenceType: string) =>
@@ -657,10 +1146,32 @@ export const TraceEvents = {
       entityType: "evidence_atom",
       entityId: atomId,
       outputData: { evidenceType, isNegative: true },
+      humanSummary: generateNegativeEvidenceSummary(evidenceType),
+      evidenceJustification: {
+        requiredEvidenceTypes: [evidenceType],
+        providedEvidenceTypes: [evidenceType],
+        atomCount: 1,
+        periodCoverage: "full",
+        justificationNarrative: `Negative evidence confirms no ${evidenceType} events occurred during the reporting period.`,
+      },
     }),
 
-  slotProposed: (ctx: TraceContext, slotId: string, status: string, evidenceAtomIds: string[], obligationIds: string[]) =>
-    logTraceEvent(ctx, {
+  slotProposed: async (
+    ctx: TraceContext, 
+    slotId: string, 
+    slotTitle: string,
+    status: string, 
+    evidenceAtomIds: string[], 
+    obligationIds: string[]
+  ) => {
+    // Fetch GRKB context for obligations
+    const obligationContexts = await getObligationContexts(obligationIds);
+    const regulatoryContexts: TraceRegulatoryContext[] = [];
+    for (const [, oblCtx] of obligationContexts) {
+      regulatoryContexts.push(buildRegulatoryContext(oblCtx));
+    }
+    
+    return logTraceEvent(ctx, {
       eventType: "SLOT_PROPOSED",
       actor: "proposeSlots",
       workflowStep: 4,
@@ -669,9 +1180,23 @@ export const TraceEvents = {
       decision: status,
       relatedEntityIds: evidenceAtomIds,
       outputData: { status, evidenceCount: evidenceAtomIds.length, obligationIds },
-    }),
+      humanSummary: generateSlotProposedSummary(slotId, slotTitle, status, evidenceAtomIds.length, obligationIds),
+      regulatoryContext: regulatoryContexts.length > 0 ? regulatoryContexts : undefined,
+      evidenceJustification: {
+        requiredEvidenceTypes: [],
+        providedEvidenceTypes: [],
+        atomCount: evidenceAtomIds.length,
+        periodCoverage: evidenceAtomIds.length > 0 ? "full" : "none",
+        justificationNarrative: status === "READY" 
+          ? `${evidenceAtomIds.length} evidence atoms support this slot proposal.`
+          : status === "TRACE_GAP"
+            ? "Missing required evidence - trace gap detected."
+            : "Administrative slot - no evidence required.",
+      },
+    });
+  },
 
-  traceGapDetected: (ctx: TraceContext, slotId: string, requiredTypes: string[]) =>
+  traceGapDetected: (ctx: TraceContext, slotId: string, slotTitle: string, requiredTypes: string[]) =>
     logTraceEvent(ctx, {
       eventType: "TRACE_GAP_DETECTED",
       actor: "proposeSlots",
@@ -681,10 +1206,37 @@ export const TraceEvents = {
       decision: "TRACE_GAP",
       reasons: [`Missing evidence types: ${requiredTypes.join(", ")}`],
       inputData: { requiredTypes },
+      humanSummary: generateTraceGapSummary(slotId, slotTitle, requiredTypes),
+      evidenceJustification: {
+        requiredEvidenceTypes: requiredTypes,
+        providedEvidenceTypes: [],
+        atomCount: 0,
+        periodCoverage: "none",
+        justificationNarrative: `Slot requires evidence of type(s): ${requiredTypes.join(", ")}. None available.`,
+      },
+      complianceAssertion: {
+        satisfies: [],
+        doesNotSatisfy: [],
+        complianceStatement: `Compliance gap: Required evidence types [${requiredTypes.join(", ")}] not available.`,
+        riskLevel: "high",
+      },
     }),
 
-  slotAccepted: (ctx: TraceContext, slotId: string, evidenceAtomIds: string[], reasons: string[]) =>
-    logTraceEvent(ctx, {
+  slotAccepted: async (
+    ctx: TraceContext, 
+    slotId: string, 
+    slotTitle: string,
+    evidenceAtomIds: string[], 
+    obligationIds: string[],
+    reasons: string[]
+  ) => {
+    const obligationContexts = await getObligationContexts(obligationIds);
+    const regulatoryContexts: TraceRegulatoryContext[] = [];
+    for (const [, oblCtx] of obligationContexts) {
+      regulatoryContexts.push(buildRegulatoryContext(oblCtx));
+    }
+    
+    return logTraceEvent(ctx, {
       eventType: "SLOT_ACCEPTED",
       actor: "adjudicator",
       workflowStep: 5,
@@ -693,9 +1245,18 @@ export const TraceEvents = {
       decision: "ACCEPTED",
       relatedEntityIds: evidenceAtomIds,
       reasons,
-    }),
+      humanSummary: generateSlotAcceptedSummary(slotId, slotTitle, evidenceAtomIds.length, obligationIds),
+      regulatoryContext: regulatoryContexts.length > 0 ? regulatoryContexts : undefined,
+      complianceAssertion: {
+        satisfies: obligationIds,
+        doesNotSatisfy: [],
+        complianceStatement: `Slot "${slotTitle}" satisfies ${obligationIds.length} regulatory obligation(s) with ${evidenceAtomIds.length} supporting evidence atom(s).`,
+        riskLevel: "low",
+      },
+    });
+  },
 
-  slotRejected: (ctx: TraceContext, slotId: string, reasons: string[]) =>
+  slotRejected: (ctx: TraceContext, slotId: string, slotTitle: string, reasons: string[], obligationIds?: string[]) =>
     logTraceEvent(ctx, {
       eventType: "SLOT_REJECTED",
       actor: "adjudicator",
@@ -704,10 +1265,19 @@ export const TraceEvents = {
       entityId: slotId,
       decision: "REJECTED",
       reasons,
+      humanSummary: generateSlotRejectedSummary(slotId, slotTitle, reasons),
+      complianceAssertion: {
+        satisfies: [],
+        doesNotSatisfy: obligationIds || [],
+        complianceStatement: `Slot "${slotTitle}" failed adjudication: ${reasons.join("; ")}`,
+        riskLevel: "high",
+      },
     }),
 
-  obligationSatisfied: (ctx: TraceContext, obligationId: string, slotId: string) =>
-    logTraceEvent(ctx, {
+  obligationSatisfied: async (ctx: TraceContext, obligationId: string, slotId: string) => {
+    const oblCtx = await getObligationContext(obligationId);
+    
+    return logTraceEvent(ctx, {
       eventType: "OBLIGATION_SATISFIED",
       actor: "coverageReport",
       workflowStep: 6,
@@ -715,10 +1285,25 @@ export const TraceEvents = {
       entityId: obligationId,
       decision: "SATISFIED",
       relatedEntityIds: [slotId],
-    }),
+      humanSummary: oblCtx 
+        ? generateObligationSatisfiedSummary(obligationId, oblCtx.title, oblCtx.sourceCitation, slotId)
+        : `Obligation ${obligationId} satisfied by slot ${slotId}.`,
+      regulatoryContext: oblCtx ? buildRegulatoryContext(oblCtx) : undefined,
+      complianceAssertion: {
+        satisfies: [obligationId],
+        doesNotSatisfy: [],
+        complianceStatement: oblCtx 
+          ? `"${oblCtx.title}" is now satisfied by content in slot ${slotId}.`
+          : `Obligation ${obligationId} satisfied.`,
+        riskLevel: "low",
+      },
+    });
+  },
 
-  obligationUnsatisfied: (ctx: TraceContext, obligationId: string, reasons: string[]) =>
-    logTraceEvent(ctx, {
+  obligationUnsatisfied: async (ctx: TraceContext, obligationId: string, reasons: string[]) => {
+    const oblCtx = await getObligationContext(obligationId);
+    
+    return logTraceEvent(ctx, {
       eventType: "OBLIGATION_UNSATISFIED",
       actor: "coverageReport",
       workflowStep: 6,
@@ -726,7 +1311,20 @@ export const TraceEvents = {
       entityId: obligationId,
       decision: "UNSATISFIED",
       reasons,
-    }),
+      humanSummary: oblCtx 
+        ? generateObligationUnsatisfiedSummary(obligationId, oblCtx.title, oblCtx.sourceCitation, reasons)
+        : `Obligation ${obligationId} not satisfied: ${reasons.join("; ")}`,
+      regulatoryContext: oblCtx ? buildRegulatoryContext(oblCtx) : undefined,
+      complianceAssertion: {
+        satisfies: [],
+        doesNotSatisfy: [obligationId],
+        complianceStatement: oblCtx 
+          ? `"${oblCtx.title}" has not been met: ${reasons.join("; ")}`
+          : `Obligation ${obligationId} unsatisfied.`,
+        riskLevel: oblCtx?.mandatory ? "critical" : "medium",
+      },
+    });
+  },
 
   coverageComputed: (ctx: TraceContext, satisfied: number, total: number, traceGaps: number) =>
     logTraceEvent(ctx, {
@@ -734,6 +1332,13 @@ export const TraceEvents = {
       actor: "coverageReport",
       workflowStep: 6,
       outputData: { satisfied, total, coverage: `${((satisfied/total)*100).toFixed(1)}%`, traceGaps },
+      humanSummary: generateCoverageComputedSummary(satisfied, total, traceGaps),
+      complianceAssertion: {
+        satisfies: [],
+        doesNotSatisfy: [],
+        complianceStatement: `Coverage: ${satisfied}/${total} obligations (${((satisfied/total)*100).toFixed(1)}%) with ${traceGaps} trace gap(s).`,
+        riskLevel: (satisfied/total) >= 0.8 ? "low" : "high",
+      },
     }),
 
   documentRendered: (ctx: TraceContext, format: string, sections: number) =>
@@ -742,6 +1347,7 @@ export const TraceEvents = {
       actor: "documentRenderer",
       workflowStep: 7,
       outputData: { format, sections },
+      humanSummary: generateDocumentRenderedSummary(format, sections),
     }),
 
   bundleExported: (ctx: TraceContext, bundleRef: string, files: string[]) =>
@@ -752,6 +1358,7 @@ export const TraceEvents = {
       entityType: "bundle",
       entityId: bundleRef,
       outputData: { files },
+      humanSummary: generateBundleExportedSummary(bundleRef, files),
     }),
 
   workflowCompleted: (ctx: TraceContext, duration: number) =>
@@ -760,6 +1367,7 @@ export const TraceEvents = {
       actor: "workflowRunner",
       workflowStep: 8,
       outputData: { durationMs: duration },
+      humanSummary: generateWorkflowCompletedSummary(duration),
     }),
 
   workflowFailed: (ctx: TraceContext, step: number, error: string) =>
@@ -769,5 +1377,6 @@ export const TraceEvents = {
       workflowStep: step,
       decision: "FAILED",
       reasons: [error],
+      humanSummary: generateWorkflowFailedSummary(step, error),
     }),
 };

@@ -447,7 +447,7 @@ export class CompileOrchestrator {
           approvers: input.approvers,
           confidentiality: input.confidentiality,
         },
-      }, this.createAgentTraceContext(input.psurCaseId, "DOCUMENT_FORMATTER"));
+      }, this.createAgentContext(input.psurCaseId, "DOCUMENT_FORMATTER"));
 
       // Get trace summary
       const traceSummary = await getTraceSummary(input.psurCaseId);

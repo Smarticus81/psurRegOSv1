@@ -10,6 +10,14 @@ import {
   getObligations,
   getConstraints,
 } from "../services/grkbService";
+import {
+  startTrace,
+  resumeTrace,
+  TraceEvents,
+  markStepCompleted,
+  markWorkflowFailed,
+  type TraceContext,
+} from "../services/decisionTraceService";
 import path from "path";
 import {
   psurCases,
@@ -68,8 +76,10 @@ async function getKernelStatus(jurisdictions: string[]): Promise<KernelStatus> {
   };
 }
 
+export type DocumentStyle = "corporate" | "regulatory" | "premium";
+
 export interface RunWorkflowParams {
-  templateId: "FormQAR-054_C" | "MDCG_2022_21_ANNEX_I";
+  templateId: "MDCG_2022_21_ANNEX_I";
   jurisdictions: ("EU_MDR" | "UK_MDR")[];
   deviceCode: string;
   deviceId: number;
@@ -77,6 +87,12 @@ export interface RunWorkflowParams {
   periodEnd: string;
   psurCaseId?: number;
   runSteps?: number[];
+  /** Enable AI-powered narrative generation for NARRATIVE slots */
+  enableAIGeneration?: boolean;
+  /** Document style preset: corporate, regulatory, or premium */
+  documentStyle?: DocumentStyle;
+  /** Enable chart generation in the output document */
+  enableCharts?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -148,10 +164,11 @@ function adjudicateProposals(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promise<OrchestratorWorkflowResult> {
-  const { templateId, jurisdictions, deviceCode, deviceId, periodStart, periodEnd, psurCaseId: existingCaseId, runSteps } = params;
+  const { templateId, jurisdictions, deviceCode, deviceId, periodStart, periodEnd, psurCaseId: existingCaseId, runSteps, enableAIGeneration } = params;
 
   const steps: WorkflowStep[] = Array.from({ length: 8 }, (_, i) => makeStep(i + 1));
   const stepsToRun = runSteps || [1, 2, 3, 4, 5, 6, 7, 8];
+  const workflowStartTime = Date.now();
 
   const scope: WorkflowScope = {
     templateId,
@@ -168,8 +185,23 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
   let evidenceAtomsData: EvidenceAtomRecord[] = [];
   let slotProposalsData: SlotProposalOutput[] = [];
   let qualificationBlocked = false;
-
+  
+  // Initialize decision trace
+  let traceCtx: TraceContext | null = null;
+  
   try {
+    // Start or resume trace
+    if (existingCaseId) {
+      traceCtx = await resumeTrace(existingCaseId);
+    }
+    if (!traceCtx) {
+      traceCtx = await startTrace(psurCaseId || 0, templateId, jurisdictions);
+    }
+    
+    // Log workflow started
+    const startResult = await TraceEvents.workflowStarted(traceCtx, templateId, jurisdictions);
+    traceCtx = startResult.ctx;
+
     // ==================== STEP 1: QUALIFY TEMPLATE ====================
     if (stepsToRun.includes(1)) {
       steps[0].status = "RUNNING";
@@ -238,6 +270,12 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
           };
           steps[0].report = qualReport;
           qualificationBlocked = true;
+          
+          // Log template blocked
+          if (traceCtx) {
+            const blockResult = await TraceEvents.templateBlocked(traceCtx, 1, qualReport.blockingErrors);
+            traceCtx = blockResult.ctx;
+          }
         } else {
           steps[0].status = "COMPLETED";
           steps[0].endedAt = new Date().toISOString();
@@ -248,11 +286,29 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
             obligationsCount: qualReport.mandatoryObligationsTotal,
           };
           steps[0].report = qualReport;
+          
+          // Log template qualified
+          if (traceCtx) {
+            const qualResult = await TraceEvents.templateQualified(traceCtx, 1, {
+              slotCount: qualReport.slotCount,
+              mappingCount: qualReport.mappingCount,
+              obligationsTotal: qualReport.mandatoryObligationsTotal,
+              obligationsFound: qualReport.mandatoryObligationsFound,
+            });
+            traceCtx = qualResult.ctx;
+            await markStepCompleted(psurCaseId || 0, 1);
+          }
         }
       } catch (e: any) {
         steps[0].status = "FAILED";
         steps[0].endedAt = new Date().toISOString();
         steps[0].error = e.message || String(e);
+        
+        // Log workflow failure
+        if (traceCtx && psurCaseId) {
+          await TraceEvents.workflowFailed(traceCtx, 1, e.message || String(e));
+          await markWorkflowFailed(psurCaseId, 1, e.message || String(e));
+        }
         throw e;
       }
     } else if (existingCaseId) {
@@ -294,10 +350,23 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
         steps[1].endedAt = new Date().toISOString();
         steps[1].summary = { psurCaseId, psurRef };
         steps[1].report = { psurCaseId, psurRef, version, created: !existingCaseId };
+        
+        // Update trace context with case ID and log case created
+        if (traceCtx) {
+          traceCtx = { ...traceCtx, psurCaseId };
+          const caseResult = await TraceEvents.caseCreated(traceCtx, psurRef, psurCaseId);
+          traceCtx = caseResult.ctx;
+          await markStepCompleted(psurCaseId, 2);
+        }
       } catch (e: any) {
         steps[1].status = "FAILED";
         steps[1].endedAt = new Date().toISOString();
         steps[1].error = e.message || String(e);
+        
+        if (traceCtx && psurCaseId) {
+          await TraceEvents.workflowFailed(traceCtx, 2, e.message || String(e));
+          await markWorkflowFailed(psurCaseId, 2, e.message || String(e));
+        }
         throw e;
       }
     } else if (existingCaseId) {
@@ -356,6 +425,26 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
         steps[2].summary = { linkedToCaseAtoms: report.linkedToCaseAtoms, byType: Object.keys(byType).join(", ") };
         steps[2].report = report;
 
+        // Log evidence atoms created
+        if (traceCtx) {
+          for (const atom of evidenceAtomsData) {
+            const isNegative = atom.normalizedData?.isNegativeEvidence === true;
+            if (isNegative) {
+              const negResult = await TraceEvents.negativeEvidenceCreated(traceCtx, atom.atomId, atom.evidenceType);
+              traceCtx = negResult.ctx;
+            } else {
+              const atomResult = await TraceEvents.evidenceAtomCreated(
+                traceCtx, 
+                atom.atomId, 
+                atom.evidenceType, 
+                atom.provenance?.sourceFile
+              );
+              traceCtx = atomResult.ctx;
+            }
+          }
+          await markStepCompleted(psurCaseId, 3);
+        }
+
         if (report.linkedToCaseAtoms === 0) {
           steps[2].status = "BLOCKED";
           steps[2].error = "No evidence atoms linked to this case. Upload evidence before running workflow.";
@@ -364,6 +453,11 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
         steps[2].status = "FAILED";
         steps[2].endedAt = new Date().toISOString();
         steps[2].error = e.message || String(e);
+        
+        if (traceCtx && psurCaseId) {
+          await TraceEvents.workflowFailed(traceCtx, 3, e.message || String(e));
+          await markWorkflowFailed(psurCaseId, 3, e.message || String(e));
+        }
         throw e;
       }
     }
@@ -384,6 +478,13 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
             psurCaseId,
             templateId,
             evidenceAtoms: evidenceAtomsData,
+            // Extended context for AI agents
+            traceCtx: traceCtx || undefined,
+            deviceCode,
+            periodStart,
+            periodEnd,
+            enableAIGeneration: enableAIGeneration ?? false,
+            log: (msg: string) => console.log(msg),
           });
 
           // Count by status
@@ -440,10 +541,40 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
               requiredTypes: p.requiredTypes,
             })),
           };
+          
+          // Log slot proposals
+          if (traceCtx) {
+            for (const proposal of slotProposalsData) {
+              const proposalResult = await TraceEvents.slotProposed(
+                traceCtx,
+                proposal.slotId,
+                proposal.status,
+                proposal.evidenceAtomIds,
+                proposal.claimedObligationIds
+              );
+              traceCtx = proposalResult.ctx;
+              
+              // Log trace gaps
+              if (proposal.status === "TRACE_GAP") {
+                const gapResult = await TraceEvents.traceGapDetected(
+                  traceCtx,
+                  proposal.slotId,
+                  proposal.requiredTypes
+                );
+                traceCtx = gapResult.ctx;
+              }
+            }
+            await markStepCompleted(psurCaseId, 4);
+          }
         } catch (e: any) {
           steps[3].status = "FAILED";
           steps[3].endedAt = new Date().toISOString();
           steps[3].error = e.message || String(e);
+          
+          if (traceCtx && psurCaseId) {
+            await TraceEvents.workflowFailed(traceCtx, 4, e.message || String(e));
+            await markWorkflowFailed(psurCaseId, 4, e.message || String(e));
+          }
         }
       }
     }
@@ -491,10 +622,34 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
           steps[4].endedAt = new Date().toISOString();
           steps[4].summary = { acceptedCount: report.acceptedCount, rejectedCount: report.rejectedCount };
           steps[4].report = report;
+          
+          // Log adjudication decisions
+          if (traceCtx) {
+            for (const accepted of adjudicationResult.accepted) {
+              const acceptResult = await TraceEvents.slotAccepted(
+                traceCtx,
+                accepted.slotId,
+                accepted.evidenceAtomIds,
+                ["Passed adjudication rules"]
+              );
+              traceCtx = acceptResult.ctx;
+            }
+            
+            for (const { proposal, reasons } of adjudicationResult.rejected) {
+              const rejectResult = await TraceEvents.slotRejected(traceCtx, proposal.slotId, reasons);
+              traceCtx = rejectResult.ctx;
+            }
+            await markStepCompleted(psurCaseId, 5);
+          }
         } catch (e: any) {
           steps[4].status = "FAILED";
           steps[4].endedAt = new Date().toISOString();
           steps[4].error = e.message || String(e);
+          
+          if (traceCtx && psurCaseId) {
+            await TraceEvents.workflowFailed(traceCtx, 5, e.message || String(e));
+            await markWorkflowFailed(psurCaseId, 5, e.message || String(e));
+          }
         }
       }
     }
@@ -565,15 +720,57 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
             passed,
           };
           steps[5].report = report;
+          
+          // Log coverage and obligation status
+          if (traceCtx) {
+            // Log satisfied obligations
+            const satisfiedObligationIds = Array.from(new Set(acceptedProposals.flatMap(p => p.claimedObligationIds)));
+            for (const obligationId of satisfiedObligationIds) {
+              const satResult = await TraceEvents.obligationSatisfied(
+                traceCtx,
+                obligationId,
+                acceptedProposals.find(p => p.claimedObligationIds.includes(obligationId))?.slotId || "unknown"
+              );
+              traceCtx = satResult.ctx;
+            }
+            
+            // Log unsatisfied obligations
+            const traceGapProposals = slotProposalsData.filter(p => p.status === "TRACE_GAP");
+            for (const gap of traceGapProposals) {
+              for (const obligationId of gap.claimedObligationIds) {
+                const unsatResult = await TraceEvents.obligationUnsatisfied(
+                  traceCtx,
+                  obligationId,
+                  [`Slot ${gap.slotId} has TRACE_GAP - missing evidence types: ${gap.requiredTypes.join(", ")}`]
+                );
+                traceCtx = unsatResult.ctx;
+              }
+            }
+            
+            // Log overall coverage
+            const coverageResult = await TraceEvents.coverageComputed(
+              traceCtx,
+              satisfiedObligations,
+              totalObligations,
+              traceGapProposals.length
+            );
+            traceCtx = coverageResult.ctx;
+            await markStepCompleted(psurCaseId, 6);
+          }
         } catch (e: any) {
           steps[5].status = "FAILED";
           steps[5].endedAt = new Date().toISOString();
           steps[5].error = e.message || String(e);
+          
+          if (traceCtx && psurCaseId) {
+            await TraceEvents.workflowFailed(traceCtx, 6, e.message || String(e));
+            await markWorkflowFailed(psurCaseId, 6, e.message || String(e));
+          }
         }
       }
     }
 
-    // ==================== STEP 7: RENDER DOCUMENT ====================
+    // ==================== STEP 7: RENDER DOCUMENT (SOTA Compilation) ====================
     if (stepsToRun.includes(7)) {
       if (steps[5].status === "BLOCKED" || steps[5].status === "FAILED") {
         steps[6].status = "BLOCKED";
@@ -583,20 +780,71 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
         steps[6].startedAt = new Date().toISOString();
 
         try {
-          const effectiveSlots = template ? getSlots(template) : [];
+          // Use SOTA CompileOrchestrator for document generation
+          const { CompileOrchestrator } = await import("../agents/runtime/compileOrchestrator");
+          const compileOrchestrator = new CompileOrchestrator();
           
-          steps[6].status = "COMPLETED";
-          steps[6].endedAt = new Date().toISOString();
-          steps[6].summary = { documentType: "markdown", sections: effectiveSlots.length };
-          steps[6].report = {
-            format: "markdown",
-            sections: effectiveSlots.length,
-            filePath: `psur_${psurRef}.md`,
-          };
+          const documentStyle = params.documentStyle || "corporate";
+          const enableCharts = params.enableCharts !== false;
+          
+          console.log(`[Workflow] Starting SOTA document compilation with style: ${documentStyle}`);
+          
+          const compileResult = await compileOrchestrator.compile({
+            psurCaseId,
+            templateId: params.templateId,
+            deviceCode: params.deviceCode,
+            periodStart: params.periodStart,
+            periodEnd: params.periodEnd,
+            documentStyle,
+            enableCharts,
+          });
+          
+          if (compileResult.success && compileResult.document) {
+            // Store the generated document
+            const docPath = `bundles/PSUR-${psurRef}/${compileResult.document.filename}`;
+            
+            steps[6].status = "COMPLETED";
+            steps[6].endedAt = new Date().toISOString();
+            steps[6].summary = { 
+              documentType: "docx", 
+              sections: compileResult.sections.length,
+              charts: compileResult.charts.length,
+              style: documentStyle,
+              traceEntries: compileResult.traceSummary.totalEntries,
+              traceConfidence: compileResult.traceSummary.averageConfidence,
+              traceLLMCalls: compileResult.traceSummary.totalLLMCalls,
+              traceTokens: compileResult.traceSummary.totalTokens,
+            };
+            steps[6].report = {
+              format: "docx",
+              sections: compileResult.sections.length,
+              filePath: docPath,
+              documentBuffer: compileResult.document.buffer,
+              documentFilename: compileResult.document.filename,
+              style: documentStyle,
+              charts: compileResult.charts.length,
+              warnings: compileResult.warnings,
+            };
+            
+            // Log document rendered
+            if (traceCtx) {
+              const renderResult = await TraceEvents.documentRendered(traceCtx, "docx", compileResult.sections.length);
+              traceCtx = renderResult.ctx;
+              await markStepCompleted(psurCaseId, 7);
+            }
+          } else {
+            // Compilation failed
+            throw new Error(`Compilation failed: ${compileResult.errors.join("; ")}`);
+          }
         } catch (e: any) {
           steps[6].status = "FAILED";
           steps[6].endedAt = new Date().toISOString();
           steps[6].error = e.message || String(e);
+          
+          if (traceCtx && psurCaseId) {
+            await TraceEvents.workflowFailed(traceCtx, 7, e.message || String(e));
+            await markWorkflowFailed(psurCaseId, 7, e.message || String(e));
+          }
         }
       }
     }
@@ -631,6 +879,7 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
               "evidence_register.json",
               "qualification_report.json",
               "psur.md",
+              "psur.docx",
             ],
             downloadUrl: `/api/audit-bundles/${psurCaseId}/download`,
           };
@@ -641,16 +890,42 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
           steps[7].endedAt = new Date().toISOString();
           steps[7].summary = { bundleRef, files: report.bundleFiles.length };
           steps[7].report = report;
+          
+          // Log bundle exported and workflow completed
+          if (traceCtx) {
+            const bundleResult = await TraceEvents.bundleExported(traceCtx, bundleRef, report.bundleFiles);
+            traceCtx = bundleResult.ctx;
+            
+            const workflowDuration = Date.now() - workflowStartTime;
+            const completeResult = await TraceEvents.workflowCompleted(traceCtx, workflowDuration);
+            traceCtx = completeResult.ctx;
+            await markStepCompleted(psurCaseId, 8);
+          }
         } catch (e: any) {
           steps[7].status = "FAILED";
           steps[7].endedAt = new Date().toISOString();
           steps[7].error = e.message || String(e);
+          
+          if (traceCtx && psurCaseId) {
+            await TraceEvents.workflowFailed(traceCtx, 8, e.message || String(e));
+            await markWorkflowFailed(psurCaseId, 8, e.message || String(e));
+          }
         }
       }
     }
 
   } catch (e: any) {
     console.error("[WorkflowRunner] Error:", e);
+    
+    // Log global workflow failure
+    if (traceCtx && psurCaseId) {
+      try {
+        await TraceEvents.workflowFailed(traceCtx, 0, e.message || String(e));
+        await markWorkflowFailed(psurCaseId, 0, e.message || String(e));
+      } catch (traceErr) {
+        console.error("[WorkflowRunner] Failed to log trace error:", traceErr);
+      }
+    }
   }
 
   const kernelStatus = await getKernelStatus(jurisdictions);

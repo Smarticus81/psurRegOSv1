@@ -10,6 +10,8 @@ import {
   type Template,
   type TemplateSlot
 } from "../../templateStore";
+import { NarrativeWriterAgent, NarrativeInput } from "../../agents/runtime/narrativeWriterAgent";
+import { TraceContext, startTrace, resumeTrace } from "../../services/decisionTraceService";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -38,6 +40,12 @@ export interface ProposeContext {
   evidenceAtoms: EvidenceAtomRecord[];
   log?: (msg: string) => void;
   slotProposals?: SlotProposalOutput[];
+  // Extended context for AI agents
+  traceCtx?: TraceContext;
+  deviceCode?: string;
+  periodStart?: string;
+  periodEnd?: string;
+  enableAIGeneration?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -168,18 +176,25 @@ async function proposeSlotsFromTemplate(ctx: ProposeContext): Promise<SlotPropos
 
   const proposals: SlotProposalOutput[] = [];
 
+  // Ensure we have trace context for AI agents
+  let traceCtx = ctx.traceCtx;
+  if (!traceCtx && ctx.enableAIGeneration) {
+    traceCtx = await resumeTrace(ctx.psurCaseId) || await startTrace(ctx.psurCaseId, templateId);
+  }
+
   for (const slot of effectiveSlots) {
     const slotId = slot.slot_id;
     const title = slot.title;
     const requiredTypes = slot.evidence_requirements?.required_types || [];
     const claimedObligationIds = effectiveMapping[slotId] || [];
+    const slotKind = slot.slot_kind;
 
     // Find eligible evidence atoms
     const eligibleAtoms = evidenceAtoms.filter(a =>
       requiredTypes.includes(a.evidenceType)
     );
 
-    // Generate proposal with appropriate status
+    // Generate base proposal with appropriate status
     const proposal = generateProposal(
       slotId,
       title,
@@ -189,6 +204,42 @@ async function proposeSlotsFromTemplate(ctx: ProposeContext): Promise<SlotPropos
       defaults.min_evidence_atoms
     );
 
+    // For NARRATIVE slots with evidence, use AI to generate content
+    if (slotKind === "NARRATIVE" && proposal.status === "READY" && ctx.enableAIGeneration && traceCtx) {
+      ctx.log?.(`[Step 4/8] Generating AI narrative for slot: ${slotId}`);
+      
+      try {
+        const narrativeContent = await generateNarrativeContent(
+          slot,
+          eligibleAtoms,
+          {
+            psurCaseId: ctx.psurCaseId,
+            traceCtx,
+            templateId,
+            deviceCode: ctx.deviceCode || "",
+            periodStart: ctx.periodStart || "",
+            periodEnd: ctx.periodEnd || "",
+          }
+        );
+        
+        proposal.content = narrativeContent.content;
+        proposal.evidenceAtomIds = narrativeContent.citedAtoms;
+        proposal.methodStatement = `AI-Generated: ${narrativeContent.reasoning}. ` +
+          `Word count: ${narrativeContent.wordCount}. ` +
+          `Confidence: ${(narrativeContent.confidence * 100).toFixed(0)}%. ` +
+          `Cited ${narrativeContent.citedAtoms.length} atoms. ` +
+          `Obligations: [${claimedObligationIds.join(", ")}].`;
+        proposal.transformations = ["ai_narrative_generation", "cite_evidence"];
+        
+        ctx.log?.(`[Step 4/8] Generated ${narrativeContent.wordCount} words for ${slotId}`);
+        
+      } catch (error: any) {
+        ctx.log?.(`[Step 4/8] AI generation failed for ${slotId}: ${error.message}`);
+        // Keep the deterministic proposal as fallback
+        proposal.methodStatement += ` [AI generation attempted but failed: ${error.message}]`;
+      }
+    }
+
     proposals.push(proposal);
   }
 
@@ -197,10 +248,83 @@ async function proposeSlotsFromTemplate(ctx: ProposeContext): Promise<SlotPropos
   const readyCount = proposals.filter(p => p.status === "READY").length;
   const gapCount = proposals.filter(p => p.status === "TRACE_GAP").length;
   const noEvidenceCount = proposals.filter(p => p.status === "NO_EVIDENCE_REQUIRED").length;
+  const aiGeneratedCount = proposals.filter(p => p.transformations.includes("ai_narrative_generation")).length;
   
-  ctx.log?.(`[Step 4/8] Generated ${proposals.length} proposals: ${readyCount} READY, ${gapCount} TRACE_GAP, ${noEvidenceCount} NO_EVIDENCE_REQUIRED`);
+  ctx.log?.(`[Step 4/8] Generated ${proposals.length} proposals: ${readyCount} READY, ${gapCount} TRACE_GAP, ${noEvidenceCount} NO_EVIDENCE_REQUIRED, ${aiGeneratedCount} AI-generated`);
 
   return proposals;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AI NARRATIVE GENERATION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+interface NarrativeResult {
+  content: string;
+  citedAtoms: string[];
+  wordCount: number;
+  confidence: number;
+  reasoning: string;
+}
+
+async function generateNarrativeContent(
+  slot: TemplateSlot,
+  atoms: EvidenceAtomRecord[],
+  context: {
+    psurCaseId: number;
+    traceCtx: TraceContext;
+    templateId: string;
+    deviceCode: string;
+    periodStart: string;
+    periodEnd: string;
+  }
+): Promise<NarrativeResult> {
+  const agent = new NarrativeWriterAgent();
+  
+  const input: NarrativeInput = {
+    slot: {
+      slotId: slot.slot_id,
+      title: slot.title,
+      sectionPath: slot.section_path,
+      requirements: slot.evidence_requirements?.required_types?.join(", "),
+      guidance: slot.output_requirements?.render_as,
+    },
+    evidenceAtoms: atoms.map(a => ({
+      atomId: a.atomId,
+      evidenceType: a.evidenceType,
+      normalizedData: a.normalizedData as Record<string, unknown>,
+    })),
+    context: {
+      deviceCode: context.deviceCode,
+      periodStart: context.periodStart,
+      periodEnd: context.periodEnd,
+      templateId: context.templateId,
+    },
+  };
+  
+  const agentContext = {
+    psurCaseId: context.psurCaseId,
+    traceCtx: context.traceCtx,
+    templateId: context.templateId,
+    slotId: slot.slot_id,
+    deviceCode: context.deviceCode,
+    periodStart: context.periodStart,
+    periodEnd: context.periodEnd,
+  };
+  
+  const result = await agent.run(input, agentContext);
+  
+  if (!result.success || !result.data) {
+    throw new Error(result.error || "Narrative generation failed");
+  }
+  
+  return {
+    content: result.data.content,
+    citedAtoms: result.data.citedAtoms,
+    wordCount: result.data.wordCount,
+    confidence: result.data.confidence,
+    reasoning: result.data.reasoning,
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

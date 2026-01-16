@@ -1,7 +1,7 @@
 /**
  * TEMPLATE EXTENSION VALIDATOR
  * 
- * Validates that template extensions (like FormQAR-054_C) comply with
+ * Validates that template extensions comply with
  * the PSUR contract rules:
  * - May ADD sections but may NOT remove or rename core sections
  * - May NOT redefine calculations

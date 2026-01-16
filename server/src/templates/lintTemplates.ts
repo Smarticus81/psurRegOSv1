@@ -62,7 +62,7 @@ export async function lintTemplate(templatePath: string): Promise<LintResult> {
   const slotIds = new Set(template.slots.map(s => s.slot_id));
   const mappingKeys = new Set(Object.keys(template.mapping));
 
-  for (const slotId of slotIds) {
+  for (const slotId of Array.from(slotIds)) {
     if (!mappingKeys.has(slotId)) {
       errors.push({
         level: "error",
@@ -74,7 +74,7 @@ export async function lintTemplate(templatePath: string): Promise<LintResult> {
   }
 
   // Check for orphaned mapping keys
-  for (const mappingKey of mappingKeys) {
+  for (const mappingKey of Array.from(mappingKeys)) {
     if (!slotIds.has(mappingKey)) {
       warnings.push({
         level: "warning",

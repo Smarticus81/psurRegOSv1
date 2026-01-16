@@ -1,42 +1,33 @@
 import { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import {
   Settings,
   Database,
   FileText,
   Upload,
-  ChevronDown,
-  ChevronRight,
   Trash2,
   Plus,
   Save,
   RefreshCw,
   Check,
-  X,
   FileSpreadsheet,
   FileType,
-  File,
   AlertCircle,
   Cog,
-  LayoutGrid,
-  List,
-  Eye,
+  Zap,
   Edit3,
-  Copy,
-  Zap
+  Layers,
+  Shield,
+  ArrowRight
 } from "lucide-react";
 
 // Types
@@ -44,7 +35,6 @@ interface FieldMapping {
   sourceField: string;
   targetField: string;
   transformation?: string;
-  defaultValue?: unknown;
 }
 
 interface EvidenceTypeMapping {
@@ -52,7 +42,6 @@ interface EvidenceTypeMapping {
   enabled: boolean;
   confidence: number;
   fieldMappings: FieldMapping[];
-  validationRules?: string[];
 }
 
 interface SourceConfig {
@@ -66,8 +55,6 @@ interface SourceConfig {
   evidenceTypeMappings: EvidenceTypeMapping[];
   autoExtract: boolean;
   requiresReview: boolean;
-  createdAt?: string;
-  updatedAt?: string;
 }
 
 interface EvidenceType {
@@ -78,26 +65,24 @@ interface EvidenceType {
   optionalFields: string[];
 }
 
-// Icon mapping for source types
-const sourceTypeIcons: Record<string, React.ReactNode> = {
-  sales: <FileSpreadsheet className="w-5 h-5 text-emerald-500" />,
-  complaints: <AlertCircle className="w-5 h-5 text-amber-500" />,
-  fsca: <Zap className="w-5 h-5 text-red-500" />,
-  capa: <Cog className="w-5 h-5 text-blue-500" />,
-  pmcf: <FileText className="w-5 h-5 text-purple-500" />,
-  literature: <File className="w-5 h-5 text-indigo-500" />,
-  external_db: <Database className="w-5 h-5 text-cyan-500" />,
-  risk: <AlertCircle className="w-5 h-5 text-orange-500" />,
-  cer: <FileType className="w-5 h-5 text-pink-500" />,
+// Source type visual configs
+const sourceTypeConfig: Record<string, { icon: any; color: string; bg: string; border: string }> = {
+  cer: { icon: FileType, color: "text-pink-400", bg: "bg-pink-500/10", border: "border-pink-500/30" },
+  sales: { icon: FileSpreadsheet, color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/30" },
+  complaints: { icon: AlertCircle, color: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/30" },
+  fsca: { icon: Zap, color: "text-red-400", bg: "bg-red-500/10", border: "border-red-500/30" },
+  pmcf: { icon: FileText, color: "text-purple-400", bg: "bg-purple-500/10", border: "border-purple-500/30" },
+  risk: { icon: Shield, color: "text-orange-400", bg: "bg-orange-500/10", border: "border-orange-500/30" },
+  capa: { icon: Cog, color: "text-blue-400", bg: "bg-blue-500/10", border: "border-blue-500/30" },
+  admin: { icon: Database, color: "text-cyan-400", bg: "bg-cyan-500/10", border: "border-cyan-500/30" },
 };
 
-// Format badge colors
-const formatBadgeColors: Record<string, string> = {
-  excel: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
-  json: "bg-amber-500/20 text-amber-400 border-amber-500/30",
-  docx: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-  pdf: "bg-red-500/20 text-red-400 border-red-500/30",
-  csv: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+const formatColors: Record<string, string> = {
+  excel: "bg-emerald-500/20 text-emerald-300",
+  csv: "bg-purple-500/20 text-purple-300",
+  json: "bg-amber-500/20 text-amber-300",
+  docx: "bg-blue-500/20 text-blue-300",
+  pdf: "bg-red-500/20 text-red-300",
 };
 
 export default function AdminPage() {
@@ -106,17 +91,19 @@ export default function AdminPage() {
   const [evidenceTypes, setEvidenceTypes] = useState<EvidenceType[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedConfig, setSelectedConfig] = useState<SourceConfig | null>(null);
-  const [expandedSources, setExpandedSources] = useState<Set<string>>(new Set());
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
-  const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [editingMapping, setEditingMapping] = useState<EvidenceTypeMapping | null>(null);
-  const [editingSourceId, setEditingSourceId] = useState<string | null>(null);
+  
+  // Modal states
+  const [selectedSource, setSelectedSource] = useState<SourceConfig | null>(null);
+  const [selectedType, setSelectedType] = useState<EvidenceType | null>(null);
+  const [editingMapping, setEditingMapping] = useState<{ source: SourceConfig; mapping: EvidenceTypeMapping } | null>(null);
+  
+  // Test extraction
+  const [testFile, setTestFile] = useState<File | null>(null);
+  const [testSourceType, setTestSourceType] = useState("sales");
+  const [extracting, setExtracting] = useState(false);
+  const [extractResult, setExtractResult] = useState<any>(null);
 
-  // Fetch data on mount
-  useEffect(() => {
-    fetchData();
-  }, []);
+  useEffect(() => { fetchData(); }, []);
 
   const fetchData = async () => {
     setLoading(true);
@@ -125,829 +112,550 @@ export default function AdminPage() {
         fetch("/api/ingest/sources"),
         fetch("/api/ingest/evidence-types"),
       ]);
-
       if (sourcesRes.ok) {
         const data = await sourcesRes.json();
         setSourceConfigs(data.sources);
       }
-
       if (typesRes.ok) {
         const data = await typesRes.json();
         setEvidenceTypes(data.evidenceTypes);
         setCategories(data.categories);
       }
     } catch (error) {
-      console.error("Failed to fetch data:", error);
-      toast({
-        title: "Error",
-        description: "Failed to load configuration data",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Failed to load configuration", variant: "destructive" });
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleResetToDefaults = async () => {
-    try {
-      const res = await fetch("/api/ingest/sources/reset", { method: "POST" });
-      if (res.ok) {
-        const data = await res.json();
-        setSourceConfigs(data.sources);
-        toast({
-          title: "Reset Complete",
-          description: "Source configurations reset to defaults",
-        });
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to reset configurations",
-        variant: "destructive",
-      });
     }
   };
 
   const handleToggleMapping = async (sourceId: string, evidenceType: string, enabled: boolean) => {
     const config = sourceConfigs.find(c => c.id === sourceId);
     if (!config) return;
-
     const updatedMappings = config.evidenceTypeMappings.map(m =>
       m.evidenceType === evidenceType ? { ...m, enabled } : m
     );
-
     const updatedConfig = { ...config, evidenceTypeMappings: updatedMappings };
-
     try {
       const res = await fetch(`/api/ingest/sources/${sourceId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updatedConfig),
       });
-
       if (res.ok) {
-        setSourceConfigs(configs =>
-          configs.map(c => (c.id === sourceId ? updatedConfig : c))
-        );
+        setSourceConfigs(configs => configs.map(c => c.id === sourceId ? updatedConfig : c));
+        if (selectedSource?.id === sourceId) setSelectedSource(updatedConfig);
       }
     } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to update mapping",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Failed to update", variant: "destructive" });
     }
-  };
-
-  const handleToggleAutoExtract = async (sourceId: string, autoExtract: boolean) => {
-    const config = sourceConfigs.find(c => c.id === sourceId);
-    if (!config) return;
-
-    const updatedConfig = { ...config, autoExtract };
-
-    try {
-      const res = await fetch(`/api/ingest/sources/${sourceId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updatedConfig),
-      });
-
-      if (res.ok) {
-        setSourceConfigs(configs =>
-          configs.map(c => (c.id === sourceId ? updatedConfig : c))
-        );
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to update configuration",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleToggleRequiresReview = async (sourceId: string, requiresReview: boolean) => {
-    const config = sourceConfigs.find(c => c.id === sourceId);
-    if (!config) return;
-
-    const updatedConfig = { ...config, requiresReview };
-
-    try {
-      const res = await fetch(`/api/ingest/sources/${sourceId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updatedConfig),
-      });
-
-      if (res.ok) {
-        setSourceConfigs(configs =>
-          configs.map(c => (c.id === sourceId ? updatedConfig : c))
-        );
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to update configuration",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const toggleSourceExpanded = (sourceId: string) => {
-    setExpandedSources(prev => {
-      const next = new Set(prev);
-      if (next.has(sourceId)) {
-        next.delete(sourceId);
-      } else {
-        next.add(sourceId);
-      }
-      return next;
-    });
-  };
-
-  const openEditDialog = (sourceId: string, mapping: EvidenceTypeMapping) => {
-    setEditingSourceId(sourceId);
-    setEditingMapping({ ...mapping });
-    setEditDialogOpen(true);
   };
 
   const handleSaveMapping = async () => {
-    if (!editingSourceId || !editingMapping) return;
-
-    const config = sourceConfigs.find(c => c.id === editingSourceId);
-    if (!config) return;
-
-    const updatedMappings = config.evidenceTypeMappings.map(m =>
-      m.evidenceType === editingMapping.evidenceType ? editingMapping : m
+    if (!editingMapping) return;
+    const { source, mapping } = editingMapping;
+    const updatedMappings = source.evidenceTypeMappings.map(m =>
+      m.evidenceType === mapping.evidenceType ? mapping : m
     );
-
-    const updatedConfig = { ...config, evidenceTypeMappings: updatedMappings };
-
+    const updatedConfig = { ...source, evidenceTypeMappings: updatedMappings };
     try {
-      const res = await fetch(`/api/ingest/sources/${editingSourceId}`, {
+      const res = await fetch(`/api/ingest/sources/${source.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updatedConfig),
       });
-
       if (res.ok) {
-        setSourceConfigs(configs =>
-          configs.map(c => (c.id === editingSourceId ? updatedConfig : c))
-        );
-        setEditDialogOpen(false);
-        toast({
-          title: "Saved",
-          description: "Mapping configuration updated",
-        });
+        setSourceConfigs(configs => configs.map(c => c.id === source.id ? updatedConfig : c));
+        if (selectedSource?.id === source.id) setSelectedSource(updatedConfig);
+        setEditingMapping(null);
+        toast({ title: "Saved", description: "Mapping updated" });
       }
     } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to save mapping",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Failed to save", variant: "destructive" });
     }
   };
 
-  const renderSourceCard = (config: SourceConfig) => {
-    const isExpanded = expandedSources.has(config.id);
-    const enabledMappings = config.evidenceTypeMappings.filter(m => m.enabled).length;
-    const totalMappings = config.evidenceTypeMappings.length;
-
-    return (
-      <Card key={config.id} className="bg-slate-900/60 border-slate-700/50 overflow-hidden">
-        <Collapsible open={isExpanded} onOpenChange={() => toggleSourceExpanded(config.id)}>
-          <CollapsibleTrigger className="w-full">
-            <CardHeader className="pb-3 cursor-pointer hover:bg-slate-800/30 transition-colors">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  {sourceTypeIcons[config.sourceType] || <File className="w-5 h-5 text-slate-400" />}
-                  <div className="text-left">
-                    <CardTitle className="text-lg font-semibold text-slate-100">
-                      {config.name}
-                    </CardTitle>
-                    {config.description && (
-                      <CardDescription className="text-slate-400 text-sm mt-0.5">
-                        {config.description}
-                      </CardDescription>
-                    )}
-                  </div>
-                </div>
-                <div className="flex items-center gap-4">
-                  <div className="flex gap-1.5">
-                    {config.acceptedFormats.map(fmt => (
-                      <Badge
-                        key={fmt}
-                        variant="outline"
-                        className={`text-xs ${formatBadgeColors[fmt] || "bg-slate-500/20 text-slate-400"}`}
-                      >
-                        {fmt.toUpperCase()}
-                      </Badge>
-                    ))}
-                  </div>
-                  <Badge variant="outline" className="bg-slate-800/50 text-slate-300 border-slate-600">
-                    {enabledMappings}/{totalMappings} types
-                  </Badge>
-                  {isExpanded ? (
-                    <ChevronDown className="w-5 h-5 text-slate-400" />
-                  ) : (
-                    <ChevronRight className="w-5 h-5 text-slate-400" />
-                  )}
-                </div>
-              </div>
-            </CardHeader>
-          </CollapsibleTrigger>
-
-          <CollapsibleContent>
-            <CardContent className="pt-0">
-              <Separator className="mb-4 bg-slate-700/50" />
-
-              {/* Config Options */}
-              <div className="flex items-center gap-6 mb-4 p-3 bg-slate-800/30 rounded-lg">
-                <div className="flex items-center gap-2">
-                  <Switch
-                    checked={config.autoExtract}
-                    onCheckedChange={(checked) => handleToggleAutoExtract(config.id, checked)}
-                  />
-                  <Label className="text-sm text-slate-300">Auto-Extract</Label>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Switch
-                    checked={config.requiresReview}
-                    onCheckedChange={(checked) => handleToggleRequiresReview(config.id, checked)}
-                  />
-                  <Label className="text-sm text-slate-300">Requires Review</Label>
-                </div>
-              </div>
-
-              {/* Primary Evidence Types */}
-              <div className="mb-4">
-                <h4 className="text-sm font-medium text-slate-300 mb-2 flex items-center gap-2">
-                  <Check className="w-4 h-4 text-emerald-500" />
-                  Primary Evidence Types
-                </h4>
-                <div className="flex flex-wrap gap-2">
-                  {config.primaryEvidenceTypes.map(type => (
-                    <Badge key={type} className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">
-                      {type}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-
-              {/* Secondary Evidence Types */}
-              {config.secondaryEvidenceTypes && config.secondaryEvidenceTypes.length > 0 && (
-                <div className="mb-4">
-                  <h4 className="text-sm font-medium text-slate-300 mb-2 flex items-center gap-2">
-                    <Plus className="w-4 h-4 text-blue-500" />
-                    Secondary Evidence Types
-                  </h4>
-                  <div className="flex flex-wrap gap-2">
-                    {config.secondaryEvidenceTypes.map(type => (
-                      <Badge key={type} variant="outline" className="bg-blue-500/10 text-blue-400 border-blue-500/30">
-                        {type}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Evidence Type Mappings */}
-              <div className="mt-4">
-                <h4 className="text-sm font-medium text-slate-300 mb-3 flex items-center gap-2">
-                  <Settings className="w-4 h-4 text-slate-400" />
-                  Evidence Type Mappings
-                </h4>
-                <div className="space-y-2">
-                  {config.evidenceTypeMappings.map(mapping => {
-                    const typeInfo = evidenceTypes.find(t => t.type === mapping.evidenceType);
-                    return (
-                      <div
-                        key={mapping.evidenceType}
-                        className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${
-                          mapping.enabled
-                            ? "bg-slate-800/50 border-slate-600/50"
-                            : "bg-slate-900/50 border-slate-700/30 opacity-60"
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <Switch
-                            checked={mapping.enabled}
-                            onCheckedChange={(checked) =>
-                              handleToggleMapping(config.id, mapping.evidenceType, checked)
-                            }
-                          />
-                          <div>
-                            <p className="text-sm font-medium text-slate-200">
-                              {mapping.evidenceType}
-                            </p>
-                            {typeInfo && (
-                              <p className="text-xs text-slate-400">{typeInfo.description}</p>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <Badge
-                            variant="outline"
-                            className={`text-xs ${
-                              mapping.confidence >= 0.8
-                                ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
-                                : mapping.confidence >= 0.6
-                                ? "bg-amber-500/20 text-amber-400 border-amber-500/30"
-                                : "bg-red-500/20 text-red-400 border-red-500/30"
-                            }`}
-                          >
-                            {(mapping.confidence * 100).toFixed(0)}% confidence
-                          </Badge>
-                          <Badge variant="outline" className="text-xs bg-slate-700/50 text-slate-400">
-                            {mapping.fieldMappings.length} fields
-                          </Badge>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => openEditDialog(config.id, mapping)}
-                          >
-                            <Edit3 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </CardContent>
-          </CollapsibleContent>
-        </Collapsible>
-      </Card>
-    );
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
-        <div className="flex items-center gap-3 text-slate-400">
-          <RefreshCw className="w-6 h-6 animate-spin" />
-          <span className="text-lg">Loading configuration...</span>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
-      {/* Header */}
-      <div className="border-b border-slate-800/50 bg-slate-900/50 backdrop-blur-sm sticky top-0 z-10">
-        <div className="container mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-3">
-                <Cog className="w-7 h-7 text-blue-500" />
-                Evidence Configuration
-              </h1>
-              <p className="text-slate-400 text-sm mt-1">
-                Configure evidence source mappings and extraction rules
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center border border-slate-700 rounded-lg overflow-hidden">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className={viewMode === "grid" ? "bg-slate-700" : ""}
-                  onClick={() => setViewMode("grid")}
-                >
-                  <LayoutGrid className="w-4 h-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className={viewMode === "list" ? "bg-slate-700" : ""}
-                  onClick={() => setViewMode("list")}
-                >
-                  <List className="w-4 h-4" />
-                </Button>
-              </div>
-              <Button variant="outline" onClick={handleResetToDefaults}>
-                <RefreshCw className="w-4 h-4 mr-2" />
-                Reset to Defaults
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="container mx-auto px-6 py-8">
-        <Tabs defaultValue="sources" className="space-y-6">
-          <TabsList className="bg-slate-800/50 border border-slate-700/50">
-            <TabsTrigger value="sources" className="data-[state=active]:bg-slate-700">
-              <Database className="w-4 h-4 mr-2" />
-              Source Mappings
-            </TabsTrigger>
-            <TabsTrigger value="types" className="data-[state=active]:bg-slate-700">
-              <FileText className="w-4 h-4 mr-2" />
-              Evidence Types
-            </TabsTrigger>
-            <TabsTrigger value="test" className="data-[state=active]:bg-slate-700">
-              <Upload className="w-4 h-4 mr-2" />
-              Test Extraction
-            </TabsTrigger>
-          </TabsList>
-
-          {/* Source Mappings Tab */}
-          <TabsContent value="sources" className="space-y-4">
-            <div className="grid gap-4">
-              {sourceConfigs.map(config => renderSourceCard(config))}
-            </div>
-          </TabsContent>
-
-          {/* Evidence Types Tab */}
-          <TabsContent value="types">
-            <Card className="bg-slate-900/60 border-slate-700/50">
-              <CardHeader>
-                <CardTitle className="text-slate-100">Evidence Types Reference</CardTitle>
-                <CardDescription className="text-slate-400">
-                  All available evidence types that can be extracted from documents
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-6">
-                  {categories.map(category => (
-                    <div key={category}>
-                      <h3 className="text-lg font-semibold text-slate-200 mb-3">{category}</h3>
-                      <div className="grid gap-2">
-                        {evidenceTypes
-                          .filter(t => t.category === category)
-                          .map(type => (
-                            <div
-                              key={type.type}
-                              className="p-3 bg-slate-800/30 rounded-lg border border-slate-700/30"
-                            >
-                              <div className="flex items-start justify-between">
-                                <div>
-                                  <p className="font-medium text-slate-200">{type.type}</p>
-                                  <p className="text-sm text-slate-400 mt-0.5">{type.description}</p>
-                                </div>
-                                <Badge variant="outline" className="bg-slate-700/50 text-slate-300 text-xs">
-                                  {type.requiredFields.length} required
-                                </Badge>
-                              </div>
-                              <div className="flex flex-wrap gap-1.5 mt-2">
-                                {type.requiredFields.map(field => (
-                                  <Badge
-                                    key={field}
-                                    className="text-xs bg-red-500/20 text-red-400 border-red-500/30"
-                                  >
-                                    {field}*
-                                  </Badge>
-                                ))}
-                                {type.optionalFields.slice(0, 5).map(field => (
-                                  <Badge
-                                    key={field}
-                                    variant="outline"
-                                    className="text-xs bg-slate-700/30 text-slate-400"
-                                  >
-                                    {field}
-                                  </Badge>
-                                ))}
-                                {type.optionalFields.length > 5 && (
-                                  <Badge variant="outline" className="text-xs bg-slate-700/30 text-slate-400">
-                                    +{type.optionalFields.length - 5} more
-                                  </Badge>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Test Extraction Tab */}
-          <TabsContent value="test">
-            <TestExtractionPanel />
-          </TabsContent>
-        </Tabs>
-      </div>
-
-      {/* Edit Mapping Dialog */}
-      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent className="bg-slate-900 border-slate-700 max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-slate-100">Edit Field Mappings</DialogTitle>
-            <DialogDescription className="text-slate-400">
-              Configure how source fields map to evidence type fields
-            </DialogDescription>
-          </DialogHeader>
-
-          {editingMapping && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-4">
-                <div className="flex-1">
-                  <Label className="text-slate-300">Evidence Type</Label>
-                  <p className="text-lg font-medium text-slate-100">{editingMapping.evidenceType}</p>
-                </div>
-                <div>
-                  <Label className="text-slate-300">Confidence</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value={editingMapping.confidence}
-                    onChange={(e) =>
-                      setEditingMapping({
-                        ...editingMapping,
-                        confidence: parseFloat(e.target.value),
-                      })
-                    }
-                    className="w-24 bg-slate-800 border-slate-700"
-                  />
-                </div>
-              </div>
-
-              <Separator className="bg-slate-700" />
-
-              <div>
-                <Label className="text-slate-300 mb-2 block">Field Mappings</Label>
-                <div className="space-y-2 max-h-80 overflow-y-auto">
-                  {editingMapping.fieldMappings.map((fm, idx) => (
-                    <div
-                      key={idx}
-                      className="flex items-center gap-2 p-2 bg-slate-800/50 rounded-lg"
-                    >
-                      <Input
-                        value={fm.sourceField}
-                        onChange={(e) => {
-                          const updated = [...editingMapping.fieldMappings];
-                          updated[idx] = { ...updated[idx], sourceField: e.target.value };
-                          setEditingMapping({ ...editingMapping, fieldMappings: updated });
-                        }}
-                        placeholder="Source field"
-                        className="flex-1 bg-slate-900 border-slate-700 text-sm"
-                      />
-                      <span className="text-slate-500">-&gt;</span>
-                      <Input
-                        value={fm.targetField}
-                        onChange={(e) => {
-                          const updated = [...editingMapping.fieldMappings];
-                          updated[idx] = { ...updated[idx], targetField: e.target.value };
-                          setEditingMapping({ ...editingMapping, fieldMappings: updated });
-                        }}
-                        placeholder="Target field"
-                        className="flex-1 bg-slate-900 border-slate-700 text-sm"
-                      />
-                      <Select
-                        value={fm.transformation || "direct"}
-                        onValueChange={(value) => {
-                          const updated = [...editingMapping.fieldMappings];
-                          updated[idx] = { ...updated[idx], transformation: value };
-                          setEditingMapping({ ...editingMapping, fieldMappings: updated });
-                        }}
-                      >
-                        <SelectTrigger className="w-28 bg-slate-900 border-slate-700 text-sm">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="bg-slate-900 border-slate-700">
-                          <SelectItem value="direct">Direct</SelectItem>
-                          <SelectItem value="uppercase">Uppercase</SelectItem>
-                          <SelectItem value="lowercase">Lowercase</SelectItem>
-                          <SelectItem value="date">Date</SelectItem>
-                          <SelectItem value="number">Number</SelectItem>
-                          <SelectItem value="boolean">Boolean</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          const updated = editingMapping.fieldMappings.filter((_, i) => i !== idx);
-                          setEditingMapping({ ...editingMapping, fieldMappings: updated });
-                        }}
-                      >
-                        <Trash2 className="w-4 h-4 text-red-500" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="mt-2"
-                  onClick={() => {
-                    setEditingMapping({
-                      ...editingMapping,
-                      fieldMappings: [
-                        ...editingMapping.fieldMappings,
-                        { sourceField: "", targetField: "", transformation: "direct" },
-                      ],
-                    });
-                  }}
-                >
-                  <Plus className="w-4 h-4 mr-1" />
-                  Add Field Mapping
-                </Button>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-4">
-                <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
-                  Cancel
-                </Button>
-                <Button onClick={handleSaveMapping}>
-                  <Save className="w-4 h-4 mr-2" />
-                  Save Changes
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
-
-// Test Extraction Panel Component
-function TestExtractionPanel() {
-  const { toast } = useToast();
-  const [file, setFile] = useState<File | null>(null);
-  const [sourceType, setSourceType] = useState("sales");
-  const [extracting, setExtracting] = useState(false);
-  const [result, setResult] = useState<any>(null);
-
   const handleExtract = async () => {
-    if (!file) return;
-
+    if (!testFile) return;
     setExtracting(true);
-    setResult(null);
-
+    setExtractResult(null);
     try {
       const formData = new FormData();
-      formData.append("file", file);
-      formData.append("sourceType", sourceType);
-
-      const res = await fetch("/api/ingest/extract", {
-        method: "POST",
-        body: formData,
-      });
-
+      formData.append("file", testFile);
+      formData.append("sourceType", testSourceType);
+      const res = await fetch("/api/ingest/extract", { method: "POST", body: formData });
       if (res.ok) {
         const data = await res.json();
-        setResult(data);
-        toast({
-          title: "Extraction Complete",
-          description: `Extracted ${data.evidenceCount} evidence items`,
-        });
+        setExtractResult(data);
+        toast({ title: "Extraction Complete", description: `Found ${data.evidenceCount} evidence items` });
       } else {
         const error = await res.json();
-        toast({
-          title: "Extraction Failed",
-          description: error.error || "Unknown error",
-          variant: "destructive",
-        });
+        toast({ title: "Failed", description: error.error, variant: "destructive" });
       }
     } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to extract evidence",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Extraction failed", variant: "destructive" });
     } finally {
       setExtracting(false);
     }
   };
 
+  if (loading) {
+    return (
+      <div className="h-full flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+        <RefreshCw className="w-8 h-8 animate-spin text-slate-500" />
+      </div>
+    );
+  }
+
   return (
-    <Card className="bg-slate-900/60 border-slate-700/50">
-      <CardHeader>
-        <CardTitle className="text-slate-100">Test Evidence Extraction</CardTitle>
-        <CardDescription className="text-slate-400">
-          Upload a document to test evidence extraction with current configuration
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <Label className="text-slate-300">Source Type</Label>
-            <Select value={sourceType} onValueChange={setSourceType}>
-              <SelectTrigger className="bg-slate-800 border-slate-700 mt-1">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="bg-slate-900 border-slate-700">
-                <SelectItem value="sales">Sales</SelectItem>
-                <SelectItem value="complaints">Complaints</SelectItem>
-                <SelectItem value="fsca">FSCA</SelectItem>
-                <SelectItem value="capa">CAPA</SelectItem>
-                <SelectItem value="pmcf">PMCF</SelectItem>
-                <SelectItem value="literature">Literature</SelectItem>
-                <SelectItem value="external_db">External DB</SelectItem>
-                <SelectItem value="risk">Risk</SelectItem>
-                <SelectItem value="cer">CER</SelectItem>
-              </SelectContent>
-            </Select>
+    <div className="h-full bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 p-4 flex flex-col overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4 shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-gradient-to-br from-blue-500/20 to-purple-500/20 border border-blue-500/30">
+            <Settings className="w-5 h-5 text-blue-400" />
           </div>
           <div>
-            <Label className="text-slate-300">Upload Document</Label>
-            <Input
-              type="file"
-              accept=".xlsx,.xls,.csv,.docx,.pdf,.json"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
-              className="bg-slate-800 border-slate-700 mt-1"
-            />
+            <h1 className="text-lg font-semibold text-slate-100">Evidence Configuration</h1>
+            <p className="text-xs text-slate-500">Configure source mappings and extraction rules</p>
           </div>
         </div>
-
-        <Button
-          onClick={handleExtract}
-          disabled={!file || extracting}
-          className="w-full"
-        >
-          {extracting ? (
-            <>
-              <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-              Extracting...
-            </>
-          ) : (
-            <>
-              <Zap className="w-4 h-4 mr-2" />
-              Extract Evidence
-            </>
-          )}
+        <Button variant="outline" size="sm" onClick={fetchData} className="text-xs">
+          <RefreshCw className="w-3 h-3 mr-1" /> Refresh
         </Button>
+      </div>
 
-        {result && (
-          <div className="mt-6 space-y-4">
-            <div className="flex items-center gap-4 p-3 bg-slate-800/50 rounded-lg">
-              <div className="flex-1">
-                <p className="text-sm text-slate-400">Document</p>
-                <p className="text-slate-200">{result.filename}</p>
-              </div>
-              <div>
-                <p className="text-sm text-slate-400">Processing Time</p>
-                <p className="text-slate-200">{result.processingTime}ms</p>
-              </div>
-              <div>
-                <p className="text-sm text-slate-400">Evidence Found</p>
-                <p className="text-2xl font-bold text-emerald-400">{result.evidenceCount}</p>
+      {/* Main Tabs */}
+      <Tabs defaultValue="sources" className="flex-1 flex flex-col overflow-hidden">
+        <TabsList className="bg-slate-900/50 border border-slate-800/50 w-fit mb-4">
+          <TabsTrigger value="sources" className="text-xs data-[state=active]:bg-blue-500/20 data-[state=active]:text-blue-300">
+            <Layers className="w-3 h-3 mr-2" /> Source Mappings
+          </TabsTrigger>
+          <TabsTrigger value="types" className="text-xs data-[state=active]:bg-purple-500/20 data-[state=active]:text-purple-300">
+            <Database className="w-3 h-3 mr-2" /> Evidence Types
+          </TabsTrigger>
+          <TabsTrigger value="test" className="text-xs data-[state=active]:bg-amber-500/20 data-[state=active]:text-amber-300">
+            <Zap className="w-3 h-3 mr-2" /> Test Extraction
+          </TabsTrigger>
+        </TabsList>
+
+        <div className="flex-1 overflow-hidden relative rounded-xl border border-slate-800/50 bg-slate-900/30 p-1">
+          {/* Source Mappings Tab */}
+          <TabsContent value="sources" className="h-full m-0 overflow-auto p-3">
+            <div className="grid grid-cols-4 lg:grid-cols-5 gap-3">
+              {sourceConfigs.map(config => {
+                const visual = sourceTypeConfig[config.sourceType] || sourceTypeConfig.admin;
+                const Icon = visual.icon;
+                const enabledCount = config.evidenceTypeMappings.filter(m => m.enabled).length;
+                return (
+                  <button
+                    key={config.id}
+                    onClick={() => setSelectedSource(config)}
+                    className={`aspect-square rounded-xl border-2 ${visual.border} ${visual.bg} p-3 flex flex-col items-center justify-center gap-2 hover:scale-[1.02] transition-all hover:shadow-lg hover:shadow-${visual.color.split("-")[1]}-500/10`}
+                  >
+                    <div className={`p-2.5 rounded-lg bg-slate-900/50 ${visual.color}`}>
+                      <Icon className="w-6 h-6" />
+                    </div>
+                    <span className="text-xs font-medium text-slate-200">{config.name}</span>
+                    <div className="flex gap-1">
+                      {config.acceptedFormats.slice(0, 2).map(fmt => (
+                        <span key={fmt} className={`text-[9px] px-1.5 py-0.5 rounded ${formatColors[fmt] || "bg-slate-700 text-slate-400"}`}>
+                          {fmt}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-1 text-[10px] text-slate-400">
+                      <Check className="w-3 h-3 text-emerald-400" />
+                      {enabledCount}/{config.evidenceTypeMappings.length}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </TabsContent>
+
+          {/* Evidence Types Tab */}
+          <TabsContent value="types" className="h-full m-0 overflow-auto p-3">
+            <div className="grid grid-cols-3 gap-6">
+              {categories.map(category => (
+                <div key={category} className="space-y-2">
+                  <div className="text-xs font-medium text-slate-500 uppercase tracking-wider px-1 border-b border-slate-800 pb-1">{category}</div>
+                  <div className="grid gap-2">
+                    {evidenceTypes.filter(t => t.category === category).map(type => (
+                      <button
+                        key={type.type}
+                        onClick={() => setSelectedType(type)}
+                        className="flex items-center justify-between p-2 rounded-lg bg-slate-800/50 border border-slate-700/50 hover:border-purple-500/50 hover:bg-purple-500/5 transition-all group"
+                      >
+                        <span className="text-xs font-medium text-slate-300 group-hover:text-purple-300">
+                          {type.type.replace(/_/g, " ")}
+                        </span>
+                        <Badge variant="outline" className="text-[9px] bg-slate-900/50 text-slate-500 border-slate-700 group-hover:border-purple-500/30">
+                          {type.requiredFields.length}
+                        </Badge>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </TabsContent>
+
+          {/* Test Extraction Tab */}
+          <TabsContent value="test" className="h-full m-0 p-3 flex gap-4">
+            <div className="w-1/3 flex flex-col gap-4">
+              <div className="bg-slate-800/30 rounded-lg p-4 border border-slate-700/50 space-y-4">
+                <div>
+                  <Label className="text-xs text-slate-400">Source Type</Label>
+                  <Select value={testSourceType} onValueChange={setTestSourceType}>
+                    <SelectTrigger className="h-9 text-xs bg-slate-900 border-slate-700 mt-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.keys(sourceTypeConfig).map(type => (
+                        <SelectItem key={type} value={type} className="text-xs">{type.toUpperCase()}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div>
+                  <Label className="text-xs text-slate-400">File</Label>
+                  <Input
+                    type="file"
+                    accept=".xlsx,.xls,.csv,.docx,.pdf,.json"
+                    onChange={(e) => setTestFile(e.target.files?.[0] || null)}
+                    className="h-9 text-xs bg-slate-900 border-slate-700 mt-1"
+                  />
+                </div>
+                
+                <Button
+                  onClick={handleExtract}
+                  disabled={!testFile || extracting}
+                  className="w-full text-xs bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600"
+                >
+                  {extracting ? <RefreshCw className="w-3 h-3 mr-1 animate-spin" /> : <Zap className="w-3 h-3 mr-1" />}
+                  {extracting ? "Extracting..." : "Extract"}
+                </Button>
               </div>
             </div>
 
-            {result.suggestions?.length > 0 && (
-              <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
-                <p className="font-medium text-amber-400 mb-1">Suggestions</p>
-                <ul className="text-sm text-amber-300/80 space-y-1">
-                  {result.suggestions.map((s: string, i: number) => (
-                    <li key={i}>- {s}</li>
-                  ))}
-                </ul>
+            <div className="flex-1 bg-slate-900/50 rounded-lg border border-slate-800 p-4 overflow-hidden flex flex-col">
+              <div className="flex items-center justify-between mb-3 shrink-0">
+                <span className="text-sm font-medium text-slate-300">Extraction Results</span>
+                {extractResult && <Badge className="bg-emerald-500/20 text-emerald-300 text-[10px]">{extractResult.evidenceCount} items</Badge>}
               </div>
-            )}
+              
+              {extractResult ? (
+                <ScrollArea className="flex-1">
+                  <div className="space-y-2 pr-2">
+                    {extractResult.evidence?.map((e: any, i: number) => (
+                      <div key={i} className="p-3 rounded-lg bg-slate-800/30 border border-slate-700/30">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className="text-[10px] bg-slate-900/50">{e.evidenceType}</Badge>
+                            <span className="text-[10px] text-slate-500">{e.sourceName}</span>
+                          </div>
+                          <span className={`text-[10px] font-bold ${e.confidence >= 0.8 ? "text-emerald-400" : e.confidence >= 0.5 ? "text-amber-400" : "text-red-400"}`}>
+                            {(e.confidence * 100).toFixed(0)}%
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-400 font-mono bg-slate-950/30 p-2 rounded">
+                          {JSON.stringify(e.data).slice(0, 150)}...
+                        </div>
+                        <div className="text-[9px] text-slate-600 mt-1">{e.extractionMethod}</div>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              ) : (
+                <div className="flex-1 flex items-center justify-center text-slate-600 text-xs">
+                  Run extraction to see results
+                </div>
+              )}
+            </div>
+          </TabsContent>
+        </div>
+      </Tabs>
 
-            <ScrollArea className="h-96">
-              <div className="space-y-2">
-                {result.evidence?.map((e: any, idx: number) => (
-                  <div
-                    key={idx}
-                    className="p-3 bg-slate-800/30 rounded-lg border border-slate-700/30"
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">
-                        {e.evidenceType}
-                      </Badge>
-                      <Badge
-                        variant="outline"
-                        className={`${
-                          e.confidence >= 0.8
-                            ? "bg-emerald-500/20 text-emerald-400"
-                            : e.confidence >= 0.5
-                            ? "bg-amber-500/20 text-amber-400"
-                            : "bg-red-500/20 text-red-400"
+      {/* Source Config Modal */}
+      <Dialog open={!!selectedSource} onOpenChange={() => setSelectedSource(null)}>
+        <DialogContent className="max-w-2xl bg-slate-900 border-slate-700">
+          {selectedSource && (
+            <>
+              <DialogHeader>
+                <div className="flex items-center gap-3">
+                  {(() => {
+                    const visual = sourceTypeConfig[selectedSource.sourceType] || sourceTypeConfig.admin;
+                    const Icon = visual.icon;
+                    return (
+                      <div className={`p-2 rounded-lg ${visual.bg} ${visual.color}`}>
+                        <Icon className="w-5 h-5" />
+                      </div>
+                    );
+                  })()}
+                  <div>
+                    <DialogTitle className="text-slate-100">{selectedSource.name}</DialogTitle>
+                    <p className="text-xs text-slate-500">{selectedSource.description}</p>
+                  </div>
+                </div>
+              </DialogHeader>
+              
+              <div className="space-y-4 mt-4">
+                {/* Config Options */}
+                <div className="flex items-center gap-6 p-3 rounded-lg bg-slate-800/30 border border-slate-700/30">
+                  <div className="flex items-center gap-2">
+                    <Switch checked={selectedSource.autoExtract} disabled />
+                    <Label className="text-xs text-slate-400">Auto-Extract</Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Switch checked={selectedSource.requiresReview} disabled />
+                    <Label className="text-xs text-slate-400">Requires Review</Label>
+                  </div>
+                  <div className="flex gap-1.5 ml-auto">
+                    {selectedSource.acceptedFormats.map(fmt => (
+                      <span key={fmt} className={`text-[10px] px-2 py-1 rounded ${formatColors[fmt] || "bg-slate-700 text-slate-400"}`}>
+                        {fmt.toUpperCase()}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Evidence Type Mappings Grid */}
+                <div>
+                  <div className="text-xs font-medium text-slate-400 mb-2">Evidence Type Mappings</div>
+                  <div className="grid grid-cols-2 gap-2 max-h-[300px] overflow-auto pr-2">
+                    {selectedSource.evidenceTypeMappings.map(mapping => (
+                      <div
+                        key={mapping.evidenceType}
+                        className={`p-3 rounded-lg border transition-all ${
+                          mapping.enabled 
+                            ? "bg-slate-800/50 border-slate-600/50" 
+                            : "bg-slate-900/50 border-slate-800/30 opacity-60"
                         }`}
                       >
-                        {(e.confidence * 100).toFixed(0)}%
-                      </Badge>
-                    </div>
-                    <p className="text-xs text-slate-400 mb-2">
-                      {e.source}: {e.sourceName} | {e.extractionMethod}
-                    </p>
-                    <pre className="text-xs text-slate-300 bg-slate-900/50 p-2 rounded overflow-x-auto">
-                      {JSON.stringify(e.data, null, 2)}
-                    </pre>
-                    {e.warnings?.length > 0 && (
-                      <div className="mt-2 text-xs text-amber-400">
-                        {e.warnings.join(", ")}
+                        <div className="flex items-center justify-between mb-2">
+                          <Switch
+                            checked={mapping.enabled}
+                            onCheckedChange={(checked) => handleToggleMapping(selectedSource.id, mapping.evidenceType, checked)}
+                          />
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0"
+                            onClick={() => setEditingMapping({ source: selectedSource, mapping: { ...mapping } })}
+                          >
+                            <Edit3 className="w-3 h-3" />
+                          </Button>
+                        </div>
+                        <div className="text-xs font-medium text-slate-200 mb-1">{mapping.evidenceType}</div>
+                        <div className="flex items-center justify-between text-[10px]">
+                          <span className={`${
+                            mapping.confidence >= 0.8 ? "text-emerald-400" : 
+                            mapping.confidence >= 0.6 ? "text-amber-400" : "text-red-400"
+                          }`}>
+                            {(mapping.confidence * 100).toFixed(0)}% confidence
+                          </span>
+                          <span className="text-slate-500">{mapping.fieldMappings.length} fields</span>
+                        </div>
                       </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Evidence Type Modal */}
+      <Dialog open={!!selectedType} onOpenChange={() => setSelectedType(null)}>
+        <DialogContent className="max-w-md bg-slate-900 border-slate-700">
+          {selectedType && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="text-slate-100 flex items-center gap-2">
+                  <Database className="w-4 h-4 text-purple-400" />
+                  {selectedType.type}
+                </DialogTitle>
+                <p className="text-xs text-slate-500">{selectedType.description}</p>
+              </DialogHeader>
+              
+              <div className="space-y-4 mt-4">
+                <div>
+                  <div className="text-xs font-medium text-slate-400 mb-2 flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                    Required Fields
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {selectedType.requiredFields.map(field => (
+                      <Badge key={field} className="text-[10px] bg-red-500/20 text-red-300 border-red-500/30">
+                        {field}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+                
+                <div>
+                  <div className="text-xs font-medium text-slate-400 mb-2 flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-slate-500"></span>
+                    Optional Fields
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {selectedType.optionalFields.slice(0, 10).map(field => (
+                      <Badge key={field} variant="outline" className="text-[10px] bg-slate-800/50 text-slate-400">
+                        {field}
+                      </Badge>
+                    ))}
+                    {selectedType.optionalFields.length > 10 && (
+                      <Badge variant="outline" className="text-[10px] bg-slate-800/50 text-slate-500">
+                        +{selectedType.optionalFields.length - 10} more
+                      </Badge>
                     )}
                   </div>
-                ))}
+                </div>
               </div>
-            </ScrollArea>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Field Mapping Edit Modal (Sub-modal) */}
+      <Dialog open={!!editingMapping} onOpenChange={() => setEditingMapping(null)}>
+        <DialogContent className="max-w-xl bg-slate-900 border-slate-700">
+          {editingMapping && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="text-slate-100">Edit Field Mappings</DialogTitle>
+                <p className="text-xs text-slate-500">{editingMapping.mapping.evidenceType}</p>
+              </DialogHeader>
+              
+              <div className="space-y-4 mt-4">
+                <div className="flex items-center gap-4">
+                  <div className="flex-1">
+                    <Label className="text-xs text-slate-400">Confidence</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      value={editingMapping.mapping.confidence}
+                      onChange={(e) => setEditingMapping({
+                        ...editingMapping,
+                        mapping: { ...editingMapping.mapping, confidence: parseFloat(e.target.value) }
+                      })}
+                      className="h-8 text-xs bg-slate-800 border-slate-700 mt-1"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 pt-5">
+                    <Switch
+                      checked={editingMapping.mapping.enabled}
+                      onCheckedChange={(checked) => setEditingMapping({
+                        ...editingMapping,
+                        mapping: { ...editingMapping.mapping, enabled: checked }
+                      })}
+                    />
+                    <Label className="text-xs text-slate-400">Enabled</Label>
+                  </div>
+                </div>
+
+                <div>
+                  <Label className="text-xs text-slate-400">Field Mappings</Label>
+                  <ScrollArea className="h-[200px] mt-2">
+                    <div className="space-y-2 pr-2">
+                      {editingMapping.mapping.fieldMappings.map((fm, idx) => (
+                        <div key={idx} className="flex items-center gap-2 p-2 rounded-lg bg-slate-800/50">
+                          <Input
+                            value={fm.sourceField}
+                            onChange={(e) => {
+                              const updated = [...editingMapping.mapping.fieldMappings];
+                              updated[idx] = { ...updated[idx], sourceField: e.target.value };
+                              setEditingMapping({
+                                ...editingMapping,
+                                mapping: { ...editingMapping.mapping, fieldMappings: updated }
+                              });
+                            }}
+                            placeholder="Source"
+                            className="h-7 text-xs bg-slate-900 border-slate-700 flex-1"
+                          />
+                          <ArrowRight className="w-4 h-4 text-slate-500 shrink-0" />
+                          <Input
+                            value={fm.targetField}
+                            onChange={(e) => {
+                              const updated = [...editingMapping.mapping.fieldMappings];
+                              updated[idx] = { ...updated[idx], targetField: e.target.value };
+                              setEditingMapping({
+                                ...editingMapping,
+                                mapping: { ...editingMapping.mapping, fieldMappings: updated }
+                              });
+                            }}
+                            placeholder="Target"
+                            className="h-7 text-xs bg-slate-900 border-slate-700 flex-1"
+                          />
+                          <Select
+                            value={fm.transformation || "direct"}
+                            onValueChange={(value) => {
+                              const updated = [...editingMapping.mapping.fieldMappings];
+                              updated[idx] = { ...updated[idx], transformation: value };
+                              setEditingMapping({
+                                ...editingMapping,
+                                mapping: { ...editingMapping.mapping, fieldMappings: updated }
+                              });
+                            }}
+                          >
+                            <SelectTrigger className="h-7 w-20 text-[10px] bg-slate-900 border-slate-700">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="direct">Direct</SelectItem>
+                              <SelectItem value="date">Date</SelectItem>
+                              <SelectItem value="number">Number</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0"
+                            onClick={() => {
+                              const updated = editingMapping.mapping.fieldMappings.filter((_, i) => i !== idx);
+                              setEditingMapping({
+                                ...editingMapping,
+                                mapping: { ...editingMapping.mapping, fieldMappings: updated }
+                              });
+                            }}
+                          >
+                            <Trash2 className="w-3 h-3 text-red-400" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-2 text-xs"
+                    onClick={() => setEditingMapping({
+                      ...editingMapping,
+                      mapping: {
+                        ...editingMapping.mapping,
+                        fieldMappings: [...editingMapping.mapping.fieldMappings, { sourceField: "", targetField: "", transformation: "direct" }]
+                      }
+                    })}
+                  >
+                    <Plus className="w-3 h-3 mr-1" /> Add Field
+                  </Button>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button variant="outline" size="sm" onClick={() => setEditingMapping(null)}>Cancel</Button>
+                  <Button size="sm" onClick={handleSaveMapping} className="bg-blue-600 hover:bg-blue-700">
+                    <Save className="w-3 h-3 mr-1" /> Save
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }

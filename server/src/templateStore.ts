@@ -49,10 +49,6 @@ export interface TemplateValidationResult {
 const TEMPLATE_ALIASES: Record<string, string> = {
   "MDCG_2022_21": "MDCG_2022_21_ANNEX_I",
   "MDCG_2022_21_ANNEX_I": "MDCG_2022_21_ANNEX_I",
-  "FormQAR-054_C": "FormQAR-054_C",
-  "FORMQAR_054_C": "FormQAR-054_C",
-  "formqar_054_c": "FormQAR-054_C",
-  "FormQAR_054_C": "FormQAR-054_C",
   "mdcg_2022_21_annex_i": "MDCG_2022_21_ANNEX_I",
   "mdcg_2022_21": "MDCG_2022_21_ANNEX_I",
 };

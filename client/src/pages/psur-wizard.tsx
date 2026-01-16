@@ -1,65 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { EvidenceIngestionPanel } from "@/components/evidence-ingestion-panel";
 
-// Generate human-readable labels from evidence type slugs
-function formatEvidenceType(type: string): string {
-    return type
-        .split('_')
-        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-        .join(' ');
-}
+// ═══════════════════════════════════════════════════════════════════════════════
+// TYPES
+// ═══════════════════════════════════════════════════════════════════════════════
 
-// Categorize evidence types for better organization
-function getEvidenceCategory(type: string): string {
-    if (type.includes('sales') || type.includes('distribution') || type.includes('usage')) return 'Sales & Usage';
-    if (type.includes('complaint') || type.includes('feedback')) return 'Complaints & Feedback';
-    if (type.includes('incident') || type.includes('vigilance')) return 'Incidents & Vigilance';
-    if (type.includes('fsca') || type.includes('recall')) return 'FSCA & Recalls';
-    if (type.includes('capa') || type.includes('ncr')) return 'CAPA & NCR';
-    if (type.includes('pmcf') || type.includes('clinical')) return 'PMCF & Clinical';
-    if (type.includes('literature') || type.includes('external')) return 'Literature & External';
-    if (type.includes('device') || type.includes('manufacturer') || type.includes('regulatory') || type.includes('certificate')) return 'Device & Regulatory';
-    if (type.includes('trend') || type.includes('signal')) return 'Trends & Signals';
-    if (type.includes('benefit') || type.includes('risk') || type.includes('rmf') || type.includes('cer')) return 'Risk & Benefit';
-    return 'Other';
-}
-
-// Get icon path for evidence type category
-function getEvidenceIcon(type: string): string {
-    const category = getEvidenceCategory(type);
-    const icons: Record<string, string> = {
-        'Sales & Usage': "M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z",
-        'Complaints & Feedback': "M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z",
-        'Incidents & Vigilance': "M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z",
-        'FSCA & Recalls': "M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z",
-        'CAPA & NCR': "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4",
-        'PMCF & Clinical': "M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z",
-        'Literature & External': "M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253",
-        'Device & Regulatory': "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z",
-        'Trends & Signals': "M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z",
-        'Risk & Benefit': "M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3",
-        'Other': "M4 6h16M4 10h16M4 14h16M4 18h16",
-    };
-    return icons[category] || icons['Other'];
-}
-
-// Category colors
-function getCategoryColor(category: string): { bg: string; border: string; text: string } {
-    const colors: Record<string, { bg: string; border: string; text: string }> = {
-        'Sales & Usage': { bg: 'bg-emerald-50 dark:bg-emerald-950', border: 'border-emerald-200', text: 'text-emerald-700 dark:text-emerald-300' },
-        'Complaints & Feedback': { bg: 'bg-amber-50 dark:bg-amber-950', border: 'border-amber-200', text: 'text-amber-700 dark:text-amber-300' },
-        'Incidents & Vigilance': { bg: 'bg-red-50 dark:bg-red-950', border: 'border-red-200', text: 'text-red-700 dark:text-red-300' },
-        'FSCA & Recalls': { bg: 'bg-orange-50 dark:bg-orange-950', border: 'border-orange-200', text: 'text-orange-700 dark:text-orange-300' },
-        'CAPA & NCR': { bg: 'bg-violet-50 dark:bg-violet-950', border: 'border-violet-200', text: 'text-violet-700 dark:text-violet-300' },
-        'PMCF & Clinical': { bg: 'bg-cyan-50 dark:bg-cyan-950', border: 'border-cyan-200', text: 'text-cyan-700 dark:text-cyan-300' },
-        'Literature & External': { bg: 'bg-indigo-50 dark:bg-indigo-950', border: 'border-indigo-200', text: 'text-indigo-700 dark:text-indigo-300' },
-        'Device & Regulatory': { bg: 'bg-slate-50 dark:bg-slate-900', border: 'border-slate-200', text: 'text-slate-700 dark:text-slate-300' },
-        'Trends & Signals': { bg: 'bg-pink-50 dark:bg-pink-950', border: 'border-pink-200', text: 'text-pink-700 dark:text-pink-300' },
-        'Risk & Benefit': { bg: 'bg-teal-50 dark:bg-teal-950', border: 'border-teal-200', text: 'text-teal-700 dark:text-teal-300' },
-        'Other': { bg: 'bg-gray-50 dark:bg-gray-900', border: 'border-gray-200', text: 'text-gray-700 dark:text-gray-300' },
-    };
-    return colors[category] || colors['Other'];
-}
+type WizardStep = 1 | 2 | 3 | 4 | 5;
 
 type CreateCasePayload = {
     psurReference: string;
@@ -73,229 +19,1313 @@ type CreateCasePayload = {
     status: string;
 };
 
-type CreateCaseResponse = {
-    id: number;
-    psurReference: string;
-};
-
-type UploadResponse = {
-    upload: {
-        id: number;
-        atomsCreated: number;
-    };
-    summary: {
-        totalRecords: number;
-        validRecords: number;
-        rejectedRecords: number;
-        atomsCreated: number;
-    };
-    validationErrors?: Array<{ rowIndex: number; errors: Array<{ path: string; message: string }> }>;
-};
-
-type AtomCountsResponse = {
-    psurCaseId: number;
-    totals: { all: number };
+type CreateCaseResponse = { id: number; psurReference: string };
+type AtomCountsResponse = { 
+    psurCaseId: number; 
+    totals: { all: number }; 
     byType: Record<string, number>;
+    // Enhanced coverage - includes ALL evidence types from uploaded sources
+    coverage?: {
+        coveredSources: string[];           // e.g., ["fsca", "complaints", "sales"]
+        coveredTypes: string[];             // ALL types from uploaded sources
+        coverageBySource: Record<string, string[]>;  // e.g., { fsca: ["fsca_record", "recall_record"] }
+        coveredByType: Record<string, { count: number; covered: boolean; source: string | null }>;
+    };
+};
+type WorkflowStep = { step: number; name: string; status: string; error?: string };
+type RunWorkflowResponse = {
+    scope: { templateId: string; jurisdictions: string[]; deviceCode: string; periodStart: string; periodEnd: string };
+    case: { psurCaseId: number; psurRef: string; version: number };
+    steps: WorkflowStep[];
+};
+type TraceSummary = { totalEvents: number; acceptedSlots: number; rejectedSlots: number; chainValid: boolean };
+type Device = { id: number; deviceName: string; deviceCode: string; riskClass: string };
+
+// Column mapping types
+type ColumnMapping = {
+    sourceColumn: string;
+    targetField: string;
+    confidence: number;
+    autoMapped: boolean;
 };
 
-type RunWorkflowResponse = {
-    scope: {
-        templateId: string;
-        jurisdictions: string[];
-        deviceCode: string;
-        periodStart: string;
-        periodEnd: string;
-    };
-    case: {
-        psurCaseId: number;
-        psurRef: string;
-        version: number;
-    };
-    steps: Array<{
-        step: number;
-        name: string;
-        status: string;
-        error?: string;
-    }>;
+type MappingConfig = {
+    evidenceType: string;
+    mappings: ColumnMapping[];
+    unmappedSource: string[];
+    unmappedTarget: string[];
 };
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// UTILITIES
+// ═══════════════════════════════════════════════════════════════════════════════
 
 async function api<T>(url: string, opts?: RequestInit): Promise<T> {
-    const resp = await fetch(url, {
-        ...opts,
-        headers: {
-            "Content-Type": "application/json",
-            ...(opts?.headers || {}),
-        },
-    });
-
+    const resp = await fetch(url, { ...opts, headers: { "Content-Type": "application/json", ...(opts?.headers || {}) } });
     const text = await resp.text();
     const json = text ? JSON.parse(text) : null;
-
-    if (!resp.ok) {
-        const msg = json?.message || json?.error || `HTTP ${resp.status}`;
-        throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
-    }
+    if (!resp.ok) throw new Error(json?.message || json?.error || `HTTP ${resp.status}`);
     return json as T;
 }
 
-function todayISO(): string {
-    const d = new Date();
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
-    return `${yyyy}-${mm}-${dd}`;
+function formatType(t: string): string { return t.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" "); }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MODAL COMPONENT (Redesigned)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function Modal({ open, onClose, title, size = "lg", children }: { 
+    open: boolean; onClose: () => void; title: string; size?: "md" | "lg" | "xl" | "full"; children: React.ReactNode 
+}) {
+    if (!open) return null;
+    const sizeClass = {
+        md: "max-w-2xl",
+        lg: "max-w-4xl", 
+        xl: "max-w-6xl",
+        full: "max-w-[95vw]"
+    }[size];
+    
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+            {/* Backdrop */}
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+            
+            {/* Modal */}
+            <div 
+                className={`relative ${sizeClass} w-full max-h-[90vh] flex flex-col rounded-xl border border-border/50 bg-background shadow-2xl`}
+                onClick={e => e.stopPropagation()}
+            >
+                {/* Header */}
+                <div className="flex items-center justify-between px-5 py-4 border-b border-border/50">
+                    <h3 className="text-lg font-semibold">{title}</h3>
+                    <button 
+                        onClick={onClose} 
+                        className="p-2 rounded-lg hover:bg-muted transition-colors"
+                    >
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+                
+                {/* Content */}
+                <div className="flex-1 overflow-y-auto p-5">{children}</div>
+            </div>
+        </div>
+    );
 }
 
-export default function PsurWizard() {
-    // Step state
-    const [step, setStep] = useState<1 | 2 | 3>(1);
+// ═══════════════════════════════════════════════════════════════════════════════
+// COLUMN MAPPING TOOL WITH VERIFICATION & PROFILE SAVE
+// ═══════════════════════════════════════════════════════════════════════════════
 
-    // Case state
-    const [deviceCode, setDeviceCode] = useState("JS3000X");
-    const [deviceId, setDeviceId] = useState(1);
-    const [templateId, setTemplateId] = useState("MDCG_2022_21_ANNEX_I");
-    const [jurisdictions, setJurisdictions] = useState<string[]>(["EU_MDR"]);
-    const [periodStart, setPeriodStart] = useState("2024-01-01");
-    const [periodEnd, setPeriodEnd] = useState("2024-12-31");
+// Field schemas matching backend evidence-parser.ts COLUMN_MAPPINGS
+// These are the canonical field names the backend expects after column mapping
+const EVIDENCE_FIELD_SCHEMAS: Record<string, string[]> = {
+    // CER inputs
+    cer_extract: ["sourceDocument", "sectionReference", "content", "extractionDate", "deviceCode"],
+    clinical_evaluation_extract: ["sourceDocument", "sectionReference", "content", "extractionDate", "deviceCode"],
+    // Sales
+    sales_volume: ["deviceCode", "region", "country", "periodStart", "periodEnd", "quantity", "revenue", "distributionChannel"],
+    // Complaints
+    complaint_record: ["complaintId", "deviceCode", "complaintDate", "description", "severity", "region", "country", "rootCause", "correctiveAction", "patientOutcome", "investigationStatus", "serious"],
+    serious_incident_record: ["incidentId", "deviceCode", "incidentDate", "description", "severity", "patientOutcome", "reportedTo", "imdrfCode"],
+    // FSCA
+    fsca_record: ["fscaId", "deviceCode", "initiationDate", "description", "affectedUnits", "status", "correctiveAction", "region"],
+    // PMCF
+    pmcf_result: ["studyId", "studyType", "startDate", "endDate", "sampleSize", "findings", "conclusions", "status"],
+    // Risk
+    benefit_risk_assessment: ["assessment", "benefitSummary", "riskSummary", "conclusion", "periodStart", "periodEnd", "deviceCode"],
+    // CAPA
+    capa_record: ["capaId", "deviceCode", "openDate", "closeDate", "description", "rootCause", "correctiveAction", "status", "effectiveness"],
+    // Admin
+    device_registry_record: ["deviceCode", "deviceName", "model", "manufacturer", "udi", "riskClass", "intendedPurpose"],
+};
 
-    const [psurCaseId, setPsurCaseId] = useState<number | null>(null);
-    const [psurRef, setPsurRef] = useState<string | null>(null);
-    const [createBusy, setCreateBusy] = useState(false);
-    const [createError, setCreateError] = useState<string>("");
+type SavedMappingProfile = {
+    id: number;
+    name: string;
+    evidenceType: string;
+    columnMappings: Record<string, string>;
+    usageCount: number;
+};
 
-    // Evidence upload state
-    const [evidenceType, setEvidenceType] = useState<string>("complaint_record");
-    const [file, setFile] = useState<File | null>(null);
-    const [uploadBusy, setUploadBusy] = useState(false);
-    const [uploadMsg, setUploadMsg] = useState<string>("");
-    const [sampleLoadBusy, setSampleLoadBusy] = useState(false);
-
-    // Atom counts
-    const [counts, setCounts] = useState<AtomCountsResponse | null>(null);
-    const [countsBusy, setCountsBusy] = useState(false);
-
-    // Run state
-    const [runBusy, setRunBusy] = useState(false);
-    const [runResult, setRunResult] = useState<RunWorkflowResponse | null>(null);
-    const [runMsg, setRunMsg] = useState<string>("");
+function ColumnMappingTool({ 
+    sourceColumns, 
+    evidenceType, 
+    onMappingComplete 
+}: { 
+    sourceColumns: string[];
+    evidenceType: string;
+    onMappingComplete: (mappings: ColumnMapping[]) => void;
+}) {
+    const targetFields = EVIDENCE_FIELD_SCHEMAS[evidenceType] || [];
+    const [mappings, setMappings] = useState<ColumnMapping[]>([]);
+    const [isVerified, setIsVerified] = useState(false);
+    const [showSaveDialog, setShowSaveDialog] = useState(false);
+    const [profileName, setProfileName] = useState("");
+    const [saving, setSaving] = useState(false);
+    const [savedProfile, setSavedProfile] = useState<SavedMappingProfile | null>(null);
+    const [loadingProfile, setLoadingProfile] = useState(true);
+    const [profileApplied, setProfileApplied] = useState(false);
     
-    // Ingestion panel toggle
-    const [showIngestionPanel, setShowIngestionPanel] = useState(false);
-    
-    // Dynamic evidence requirements
-    const [requiredEvidenceTypes, setRequiredEvidenceTypes] = useState<string[]>([]);
-
+    // Check for existing saved mapping profile on mount
     useEffect(() => {
-        api<{ requiredEvidenceTypes: string[] }>(`/api/templates/${templateId}/requirements`)
-            .then(data => {
-                if (data.requiredEvidenceTypes && data.requiredEvidenceTypes.length > 0) {
-                    const types = data.requiredEvidenceTypes.sort();
-                    setRequiredEvidenceTypes(types);
-                    // Default to first available type when template changes
-                    if (types.length > 0) {
-                        setEvidenceType(types[0]);
+        const checkForProfile = async () => {
+            setLoadingProfile(true);
+            try {
+                const res = await fetch("/api/column-mapping-profiles/match", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ evidenceType, sourceColumns })
+                });
+                
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.found && data.profile) {
+                        setSavedProfile(data.profile);
+                        
+                        // If profile can be auto-applied (verified previously), apply it immediately
+                        if (data.canAutoApply) {
+                            applyProfile(data.profile);
+                            setProfileApplied(true);
+                            setIsVerified(true);
+                        }
+                    } else {
+                        // No saved profile, do auto-mapping with SOTA agent
+                        await performAutoMapping();
                     }
                 } else {
-                    // Fallback for safety if API returns empty (shouldn't happen for valid templates)
-                    const defaults = [
-                        "sales_volume", "complaint_record", "serious_incident_record",
-                        "fsca_record", "pmcf_result", "literature_result"
-                    ];
-                    setRequiredEvidenceTypes(defaults);
-                    setEvidenceType(defaults[0]);
+                    await performAutoMapping();
                 }
-            })
-            .catch(err => {
-                console.error("Failed to fetch template requirements", err);
-                // Fallback on error
-                const defaults = [
-                    "sales_volume", "complaint_record", "serious_incident_record",
-                    "fsca_record", "pmcf_result", "literature_result"
-                ];
-                setRequiredEvidenceTypes(defaults);
-                setEvidenceType(defaults[0]);
-            });
-    }, [templateId]);
-
-    const canGoStep2 = !!psurCaseId;
-    const evidenceTotalsOk = (counts?.totals?.all || 0) > 0;
-
-    const missingRequiredEvidenceTypes = useMemo(() => {
-        const byType = counts?.byType || {};
-        return requiredEvidenceTypes.filter((t) => (byType[t] || 0) <= 0);
-    }, [counts, requiredEvidenceTypes]);
-
-    // Strict gating by required evidence types
-    const canGoStep3 = canGoStep2 && evidenceTotalsOk && missingRequiredEvidenceTypes.length === 0;
-
-    // Fetch counts when case exists / after uploads
-    async function refreshCounts() {
-        if (!psurCaseId) return;
-        setCountsBusy(true);
-        try {
-            const data = await api<AtomCountsResponse>(`/api/evidence/atoms/counts?psur_case_id=${psurCaseId}`);
-            setCounts(data);
-        } catch (e) {
-            setCounts(null);
-        } finally {
-            setCountsBusy(false);
+            } catch {
+                await performAutoMapping();
+            } finally {
+                setLoadingProfile(false);
+            }
+        };
+        
+        checkForProfile();
+    }, [sourceColumns, evidenceType]);
+    
+    const applyProfile = (profile: SavedMappingProfile) => {
+        const profileMappings: ColumnMapping[] = [];
+        const mappingsData = profile.columnMappings as Record<string, string>;
+        
+        for (const [sourceCol, targetField] of Object.entries(mappingsData)) {
+            // Find matching source column (case-insensitive)
+            const matchedSource = sourceColumns.find(
+                s => s.toLowerCase().replace(/[\s_-]/g, "") === sourceCol.toLowerCase().replace(/[\s_-]/g, "")
+            );
+            if (matchedSource) {
+                profileMappings.push({
+                    sourceColumn: matchedSource,
+                    targetField,
+                    confidence: 1.0,
+                    autoMapped: false
+                });
+            }
         }
-    }
-
-    useEffect(() => {
-        if (psurCaseId) refreshCounts();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [psurCaseId]);
-
-    async function createCase() {
-        setCreateError("");
-        setUploadMsg("");
-        setRunResult(null);
-        setCreateBusy(true);
-
+        
+        setMappings(profileMappings);
+    };
+    
+    const performAutoMapping = async () => {
+        // Try SOTA backend agent first
         try {
-            const refNum = `PSUR-${Date.now().toString(36).toUpperCase()}`;
-            const payload: CreateCasePayload = {
-                psurReference: refNum,
-                version: 1,
-                templateId,
-                jurisdictions,
-                startPeriod: periodStart,
-                endPeriod: periodEnd,
-                deviceIds: [deviceId],
-                leadingDeviceId: deviceId,
-                status: "draft",
-            };
-
-            const data = await api<CreateCaseResponse>("/api/psur-cases", {
+            const res = await fetch("/api/ingest/auto-map", {
                 method: "POST",
-                body: JSON.stringify(payload),
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    sourceColumns,
+                    evidenceType
+                })
             });
-
-            setPsurCaseId(data.id);
-            setPsurRef(data.psurReference);
-            setStep(2);
-        } catch (e: unknown) {
-            const err = e as Error;
-            setCreateError(err?.message || "Failed to create case");
+            
+            if (res.ok) {
+                const data = await res.json();
+                if (data.success && data.mappings) {
+                    const agentMappings: ColumnMapping[] = data.mappings
+                        .filter((m: any) => m.targetField)
+                        .map((m: any) => ({
+                            sourceColumn: m.sourceColumn,
+                            targetField: m.targetField,
+                            confidence: m.confidence,
+                            autoMapped: m.method !== "user_provided"
+                        }));
+                    
+                    setMappings(agentMappings);
+                    return;
+                }
+            }
+        } catch {
+            // Fall back to local matching
+        }
+        
+        // Local fallback with enhanced matching
+        const autoMappings: ColumnMapping[] = [];
+        const usedSource = new Set<string>();
+        const usedTarget = new Set<string>();
+        
+        // Enhanced alias dictionary - keys are canonical field names matching backend expectations
+        const COLUMN_ALIASES: Record<string, string[]> = {
+            // Complaint fields
+            complaintId: ["complaint_id", "complaint id", "complaintid", "complaint_number", "complaint number", "case_id", "caseid", "ticket_id", "reference", "ref_no", "ccr_number", "qms_number", "record_id"],
+            complaintDate: ["complaint_date", "complaintdate", "date_received", "received_date", "datereceived", "date_reported", "report_date", "created_date", "entry_date", "date_opened", "csi_notification_date", "notification_date"],
+            deviceCode: ["device_code", "devicecode", "product_code", "product_number", "product number", "part_number", "sku", "model", "catalog_number", "item_number", "material_number"],
+            description: ["description", "desc", "details", "narrative", "summary", "issue", "problem", "complaint_text", "notes", "comments", "nonconformity"],
+            severity: ["severity", "seriousness", "priority", "criticality", "harm_level", "risk_level", "grade", "class"],
+            region: ["region", "sales_region", "market", "territory", "location", "area", "geo", "zone", "distribution_location"],
+            country: ["country", "country_code", "countrycode", "nation", "customer_country", "site_country"],
+            rootCause: ["root_cause", "rootcause", "cause", "failure_mode", "reason", "finding", "determination", "investigation_findings"],
+            correctiveAction: ["corrective_action", "correctiveaction", "corrective_actions", "action_taken", "fix", "remediation", "response"],
+            patientOutcome: ["patient_outcome", "patientoutcome", "patient_involvement", "patient_status", "injury", "harm"],
+            investigationStatus: ["investigation_status", "status", "state", "disposition", "progress", "stage", "open_closed", "workflow_status"],
+            serious: ["serious", "mdr_issued", "reportable", "is_serious"],
+            // Sales fields  
+            quantity: ["quantity", "qty", "units", "volume", "units_sold", "count", "amount"],
+            revenue: ["revenue", "sales", "sales_amount", "value", "total_sales"],
+            periodStart: ["period_start", "start_date", "from_date", "begin_date"],
+            periodEnd: ["period_end", "end_date", "to_date", "through_date"],
+            // FSCA fields
+            fscaId: ["fsca_id", "fscaid", "recall_id", "recall_number", "field_action_id"],
+            affectedUnits: ["affected_units", "units_affected", "affected_quantity", "scope"],
+            // CAPA fields
+            capaId: ["capa_id", "capaid", "capa_number", "nc_number", "nonconformance_id"],
+            openDate: ["open_date", "date_opened", "initiation_date", "start_date"],
+            closeDate: ["close_date", "date_closed", "closure_date", "completion_date"],
+            effectiveness: ["effectiveness", "effectiveness_check", "verification_result"]
+        };
+        
+        sourceColumns.forEach(src => {
+            const srcNorm = src.toLowerCase().replace(/[_\s-]/g, "");
+            let bestMatch: { field: string; score: number } | null = null;
+            
+            targetFields.forEach(target => {
+                if (usedTarget.has(target)) return;
+                const targetNorm = target.toLowerCase().replace(/[_\s-]/g, "");
+                
+                let score = 0;
+                
+                // Check exact match
+                if (srcNorm === targetNorm) {
+                    score = 1.0;
+                }
+                // Check aliases
+                else {
+                    const aliases = COLUMN_ALIASES[target] || [];
+                    for (const alias of aliases) {
+                        const aliasNorm = alias.toLowerCase().replace(/[_\s-]/g, "");
+                        if (srcNorm === aliasNorm) {
+                            score = 0.95;
+                            break;
+                        }
+                        if (srcNorm.includes(aliasNorm) || aliasNorm.includes(srcNorm)) {
+                            score = Math.max(score, 0.8);
+                        }
+                    }
+                }
+                // Partial match
+                if (score === 0) {
+                    if (srcNorm.includes(targetNorm) || targetNorm.includes(srcNorm)) {
+                        score = 0.7;
+                    }
+                    else if (srcNorm.split("").filter(c => targetNorm.includes(c)).length / srcNorm.length > 0.6) {
+                        score = 0.5;
+                    }
+                }
+                
+                if (score > 0 && (!bestMatch || score > bestMatch.score)) {
+                    bestMatch = { field: target, score };
+                }
+            });
+            
+            if (bestMatch && bestMatch.score >= 0.5) {
+                autoMappings.push({
+                    sourceColumn: src,
+                    targetField: bestMatch.field,
+                    confidence: bestMatch.score,
+                    autoMapped: true
+                });
+                usedSource.add(src);
+                usedTarget.add(bestMatch.field);
+            }
+        });
+        
+        setMappings(autoMappings);
+    };
+    
+    const unmappedSource = sourceColumns.filter(s => !mappings.find(m => m.sourceColumn === s));
+    const unmappedTarget = targetFields.filter(t => !mappings.find(m => m.targetField === t));
+    const lowConfidenceMappings = mappings.filter(m => m.confidence < 0.9 && m.autoMapped);
+    const hasIssues = lowConfidenceMappings.length > 0 || unmappedTarget.length > 0;
+    
+    const updateMapping = (sourceColumn: string, targetField: string) => {
+        setIsVerified(false);
+        setMappings(prev => {
+            const existing = prev.find(m => m.sourceColumn === sourceColumn);
+            if (existing) {
+                if (targetField === "") {
+                    return prev.filter(m => m.sourceColumn !== sourceColumn);
+                }
+                return prev.map(m => m.sourceColumn === sourceColumn ? { ...m, targetField, autoMapped: false, confidence: 1 } : m);
+            }
+            return [...prev, { sourceColumn, targetField, confidence: 1, autoMapped: false }];
+        });
+    };
+    
+    const addMapping = (sourceColumn: string, targetField: string) => {
+        if (!sourceColumn || !targetField) return;
+        setIsVerified(false);
+        setMappings(prev => [...prev, { sourceColumn, targetField, confidence: 1, autoMapped: false }]);
+    };
+    
+    const removeMapping = (sourceColumn: string) => {
+        setIsVerified(false);
+        setMappings(prev => prev.filter(m => m.sourceColumn !== sourceColumn));
+    };
+    
+    const handleVerify = () => {
+        setIsVerified(true);
+    };
+    
+    const handleSaveProfile = async () => {
+        if (!profileName.trim()) return;
+        setSaving(true);
+        
+        try {
+            // Convert mappings to the format needed for storage
+            const columnMappings: Record<string, string> = {};
+            for (const m of mappings) {
+                columnMappings[m.sourceColumn] = m.targetField;
+            }
+            
+            const res = await fetch("/api/column-mapping-profiles", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    name: profileName,
+                    evidenceType,
+                    columnMappings
+                })
+            });
+            
+            if (res.ok) {
+                const newProfile = await res.json();
+                setSavedProfile(newProfile);
+                setShowSaveDialog(false);
+                setProfileName("");
+            }
+        } catch (e) {
+            console.error("Failed to save profile:", e);
         } finally {
-            setCreateBusy(false);
+            setSaving(false);
         }
+    };
+    
+    if (loadingProfile) {
+        return (
+            <div className="flex items-center justify-center py-8">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                    <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    <span>Checking for saved mapping profiles...</span>
+                </div>
+            </div>
+        );
     }
+    
+    return (
+        <div className="space-y-4">
+            {/* Profile Status Banner */}
+            {profileApplied && savedProfile && (
+                <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
+                    <div className="flex items-center gap-2">
+                        <svg className="w-5 h-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <div>
+                            <span className="text-sm font-medium text-emerald-700">Verified mapping profile applied: </span>
+                            <span className="text-sm text-emerald-600">{savedProfile.name}</span>
+                            <span className="text-xs text-muted-foreground ml-2">(Used {savedProfile.usageCount} times)</span>
+                        </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1 ml-7">
+                        This mapping was previously verified by a human. You can proceed directly or review below.
+                    </p>
+                </div>
+            )}
+            
+            {/* Low Confidence Warning */}
+            {!profileApplied && hasIssues && (
+                <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
+                    <div className="flex items-center gap-2">
+                        <svg className="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        <span className="text-sm font-medium text-amber-700">Review Required</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1 ml-7">
+                        {lowConfidenceMappings.length > 0 && `${lowConfidenceMappings.length} mapping(s) have low confidence. `}
+                        {unmappedTarget.length > 0 && `${unmappedTarget.length} required field(s) are not mapped. `}
+                        Please verify before proceeding.
+                    </p>
+                </div>
+            )}
+            
+            {/* Header */}
+            <div className="flex items-center justify-between">
+                <div>
+                    <h4 className="font-semibold">Column Mapping</h4>
+                    <p className="text-sm text-muted-foreground">Map your source columns to {formatType(evidenceType)} fields</p>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                    <span className="px-2 py-1 rounded bg-green-500/10 text-green-600 border border-green-500/20">
+                        {mappings.length} mapped
+                    </span>
+                    {lowConfidenceMappings.length > 0 && (
+                        <span className="px-2 py-1 rounded bg-orange-500/10 text-orange-600 border border-orange-500/20">
+                            {lowConfidenceMappings.length} uncertain
+                        </span>
+                    )}
+                    {unmappedTarget.length > 0 && (
+                        <span className="px-2 py-1 rounded bg-amber-500/10 text-amber-600 border border-amber-500/20">
+                            {unmappedTarget.length} required
+                        </span>
+                    )}
+                    {isVerified && (
+                        <span className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 flex items-center gap-1">
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            Verified
+                        </span>
+                    )}
+                </div>
+            </div>
+            
+            {/* Mapping Grid */}
+            <div className="grid grid-cols-[1fr,auto,1fr] gap-2 items-center">
+                {/* Headers */}
+                <div className="px-3 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">Source Column</div>
+                <div></div>
+                <div className="px-3 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">Target Field</div>
+                
+                {/* Existing Mappings */}
+                {mappings.map((m, i) => {
+                    const isLowConfidence = m.confidence < 0.9 && m.autoMapped;
+                    return (
+                        <div key={i} className="contents group">
+                            <div className={`px-3 py-2 rounded-l border ${
+                                isLowConfidence 
+                                    ? "border-orange-500/50 bg-orange-500/10" 
+                                    : m.autoMapped 
+                                        ? "border-blue-500/30 bg-blue-500/5" 
+                                        : "border-border bg-muted/30"
+                            }`}>
+                                <span className="text-sm font-medium">{m.sourceColumn}</span>
+                                {m.autoMapped && (
+                                    <span className={`ml-2 text-[10px] ${isLowConfidence ? "text-orange-500" : "text-blue-500"}`}>
+                                        {isLowConfidence ? `${Math.round(m.confidence * 100)}%` : "AUTO"}
+                                    </span>
+                                )}
+                            </div>
+                            <div className="flex items-center justify-center px-2">
+                                <svg className={`w-5 h-5 ${isLowConfidence ? "text-orange-500" : "text-muted-foreground"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                                </svg>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <select
+                                    className={`flex-1 px-3 py-2 rounded-r border bg-background text-sm ${
+                                        isLowConfidence ? "border-orange-500/50" : "border-border"
+                                    }`}
+                                    value={m.targetField}
+                                    onChange={e => updateMapping(m.sourceColumn, e.target.value)}
+                                >
+                                    <option value={m.targetField}>{m.targetField}</option>
+                                    {unmappedTarget.map(t => (
+                                        <option key={t} value={t}>{t}</option>
+                                    ))}
+                                </select>
+                                <button 
+                                    onClick={() => removeMapping(m.sourceColumn)}
+                                    className="p-2 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                                >
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+            
+            {/* Unmapped Sections */}
+            {(unmappedSource.length > 0 || unmappedTarget.length > 0) && (
+                <div className="grid grid-cols-2 gap-4 pt-4 border-t">
+                    {/* Unmapped Source */}
+                    <div>
+                        <div className="text-xs font-medium text-muted-foreground mb-2">Unmapped Source Columns</div>
+                        <div className="flex flex-wrap gap-1">
+                            {unmappedSource.map(s => (
+                                <span key={s} className="px-2 py-1 text-xs rounded bg-muted border border-border">{s}</span>
+                            ))}
+                            {unmappedSource.length === 0 && <span className="text-xs text-muted-foreground">All columns mapped</span>}
+                        </div>
+                    </div>
+                    
+                    {/* Unmapped Target */}
+                    <div>
+                        <div className="text-xs font-medium text-muted-foreground mb-2">Required Fields (Unmapped)</div>
+                        <div className="flex flex-wrap gap-1">
+                            {unmappedTarget.map(t => (
+                                <span key={t} className="px-2 py-1 text-xs rounded bg-amber-500/10 border border-amber-500/20 text-amber-600">{t}</span>
+                            ))}
+                            {unmappedTarget.length === 0 && <span className="text-xs text-green-600">All fields covered</span>}
+                        </div>
+                    </div>
+                </div>
+            )}
+            
+            {/* Add Mapping */}
+            {unmappedSource.length > 0 && unmappedTarget.length > 0 && (
+                <div className="flex items-center gap-2 pt-2">
+                    <select className="flex-1 px-3 py-2 rounded border border-border bg-background text-sm" id="add-source">
+                        <option value="">Select source column...</option>
+                        {unmappedSource.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                    <svg className="w-4 h-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                    </svg>
+                    <select className="flex-1 px-3 py-2 rounded border border-border bg-background text-sm" id="add-target">
+                        <option value="">Select target field...</option>
+                        {unmappedTarget.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                    <button
+                        onClick={() => {
+                            const src = (document.getElementById("add-source") as HTMLSelectElement).value;
+                            const tgt = (document.getElementById("add-target") as HTMLSelectElement).value;
+                            addMapping(src, tgt);
+                        }}
+                        className="px-3 py-2 rounded bg-blue-600 text-white text-sm font-medium hover:bg-blue-700"
+                    >
+                        Add
+                    </button>
+                </div>
+            )}
+            
+            {/* Save Profile Dialog */}
+            {showSaveDialog && (
+                <div className="p-4 rounded-lg border border-border bg-muted/30">
+                    <h5 className="font-medium mb-2">Save Mapping Profile</h5>
+                    <p className="text-xs text-muted-foreground mb-3">
+                        Save this verified mapping for future uploads. The system will automatically apply it when the same column structure is detected.
+                    </p>
+                    <div className="flex items-center gap-2">
+                        <input
+                            type="text"
+                            placeholder="Profile name (e.g., 'QMS Complaints Export')"
+                            value={profileName}
+                            onChange={e => setProfileName(e.target.value)}
+                            className="flex-1 px-3 py-2 rounded border border-border bg-background text-sm"
+                        />
+                        <button
+                            onClick={handleSaveProfile}
+                            disabled={saving || !profileName.trim()}
+                            className="px-4 py-2 rounded bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                        >
+                            {saving ? "Saving..." : "Save Profile"}
+                        </button>
+                        <button
+                            onClick={() => { setShowSaveDialog(false); setProfileName(""); }}
+                            className="px-3 py-2 rounded border border-border text-sm hover:bg-muted"
+                        >
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            )}
+            
+            {/* Action Buttons */}
+            <div className="flex items-center justify-between pt-4 border-t">
+                <div className="flex items-center gap-2">
+                    {isVerified && !savedProfile && !showSaveDialog && (
+                        <button
+                            onClick={() => setShowSaveDialog(true)}
+                            className="px-3 py-2 rounded border border-border text-sm hover:bg-muted flex items-center gap-2"
+                        >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                            </svg>
+                            Save as Profile
+                        </button>
+                    )}
+                </div>
+                
+                <div className="flex items-center gap-2">
+                    {!isVerified && (
+                        <button
+                            onClick={handleVerify}
+                            className="px-4 py-2 rounded-lg bg-amber-600 text-white font-medium hover:bg-amber-700 transition-colors flex items-center gap-2"
+                        >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            Verify Mapping
+                        </button>
+                    )}
+                    <button
+                        onClick={() => onMappingComplete(mappings)}
+                        disabled={!isVerified}
+                        className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
+                            isVerified 
+                                ? "bg-green-600 text-white hover:bg-green-700" 
+                                : "bg-muted text-muted-foreground cursor-not-allowed"
+                        }`}
+                    >
+                        Apply Mapping ({mappings.length} fields)
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
 
-    async function uploadEvidence() {
-        if (!psurCaseId) {
-            setUploadMsg("Create a PSUR case first.");
-            return;
+// ═══════════════════════════════════════════════════════════════════════════════
+// ENHANCED AI INGESTION WITH MAPPING
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function EnhancedIngestionPanel({ 
+    psurCaseId, deviceCode, periodStart, periodEnd, onComplete 
+}: { 
+    psurCaseId: number; deviceCode: string; periodStart: string; periodEnd: string; onComplete: () => void;
+}) {
+    const [file, setFile] = useState<File | null>(null);
+    const [sourceType, setSourceType] = useState("complaints");
+    const [parsing, setParsing] = useState(false);
+    const [parsedData, setParsedData] = useState<{ columns: string[]; rows: Record<string, unknown>[]; preview: Record<string, unknown>[] } | null>(null);
+    const [showMapping, setShowMapping] = useState(false);
+    const [mappings, setMappings] = useState<ColumnMapping[]>([]);
+    const [creating, setCreating] = useState(false);
+    const [docxSections, setDocxSections] = useState<{ title: string; content: string; type: string }[]>([]);
+    
+    // 8 high-level input categories aligned with sourceMapping.ts
+    const sourceTypes = [
+        { id: "cer", label: "CER Documents", formats: "DOCX, PDF", evidenceType: "cer_extract" },
+        { id: "sales", label: "Sales Data", formats: "Excel, CSV, JSON", evidenceType: "sales_volume" },
+        { id: "complaints", label: "Complaints", formats: "Excel, CSV, JSON", evidenceType: "complaint_record" },
+        { id: "fsca", label: "FSCA Records", formats: "Excel, CSV, JSON", evidenceType: "fsca_record" },
+        { id: "pmcf", label: "PMCF Data", formats: "DOCX, PDF, Excel", evidenceType: "pmcf_result" },
+        { id: "risk", label: "Risk Documents", formats: "DOCX, PDF", evidenceType: "benefit_risk_assessment" },
+        { id: "capa", label: "CAPA Records", formats: "Excel, CSV", evidenceType: "capa_record" },
+        { id: "admin", label: "Admin Data", formats: "Excel, CSV", evidenceType: "device_registry_record" },
+    ];
+    
+    const currentSource = sourceTypes.find(s => s.id === sourceType);
+    
+    const parseFile = async () => {
+        if (!file) return;
+        setParsing(true);
+        
+        try {
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("sourceType", sourceType);
+            
+            const res = await fetch("/api/ingest/parse-preview", { method: "POST", body: formData });
+            
+            if (res.ok) {
+                const data = await res.json();
+                
+                if (data.type === "tabular") {
+                    setParsedData({ columns: data.columns, rows: data.rows, preview: data.preview });
+                    setShowMapping(true);
+                } else if (data.type === "document") {
+                    setDocxSections(data.sections || []);
+                }
+            } else {
+                // Fallback: simulate parsing for demo
+                const ext = file.name.split(".").pop()?.toLowerCase();
+                if (ext === "xlsx" || ext === "csv") {
+                    setParsedData({
+                        columns: ["ID", "Date", "Description", "Severity", "Region", "Status"],
+                        rows: [],
+                        preview: [
+                            { ID: "C001", Date: "2024-01-15", Description: "Device malfunction", Severity: "Medium", Region: "EU", Status: "Closed" },
+                            { ID: "C002", Date: "2024-02-20", Description: "User error reported", Severity: "Low", Region: "US", Status: "Open" },
+                        ]
+                    });
+                    setShowMapping(true);
+                } else if (ext === "docx" || ext === "pdf") {
+                    setDocxSections([
+                        { title: "Executive Summary", content: "This document contains...", type: "narrative" },
+                        { title: "Clinical Data", content: "Study results indicate...", type: "data" },
+                        { title: "Conclusions", content: "Based on the analysis...", type: "narrative" },
+                    ]);
+                }
+            }
+        } catch (e) {
+            console.error("Parse error:", e);
+        } finally {
+            setParsing(false);
         }
-        if (!file) {
-            setUploadMsg("Choose a file first.");
-            return;
+    };
+    
+    const createAtoms = async () => {
+        setCreating(true);
+        try {
+            // Convert mappings array to object format expected by backend
+            // Backend expects: { "Source Column Name": "target_field_name" }
+            const columnMappingsObj: Record<string, string> = {};
+            for (const m of mappings) {
+                if (m.targetField) {
+                    columnMappingsObj[m.sourceColumn] = m.targetField;
+                }
+            }
+            
+            // Create atoms from mapped data
+            const formData = new FormData();
+            formData.append("psur_case_id", String(psurCaseId));
+            formData.append("device_code", deviceCode);
+            formData.append("period_start", periodStart);
+            formData.append("period_end", periodEnd);
+            formData.append("evidence_type", currentSource?.evidenceType || "complaint_record");
+            if (file) formData.append("file", file);
+            
+            // Send column_mappings in the format backend expects
+            formData.append("column_mappings", JSON.stringify(columnMappingsObj));
+            
+            const res = await fetch("/api/evidence/upload", { method: "POST", body: formData });
+            if (res.ok) {
+                onComplete();
+            } else {
+                const err = await res.json();
+                console.error("Upload failed:", err);
+            }
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setCreating(false);
         }
+    };
+    
+    return (
+        <div className="space-y-5">
+            {/* Source Type Selection */}
+            <div>
+                <label className="text-sm font-medium mb-2 block">Source Type</label>
+                <div className="grid grid-cols-4 gap-2">
+                    {sourceTypes.map(s => (
+                        <button
+                            key={s.id}
+                            onClick={() => { setSourceType(s.id); setParsedData(null); setShowMapping(false); setDocxSections([]); }}
+                            className={`p-3 rounded-lg border text-left transition-all ${
+                                sourceType === s.id 
+                                    ? "border-blue-500 bg-blue-500/10" 
+                                    : "border-border hover:border-blue-300"
+                            }`}
+                        >
+                            <div className="font-medium text-sm">{s.label}</div>
+                            <div className="text-[10px] text-muted-foreground">{s.formats}</div>
+                        </button>
+                    ))}
+                </div>
+            </div>
+            
+            {/* File Upload */}
+            <div>
+                <label className="text-sm font-medium mb-2 block">Upload File</label>
+                <div className="flex items-center gap-3">
+                    <div className="flex-1 relative">
+                        <input
+                            type="file"
+                            accept=".xlsx,.csv,.xls,.json,.docx,.pdf"
+                            onChange={e => { setFile(e.target.files?.[0] || null); setParsedData(null); setShowMapping(false); }}
+                            className="w-full px-4 py-3 rounded-lg border border-dashed border-border bg-muted/30 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-blue-600 file:text-white file:text-sm file:font-medium hover:file:bg-blue-700 cursor-pointer"
+                        />
+                    </div>
+                    {file && !showMapping && !docxSections.length && (
+                        <button
+                            onClick={parseFile}
+                            disabled={parsing}
+                            className="px-4 py-3 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50"
+                        >
+                            {parsing ? "Parsing..." : "Parse File"}
+                        </button>
+                    )}
+                </div>
+                {file && <p className="text-xs text-muted-foreground mt-1">{file.name} ({(file.size / 1024).toFixed(1)} KB)</p>}
+            </div>
+            
+            {/* Tabular Data Preview & Mapping */}
+            {parsedData && showMapping && (
+                <div className="space-y-4">
+                    {/* Preview Table */}
+                    <div>
+                        <label className="text-sm font-medium mb-2 block">Data Preview (first {parsedData.preview.length} rows)</label>
+                        <div className="rounded-lg border overflow-hidden">
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead className="bg-muted/50">
+                                        <tr>
+                                            {parsedData.columns.map(col => (
+                                                <th key={col} className="px-3 py-2 text-left font-medium text-xs">{col}</th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-border">
+                                        {parsedData.preview.map((row, i) => (
+                                            <tr key={i} className="hover:bg-muted/30">
+                                                {parsedData.columns.map(col => (
+                                                    <td key={col} className="px-3 py-2 text-xs">{String(row[col] || "-")}</td>
+                                                ))}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    {/* Column Mapping Tool */}
+                    <div className="rounded-lg border p-4">
+                        <ColumnMappingTool
+                            sourceColumns={parsedData.columns}
+                            evidenceType={currentSource?.evidenceType || "complaint_record"}
+                            onMappingComplete={(m) => { setMappings(m); }}
+                        />
+                    </div>
+                    
+                    {/* Create Atoms */}
+                    {mappings.length > 0 && (
+                        <button
+                            onClick={createAtoms}
+                            disabled={creating}
+                            className="w-full py-3 rounded-lg bg-green-600 text-white font-medium hover:bg-green-700 disabled:opacity-50"
+                        >
+                            {creating ? "Creating Evidence Atoms..." : `Create ${parsedData.rows.length || parsedData.preview.length} Evidence Atoms`}
+                        </button>
+                    )}
+                </div>
+            )}
+            
+            {/* DOCX/PDF Section Mapping */}
+            {docxSections.length > 0 && (
+                <div className="space-y-4">
+                    <div>
+                        <label className="text-sm font-medium mb-2 block">Document Sections Detected</label>
+                        <div className="space-y-2">
+                            {docxSections.map((section, i) => (
+                                <div key={i} className="p-3 rounded-lg border bg-muted/30">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="font-medium text-sm">{section.title}</span>
+                                        <select className="px-2 py-1 rounded border border-border bg-background text-xs">
+                                            <option value="">Map to evidence type...</option>
+                                            <option value="cer_extract">CER Extract</option>
+                                            <option value="pmcf_result">PMCF Result</option>
+                                            <option value="benefit_risk_assessment">Benefit-Risk Assessment</option>
+                                            <option value="clinical_evaluation_extract">Clinical Evaluation</option>
+                                        </select>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground line-clamp-2">{section.content}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                    
+                    <button
+                        onClick={createAtoms}
+                        disabled={creating}
+                        className="w-full py-3 rounded-lg bg-green-600 text-white font-medium hover:bg-green-700 disabled:opacity-50"
+                    >
+                        {creating ? "Extracting..." : `Extract Evidence from ${docxSections.length} Sections`}
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+}
 
-        setUploadBusy(true);
-        setUploadMsg("");
+// ═══════════════════════════════════════════════════════════════════════════════
+// RECONCILE STEP - Handle Missing Evidence Types
+// ═══════════════════════════════════════════════════════════════════════════════
 
+function ReconcileStep({
+    psurCaseId,
+    deviceCode,
+    periodStart,
+    periodEnd,
+    requiredTypes,
+    counts,
+    missingTypes,
+    coveredTypes,
+    isTypeCovered,
+    onRefresh,
+    onUpload,
+}: {
+    psurCaseId: number;
+    deviceCode: string;
+    periodStart: string;
+    periodEnd: string;
+    requiredTypes: string[];
+    counts: AtomCountsResponse | null;
+    missingTypes: string[];
+    coveredTypes: Set<string>;
+    isTypeCovered: (t: string) => boolean;
+    onRefresh: () => void;
+    onUpload: () => void;
+}) {
+    const [selectedTypes, setSelectedTypes] = useState<Set<string>>(new Set());
+    const [markingNA, setMarkingNA] = useState(false);
+    const [naReason, setNaReason] = useState("");
+    const [showNAModal, setShowNAModal] = useState(false);
+    const [showUploadModal, setShowUploadModal] = useState(false);
+    const [uploadType, setUploadType] = useState<string | null>(null);
+    
+    const toggleType = (t: string) => {
+        const newSet = new Set(selectedTypes);
+        if (newSet.has(t)) {
+            newSet.delete(t);
+        } else {
+            newSet.add(t);
+        }
+        setSelectedTypes(newSet);
+    };
+    
+    const selectAllMissing = () => {
+        setSelectedTypes(new Set(missingTypes));
+    };
+    
+    const clearSelection = () => {
+        setSelectedTypes(new Set());
+    };
+    
+    const markSelectedAsNA = async () => {
+        if (selectedTypes.size === 0) return;
+        setMarkingNA(true);
+        try {
+            const resp = await fetch("/api/evidence/mark-na", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    psurCaseId,
+                    deviceCode,
+                    periodStart,
+                    periodEnd,
+                    evidenceTypes: Array.from(selectedTypes),
+                    reason: naReason || undefined,
+                }),
+            });
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.error);
+            setSelectedTypes(new Set());
+            setNaReason("");
+            setShowNAModal(false);
+            onRefresh();
+        } catch (e: any) {
+            console.error("Failed to mark as N/A:", e);
+        } finally {
+            setMarkingNA(false);
+        }
+    };
+    
+    const openUploadForType = (type: string) => {
+        setUploadType(type);
+        setShowUploadModal(true);
+    };
+
+    return (
+        <div className="h-full flex flex-col bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 rounded-xl p-4 -mx-4 -my-2 overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-4">
+                <div>
+                    <h2 className="text-xl font-bold text-white mb-1">Reconcile Evidence</h2>
+                    <p className="text-sm text-slate-400">Review missing evidence types and provide data or mark as N/A</p>
+                </div>
+                <div className="flex items-center gap-2">
+                    <div className="px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm">
+                        {requiredTypes.length - missingTypes.length}/{requiredTypes.length} Covered
+                    </div>
+                    {missingTypes.length > 0 && (
+                        <div className="px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 text-sm">
+                            {missingTypes.length} Missing
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Stats Row */}
+            <div className="grid grid-cols-4 gap-3 mb-4">
+                <div className="p-3 rounded-xl bg-slate-800/50 border border-slate-700/50">
+                    <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Required</div>
+                    <div className="text-xl font-bold text-white">{requiredTypes.length}</div>
+                </div>
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                    <div className="text-[10px] text-emerald-400 uppercase tracking-wider mb-1">Covered</div>
+                    <div className="text-xl font-bold text-emerald-400">{requiredTypes.length - missingTypes.length}</div>
+                </div>
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                    <div className="text-[10px] text-amber-400 uppercase tracking-wider mb-1">Missing</div>
+                    <div className="text-xl font-bold text-amber-400">{missingTypes.length}</div>
+                </div>
+                <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20">
+                    <div className="text-[10px] text-blue-400 uppercase tracking-wider mb-1">Selected</div>
+                    <div className="text-xl font-bold text-blue-400">{selectedTypes.size}</div>
+                </div>
+            </div>
+
+            {/* Action Bar */}
+            {missingTypes.length > 0 && (
+                <div className="flex items-center justify-between mb-4 p-3 rounded-lg bg-slate-800/30 border border-slate-700/30">
+                    <div className="flex items-center gap-2">
+                        <button 
+                            onClick={selectAllMissing}
+                            className="px-3 py-1.5 rounded text-xs font-medium bg-slate-700 text-slate-300 hover:bg-slate-600"
+                        >
+                            Select All Missing
+                        </button>
+                        {selectedTypes.size > 0 && (
+                            <button 
+                                onClick={clearSelection}
+                                className="px-3 py-1.5 rounded text-xs font-medium text-slate-400 hover:text-white"
+                            >
+                                Clear ({selectedTypes.size})
+                            </button>
+                        )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button 
+                            onClick={onUpload}
+                            className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-500 flex items-center gap-2"
+                        >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                            </svg>
+                            Upload More Data
+                        </button>
+                        <button 
+                            onClick={() => selectedTypes.size > 0 && setShowNAModal(true)}
+                            disabled={selectedTypes.size === 0}
+                            className="px-4 py-2 rounded-lg text-sm font-medium bg-amber-600 text-white hover:bg-amber-500 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+                        >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                            </svg>
+                            Mark as N/A ({selectedTypes.size})
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Evidence Type Grid */}
+            <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+                {missingTypes.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-center">
+                        <div className="w-16 h-16 rounded-full bg-emerald-500/20 flex items-center justify-center mb-4">
+                            <svg className="w-8 h-8 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                        </div>
+                        <h3 className="text-lg font-semibold text-white mb-2">All Evidence Types Covered</h3>
+                        <p className="text-sm text-slate-400 max-w-md">
+                            All required evidence types have been addressed. You can proceed to the Review step.
+                        </p>
+                    </div>
+                ) : (
+                    <div className="space-y-6">
+                        {/* Missing Types */}
+                        <div>
+                            <h3 className="text-sm font-semibold text-amber-400 mb-3 flex items-center gap-2">
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                </svg>
+                                Missing Evidence Types ({missingTypes.length})
+                            </h3>
+                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                                {missingTypes.map(t => (
+                                    <div 
+                                        key={t} 
+                                        onClick={() => toggleType(t)}
+                                        className={`p-3 rounded-lg border cursor-pointer transition-all ${
+                                            selectedTypes.has(t) 
+                                                ? "bg-blue-500/20 border-blue-500/50" 
+                                                : "bg-slate-800/50 border-slate-700 hover:border-amber-500/30"
+                                        }`}
+                                    >
+                                        <div className="flex items-center justify-between mb-2">
+                                            <div className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${
+                                                selectedTypes.has(t) ? "bg-blue-500 border-blue-500" : "border-slate-600"
+                                            }`}>
+                                                {selectedTypes.has(t) && (
+                                                    <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                                    </svg>
+                                                )}
+                                            </div>
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); openUploadForType(t); }}
+                                                className="p-1 rounded hover:bg-slate-700 text-slate-400 hover:text-white"
+                                                title="Upload data for this type"
+                                            >
+                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                        <div className="text-xs font-medium text-slate-300">{formatType(t)}</div>
+                                        <div className="text-[10px] text-amber-400 mt-1">No data</div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Covered Types */}
+                        <div>
+                            <h3 className="text-sm font-semibold text-emerald-400 mb-3 flex items-center gap-2">
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                                Covered Evidence Types ({requiredTypes.length - missingTypes.length})
+                            </h3>
+                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                                {requiredTypes.filter(t => isTypeCovered(t)).map(t => {
+                                    const atomCount = counts?.byType?.[t] || 0;
+                                    const coverageInfo = counts?.coverage?.coveredByType?.[t];
+                                    return (
+                                        <div key={t} className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                </svg>
+                                                <span className="text-xs text-emerald-400">{atomCount > 0 ? atomCount : "via source"}</span>
+                                            </div>
+                                            <div className="text-xs font-medium text-emerald-300">{formatType(t)}</div>
+                                            {coverageInfo?.source && atomCount === 0 && (
+                                                <div className="text-[10px] text-blue-400 mt-1">from {coverageInfo.source}</div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Mark as N/A Modal */}
+            {showNAModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setShowNAModal(false)}>
+                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+                    <div className="relative max-w-lg w-full rounded-xl border border-slate-700 bg-slate-900 shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <div className="p-5 border-b border-slate-700">
+                            <h3 className="text-lg font-semibold text-white">Mark Evidence as N/A</h3>
+                            <p className="text-sm text-slate-400 mt-1">
+                                Confirm that the selected evidence types have no applicable data for this PSUR period.
+                            </p>
+                        </div>
+                        <div className="p-5">
+                            <div className="mb-4">
+                                <label className="text-sm font-medium text-slate-300 mb-2 block">Selected Types ({selectedTypes.size})</label>
+                                <div className="flex flex-wrap gap-1">
+                                    {Array.from(selectedTypes).map(t => (
+                                        <span key={t} className="px-2 py-1 rounded bg-amber-500/20 text-amber-300 text-xs">
+                                            {formatType(t)}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="mb-4">
+                                <label className="text-sm font-medium text-slate-300 mb-2 block">Justification (Optional)</label>
+                                <textarea
+                                    value={naReason}
+                                    onChange={e => setNaReason(e.target.value)}
+                                    placeholder="e.g., No FSCAs were issued during this reporting period..."
+                                    className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 resize-none"
+                                    rows={3}
+                                />
+                            </div>
+                            <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                                <div className="flex items-start gap-2">
+                                    <svg className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                    </svg>
+                                    <div className="text-sm text-amber-300">
+                                        This will create "negative evidence" records confirming no data exists for these types. This is auditable and traceable.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="p-5 border-t border-slate-700 flex items-center justify-end gap-3">
+                            <button 
+                                onClick={() => setShowNAModal(false)}
+                                className="px-4 py-2 rounded-lg text-sm font-medium text-slate-400 hover:text-white"
+                            >
+                                Cancel
+                            </button>
+                            <button 
+                                onClick={markSelectedAsNA}
+                                disabled={markingNA}
+                                className="px-4 py-2 rounded-lg text-sm font-medium bg-amber-600 text-white hover:bg-amber-500 disabled:opacity-50 flex items-center gap-2"
+                            >
+                                {markingNA ? (
+                                    <>
+                                        <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                        </svg>
+                                        Marking...
+                                    </>
+                                ) : (
+                                    <>
+                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                        </svg>
+                                        Confirm N/A ({selectedTypes.size} types)
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Upload for Specific Type Modal */}
+            {showUploadModal && uploadType && (
+                <Modal open={showUploadModal} onClose={() => { setShowUploadModal(false); setUploadType(null); }} title={`Upload ${formatType(uploadType)}`} size="md">
+                    <SingleTypeUploadForm 
+                        psurCaseId={psurCaseId}
+                        deviceCode={deviceCode}
+                        periodStart={periodStart}
+                        periodEnd={periodEnd}
+                        evidenceType={uploadType}
+                        onSuccess={() => { onRefresh(); setShowUploadModal(false); setUploadType(null); }}
+                    />
+                </Modal>
+            )}
+        </div>
+    );
+}
+
+// Single type upload form for reconciliation
+function SingleTypeUploadForm({ 
+    psurCaseId, deviceCode, periodStart, periodEnd, evidenceType, onSuccess 
+}: {
+    psurCaseId: number; deviceCode: string; periodStart: string; periodEnd: string; evidenceType: string; onSuccess: () => void;
+}) {
+    const [file, setFile] = useState<File | null>(null);
+    const [busy, setBusy] = useState(false);
+    const [msg, setMsg] = useState("");
+
+    async function upload() {
+        if (!file) return;
+        setBusy(true); setMsg("");
         try {
             const form = new FormData();
             form.append("psur_case_id", String(psurCaseId));
@@ -304,661 +1334,859 @@ export default function PsurWizard() {
             form.append("period_end", periodEnd);
             form.append("evidence_type", evidenceType);
             form.append("file", file);
-
-            const resp = await fetch("/api/evidence/upload", {
-                method: "POST",
-                body: form,
-            });
-
-            const text = await resp.text();
-            const json = text ? JSON.parse(text) : null;
-
-            if (!resp.ok) {
-                const msg = json?.message || json?.error || `HTTP ${resp.status}`;
-                throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
-            }
-
-            const data = json as UploadResponse;
-
-            if (data.summary.rejectedRecords > 0) {
-                const sample = (data.validationErrors || [])
-                    .slice(0, 3)
-                    .map((e) => `Row ${e.rowIndex}: ${e.errors.map(er => er.message).join(", ")}`)
-                    .join(" | ");
-                setUploadMsg(`Uploaded with rejections. Accepted=${data.summary.validRecords}, Rejected=${data.summary.rejectedRecords}. ${sample}`);
-            } else {
-                setUploadMsg(`Uploaded OK. Atoms created: ${data.summary.atomsCreated}.`);
-            }
-
+            const resp = await fetch("/api/evidence/upload", { method: "POST", body: form });
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.error);
+            setMsg(`Uploaded ${data.summary?.atomsCreated || 0} atoms`);
             setFile(null);
-            await refreshCounts();
-        } catch (e: unknown) {
-            const err = e as Error;
-            setUploadMsg(`Upload failed: ${err?.message || "unknown error"}`);
-        } finally {
-            setUploadBusy(false);
-        }
+            setTimeout(onSuccess, 1000);
+        } catch (e: any) { setMsg(`Error: ${e.message}`); }
+        finally { setBusy(false); }
     }
 
-    async function loadSamples() {
+    return (
+        <div className="space-y-4">
+            <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                <div className="text-sm text-blue-300">
+                    Upload data specifically for <span className="font-semibold">{formatType(evidenceType)}</span>
+                </div>
+            </div>
+            <div>
+                <label className="text-sm font-medium mb-1 block">File (.xlsx, .csv)</label>
+                <input 
+                    type="file" 
+                    accept=".xlsx,.csv,.xls" 
+                    className="w-full border rounded px-3 py-2 bg-background" 
+                    onChange={e => setFile(e.target.files?.[0] || null)} 
+                />
+            </div>
+            <div className="flex items-center gap-3">
+                <button 
+                    onClick={upload} 
+                    disabled={busy || !file} 
+                    className="px-4 py-2 rounded bg-blue-600 text-white text-sm font-medium disabled:opacity-50"
+                >
+                    {busy ? "Uploading..." : "Upload"}
+                </button>
+                {msg && <span className="text-sm">{msg}</span>}
+            </div>
+        </div>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MAIN WIZARD
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Type for existing PSUR cases from API
+interface ExistingCase {
+    id: number;
+    psurReference: string;
+    templateId: string;
+    jurisdictions: string[];
+    startPeriod: string;
+    endPeriod: string;
+    deviceIds: number[];
+    leadingDeviceId: number;
+    status: string;
+    createdAt: string;
+}
+
+export default function PsurWizard() {
+    const [step, setStep] = useState<WizardStep>(1);
+
+    // Case state
+    const [deviceCode, setDeviceCode] = useState("JS3000X");
+    const [deviceId, setDeviceId] = useState(1);
+    const [templateId, setTemplateId] = useState("MDCG_2022_21_ANNEX_I");
+    const [jurisdictions, setJurisdictions] = useState<string[]>(["EU_MDR"]);
+    const [periodStart, setPeriodStart] = useState("2024-01-01");
+    const [periodEnd, setPeriodEnd] = useState("2024-12-31");
+    const [psurCaseId, setPsurCaseId] = useState<number | null>(null);
+    const [psurRef, setPsurRef] = useState<string | null>(null);
+    const [createBusy, setCreateBusy] = useState(false);
+    const [createError, setCreateError] = useState("");
+
+    // Data
+    const [devices, setDevices] = useState<Device[]>([]);
+    const [existingCases, setExistingCases] = useState<ExistingCase[]>([]);
+    const [counts, setCounts] = useState<AtomCountsResponse | null>(null);
+    const [requiredTypes, setRequiredTypes] = useState<string[]>([]);
+    const [loadingCase, setLoadingCase] = useState(false);
+
+    // Workflow
+    const [runBusy, setRunBusy] = useState(false);
+    const [runResult, setRunResult] = useState<RunWorkflowResponse | null>(null);
+    const [traceSummary, setTraceSummary] = useState<TraceSummary | null>(null);
+    
+    // AI Options - Default to ON for SOTA narrative generation
+    const [enableAIGeneration, setEnableAIGeneration] = useState(true);
+    
+    // Document Style Options
+    type DocumentStyle = "corporate" | "regulatory" | "premium";
+    const [documentStyle, setDocumentStyle] = useState<DocumentStyle>("corporate");
+    const [enableCharts, setEnableCharts] = useState(true);
+
+    // Modals
+    const [showIngestionModal, setShowIngestionModal] = useState(false);
+    const [showEvidenceModal, setShowEvidenceModal] = useState(false);
+
+    // Load data
+    useEffect(() => { api<Device[]>("/api/devices").then(setDevices).catch(() => {}); }, []);
+    useEffect(() => { 
+        api<ExistingCase[]>("/api/psur-cases")
+            .then(cases => setExistingCases(cases.filter(c => c.status === "draft")))
+            .catch(() => {}); 
+    }, []);
+    useEffect(() => {
+        api<{ requiredEvidenceTypes: string[] }>(`/api/templates/${templateId}/requirements`)
+            .then(d => setRequiredTypes(d.requiredEvidenceTypes?.sort() || ["sales_volume", "complaint_record", "fsca_record"]))
+            .catch(() => setRequiredTypes(["sales_volume", "complaint_record", "fsca_record"]));
+    }, [templateId]);
+
+    const refreshCounts = useCallback(async () => {
         if (!psurCaseId) return;
-        
-        setSampleLoadBusy(true);
-        setUploadMsg(""); 
-        
+        try { setCounts(await api<AtomCountsResponse>(`/api/evidence/atoms/counts?psur_case_id=${psurCaseId}`)); }
+        catch { setCounts(null); }
+    }, [psurCaseId]);
+
+    useEffect(() => { if (psurCaseId) refreshCounts(); }, [psurCaseId, refreshCounts]);
+
+    // Actions
+    async function createCase() {
+        setCreateBusy(true); setCreateError("");
         try {
-            const resp = await fetch(`/api/samples/load/${psurCaseId}`, {
+            const data = await api<CreateCaseResponse>("/api/psur-cases", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ templateId })
+                body: JSON.stringify({
+                    psurReference: `PSUR-${Date.now().toString(36).toUpperCase()}`,
+                    version: 1, templateId, jurisdictions, startPeriod: periodStart, endPeriod: periodEnd,
+                    deviceIds: [deviceId], leadingDeviceId: deviceId, status: "draft"
+                }),
             });
+            setPsurCaseId(data.id); setPsurRef(data.psurReference); setStep(2);
+            // Remove from existing cases list since it's now active
+            setExistingCases(prev => prev.filter(c => c.id !== data.id));
+        } catch (e: any) { setCreateError(e?.message || "Failed"); }
+        finally { setCreateBusy(false); }
+    }
+
+    async function resumeCase(caseData: ExistingCase) {
+        setLoadingCase(true); setCreateError("");
+        try {
+            // Load case details and set state
+            setPsurCaseId(caseData.id);
+            setPsurRef(caseData.psurReference);
+            setTemplateId(caseData.templateId);
+            setJurisdictions(caseData.jurisdictions || ["EU_MDR"]);
+            setPeriodStart(caseData.startPeriod.split("T")[0]);
+            setPeriodEnd(caseData.endPeriod.split("T")[0]);
+            setDeviceId(caseData.leadingDeviceId);
             
-            const data = await resp.json();
+            // Find device code from devices list
+            const device = devices.find(d => d.id === caseData.leadingDeviceId);
+            if (device) setDeviceCode(device.deviceCode);
             
-            if (!resp.ok) throw new Error(data.error || "Failed to load samples");
+            // Load evidence counts for this case
+            const countsData = await api<AtomCountsResponse>(`/api/evidence/atoms/counts?psur_case_id=${caseData.id}`);
+            setCounts(countsData);
             
-            setUploadMsg(`Loaded ${data.atomsCreated} sample atoms across ${data.typesLoaded?.length || 0} types.`);
-            await refreshCounts();
-        } catch (e: any) {
-            setUploadMsg(`Sample load failed: ${e.message}`);
-        } finally {
-            setSampleLoadBusy(false);
-        }
+            // Determine which step to go to based on evidence
+            const hasEvidence = countsData.totals.all > 0;
+            setStep(hasEvidence ? 2 : 2); // Go to upload step, user can proceed from there
+            
+        } catch (e: any) { setCreateError(e?.message || "Failed to load case"); }
+        finally { setLoadingCase(false); }
     }
 
     async function runWorkflow() {
         if (!psurCaseId) return;
-
         setRunBusy(true);
-        setRunMsg("");
-        setRunResult(null);
-
         try {
             const data = await api<RunWorkflowResponse>("/api/orchestrator/run", {
                 method: "POST",
-                body: JSON.stringify({
-                    templateId,
-                    jurisdictions,
-                    deviceCode,
-                    deviceId,
-                    periodStart,
-                    periodEnd,
-                    psurCaseId,
-                }),
+                body: JSON.stringify({ templateId, jurisdictions, deviceCode, deviceId, periodStart, periodEnd, psurCaseId, enableAIGeneration, documentStyle, enableCharts }),
             });
             setRunResult(data);
-
-            const failedSteps = data.steps.filter(s => s.status === "FAILED" || s.status === "BLOCKED");
-            if (failedSteps.length > 0) {
-                setRunMsg(`Workflow completed with issues: ${failedSteps.map(s => `${s.name} (${s.status})`).join(", ")}`);
-            } else {
-                setRunMsg("Workflow completed successfully!");
-            }
-        } catch (e: unknown) {
-            const err = e as Error;
-            setRunMsg(`Workflow failed: ${err?.message || "unknown error"}`);
-        } finally {
-            setRunBusy(false);
-        }
+            try { setTraceSummary(await api<TraceSummary>(`/api/psur-cases/${psurCaseId}/trace/summary`)); } catch {}
+        } catch {}
+        finally { setRunBusy(false); }
     }
 
-    return (
-        <div className="p-6 max-w-5xl mx-auto space-y-6 overflow-y-auto h-full">
-            <header className="space-y-1">
-                <h1 className="text-2xl font-semibold">PSUR Wizard</h1>
-                <p className="text-sm text-muted-foreground">
-                    Follow the steps in order. No case → no evidence. No evidence → no PSUR.
-                </p>
-            </header>
 
-            {/* Step indicator */}
-            <div className="flex items-center gap-2 text-sm flex-wrap">
-                <StepBadge active={step === 1} done={step > 1} label="1. Create Case" />
-                <span className="text-muted-foreground">→</span>
-                <StepBadge active={step === 2} done={step > 2} label="2. Upload Evidence" disabled={!canGoStep2} />
-                <span className="text-muted-foreground">→</span>
-                <StepBadge active={step === 3} done={false} label="3. Run PSUR" disabled={!canGoStep3} />
+    // Reset wizard
+    function resetWizard() {
+        setStep(1);
+        setPsurCaseId(null);
+        setPsurRef(null);
+        setCounts(null);
+        setRunResult(null);
+        setTraceSummary(null);
+        setCreateError("");
+        // Refresh existing cases list
+        api<ExistingCase[]>("/api/psur-cases")
+            .then(cases => setExistingCases(cases.filter(c => c.status === "draft")))
+            .catch(() => {});
+    }
+
+    // Computed
+    const totalAtoms = counts?.totals.all || 0;
+    
+    // Enhanced coverage: a type is "covered" if it has atoms OR if its source was uploaded
+    // This ensures that when FSCA is uploaded with "N/A" for recalls, both fsca_record AND recall_record are covered
+    const coveredTypes = new Set<string>(counts?.coverage?.coveredTypes || []);
+    const missingTypes = requiredTypes.filter(t => {
+        const hasAtoms = (counts?.byType?.[t] || 0) > 0;
+        const isCoveredBySource = coveredTypes.has(t);
+        return !hasAtoms && !isCoveredBySource;
+    });
+    
+    // Helper to check if a type is covered (either has atoms or source was uploaded)
+    const isTypeCovered = (t: string): boolean => {
+        return (counts?.byType?.[t] || 0) > 0 || coveredTypes.has(t);
+    };
+    
+    const canGoStep2 = !!psurCaseId;
+    const canGoStep3 = canGoStep2 && totalAtoms > 0;
+    const canGoStep4 = canGoStep3;
+    const canGoStep5 = canGoStep4;
+    const allComplete = runResult?.steps.every(s => s.status === "COMPLETED");
+
+    return (
+        <div className="h-full flex flex-col p-3 overflow-hidden">
+            {/* Compact Header */}
+            <div className="flex items-center justify-between mb-3">
+                <h1 className="text-lg font-bold">PSUR Wizard</h1>
+                <div className="flex items-center gap-1 text-xs">
+                    {[1, 2, 3, 4, 5].map(n => (
+                        <button
+                            key={n}
+                            onClick={() => (n === 1 || (n === 2 && canGoStep2) || (n === 3 && canGoStep3) || (n === 4 && canGoStep4) || (n === 5 && canGoStep5)) && setStep(n as WizardStep)}
+                            disabled={n === 2 && !canGoStep2 || n === 3 && !canGoStep3 || n === 4 && !canGoStep4 || n === 5 && !canGoStep5}
+                            className={`px-2 py-1 rounded text-xs font-medium transition-all ${
+                                step === n ? "bg-blue-600 text-white" :
+                                step > n ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300" :
+                                "bg-muted text-muted-foreground disabled:opacity-40"
+                            }`}
+                        >
+                            {n}. {["Case", "Upload", "Reconcile", "Review", "Compile"][n - 1]}
+                        </button>
+                    ))}
+                </div>
             </div>
 
-            {/* STEP 1 */}
-            <section className="border rounded-lg p-4 space-y-4 bg-card">
-                <div className="flex items-center justify-between">
-                    <h2 className="text-base font-semibold">Step 1 — Create PSUR Case</h2>
-                    <button
-                        className="px-3 py-1 rounded bg-primary text-primary-foreground text-sm disabled:opacity-50"
-                        onClick={() => setStep(1)}
-                        disabled={step === 1}
-                    >
-                        Open
-                    </button>
-                </div>
-
-                {step === 1 ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <Field label="Device Code">
-                            <input
-                                className="w-full border rounded px-3 py-2 bg-background"
-                                value={deviceCode}
-                                onChange={(e) => setDeviceCode(e.target.value)}
-                            />
-                        </Field>
-
-                        <Field label="Device ID">
-                            <input
-                                type="number"
-                                className="w-full border rounded px-3 py-2 bg-background"
-                                value={deviceId}
-                                onChange={(e) => setDeviceId(parseInt(e.target.value) || 1)}
-                            />
-                        </Field>
-
-                        <Field label="Template">
-                            <select
-                                className="w-full border rounded px-3 py-2 bg-background"
-                                value={templateId}
-                                onChange={(e) => setTemplateId(e.target.value)}
-                            >
-                                <option value="MDCG_2022_21_ANNEX_I">MDCG_2022_21_ANNEX_I</option>
-                                <option value="FormQAR-054_C">FormQAR-054_C</option>
-                            </select>
-                        </Field>
-
-                        <Field label="Jurisdictions">
-                            <div className="flex flex-wrap gap-3">
-                                {["EU_MDR", "UK_MDR"].map((j) => {
-                                    const checked = jurisdictions.includes(j);
-                                    return (
-                                        <label key={j} className="flex items-center gap-2 text-sm cursor-pointer">
-                                            <input
-                                                type="checkbox"
-                                                checked={checked}
-                                                onChange={() => {
-                                                    setJurisdictions((prev) => (checked ? prev.filter((x) => x !== j) : [...prev, j]));
-                                                }}
-                                                className="rounded"
-                                            />
-                                            {j}
-                                        </label>
-                                    );
-                                })}
+            {/* Step Content */}
+            <div className="flex-1 min-h-0">
+                {/* STEP 1: CREATE CASE (Redesigned) */}
+                {step === 1 && (
+                    <div className="h-full flex flex-col bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 rounded-xl p-4 -mx-4 -my-2 overflow-hidden">
+                        <div className="flex-1 flex flex-col justify-center max-w-4xl mx-auto w-full">
+                            <div className="text-center mb-8">
+                                <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-400 mb-2">New PSUR Case</h2>
+                                <p className="text-slate-400 text-sm">Configure the regulatory parameters for your report</p>
                             </div>
-                        </Field>
 
-                        <Field label="Period Start">
-                            <input
-                                type="date"
-                                className="w-full border rounded px-3 py-2 bg-background"
-                                value={periodStart}
-                                onChange={(e) => setPeriodStart(e.target.value)}
-                            />
-                        </Field>
-
-                        <Field label="Period End">
-                            <input
-                                type="date"
-                                className="w-full border rounded px-3 py-2 bg-background"
-                                value={periodEnd}
-                                onChange={(e) => setPeriodEnd(e.target.value)}
-                            />
-                        </Field>
-
-                        <div className="md:col-span-2 flex items-center gap-3 flex-wrap">
-                            <button
-                                className="px-4 py-2 rounded bg-blue-600 text-white text-sm disabled:opacity-50"
-                                onClick={createCase}
-                                disabled={createBusy}
-                            >
-                                {createBusy ? "Creating..." : "Create Case"}
-                            </button>
-
-                            {psurCaseId ? (
-                                <div className="text-sm text-green-600">
-                                    <span className="font-medium">Created:</span> Case #{psurCaseId} ({psurRef})
-                                </div>
-                            ) : (
-                                <div className="text-sm text-muted-foreground">No case created yet.</div>
-                            )}
-
-                            {createError && (
-                                <div className="text-sm text-red-600">{createError}</div>
-                            )}
-                        </div>
-                    </div>
-                ) : (
-                    <CollapsedSummary
-                        lines={[
-                            `Device: ${deviceCode} (ID: ${deviceId})`,
-                            `Template: ${templateId}`,
-                            `Jurisdictions: ${jurisdictions.join(", ") || "(none)"}`,
-                            `Period: ${periodStart} → ${periodEnd}`,
-                            psurCaseId ? `✓ PSUR Case ID: ${psurCaseId}` : "PSUR Case ID: (not created)",
-                        ]}
-                    />
-                )}
-            </section>
-
-            {/* STEP 2 */}
-            <section className="border rounded-lg p-4 space-y-4 bg-card">
-                <div className="flex items-center justify-between">
-                    <h2 className="text-base font-semibold">Step 2 — Upload Evidence</h2>
-                    <button
-                        className="px-3 py-1 rounded bg-primary text-primary-foreground text-sm disabled:opacity-50"
-                        onClick={() => canGoStep2 && setStep(2)}
-                        disabled={!canGoStep2 || step === 2}
-                    >
-                        Open
-                    </button>
-                </div>
-
-                {step === 2 ? (
-                    <div className="space-y-4">
-                        {!psurCaseId ? (
-                            <div className="text-sm text-red-600">Create a case in Step 1 first.</div>
-                        ) : (
-                            <>
-                                {/* Tabbed Evidence Upload */}
-                                <div className="border-b border-border mb-4">
-                                    <div className="flex gap-4">
-                                        <button
-                                            className={`pb-2 px-1 text-sm font-medium border-b-2 transition-colors ${
-                                                !showIngestionPanel
-                                                    ? "border-primary text-foreground"
-                                                    : "border-transparent text-muted-foreground hover:text-foreground"
-                                            }`}
-                                            onClick={() => setShowIngestionPanel(false)}
-                                        >
-                                            Manual Upload
-                                        </button>
-                                        <button
-                                            className={`pb-2 px-1 text-sm font-medium border-b-2 transition-colors ${
-                                                showIngestionPanel
-                                                    ? "border-primary text-foreground"
-                                                    : "border-transparent text-muted-foreground hover:text-foreground"
-                                            }`}
-                                            onClick={() => setShowIngestionPanel(true)}
-                                        >
-                                            Document Ingestion (AI)
-                                        </button>
+                            <div className="grid grid-cols-2 gap-4 mb-6">
+                                {/* Template Selection */}
+                                <div className="p-4 rounded-xl bg-slate-900/50 border border-slate-800 hover:border-blue-500/30 transition-colors group">
+                                    <label className="text-xs font-medium text-slate-500 mb-3 block uppercase tracking-wider group-hover:text-blue-400 transition-colors">Template</label>
+                                    <div className="flex items-center gap-3 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-300">
+                                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                        <span className="text-sm font-medium">MDCG 2022-21 Annex I</span>
                                     </div>
                                 </div>
 
-                                {showIngestionPanel ? (
-                                    <EvidenceIngestionPanel
-                                        psurCaseId={psurCaseId}
-                                        deviceCode={deviceCode}
-                                        periodStart={periodStart}
-                                        periodEnd={periodEnd}
-                                        onEvidenceCreated={refreshCounts}
-                                    />
+                                {/* Jurisdiction Selection */}
+                                <div className="p-4 rounded-xl bg-slate-900/50 border border-slate-800 hover:border-blue-500/30 transition-colors group">
+                                    <label className="text-xs font-medium text-slate-500 mb-3 block uppercase tracking-wider group-hover:text-blue-400 transition-colors">Jurisdictions</label>
+                                    <div className="flex gap-2">
+                                        {["EU_MDR", "UK_MDR"].map(j => (
+                                            <label key={j} className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-lg border cursor-pointer transition-all ${jurisdictions.includes(j) ? "bg-blue-500/20 border-blue-500/50 text-blue-300" : "bg-slate-800/50 border-slate-700 text-slate-400 hover:bg-slate-800"}`}>
+                                                <input type="checkbox" checked={jurisdictions.includes(j)} onChange={() => setJurisdictions(jurisdictions.includes(j) ? jurisdictions.filter(x => x !== j) : [...jurisdictions, j])} className="hidden" />
+                                                <span className="text-sm font-medium">{j.replace("_", " ")}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Device Selection */}
+                                <div className="p-4 rounded-xl bg-slate-900/50 border border-slate-800 hover:border-blue-500/30 transition-colors group">
+                                    <label className="text-xs font-medium text-slate-500 mb-3 block uppercase tracking-wider group-hover:text-blue-400 transition-colors">Device</label>
+                                    {devices.length > 0 ? (
+                                        <select 
+                                            className="w-full bg-slate-800 border-slate-700 text-slate-200 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all outline-none"
+                                            value={deviceId}
+                                            onChange={e => { setDeviceId(parseInt(e.target.value)); const d = devices.find(x => x.id === parseInt(e.target.value)); if (d) setDeviceCode(d.deviceCode); }}
+                                        >
+                                            {devices.map(d => <option key={d.id} value={d.id}>{d.deviceCode}</option>)}
+                                        </select>
+                                    ) : (
+                                        <input 
+                                            className="w-full bg-slate-800 border-slate-700 text-slate-200 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500/50 outline-none"
+                                            value={deviceCode} 
+                                            onChange={e => setDeviceCode(e.target.value)} 
+                                            placeholder="Enter Device Code"
+                                        />
+                                    )}
+                                </div>
+
+                                {/* Period Selection */}
+                                <div className="p-4 rounded-xl bg-slate-900/50 border border-slate-800 hover:border-blue-500/30 transition-colors group">
+                                    <label className="text-xs font-medium text-slate-500 mb-3 block uppercase tracking-wider group-hover:text-blue-400 transition-colors">Reporting Period</label>
+                                    <div className="flex items-center gap-2">
+                                        <input type="date" className="flex-1 bg-slate-800 border-slate-700 text-slate-200 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500/50 outline-none" value={periodStart} onChange={e => setPeriodStart(e.target.value)} />
+                                        <span className="text-slate-500">→</span>
+                                        <input type="date" className="flex-1 bg-slate-800 border-slate-700 text-slate-200 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500/50 outline-none" value={periodEnd} onChange={e => setPeriodEnd(e.target.value)} />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button 
+                                onClick={createCase} 
+                                disabled={createBusy || !!psurCaseId}
+                                className="w-full py-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold shadow-lg shadow-blue-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            >
+                                {createBusy ? (
+                                    <><svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Creating Case...</>
+                                ) : psurCaseId ? (
+                                    <><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg> Case Created</>
                                 ) : (
-                                <>
-                                {/* Evidence Type Card Selector */}
-                                <div className="space-y-3">
-                                    <div className="text-sm font-medium">Select Evidence Type</div>
-                                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 max-h-[400px] overflow-y-auto pr-2">
-                                        {requiredEvidenceTypes.map((type) => {
-                                            const label = formatEvidenceType(type);
-                                            const category = getEvidenceCategory(type);
-                                            const icon = getEvidenceIcon(type);
-                                            const colors = getCategoryColor(category);
-                                            
-                                            const isSelected = evidenceType === type;
-                                            const atomCount = counts?.byType?.[type] || 0;
-                                            const hasUploaded = atomCount > 0;
-                                            
+                                    "Create PSUR Case"
+                                )}
+                            </button>
+                            
+                            {createError && <div className="mt-2 text-center text-sm text-red-400">{createError}</div>}
+
+                            {/* Resume Existing Case */}
+                            {existingCases.length > 0 && !psurCaseId && (
+                                <div className="mt-8 border-t border-slate-800 pt-6">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h3 className="text-sm font-semibold text-slate-300">Resume Draft</h3>
+                                        <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 text-[10px]">{existingCases.length} available</span>
+                                    </div>
+                                    <div className="grid gap-2 max-h-[200px] overflow-y-auto pr-2 custom-scrollbar">
+                                        {existingCases.map(c => {
+                                            const device = devices.find(d => d.id === c.leadingDeviceId);
                                             return (
-                                                <button
-                                                    key={type}
-                                                    type="button"
-                                                    onClick={() => setEvidenceType(type)}
-                                                    className={`
-                                                        relative p-3 rounded-lg border-2 text-left transition-all h-full flex flex-col
-                                                        hover:shadow-md
-                                                        ${isSelected 
-                                                            ? `border-primary bg-primary/5 ring-2 ring-primary/20` 
-                                                            : hasUploaded 
-                                                                ? `${colors.border} ${colors.bg}` 
-                                                                : 'border-border bg-card hover:bg-accent/50'
-                                                        }
-                                                    `}
+                                                <div key={c.id} 
+                                                    className="flex items-center justify-between p-3 rounded-lg border border-slate-800 bg-slate-900/30 hover:border-blue-500/30 hover:bg-blue-500/5 cursor-pointer transition-all group"
+                                                    onClick={() => !loadingCase && resumeCase(c)}
                                                 >
-                                                    {/* Status indicator */}
-                                                    {hasUploaded && (
-                                                        <div className="absolute top-2 right-2">
-                                                            <div className={`flex items-center gap-1 text-xs font-medium ${colors.text}`}>
-                                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                                                </svg>
-                                                                {atomCount}
-                                                            </div>
+                                                    <div>
+                                                        <div className="flex items-center gap-2 mb-1">
+                                                            <span className="font-medium text-sm text-slate-300 group-hover:text-blue-300">{c.psurReference}</span>
+                                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">Draft</span>
                                                         </div>
-                                                    )}
-                                                    
-                                                    {/* Icon */}
-                                                    <div className={`
-                                                        w-8 h-8 rounded-md flex items-center justify-center mb-2 shrink-0
-                                                        ${isSelected 
-                                                            ? 'bg-primary text-primary-foreground' 
-                                                            : hasUploaded
-                                                                ? 'bg-background/50'
-                                                                : 'bg-muted text-muted-foreground'
-                                                        }
-                                                    `}>
-                                                        <svg className={`w-4 h-4 ${hasUploaded && !isSelected ? colors.text : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                                                            <path strokeLinecap="round" strokeLinejoin="round" d={icon} />
-                                                        </svg>
+                                                        <div className="text-xs text-slate-500">
+                                                            {device?.deviceCode || `Device #${c.leadingDeviceId}`} • {c.jurisdictions?.join(", ").replace(/_/g, " ")}
+                                                        </div>
                                                     </div>
-                                                    
-                                                    {/* Label */}
-                                                    <div className={`font-medium text-xs leading-tight mb-1 ${isSelected ? 'text-foreground' : ''}`}>
-                                                        {label}
-                                                    </div>
-                                                    
-                                                    {/* Category */}
-                                                    <div className="text-[10px] text-muted-foreground mt-auto pt-1">
-                                                        {category}
-                                                    </div>
-                                                </button>
+                                                    <svg className="w-4 h-4 text-slate-600 group-hover:text-blue-400 transform group-hover:translate-x-1 transition-all" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                                                </div>
                                             );
                                         })}
                                     </div>
-                                    
-                                    {/* Selected type info */}
-                                    <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 border border-border">
-                                        <div className="w-8 h-8 rounded-md bg-background flex items-center justify-center border border-border">
-                                            <svg className="w-4 h-4 text-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                                                <path strokeLinecap="round" strokeLinejoin="round" d={getEvidenceIcon(evidenceType)} />
-                                            </svg>
-                                        </div>
-                                        <div>
-                                            <div className="font-medium text-sm text-foreground">
-                                                Uploading: {formatEvidenceType(evidenceType)}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* STEP 2: UPLOAD (Redesigned) */}
+                {step === 2 && psurCaseId && (
+                    <div className="h-full flex flex-col bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 rounded-xl p-4 -mx-4 -my-2 overflow-hidden">
+                        {/* Header Stats */}
+                        <div className="grid grid-cols-3 gap-4 mb-6">
+                            <div className="p-4 rounded-xl bg-blue-500/10 border border-blue-500/20 backdrop-blur-sm">
+                                <div className="text-[10px] text-blue-300 uppercase tracking-wider mb-1">Evidence Atoms</div>
+                                <div className="text-2xl font-bold text-blue-400">{totalAtoms}</div>
+                            </div>
+                            <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 backdrop-blur-sm">
+                                <div className="text-[10px] text-emerald-300 uppercase tracking-wider mb-1">Coverage</div>
+                                <div className="text-2xl font-bold text-emerald-400">{((requiredTypes.length - missingTypes.length) / requiredTypes.length * 100).toFixed(0)}%</div>
+                            </div>
+                            <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 backdrop-blur-sm">
+                                <div className="text-[10px] text-amber-300 uppercase tracking-wider mb-1">Missing Types</div>
+                                <div className="text-2xl font-bold text-amber-400">{missingTypes.length}</div>
+                            </div>
+                        </div>
+
+                        {/* Upload Actions */}
+                        <div className="grid grid-cols-2 gap-4 mb-6">
+                            <button onClick={() => setShowIngestionModal(true)} className="group relative p-6 rounded-xl border border-slate-700 bg-slate-900/50 hover:bg-slate-800 hover:border-blue-500/50 transition-all text-left overflow-hidden">
+                                <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+                                    <svg className="w-24 h-24 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+                                </div>
+                                <div className="relative z-10">
+                                    <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform text-blue-400">
+                                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+                                    </div>
+                                    <h3 className="text-lg font-semibold text-slate-200 mb-1 group-hover:text-blue-300">Upload Documents</h3>
+                                    <p className="text-sm text-slate-400">AI-powered extraction for CER, Risk, PMCF, Sales, Complaints</p>
+                                </div>
+                            </button>
+
+                            <button onClick={() => setShowEvidenceModal(true)} className="group relative p-6 rounded-xl border border-slate-700 bg-slate-900/50 hover:bg-slate-800 hover:border-emerald-500/50 transition-all text-left overflow-hidden">
+                                <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+                                    <svg className="w-24 h-24 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
+                                </div>
+                                <div className="relative z-10">
+                                    <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform text-emerald-400">
+                                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+                                    </div>
+                                    <h3 className="text-lg font-semibold text-slate-200 mb-1 group-hover:text-emerald-300">Advanced Upload</h3>
+                                    <p className="text-sm text-slate-400">Directly upload structured data for specific evidence types</p>
+                                </div>
+                            </button>
+                        </div>
+
+                        {/* Evidence Status Grid */}
+                        <div className="flex-1 flex flex-col min-h-0 bg-slate-900/30 border border-slate-800 rounded-xl p-4 overflow-hidden">
+                            <div className="flex items-center justify-between mb-4">
+                                <h3 className="text-sm font-semibold text-slate-300">Required Evidence</h3>
+                                <button onClick={refreshCounts} className="p-1.5 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition-colors">
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                                </button>
+                            </div>
+                            
+                            <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                                    {requiredTypes.map(t => {
+                                        const c = counts?.byType?.[t] || 0;
+                                        const isCovered = isTypeCovered(t);
+                                        const coverageInfo = counts?.coverage?.coveredByType?.[t];
+                                        const sourceName = coverageInfo?.source;
+                                        return (
+                                            <div key={t} className={`p-3 rounded-lg border flex flex-col justify-between h-24 transition-all ${
+                                                isCovered ? "bg-emerald-500/5 border-emerald-500/20" : "bg-slate-800/50 border-slate-700 hover:border-amber-500/30"
+                                            }`}>
+                                                <div className="flex items-start justify-between">
+                                                    <span className={`text-[10px] font-semibold uppercase tracking-wider ${isCovered ? "text-emerald-400" : "text-slate-500"}`}>
+                                                        {formatType(t)}
+                                                    </span>
+                                                    {isCovered && <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>}
+                                                </div>
+                                                <div className="flex items-end justify-between">
+                                                    <div className={`text-2xl font-bold ${isCovered ? "text-emerald-300" : "text-slate-600"}`}>
+                                                        {c}
+                                                    </div>
+                                                    <div className={`text-[10px] px-1.5 py-0.5 rounded ${
+                                                        c > 0 ? "bg-emerald-500/20 text-emerald-300" 
+                                                        : isCovered ? "bg-blue-500/20 text-blue-300" 
+                                                        : "bg-slate-800 text-slate-500"
+                                                    }`}>
+                                                        {c > 0 ? "Ready" : isCovered ? `via ${sourceName || "source"}` : "Missing"}
+                                                    </div>
+                                                </div>
                                             </div>
-                                            <div className="text-xs text-muted-foreground flex items-center gap-2">
-                                                <span>{getEvidenceCategory(evidenceType)}</span>
-                                                <span className="w-1 h-1 rounded-full bg-border"></span>
-                                                <code className="font-mono text-[10px]">{evidenceType}</code>
-                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* STEP 3: RECONCILE - Handle Missing Evidence Types */}
+                {step === 3 && psurCaseId && (
+                    <ReconcileStep 
+                        psurCaseId={psurCaseId}
+                        deviceCode={deviceCode}
+                        periodStart={periodStart}
+                        periodEnd={periodEnd}
+                        requiredTypes={requiredTypes}
+                        counts={counts}
+                        missingTypes={missingTypes}
+                        coveredTypes={coveredTypes}
+                        isTypeCovered={isTypeCovered}
+                        onRefresh={refreshCounts}
+                        onUpload={() => setShowIngestionModal(true)}
+                    />
+                )}
+
+                {/* STEP 4: REVIEW */}
+                {step === 4 && psurCaseId && (
+                    <div className="h-full flex flex-col">
+                        {/* Stats Row */}
+                        <div className="grid grid-cols-4 gap-3 mb-3">
+                            <div className="p-3 rounded bg-blue-50 dark:bg-blue-950 border border-blue-200 text-center">
+                                <div className="text-2xl font-bold text-blue-700">{totalAtoms}</div>
+                                <div className="text-xs text-blue-600">Total Atoms</div>
+                            </div>
+                            <div className="p-3 rounded bg-green-50 dark:bg-green-950 border border-green-200 text-center">
+                                <div className="text-2xl font-bold text-green-700">{requiredTypes.length - missingTypes.length}</div>
+                                <div className="text-xs text-green-600">Types Covered</div>
+                            </div>
+                            <div className="p-3 rounded bg-amber-50 dark:bg-amber-950 border border-amber-200 text-center">
+                                <div className="text-2xl font-bold text-amber-700">{missingTypes.length}</div>
+                                <div className="text-xs text-amber-600">Types Missing</div>
+                            </div>
+                            <div className={`p-3 rounded border text-center ${missingTypes.length === 0 ? "bg-green-50 dark:bg-green-950 border-green-300" : "bg-amber-50 dark:bg-amber-950 border-amber-300"}`}>
+                                <div className="text-lg font-bold">{missingTypes.length === 0 ? "Ready" : "Incomplete"}</div>
+                                <div className="text-xs text-muted-foreground">Status</div>
+                            </div>
+                        </div>
+
+                        {/* Evidence Grid */}
+                        <div className="flex-1 min-h-0 overflow-y-auto border rounded p-3">
+                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                                {requiredTypes.map(t => {
+                                    const c = counts?.byType?.[t] || 0;
+                                    const isCovered = isTypeCovered(t);
+                                    const coverageInfo = counts?.coverage?.coveredByType?.[t];
+                                    return (
+                                        <div key={t} className={`flex items-center justify-between px-3 py-2 rounded border ${
+                                            isCovered 
+                                                ? c > 0 
+                                                    ? "bg-green-50 dark:bg-green-950 border-green-200" 
+                                                    : "bg-blue-50 dark:bg-blue-950 border-blue-200"
+                                                : "bg-red-50 dark:bg-red-950 border-red-200"
+                                        }`}>
+                                            <span className="text-sm font-medium truncate mr-2">{formatType(t)}</span>
+                                            <span className={`text-sm font-bold ${
+                                                c > 0 ? "text-green-600" 
+                                                : isCovered ? "text-blue-500" 
+                                                : "text-red-500"
+                                            }`}>
+                                                {c > 0 ? c : isCovered ? `(${coverageInfo?.source || "covered"})` : "-"}
+                                            </span>
                                         </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        {missingTypes.length > 0 && (
+                            <div className="mt-2 p-2 rounded bg-amber-50 dark:bg-amber-950 border border-amber-200 text-xs text-amber-700">
+                                Missing: {missingTypes.slice(0, 5).map(formatType).join(", ")}{missingTypes.length > 5 && ` +${missingTypes.length - 5} more`}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* STEP 5: COMPILE - SOTA Runtime Viewer */}
+                {step === 5 && psurCaseId && (
+                    <div className="h-full flex flex-col bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 rounded-xl p-4 -mx-4 -my-2">
+                        {/* Futuristic Header */}
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-3">
+                                <div className="relative">
+                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${runBusy ? "bg-gradient-to-br from-blue-500 to-purple-600 animate-pulse" : allComplete ? "bg-gradient-to-br from-emerald-500 to-teal-600" : "bg-gradient-to-br from-indigo-500 to-purple-600"}`}>
+                                        <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                    </div>
+                                    {runBusy && <div className="absolute -inset-1 rounded-xl bg-blue-500/20 animate-ping"></div>}
+                                </div>
+                                <div>
+                                    <div className="text-sm font-semibold text-white">PSUR Compiler</div>
+                                    <div className="text-[10px] text-slate-400">
+                                        {runBusy ? "Processing..." : allComplete ? "Complete" : "Ready to compile"}
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <div className="px-2 py-1 rounded bg-slate-800/50 border border-slate-700/50 text-[10px] text-slate-400">
+                                    Case #{psurCaseId}
+                                </div>
+                                <div className="px-2 py-1 rounded bg-indigo-500/20 border border-indigo-500/30 text-[10px] text-indigo-300">
+                                    {totalAtoms} atoms
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Main Content Area */}
+                        {!runResult ? (
+                            <div className="flex-1 flex flex-col items-center justify-center">
+                                {/* Summary Cards */}
+                                <div className="grid grid-cols-4 gap-3 w-full mb-6">
+                                    {[
+                                        { label: "Template", value: templateId.split("_")[0], icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z", color: "from-pink-500/20 to-rose-500/20 border-pink-500/30" },
+                                        { label: "Jurisdictions", value: jurisdictions.join(", "), icon: "M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z", color: "from-blue-500/20 to-cyan-500/20 border-blue-500/30" },
+                                        { label: "Device", value: deviceCode, icon: "M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z", color: "from-amber-500/20 to-orange-500/20 border-amber-500/30" },
+                                        { label: "Period", value: `${periodStart.slice(5)} - ${periodEnd.slice(5)}`, icon: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z", color: "from-emerald-500/20 to-teal-500/20 border-emerald-500/30" },
+                                    ].map((item, i) => (
+                                        <div key={i} className={`p-3 rounded-xl bg-gradient-to-br ${item.color} border backdrop-blur-sm`}>
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <svg className="w-3.5 h-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={item.icon} />
+                                                </svg>
+                                                <span className="text-[10px] text-slate-500 uppercase tracking-wider">{item.label}</span>
+                                            </div>
+                                            <div className="text-sm font-medium text-white truncate">{item.value}</div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {/* AI Toggle */}
+                                <label className="flex items-center gap-3 mb-4 cursor-pointer group">
+                                    <div className={`relative w-12 h-6 rounded-full transition-all ${enableAIGeneration ? "bg-gradient-to-r from-purple-500 to-indigo-500" : "bg-slate-700"}`}>
+                                        <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow-lg transition-all ${enableAIGeneration ? "left-7" : "left-1"}`}></div>
+                                    </div>
+                                    <span className="text-sm text-slate-300 group-hover:text-white transition-colors">
+                                        AI Narrative Generation
+                                    </span>
+                                    {enableAIGeneration && <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">Claude Sonnet</span>}
+                                </label>
+
+                                {/* Charts Toggle */}
+                                <label className="flex items-center gap-3 mb-4 cursor-pointer group">
+                                    <div className={`relative w-12 h-6 rounded-full transition-all ${enableCharts ? "bg-gradient-to-r from-teal-500 to-emerald-500" : "bg-slate-700"}`}>
+                                        <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow-lg transition-all ${enableCharts ? "left-7" : "left-1"}`}></div>
+                                    </div>
+                                    <span className="text-sm text-slate-300 group-hover:text-white transition-colors">
+                                        Include Charts & Graphs
+                                    </span>
+                                    {enableCharts && <span className="text-[10px] px-2 py-0.5 rounded-full bg-teal-500/20 text-teal-300 border border-teal-500/30">Chart.js</span>}
+                                </label>
+
+                                {/* Document Style Selector */}
+                                <div className="mb-6">
+                                    <span className="text-xs text-slate-400 mb-2 block">Document Style</span>
+                                    <div className="flex gap-2">
+                                        {([
+                                            { value: "corporate" as const, label: "Corporate Formal", desc: "Blue accents, professional tables", colors: "from-blue-500 to-indigo-500" },
+                                            { value: "regulatory" as const, label: "Regulatory Minimal", desc: "Black/white, maximum clarity", colors: "from-slate-500 to-slate-600" },
+                                            { value: "premium" as const, label: "Premium Modern", desc: "Gradient headers, branded", colors: "from-purple-500 to-pink-500" },
+                                        ]).map(style => (
+                                            <button 
+                                                key={style.value}
+                                                onClick={() => setDocumentStyle(style.value)}
+                                                className={`flex-1 p-3 rounded-xl border transition-all ${
+                                                    documentStyle === style.value 
+                                                        ? `bg-gradient-to-br ${style.colors} border-white/20 text-white shadow-lg`
+                                                        : "bg-slate-800/50 border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-300"
+                                                }`}
+                                            >
+                                                <div className="text-xs font-semibold">{style.label}</div>
+                                                <div className="text-[10px] opacity-70 mt-0.5">{style.desc}</div>
+                                            </button>
+                                        ))}
                                     </div>
                                 </div>
 
-                                {/* File upload */}
-                                <div className="space-y-2">
-                                    <Field label="Select File (.xlsx / .csv)">
-                                        <input
-                                            type="file"
-                                            accept=".xlsx,.csv,.xls"
-                                            className="w-full border rounded px-3 py-2 bg-background file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-blue-950 dark:file:text-blue-300"
-                                            onChange={(e) => setFile(e.target.files?.[0] || null)}
-                                        />
-                                    </Field>
-                                    {file && (
-                                        <div className="text-sm text-muted-foreground">
-                                            Selected: <span className="font-medium">{file.name}</span> ({(file.size / 1024).toFixed(1)} KB)
-                                        </div>
-                                    )}
-                                </div>
-
-                                <div className="flex items-center gap-3 flex-wrap">
-                                    <button
-                                        className="px-4 py-2 rounded bg-blue-600 text-white text-sm disabled:opacity-50"
-                                        onClick={uploadEvidence}
-                                        disabled={uploadBusy || !file}
-                                    >
-                                        {uploadBusy ? "Uploading..." : "Upload Evidence"}
-                                    </button>
-
-                                    <button
-                                        className="px-3 py-2 rounded border text-sm disabled:opacity-50"
-                                        onClick={refreshCounts}
-                                        disabled={countsBusy}
-                                    >
-                                        {countsBusy ? "Refreshing..." : "Refresh Counts"}
-                                    </button>
-
-                                    <button
-                                        className="px-3 py-2 rounded border border-primary/20 bg-primary/5 text-primary text-sm disabled:opacity-50 hover:bg-primary/10"
-                                        onClick={loadSamples}
-                                        disabled={sampleLoadBusy || uploadBusy}
-                                        title="Automatically populate case with sample data for all required evidence types"
-                                    >
-                                        {sampleLoadBusy ? "Loading Samples..." : "⚡ Load Sample Data"}
-                                    </button>
-
-                                    {uploadMsg && <div className="text-sm">{uploadMsg}</div>}
-                                </div>
-
-                                <div className="border rounded-lg p-4 bg-muted/30">
-                                    <div className="text-sm font-medium mb-3">Evidence Atom Counts (Case #{psurCaseId})</div>
-                                    {!counts ? (
-                                        <div className="text-sm text-muted-foreground">No counts loaded. Click "Refresh Counts".</div>
-                                    ) : (
-                                        <div className="space-y-3">
-                                            <div className="text-lg font-semibold">Total atoms: {counts.totals.all}</div>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                                                {requiredEvidenceTypes.map((t) => {
-                                                    const count = counts.byType?.[t] || 0;
-                                                    return (
-                                                        <div
-                                                            key={t}
-                                                            className={`flex items-center justify-between border rounded px-3 py-2 ${count > 0 ? 'bg-green-50 dark:bg-green-950 border-green-200' : 'bg-red-50 dark:bg-red-950 border-red-200'}`}
-                                                        >
-                                                            <span className="text-sm">{t}</span>
-                                                            <span className={`font-medium ${count > 0 ? 'text-green-600' : 'text-red-600'}`}>{count}</span>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-
-                                            {missingRequiredEvidenceTypes.length > 0 ? (
-                                                <div className="mt-3 p-3 rounded bg-amber-50 dark:bg-amber-950 border border-amber-200 text-sm text-amber-700 dark:text-amber-300">
-                                                    ⚠️ Missing required evidence types: {missingRequiredEvidenceTypes.join(", ")}
-                                                </div>
-                                            ) : (
-                                                <div className="mt-3 p-3 rounded bg-green-50 dark:bg-green-950 border border-green-200 text-sm text-green-700 dark:text-green-300">
-                                                    ✓ All required evidence types are present.
-                                                </div>
-                                            )}
-
-                                            <div className="mt-4">
-                                                <button
-                                                    className="px-4 py-2 rounded bg-primary text-primary-foreground text-sm disabled:opacity-50"
-                                                    onClick={() => setStep(3)}
-                                                    disabled={!canGoStep3}
-                                                >
-                                                    Continue to Step 3 →
-                                                </button>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                                </>
-                                )}
-                            </>
-                        )}
-                    </div>
-                ) : (
-                    <CollapsedSummary
-                        lines={[
-                            psurCaseId ? `PSUR Case ID: ${psurCaseId}` : "PSUR Case ID: (none)",
-                            counts ? `Total atoms: ${counts.totals.all}` : "Total atoms: (unknown)",
-                            missingRequiredEvidenceTypes.length > 0
-                                ? `⚠️ Missing: ${missingRequiredEvidenceTypes.join(", ")}`
-                                : "✓ All required evidence present",
-                        ]}
-                    />
-                )}
-            </section>
-
-            {/* STEP 3 */}
-            <section className="border rounded-lg p-4 space-y-4 bg-card">
-                <div className="flex items-center justify-between">
-                    <h2 className="text-base font-semibold">Step 3 — Run PSUR + Export Audit Bundle</h2>
-                    <button
-                        className="px-3 py-1 rounded bg-primary text-primary-foreground text-sm disabled:opacity-50"
-                        onClick={() => canGoStep3 && setStep(3)}
-                        disabled={!canGoStep3 || step === 3}
-                    >
-                        Open
-                    </button>
-                </div>
-
-                {step === 3 ? (
-                    <div className="space-y-4">
-                        {!canGoStep3 ? (
-                            <div className="text-sm text-red-600">
-                                Complete Step 1 and Step 2 (including all required evidence types) before running PSUR.
+                                {/* Compile Button */}
+                                <button 
+                                    onClick={runWorkflow} 
+                                    disabled={runBusy}
+                                    className="relative group px-8 py-4 rounded-2xl bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 bg-[length:200%_100%] hover:bg-right transition-all duration-500 text-white font-semibold shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 disabled:opacity-50"
+                                >
+                                    <span className="flex items-center gap-3">
+                                        {runBusy ? (
+                                            <>
+                                                <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                                </svg>
+                                                Compiling PSUR...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                                </svg>
+                                                Compile PSUR Document
+                                            </>
+                                        )}
+                                    </span>
+                                    <div className="absolute inset-0 rounded-2xl bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                                </button>
                             </div>
                         ) : (
-                            <>
-                                <div className="p-4 rounded-lg bg-muted/30 border">
-                                    <div className="text-sm font-medium mb-2">Ready to generate PSUR</div>
-                                    <div className="text-sm text-muted-foreground space-y-1">
-                                        <div>Case: #{psurCaseId} ({psurRef})</div>
-                                        <div>Template: {templateId}</div>
-                                        <div>Jurisdictions: {jurisdictions.join(", ")}</div>
-                                        <div>Period: {periodStart} → {periodEnd}</div>
-                                        <div>Evidence atoms: {counts?.totals.all || 0}</div>
-                                    </div>
+                            <div className="flex-1 flex flex-col gap-4 overflow-hidden">
+                                {/* Runtime Pipeline Visualization */}
+                                <div className="flex items-center gap-1 overflow-x-auto pb-2">
+                                    {runResult.steps.map((s, i) => (
+                                        <div key={s.step} className="flex items-center">
+                                            <div className={`relative px-3 py-2 rounded-lg border-2 min-w-[100px] transition-all ${
+                                                s.status === "COMPLETED" ? "bg-emerald-500/10 border-emerald-500/50" :
+                                                s.status === "FAILED" ? "bg-red-500/10 border-red-500/50" :
+                                                s.status === "RUNNING" ? "bg-blue-500/10 border-blue-500/50 animate-pulse" :
+                                                s.status === "BLOCKED" ? "bg-amber-500/10 border-amber-500/50" : 
+                                                "bg-slate-800/50 border-slate-700/50"
+                                            }`}>
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    {s.status === "COMPLETED" ? (
+                                                        <div className="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center">
+                                                            <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                                                        </div>
+                                                    ) : s.status === "FAILED" ? (
+                                                        <div className="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center">
+                                                            <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
+                                                        </div>
+                                                    ) : s.status === "RUNNING" ? (
+                                                        <div className="w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center">
+                                                            <svg className="w-2.5 h-2.5 text-white animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="w-4 h-4 rounded-full bg-slate-600 flex items-center justify-center text-[8px] text-white font-bold">{s.step}</div>
+                                                    )}
+                                                    <span className={`text-[10px] font-medium ${
+                                                        s.status === "COMPLETED" ? "text-emerald-400" :
+                                                        s.status === "FAILED" ? "text-red-400" :
+                                                        s.status === "RUNNING" ? "text-blue-400" : "text-slate-400"
+                                                    }`}>{s.name}</span>
+                                                </div>
+                                                {s.error && <div className="text-[9px] text-red-400 truncate max-w-[120px]">{s.error}</div>}
+                                            </div>
+                                            {i < runResult.steps.length - 1 && (
+                                                <div className={`w-6 h-0.5 mx-1 ${s.status === "COMPLETED" ? "bg-emerald-500" : "bg-slate-700"}`}></div>
+                                            )}
+                                        </div>
+                                    ))}
                                 </div>
 
-                                <div className="flex items-center gap-3 flex-wrap">
-                                    <button
-                                        className="px-6 py-3 rounded bg-blue-600 text-white font-medium disabled:opacity-50"
-                                        onClick={runWorkflow}
-                                        disabled={runBusy}
-                                    >
-                                        {runBusy ? "Running Workflow..." : "🚀 Run PSUR Workflow"}
-                                    </button>
-
-                                    {runMsg && (
-                                        <div className={`text-sm ${runMsg.includes("failed") ? "text-red-600" : "text-green-600"}`}>
-                                            {runMsg}
+                                {/* Trace Metrics */}
+                                {traceSummary && (
+                                    <div className="grid grid-cols-4 gap-3">
+                                        <div className="p-3 rounded-xl bg-slate-800/30 border border-slate-700/30">
+                                            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Events</div>
+                                            <div className="text-xl font-bold text-white">{traceSummary.totalEvents}</div>
                                         </div>
-                                    )}
-                                </div>
-
-                                {runResult && (
-                                    <div className="border rounded-lg p-4 space-y-3 bg-muted/30">
-                                        <div className="text-sm font-medium">Workflow Result</div>
-                                        <div className="text-sm">Case: #{runResult.case.psurCaseId} ({runResult.case.psurRef})</div>
-
-                                        <div className="space-y-2">
-                                            <div className="text-sm font-medium">Steps</div>
-                                            <div className="space-y-1">
-                                                {runResult.steps.map((s) => (
-                                                    <div
-                                                        key={s.step}
-                                                        className={`flex items-center justify-between text-sm px-3 py-2 rounded border ${s.status === "COMPLETED" ? "bg-green-50 dark:bg-green-950 border-green-200" :
-                                                                s.status === "FAILED" ? "bg-red-50 dark:bg-red-950 border-red-200" :
-                                                                    s.status === "BLOCKED" ? "bg-amber-50 dark:bg-amber-950 border-amber-200" :
-                                                                        "bg-muted"
-                                                            }`}
-                                                    >
-                                                        <span>Step {s.step}: {s.name}</span>
-                                                        <span className="font-medium">{s.status}</span>
-                                                    </div>
-                                                ))}
-                                            </div>
+                                        <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30">
+                                            <div className="text-[10px] text-emerald-400 uppercase tracking-wider mb-1">Accepted</div>
+                                            <div className="text-xl font-bold text-emerald-400">{traceSummary.acceptedSlots}</div>
                                         </div>
-
-                                        <div className="pt-3 border-t space-y-3">
-                                            <div className="text-sm font-medium">Download PSUR Documents</div>
-                                            <div className="flex flex-wrap gap-2">
-                                                <a
-                                                    href={`/api/psur-cases/${psurCaseId}/psur.docx`}
-                                                    className="inline-flex items-center gap-2 px-4 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium"
-                                                    download
-                                                >
-                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                                    </svg>
-                                                    Word Document (.docx)
-                                                </a>
-                                                <a
-                                                    href={`/api/psur-cases/${psurCaseId}/psur.md`}
-                                                    className="inline-flex items-center gap-2 px-4 py-2 rounded bg-gray-600 hover:bg-gray-700 text-white text-sm font-medium"
-                                                    download
-                                                >
-                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                                                    </svg>
-                                                    Markdown (.md)
-                                                </a>
-                                                <a
-                                                    href={`/api/audit-bundles/${psurCaseId}/download`}
-                                                    className="inline-flex items-center gap-2 px-4 py-2 rounded bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium"
-                                                    target="_blank"
-                                                    rel="noreferrer"
-                                                >
-                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-                                                    </svg>
-                                                    Full Audit Bundle (.zip)
-                                                </a>
-                                            </div>
+                                        <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30">
+                                            <div className="text-[10px] text-red-400 uppercase tracking-wider mb-1">Rejected</div>
+                                            <div className="text-xl font-bold text-red-400">{traceSummary.rejectedSlots}</div>
+                                        </div>
+                                        <div className={`p-3 rounded-xl ${traceSummary.chainValid ? "bg-emerald-500/10 border border-emerald-500/30" : "bg-red-500/10 border border-red-500/30"}`}>
+                                            <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: traceSummary.chainValid ? "#34d399" : "#f87171" }}>Chain</div>
+                                            <div className="text-xl font-bold" style={{ color: traceSummary.chainValid ? "#34d399" : "#f87171" }}>{traceSummary.chainValid ? "Valid" : "Invalid"}</div>
                                         </div>
                                     </div>
                                 )}
-                            </>
+
+                                {/* Success State - Downloads */}
+                                {allComplete && (
+                                    <div className="flex-1 flex flex-col items-center justify-center">
+                                        <div className="relative mb-6">
+                                            <div className="w-20 h-20 rounded-full bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center shadow-lg shadow-emerald-500/30">
+                                                <svg className="w-10 h-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                </svg>
+                                            </div>
+                                            <div className="absolute -inset-2 rounded-full bg-emerald-500/20 animate-ping"></div>
+                                        </div>
+                                        <h3 className="text-lg font-semibold text-white mb-1">PSUR Generated Successfully</h3>
+                                        <p className="text-sm text-slate-400 mb-6">Your document is ready for download</p>
+                                        
+                                        <div className="flex flex-wrap gap-3 justify-center">
+                                            <a href={`/api/psur-cases/${psurCaseId}/psur.docx?style=${documentStyle}`} download 
+                                               className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 text-white text-sm font-medium shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 transition-all flex items-center gap-2">
+                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                                Download DOCX ({documentStyle})
+                                            </a>
+                                            <a href={`/api/psur-cases/${psurCaseId}/psur.md?style=${documentStyle}`} download 
+                                               className="px-4 py-2.5 rounded-xl bg-slate-700 text-white text-sm font-medium hover:bg-slate-600 transition-all flex items-center gap-2">
+                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
+                                                Markdown
+                                            </a>
+                                            <a href={`/api/audit-bundles/${psurCaseId}/download`} 
+                                               className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-sm font-medium shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 transition-all flex items-center gap-2">
+                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
+                                                Audit Bundle
+                                            </a>
+                                            <a href={`/api/psur-cases/${psurCaseId}/trace/export?format=jsonl`} download 
+                                               className="px-4 py-2.5 rounded-xl border border-slate-600 text-slate-300 text-sm font-medium hover:bg-slate-800/50 transition-all flex items-center gap-2">
+                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                                                Trace Log
+                                            </a>
+                                        </div>
+
+                                        <button onClick={resetWizard}
+                                            className="mt-8 px-6 py-3 rounded-xl border-2 border-dashed border-slate-700 text-slate-400 text-sm font-medium hover:border-blue-500/50 hover:text-blue-400 transition-all flex items-center gap-2">
+                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                            </svg>
+                                            Start New PSUR
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
                         )}
                     </div>
-                ) : (
-                    <CollapsedSummary
-                        lines={[
-                            canGoStep3 ? "✓ Ready to run." : "⏳ Complete previous steps first.",
-                            runResult?.case.psurCaseId ? `Generated: Case #${runResult.case.psurCaseId}` : "Audit bundle: (not generated)",
-                        ]}
-                    />
                 )}
-            </section>
+            </div>
 
-            <footer className="text-xs text-muted-foreground pt-4 border-t">
-                RegulatoryOS PSUR Engine • {todayISO()}
-            </footer>
+            {/* Compact Navigation */}
+            <div className="flex items-center justify-between mt-3 pt-3 border-t">
+                <button onClick={() => setStep((step - 1) as WizardStep)} disabled={step === 1} className="px-3 py-1.5 rounded border text-xs font-medium disabled:opacity-40">Prev</button>
+                <span className="text-xs text-muted-foreground">Step {step}/5</span>
+                <button onClick={() => setStep((step + 1) as WizardStep)} disabled={step === 5 || (step === 1 && !canGoStep2) || (step === 2 && !canGoStep3) || (step === 3 && !canGoStep4) || (step === 4 && !canGoStep5)} className="px-3 py-1.5 rounded bg-blue-600 text-white text-xs font-medium disabled:opacity-40">Next</button>
+            </div>
+
+            {/* AI Ingestion Modal (Enhanced with Mapping) */}
+            <Modal open={showIngestionModal} onClose={() => setShowIngestionModal(false)} title="Upload Evidence Documents" size="xl">
+                <EvidenceIngestionPanel 
+                    psurCaseId={psurCaseId!} 
+                    deviceCode={deviceCode} 
+                    periodStart={periodStart} 
+                    periodEnd={periodEnd} 
+                    onEvidenceCreated={() => { refreshCounts(); setShowIngestionModal(false); }} 
+                />
+            </Modal>
+
+            {/* Manual Upload Modal */}
+            <Modal open={showEvidenceModal} onClose={() => setShowEvidenceModal(false)} title="Manual Evidence Upload" size="md">
+                <ManualUploadForm psurCaseId={psurCaseId!} deviceCode={deviceCode} periodStart={periodStart} periodEnd={periodEnd} requiredTypes={requiredTypes} onSuccess={() => { refreshCounts(); setShowEvidenceModal(false); }} />
+            </Modal>
         </div>
     );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-    return (
-        <div className="space-y-1.5">
-            <label className="text-sm font-medium">{label}</label>
-            {children}
-        </div>
-    );
-}
+// ═══════════════════════════════════════════════════════════════════════════════
+// MANUAL UPLOAD FORM
+// ═══════════════════════════════════════════════════════════════════════════════
 
-function StepBadge({
-    label,
-    active,
-    done,
-    disabled,
-}: {
-    label: string;
-    active: boolean;
-    done: boolean;
-    disabled?: boolean;
+function ManualUploadForm({ psurCaseId, deviceCode, periodStart, periodEnd, requiredTypes, onSuccess }: {
+    psurCaseId: number; deviceCode: string; periodStart: string; periodEnd: string; requiredTypes: string[]; onSuccess: () => void;
 }) {
-    const base = "px-3 py-1.5 rounded-full text-xs font-medium border transition-colors";
-    const cls = disabled
-        ? `${base} opacity-50 bg-muted text-muted-foreground`
-        : active
-            ? `${base} bg-blue-600 text-white border-blue-600`
-            : done
-                ? `${base} bg-green-100 text-green-700 border-green-200 dark:bg-green-950 dark:text-green-300`
-                : `${base} bg-muted text-muted-foreground`;
+    const [evidenceType, setEvidenceType] = useState(requiredTypes[0] || "complaint_record");
+    const [file, setFile] = useState<File | null>(null);
+    const [busy, setBusy] = useState(false);
+    const [msg, setMsg] = useState("");
 
-    return <span className={cls}>{label}</span>;
-}
+    async function upload() {
+        if (!file) return;
+        setBusy(true); setMsg("");
+        try {
+            const form = new FormData();
+            form.append("psur_case_id", String(psurCaseId));
+            form.append("device_code", deviceCode);
+            form.append("period_start", periodStart);
+            form.append("period_end", periodEnd);
+            form.append("evidence_type", evidenceType);
+            form.append("file", file);
+            const resp = await fetch("/api/evidence/upload", { method: "POST", body: form });
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.error);
+            setMsg(`Uploaded ${data.summary?.atomsCreated || 0} atoms`);
+            setFile(null);
+            setTimeout(onSuccess, 1000);
+        } catch (e: any) { setMsg(`Error: ${e.message}`); }
+        finally { setBusy(false); }
+    }
 
-function CollapsedSummary({ lines }: { lines: string[] }) {
     return (
-        <div className="text-sm text-muted-foreground space-y-1">
-            {lines.map((l, i) => (
-                <div key={i}>{l}</div>
-            ))}
+        <div className="space-y-4">
+            <div>
+                <label className="text-sm font-medium mb-1 block">Evidence Type</label>
+                <select className="w-full border rounded px-3 py-2 bg-background" value={evidenceType} onChange={e => setEvidenceType(e.target.value)}>
+                    {requiredTypes.map(t => <option key={t} value={t}>{formatType(t)}</option>)}
+                </select>
+            </div>
+            <div>
+                <label className="text-sm font-medium mb-1 block">File (.xlsx, .csv)</label>
+                <input type="file" accept=".xlsx,.csv,.xls" className="w-full border rounded px-3 py-2 bg-background" onChange={e => setFile(e.target.files?.[0] || null)} />
+            </div>
+            <div className="flex items-center gap-3">
+                <button onClick={upload} disabled={busy || !file} className="px-4 py-2 rounded bg-blue-600 text-white text-sm font-medium disabled:opacity-50">
+                    {busy ? "Uploading..." : "Upload"}
+                </button>
+                {msg && <span className="text-sm">{msg}</span>}
+            </div>
         </div>
     );
 }

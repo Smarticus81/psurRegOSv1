@@ -317,14 +317,6 @@ export default function Instructions() {
     return [headers, ...rows].join("\n");
   };
 
-  const downloadSampleCSV = (example: EvidenceTypeExample) => {
-    const content = generateCSVContent(example);
-    const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `sample_${example.type}.csv`;
-    link.click();
-  };
 
   return (
     <div className="h-full overflow-auto" data-testid="instructions-page">
@@ -339,14 +331,6 @@ export default function Instructions() {
               Complete guide for preparing and uploading evidence files
             </p>
           </div>
-          <a
-            href="/api/samples/download-all"
-            className="flex items-center gap-2 px-4 py-2 rounded bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
-            download
-          >
-            <Download className="h-4 w-4" />
-            Download All Samples (.zip)
-          </a>
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -550,13 +534,6 @@ export default function Instructions() {
                                 <FileSpreadsheet className="h-4 w-4" />
                                 Sample Data
                               </h4>
-                              <button
-                                onClick={() => downloadSampleCSV(example)}
-                                className="flex items-center gap-1 text-xs text-primary hover:underline"
-                              >
-                                <Download className="h-3 w-3" />
-                                Download Sample CSV
-                              </button>
                             </div>
                             <ScrollArea className="w-full">
                               <div className="rounded border bg-muted/30 p-2 overflow-x-auto">
@@ -651,8 +628,8 @@ export default function Instructions() {
                       <p>The selected evidence type is not recognized by the system.</p>
                       <p><strong>Solutions:</strong></p>
                       <ul className="list-disc pl-4 space-y-1">
-                        <li>Use the dropdown to select one of the supported evidence types</li>
-                        <li>Supported types: sales_volume, complaint_record, serious_incident_record, fsca_record, pmcf_result, literature_result</li>
+                        <li>Use one of the 8 high-level input types: CER, Sales, Complaints, FSCA, PMCF, Risk, CAPA, Admin</li>
+                        <li>The system will extract appropriate canonical evidence types from your documents</li>
                       </ul>
                     </AccordionContent>
                   </AccordionItem>
@@ -696,7 +673,7 @@ export default function Instructions() {
                       <p><strong>Solutions:</strong></p>
                       <ul className="list-disc pl-4 space-y-1">
                         <li>Check the "Required Evidence" section - any showing "0" must have data uploaded</li>
-                        <li>For the EU MDR Annex I template, you need: sales_volume, complaint_record, serious_incident_record, fsca_record, pmcf_result, literature_result</li>
+                        <li>For the EU MDR Annex I template, upload documents for: CER, Sales, Complaints, FSCA, PMCF, Risk, CAPA, Admin</li>
                         <li>Upload files with real data (not just headers or placeholder rows)</li>
                       </ul>
                     </AccordionContent>

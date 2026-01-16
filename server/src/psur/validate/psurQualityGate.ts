@@ -617,9 +617,9 @@ function validateStructuralIntegrity(document: PSURDocument): {
   const timestamp = new Date().toISOString();
   
   // Check 1: Document has cover page
-  const hasCoverPage = document.coverPage && 
+  const hasCoverPage = !!(document.coverPage && 
                        document.coverPage.psurReference && 
-                       document.coverPage.deviceInfo?.deviceName;
+                       document.coverPage.deviceInfo?.deviceName);
   
   checks.push({
     checkId: "STRUCTURE_COVER_PAGE",
@@ -644,9 +644,9 @@ function validateStructuralIntegrity(document: PSURDocument): {
   }
   
   // Check 2: Document has conclusions
-  const hasConclusions = document.conclusions && 
+  const hasConclusions = !!(document.conclusions && 
                          document.conclusions.overallConclusion &&
-                         document.conclusions.benefitRiskStatement;
+                         document.conclusions.benefitRiskStatement);
   
   checks.push({
     checkId: "STRUCTURE_CONCLUSIONS",
@@ -671,9 +671,9 @@ function validateStructuralIntegrity(document: PSURDocument): {
   }
   
   // Check 3: Document has signoff
-  const hasSignoff = document.signoff && 
+  const hasSignoff = !!(document.signoff && 
                      document.signoff.preparer &&
-                     document.signoff.finalApprover;
+                     document.signoff.finalApprover);
   
   checks.push({
     checkId: "STRUCTURE_SIGNOFF",

@@ -41,12 +41,60 @@ export function makeContentHash(normalizedData: any): string {
 export function coerceEvidenceType(raw: string): EvidenceType {
   const v = (raw || "").trim().toLowerCase();
 
+  // Raw data inputs
   if (v === "sales" || v === "sales_volume") return CANONICAL_EVIDENCE_TYPES.SALES;
   if (v === "complaints" || v === "complaint_record") return CANONICAL_EVIDENCE_TYPES.COMPLAINT;
   if (v === "serious_incidents" || v === "serious_incident" || v === "incidents" || v === "serious_incident_record") return CANONICAL_EVIDENCE_TYPES.SERIOUS_INCIDENT;
   if (v === "fsca" || v === "fsca_record") return CANONICAL_EVIDENCE_TYPES.FSCA;
   if (v === "pmcf" || v === "pmcf_result") return CANONICAL_EVIDENCE_TYPES.PMCF;
   if (v === "literature" || v === "literature_result") return CANONICAL_EVIDENCE_TYPES.LITERATURE;
+  if (v === "capa" || v === "capa_record") return CANONICAL_EVIDENCE_TYPES.CAPA;
+  if (v === "ncr" || v === "ncr_record") return CANONICAL_EVIDENCE_TYPES.NCR;
+  if (v === "recall" || v === "recall_record") return CANONICAL_EVIDENCE_TYPES.RECALL;
+  
+  // Administrative records
+  if (v === "device_registry" || v === "device_registry_record") return CANONICAL_EVIDENCE_TYPES.DEVICE_REGISTRY;
+  if (v === "manufacturer_profile") return CANONICAL_EVIDENCE_TYPES.MANUFACTURER_PROFILE;
+  if (v === "regulatory_certificate" || v === "regulatory_certificate_record") return CANONICAL_EVIDENCE_TYPES.REGULATORY_CERTIFICATE;
+  if (v === "change_control" || v === "change_control_record") return CANONICAL_EVIDENCE_TYPES.CHANGE_CONTROL;
+  if (v === "data_source_register") return CANONICAL_EVIDENCE_TYPES.DATA_SOURCE_REGISTER;
+  if (v === "pms_activity_log") return CANONICAL_EVIDENCE_TYPES.PMS_ACTIVITY_LOG;
+  
+  // Document extracts
+  if (v === "cer_extract") return CANONICAL_EVIDENCE_TYPES.CER_EXTRACT;
+  if (v === "rmf_extract") return CANONICAL_EVIDENCE_TYPES.RMF_EXTRACT;
+  if (v === "ifu_extract") return CANONICAL_EVIDENCE_TYPES.IFU_EXTRACT;
+  if (v === "clinical_evaluation_extract") return CANONICAL_EVIDENCE_TYPES.CLINICAL_EVALUATION_EXTRACT;
+  if (v === "pms_plan_extract") return CANONICAL_EVIDENCE_TYPES.PMS_PLAN_EXTRACT;
+  if (v === "previous_psur_extract") return CANONICAL_EVIDENCE_TYPES.PREVIOUS_PSUR_EXTRACT;
+  if (v === "pmcf_report_extract") return CANONICAL_EVIDENCE_TYPES.PMCF_REPORT_EXTRACT;
+  if (v === "pmcf_activity_record") return CANONICAL_EVIDENCE_TYPES.PMCF_ACTIVITY_RECORD;
+  
+  // Summaries
+  if (v === "sales_summary") return CANONICAL_EVIDENCE_TYPES.SALES_SUMMARY;
+  if (v === "sales_by_region") return CANONICAL_EVIDENCE_TYPES.SALES_BY_REGION;
+  if (v === "distribution_summary") return CANONICAL_EVIDENCE_TYPES.DISTRIBUTION_SUMMARY;
+  if (v === "usage_estimate") return CANONICAL_EVIDENCE_TYPES.USAGE_ESTIMATE;
+  if (v === "complaint_summary") return CANONICAL_EVIDENCE_TYPES.COMPLAINT_SUMMARY;
+  if (v === "complaints_by_region") return CANONICAL_EVIDENCE_TYPES.COMPLAINTS_BY_REGION;
+  if (v === "serious_incident_summary") return CANONICAL_EVIDENCE_TYPES.SERIOUS_INCIDENT_SUMMARY;
+  if (v === "serious_incident_records_imdrf") return CANONICAL_EVIDENCE_TYPES.SERIOUS_INCIDENT_IMDRF;
+  if (v === "trend_analysis") return CANONICAL_EVIDENCE_TYPES.TREND_ANALYSIS;
+  if (v === "signal_log") return CANONICAL_EVIDENCE_TYPES.SIGNAL_LOG;
+  if (v === "fsca_summary") return CANONICAL_EVIDENCE_TYPES.FSCA_SUMMARY;
+  if (v === "capa_summary") return CANONICAL_EVIDENCE_TYPES.CAPA_SUMMARY;
+  if (v === "pmcf_summary") return CANONICAL_EVIDENCE_TYPES.PMCF_SUMMARY;
+  if (v === "literature_review_summary") return CANONICAL_EVIDENCE_TYPES.LITERATURE_REVIEW_SUMMARY;
+  if (v === "literature_search_strategy") return CANONICAL_EVIDENCE_TYPES.LITERATURE_SEARCH_STRATEGY;
+  if (v === "external_db_summary") return CANONICAL_EVIDENCE_TYPES.EXTERNAL_DB_SUMMARY;
+  if (v === "external_db_query_log") return CANONICAL_EVIDENCE_TYPES.EXTERNAL_DB_QUERY_LOG;
+  if (v === "vigilance_report") return CANONICAL_EVIDENCE_TYPES.VIGILANCE_REPORT;
+  if (v === "benefit_risk_assessment") return CANONICAL_EVIDENCE_TYPES.BENEFIT_RISK_ASSESSMENT;
+  if (v === "risk_assessment") return CANONICAL_EVIDENCE_TYPES.RISK_ASSESSMENT;
+  
+  // Change logs
+  if (v === "cer_change_log") return CANONICAL_EVIDENCE_TYPES.CER_CHANGE_LOG;
+  if (v === "rmf_change_log") return CANONICAL_EVIDENCE_TYPES.RMF_CHANGE_LOG;
 
   throw new Error(`Unsupported evidence_type: ${raw}. Supported types: ${Object.values(CANONICAL_EVIDENCE_TYPES).join(", ")}`);
 }

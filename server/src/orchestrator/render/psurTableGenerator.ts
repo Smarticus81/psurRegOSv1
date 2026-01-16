@@ -29,6 +29,57 @@ function getValue(data: any, ...keys: string[]): any {
 // SALES & EXPOSURE TABLES
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// Known valid geographic regions for filtering
+const VALID_REGIONS = new Set([
+  "US", "USA", "United States", "North America",
+  "EU", "Europe", "European Union", "EU (excluding UK)", "EU (incl. UK)",
+  "UK", "United Kingdom", "Great Britain", "GB",
+  "Canada", "CA",
+  "Australia", "AU", "APAC", "Asia Pacific",
+  "Japan", "JP", "China", "CN", "India", "IN",
+  "Germany", "DE", "France", "FR", "Italy", "IT", "Spain", "ES",
+  "Netherlands", "NL", "Belgium", "BE", "Switzerland", "CH",
+  "Brazil", "BR", "Mexico", "MX", "Latin America", "LATAM",
+  "Rest of World", "ROW", "Other", "Global", "Worldwide", "Total",
+]);
+
+// Check if a value looks like a valid geographic region
+function isValidRegion(value: string | null | undefined): boolean {
+  if (!value || value === "[MISSING]") return false;
+  
+  // Check against known regions (case-insensitive)
+  const normalizedValue = value.trim().toLowerCase();
+  for (const region of Array.from(VALID_REGIONS)) {
+    if (region.toLowerCase() === normalizedValue) return true;
+  }
+  
+  // Filter out obvious garbage (signature lines, role titles, etc.)
+  const garbagePatterns = [
+    /^approved by/i,
+    /^reviewed by/i,
+    /^issued by/i,
+    /director/i,
+    /specialist/i,
+    /writer/i,
+    /expert/i,
+    /clinical/i,
+    /regulatory/i,
+    /affairs/i,
+    /manager/i,
+    /^dr\./i,
+    /^\d+$/,  // Pure numbers
+    /^[A-Z]{2,},/,  // Multiple state codes like "CA, SC, WI"
+    /title$/i,
+  ];
+  
+  for (const pattern of garbagePatterns) {
+    if (pattern.test(value)) return false;
+  }
+  
+  // If it's short (< 50 chars) and doesn't look like garbage, accept it
+  return value.length < 50;
+}
+
 export function generateSalesTable(atoms: EvidenceAtomData[]): TableResult {
   const salesAtoms = atoms.filter(a => 
     ["sales_summary", "sales_by_region", "sales_volume", "distribution_summary"].includes(a.evidenceType)
@@ -49,33 +100,69 @@ export function generateSalesTable(atoms: EvidenceAtomData[]): TableResult {
   rows.push("|--------|------------|--------------|--------|");
   
   let totalUnits = 0;
-  const seenRegions = new Set<string>();
+  const regionTotals = new Map<string, number>();
+  const validAtomIds: string[] = [];
   
+  // First pass: aggregate by valid regions only
   for (const atom of salesAtoms) {
     const data = atom.normalizedData;
     if (!data) continue;
     
-    const region = getValue(data, "region", "country") || "[MISSING]";
-    const units = Number(getValue(data, "quantity", "units_sold", "count")) || 0;
-    const share = getValue(data, "market_share") || "[MISSING]";
-    const periodStart = getValue(data, "period_start", "periodStart") || "";
-    const periodEnd = getValue(data, "period_end", "periodEnd") || "";
-    const period = periodStart && periodEnd ? `${periodStart} to ${periodEnd}` : getValue(data, "period") || "[MISSING]";
+    const rawRegion = getValue(data, "region", "country", "market");
+    const units = Number(getValue(data, "quantity", "units_sold", "count", "volume")) || 0;
     
-    // Avoid duplicate regions
-    const regionKey = `${region}-${units}`;
-    if (seenRegions.has(regionKey)) continue;
-    seenRegions.add(regionKey);
+    // Skip rows with invalid regions or zero units
+    if (!isValidRegion(rawRegion)) continue;
+    if (units === 0) continue;
     
-    rows.push(`| ${region} | ${units.toLocaleString()} | ${share} | ${period} |`);
+    const region = rawRegion.trim();
+    const existingUnits = regionTotals.get(region) || 0;
+    regionTotals.set(region, existingUnits + units);
     totalUnits += units;
+    validAtomIds.push(atom.atomId);
   }
   
-  rows.push(`| **Total** | **${totalUnits.toLocaleString()}** | - | - |`);
+  // If no valid data after filtering, show message
+  if (regionTotals.size === 0) {
+    // Fall back to just showing the total from all atoms
+    let fallbackTotal = 0;
+    for (const atom of salesAtoms) {
+      const data = atom.normalizedData;
+      if (!data) continue;
+      const units = Number(getValue(data, "quantity", "units_sold", "count", "volume")) || 0;
+      fallbackTotal += units;
+    }
+    
+    if (fallbackTotal > 0) {
+      rows.push(`| Global | ${fallbackTotal.toLocaleString()} | - | - |`);
+      return {
+        markdown: rows.join("\n"),
+        evidenceAtomIds: atomIds,
+        dataSourceFooter: `Data Source: Evidence Atoms [${atomIds.slice(0, 3).map(id => id.slice(0, 12)).join(", ")}${atomIds.length > 3 ? ` +${atomIds.length - 3} more` : ""}] (regional breakdown unavailable)`
+      };
+    }
+    
+    return {
+      markdown: "| Region | Units Sold | Market Share | Period |\n|--------|------------|--------------|--------|\n| *No valid sales data available* | - | - | - |",
+      evidenceAtomIds: [],
+      dataSourceFooter: "Data Source: Sales evidence uploaded but region data could not be parsed"
+    };
+  }
+  
+  // Second pass: render sorted rows
+  const sortedRegions = Array.from(regionTotals.entries())
+    .sort((a, b) => b[1] - a[1]); // Sort by units descending
+  
+  for (const [region, units] of sortedRegions) {
+    const share = totalUnits > 0 ? `${((units / totalUnits) * 100).toFixed(1)}%` : "-";
+    rows.push(`| ${region} | ${units.toLocaleString()} | ${share} | - |`);
+  }
+  
+  rows.push(`| **Total** | **${totalUnits.toLocaleString()}** | **100%** | - |`);
   
   return {
     markdown: rows.join("\n"),
-    evidenceAtomIds: atomIds,
+    evidenceAtomIds: validAtomIds.length > 0 ? validAtomIds : atomIds,
     dataSourceFooter: `Data Source: Evidence Atoms [${atomIds.slice(0, 3).map(id => id.slice(0, 12)).join(", ")}${atomIds.length > 3 ? ` +${atomIds.length - 3} more` : ""}]`
   };
 }

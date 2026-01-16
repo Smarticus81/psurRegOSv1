@@ -867,7 +867,7 @@ function generateNarrativeBlocks(
     fscaStatement,
     capaStatement,
     justificationFragments,
-    riskFileReferences: [...new Set(riskFileReferences)],
+    riskFileReferences: Array.from(new Set(riskFileReferences)),
   };
 }
 

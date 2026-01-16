@@ -169,7 +169,7 @@ export function computeLiteratureAnalysis(
   const newRiskLit = literatureAtoms.filter(l => l.newRiskIdentified);
   const stateOfArtLit = literatureAtoms.filter(l => l.stateOfArtRelevant);
   
-  const databasesSearched = [...new Set(externalDbAtoms.map(e => e.database))];
+  const databasesSearched = Array.from(new Set(externalDbAtoms.map(e => e.database)));
   const externalDbTotalReports = externalDbAtoms.reduce((s, e) => s + e.totalResults, 0);
   const externalDbDeviceRelated = externalDbAtoms.reduce((s, e) => s + e.deviceRelatedReports, 0);
   const externalDbSafetySignals = externalDbAtoms.reduce((s, e) => s + e.safetySignalsIdentified, 0);

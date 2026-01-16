@@ -512,6 +512,47 @@ export class DatabaseStorage implements IStorage {
     );
   }
 
+  async findMatchingMappingProfile(evidenceType: string, sourceColumns: string[]): Promise<ColumnMappingProfile | undefined> {
+    // Get all profiles for this evidence type ordered by usage
+    const profiles = await db.select().from(columnMappingProfiles)
+      .where(eq(columnMappingProfiles.evidenceType, evidenceType))
+      .orderBy(desc(columnMappingProfiles.usageCount));
+    
+    // Calculate signature for input columns (sorted, lowercased, normalized)
+    const normalizeColumn = (col: string) => col.toLowerCase().replace(/[\s_-]/g, "");
+    const inputSignature = new Set(sourceColumns.map(normalizeColumn));
+    
+    // Find best matching profile
+    for (const profile of profiles) {
+      const profileMappings = profile.columnMappings as Record<string, string>;
+      const profileColumns = Object.keys(profileMappings);
+      const profileSignature = new Set(profileColumns.map(normalizeColumn));
+      
+      // Check if input has all the columns in the profile (profile is subset of input)
+      let allFound = true;
+      for (const col of Array.from(profileSignature)) {
+        if (!inputSignature.has(col)) {
+          allFound = false;
+          break;
+        }
+      }
+      
+      // If all profile columns exist in input, this is a match
+      if (allFound && profileColumns.length > 0) {
+        return profile;
+      }
+    }
+    
+    return undefined;
+  }
+
+  async deleteColumnMappingProfile(id: number): Promise<boolean> {
+    const result = await db.delete(columnMappingProfiles)
+      .where(eq(columnMappingProfiles.id, id))
+      .returning();
+    return result.length > 0;
+  }
+
   async getTemplateRequirements(templateId: string): Promise<string[]> {
     const slots = await db.select({
       requiredEvidenceTypes: slotDefinitions.requiredEvidenceTypes

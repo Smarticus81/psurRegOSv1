@@ -82,15 +82,14 @@ interface Props {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const sourceTypeIcons: Record<string, React.ReactNode> = {
+  cer: <FileType className="w-5 h-5 text-pink-500" />,
   sales: <FileSpreadsheet className="w-5 h-5 text-emerald-500" />,
   complaints: <AlertCircle className="w-5 h-5 text-amber-500" />,
   fsca: <Zap className="w-5 h-5 text-red-500" />,
-  capa: <FileCheck className="w-5 h-5 text-blue-500" />,
   pmcf: <FileText className="w-5 h-5 text-purple-500" />,
-  literature: <File className="w-5 h-5 text-indigo-500" />,
-  external_db: <Database className="w-5 h-5 text-cyan-500" />,
   risk: <AlertCircle className="w-5 h-5 text-orange-500" />,
-  cer: <FileType className="w-5 h-5 text-pink-500" />,
+  capa: <FileCheck className="w-5 h-5 text-blue-500" />,
+  admin: <Database className="w-5 h-5 text-cyan-500" />,
 };
 
 const formatIcons: Record<string, React.ReactNode> = {

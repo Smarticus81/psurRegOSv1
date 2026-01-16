@@ -1,10 +1,18 @@
 /**
- * Intelligent Evidence Extractor
- * Analyzes parsed documents and extracts evidence atoms based on content patterns
+ * SOTA Evidence Extractor
+ * Uses Claude Sonnet 4.5 for intelligent semantic extraction with rule-based fallback
+ * 
+ * Architecture:
+ * 1. LLM-powered schema inference (primary) - Uses Claude to understand column semantics
+ * 2. Rule-based extraction (fallback) - Pattern matching when LLM unavailable
+ * 3. Specialized CER extraction - Multi-evidence extraction from Clinical Evaluation Reports
+ * 4. Granular decision tracing - Full audit trail for all extraction decisions
  */
 
 import { ParsedDocument, ParsedTable, ParsedSection } from "./documentParser";
-import { createHash } from "crypto";
+import { createHash, randomUUID } from "crypto";
+import { complete, LLMRequest } from "../agents/llmService";
+import { extractFromCER, CERExtractionResult, CERDecisionTrace } from "./cerExtractor";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -37,6 +45,22 @@ export interface ExtractionResult {
   unmatchedContent: string[];
   suggestions: string[];
   processingTime: number;
+  decisionTrace: ExtractionDecisionTrace[];
+  cerExtractionResult?: CERExtractionResult;
+}
+
+export interface ExtractionDecisionTrace {
+  traceId: string;
+  timestamp: string;
+  stage: "DOCUMENT_CLASSIFICATION" | "EVIDENCE_TYPE_DETECTION" | "FIELD_MAPPING" | "LLM_INFERENCE" | "VALIDATION" | "CER_EXTRACTION";
+  decision: string;
+  confidence: number;
+  inputSummary: string;
+  outputSummary: string;
+  reasoning: string[];
+  alternativesConsidered?: { option: string; reason: string; score: number }[];
+  warnings?: string[];
+  durationMs?: number;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -44,310 +68,335 @@ export interface ExtractionResult {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const EVIDENCE_TYPES: EvidenceType[] = [
-  // Sales & Distribution
+  // Sales & Distribution (Canonical: sales_volume)
   {
-    type: "sales_summary",
+    type: "sales_volume",
     category: "Sales",
-    description: "Summary of sales volume data",
-    requiredFields: ["period_start", "period_end"],
-    optionalFields: ["total_units", "region", "market_share"],
-    indicators: ["sales", "sold", "units", "volume", "revenue", "distribution"],
-  },
-  {
-    type: "sales_by_region",
-    category: "Sales",
-    description: "Regional breakdown of sales",
-    requiredFields: ["region", "quantity"],
-    optionalFields: ["period_start", "period_end", "country", "market_share"],
-    indicators: ["region", "country", "geography", "market", "territory"],
-  },
-  {
-    type: "distribution_summary",
-    category: "Sales",
-    description: "Distribution channel summary",
-    requiredFields: ["channel", "quantity"],
-    optionalFields: ["region", "period"],
-    indicators: ["distribution", "channel", "distributor", "shipped"],
-  },
-  {
-    type: "usage_estimate",
-    category: "Sales",
-    description: "Device usage and exposure estimates",
-    requiredFields: ["metric", "value"],
-    optionalFields: ["source", "methodology"],
-    indicators: ["usage", "exposure", "patient", "procedure", "implant"],
+    description: "Sales volume, distribution, and usage data",
+    requiredFields: ["quantity", "period_start"],
+    optionalFields: ["region", "country", "period_end", "device_code", "model", "market_share"],
+    indicators: ["sales", "sold", "units", "volume", "revenue", "distribution", "region", "country", "market", "shipped", "usage"],
   },
 
-  // Complaints & Incidents
+  // Complaints & Incidents (Canonical: complaint_record, serious_incident_record)
   {
     type: "complaint_record",
     category: "Complaints",
-    description: "Individual complaint record",
-    requiredFields: ["complaint_type", "date"],
-    optionalFields: ["description", "region", "severity", "status", "resolution"],
-    indicators: ["complaint", "feedback", "issue", "problem", "concern", "reported"],
+    description: "Individual complaint record or feedback",
+    requiredFields: ["complaint_date"],
+    optionalFields: ["complaint_id", "description", "region", "severity", "status", "device_code", "category"],
+    indicators: ["complaint", "feedback", "issue", "problem", "concern", "reported", "customer", "allegation"],
   },
   {
-    type: "complaint_summary",
-    category: "Complaints",
-    description: "Summary of complaint data",
-    requiredFields: ["complaint_type", "count"],
-    optionalFields: ["rate", "trend", "period"],
-    indicators: ["summary", "total", "count", "aggregat"],
-  },
-  {
-    type: "complaints_by_region",
-    category: "Complaints",
-    description: "Regional complaint breakdown",
-    requiredFields: ["region", "count"],
-    optionalFields: ["serious", "non_serious"],
-    indicators: ["region", "country", "by location"],
-  },
-  {
-    type: "serious_incident_summary",
+    type: "serious_incident_record",
     category: "Incidents",
-    description: "Summary of serious incidents",
-    requiredFields: ["count"],
-    optionalFields: ["description", "outcome", "period"],
-    indicators: ["serious", "incident", "adverse event", "mdr", "vigilance"],
-  },
-  {
-    type: "serious_incident_records_imdrf",
-    category: "Incidents",
-    description: "Serious incident with IMDRF coding",
-    requiredFields: ["imdrf_code", "description"],
-    optionalFields: ["count", "outcome", "date"],
-    indicators: ["imdrf", "E0", "A0", "coding", "classification"],
-  },
-  {
-    type: "vigilance_report",
-    category: "Incidents",
-    description: "Regulatory vigilance report data",
-    requiredFields: ["report_type", "date"],
-    optionalFields: ["authority", "outcome", "status"],
-    indicators: ["vigilance", "mdr", "medsafe", "report", "notification"],
-  },
-  {
-    type: "customer_feedback_summary",
-    category: "Complaints",
-    description: "Customer feedback summary",
-    requiredFields: ["feedback_type"],
-    optionalFields: ["count", "sentiment", "action_required"],
-    indicators: ["feedback", "survey", "satisfaction", "customer"],
+    description: "Serious incident report",
+    requiredFields: ["incident_date"],
+    optionalFields: ["incident_id", "description", "outcome", "device_code", "imdrf_code", "competent_authority"],
+    indicators: ["serious", "incident", "adverse event", "mdr", "vigilance", "death", "injury", "imdrf"],
   },
 
-  // FSCA & CAPA
+  // FSCA & CAPA (Canonical: fsca_record, capa_record - assuming capa_record is canonical based on usage)
   {
     type: "fsca_record",
     category: "FSCA",
     description: "Field Safety Corrective Action record",
     requiredFields: ["fsca_id"],
-    optionalFields: ["action_type", "date", "status", "affected_units", "description"],
-    indicators: ["fsca", "field safety", "corrective action", "recall", "advisory"],
-  },
-  {
-    type: "fsca_summary",
-    category: "FSCA",
-    description: "Summary of FSCA activities",
-    requiredFields: [],
-    optionalFields: ["total_fscas", "period", "status"],
-    indicators: ["fsca summary", "field safety summary", "recall summary"],
+    optionalFields: ["action_type", "initiation_date", "status", "affected_units", "description", "device_code"],
+    indicators: ["fsca", "field safety", "corrective action", "recall", "advisory", "notice"],
   },
   {
     type: "capa_record",
     category: "CAPA",
     description: "Corrective and Preventive Action record",
-    requiredFields: ["description"],
-    optionalFields: ["capa_id", "date", "status", "effectiveness", "root_cause"],
-    indicators: ["capa", "corrective", "preventive", "action", "improvement"],
-  },
-  {
-    type: "capa_summary",
-    category: "CAPA",
-    description: "Summary of CAPA activities",
-    requiredFields: [],
-    optionalFields: ["total_capas", "open", "closed", "effectiveness"],
-    indicators: ["capa summary", "corrective action summary"],
+    requiredFields: ["capa_id"],
+    optionalFields: ["description", "initiation_date", "status", "effectiveness", "root_cause", "action_plan"],
+    indicators: ["capa", "corrective", "preventive", "action", "improvement", "non-conformance", "ncr"],
   },
 
-  // Literature & External
+  // Literature (Canonical: literature_result)
   {
-    type: "literature_search_strategy",
+    type: "literature_result",
     category: "Literature",
-    description: "Literature search methodology",
-    requiredFields: ["database"],
-    optionalFields: ["search_terms", "date_range", "inclusion_criteria"],
-    indicators: ["search strategy", "methodology", "database", "pubmed", "embase"],
-  },
-  {
-    type: "literature_review_summary",
-    category: "Literature",
-    description: "Summary of literature review findings",
-    requiredFields: ["database", "results_count"],
-    optionalFields: ["relevant_count", "conclusion", "date"],
-    indicators: ["literature", "review", "publication", "article", "findings"],
-  },
-  {
-    type: "external_db_query_log",
-    category: "External",
-    description: "External database search log",
-    requiredFields: ["database", "query_date"],
-    optionalFields: ["search_terms", "results"],
-    indicators: ["maude", "eudamed", "database", "query", "search"],
-  },
-  {
-    type: "external_db_summary",
-    category: "External",
-    description: "External database search summary",
-    requiredFields: ["database"],
-    optionalFields: ["adverse_events", "recalls", "findings"],
-    indicators: ["external", "database", "summary", "maude", "eudamed"],
+    description: "Literature review finding or search result",
+    requiredFields: ["citation"], // citation or source usually required
+    optionalFields: ["database", "search_terms", "summary", "analysis", "favorable", "device_related", "date"],
+    indicators: ["literature", "review", "publication", "article", "search", "pubmed", "embase", "abstract", "citation"],
   },
 
-  // PMCF
+  // PMCF (Canonical: pmcf_result)
   {
-    type: "pmcf_summary",
+    type: "pmcf_result",
     category: "PMCF",
-    description: "Post-Market Clinical Follow-up summary",
-    requiredFields: ["status"],
-    optionalFields: ["key_findings", "enrolled", "activities"],
-    indicators: ["pmcf", "post-market", "clinical follow-up", "registry"],
-  },
-  {
-    type: "pmcf_activity_record",
-    category: "PMCF",
-    description: "PMCF activity record",
-    requiredFields: ["activity_type"],
-    optionalFields: ["status", "start_date", "enrolled", "findings"],
-    indicators: ["pmcf activity", "study", "survey", "registry"],
-  },
-  {
-    type: "pmcf_report_extract",
-    category: "PMCF",
-    description: "Extract from PMCF report",
-    requiredFields: ["content"],
-    optionalFields: ["section", "findings"],
-    indicators: ["pmcf report", "clinical data", "follow-up data"],
+    description: "Post-Market Clinical Follow-up result",
+    requiredFields: ["finding"],
+    optionalFields: ["study_id", "patient_count", "outcome", "status", "conclusion", "activity_type"],
+    indicators: ["pmcf", "post-market", "clinical follow-up", "registry", "study", "survey", "cohort"],
   },
 
-  // Risk & Safety
-  {
-    type: "benefit_risk_assessment",
-    category: "Risk",
-    description: "Benefit-risk assessment data",
-    requiredFields: ["conclusion"],
-    optionalFields: ["benefits", "risks", "assessment", "summary"],
-    indicators: ["benefit", "risk", "assessment", "conclusion", "favorable"],
-  },
-  {
-    type: "rmf_extract",
-    category: "Risk",
-    description: "Risk Management File extract",
-    requiredFields: ["content"],
-    optionalFields: ["risk_level", "mitigation", "residual_risk"],
-    indicators: ["rmf", "risk management", "risk file", "hazard", "harm"],
-  },
-  {
-    type: "trend_analysis",
-    category: "Trend",
-    description: "Trend analysis data",
-    requiredFields: ["metric"],
-    optionalFields: ["previous_value", "current_value", "trend", "assessment"],
-    indicators: ["trend", "analysis", "signal", "threshold", "statistic"],
-  },
-  {
-    type: "signal_log",
-    category: "Trend",
-    description: "Safety signal detection log",
-    requiredFields: ["signal_type"],
-    optionalFields: ["detection_date", "status", "action"],
-    indicators: ["signal", "detection", "alert", "threshold"],
-  },
-
-  // Device & Regulatory
+  // External Databases (Canonical mapping? Treating as 'registry' or specific type if defined, else generic)
+  // Re-mapping to relevant canonicals or keeping if they support specific flows not yet strictly canonicalized in input but needed for processing
+  // NOTE: Based on user request, we stick to high level inputs. But extractor needs to map to ATOMS.
+  // Using device_registry_record for admin data
   {
     type: "device_registry_record",
     category: "Device",
-    description: "Device registry information",
+    description: "Device registry and manufacturer information",
     requiredFields: ["device_name"],
-    optionalFields: ["model", "udi_di", "risk_class", "intended_purpose"],
-    indicators: ["device", "model", "udi", "catalog", "product"],
+    optionalFields: ["model", "udi_di", "risk_class", "manufacturer", "intended_purpose", "gmdn"],
+    indicators: ["device", "model", "udi", "catalog", "product", "registry", "registration", "manufacturer"],
   },
+  
+  // Risk (Canonical: benefit_risk_assessment? or separate atoms?)
+  // Keeping specific risk types if they map to canonical atoms or are used by risk agent
   {
-    type: "manufacturer_profile",
-    category: "Device",
-    description: "Manufacturer information",
-    requiredFields: ["manufacturer_name"],
-    optionalFields: ["address", "srn", "contact"],
-    indicators: ["manufacturer", "company", "organization", "srn"],
-  },
-  {
-    type: "regulatory_certificate_record",
-    category: "Regulatory",
-    description: "Regulatory certificate data",
-    requiredFields: ["certificate_type"],
-    optionalFields: ["certificate_number", "notified_body", "issue_date", "expiry_date"],
-    indicators: ["certificate", "ce mark", "notified body", "approval", "registration"],
-  },
-  {
-    type: "ifu_extract",
-    category: "Device",
-    description: "Instructions for Use extract",
-    requiredFields: ["content"],
-    optionalFields: ["section", "version"],
-    indicators: ["ifu", "instructions", "use", "indication", "contraindication"],
-  },
-  {
-    type: "cer_extract",
-    category: "Clinical",
-    description: "Clinical Evaluation Report extract",
-    requiredFields: ["content"],
-    optionalFields: ["section", "findings", "version"],
-    indicators: ["cer", "clinical evaluation", "clinical evidence", "clinical data"],
-  },
-  {
-    type: "clinical_evaluation_extract",
-    category: "Clinical",
-    description: "Clinical evaluation data",
-    requiredFields: ["content"],
-    optionalFields: ["section", "key_findings"],
-    indicators: ["clinical", "evaluation", "evidence", "study"],
-  },
-
-  // PMS & Changes
-  {
-    type: "pms_plan_extract",
-    category: "PMS",
-    description: "Post-Market Surveillance Plan extract",
-    requiredFields: ["content"],
-    optionalFields: ["section", "activities"],
-    indicators: ["pms", "surveillance", "plan", "monitoring"],
-  },
-  {
-    type: "pms_activity_log",
-    category: "PMS",
-    description: "PMS activity log",
-    requiredFields: ["activity"],
-    optionalFields: ["date", "status", "findings"],
-    indicators: ["pms activity", "surveillance activity", "monitoring"],
-  },
-  {
-    type: "change_control_record",
-    category: "Changes",
-    description: "Change control record",
-    requiredFields: ["description"],
-    optionalFields: ["date", "status", "impact"],
-    indicators: ["change", "modification", "update", "revision", "version"],
-  },
-  {
-    type: "previous_psur_extract",
-    category: "PSUR",
-    description: "Previous PSUR reference",
-    requiredFields: ["psur_reference"],
-    optionalFields: ["period", "findings", "actions"],
-    indicators: ["previous psur", "prior", "last report"],
-  },
+    type: "benefit_risk_assessment",
+    category: "Risk",
+    description: "Benefit-risk analysis",
+    requiredFields: ["conclusion"],
+    optionalFields: ["benefits", "risks", "ratio", "evaluation", "date"],
+    indicators: ["benefit", "risk", "assessment", "conclusion", "favorable", "bra", "residual"],
+  }
 ];
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SOTA LLM-POWERED EXTRACTION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * SOTA Schema Inference using Claude Sonnet 4.5
+ * Analyzes column headers and sample data to determine semantic mappings
+ */
+async function llmInferSchema(
+  headers: string[],
+  sampleRows: Record<string, unknown>[],
+  sourceType: string,
+  targetEvidenceType: string
+): Promise<{
+  mappings: Array<{ sourceColumn: string; targetField: string; confidence: number; reasoning: string }>;
+  evidenceType: string;
+  overallConfidence: number;
+} | null> {
+  const canonicalFields = getCanonicalFieldsForType(targetEvidenceType);
+  
+  // Get sample values for each column (first 3 rows)
+  const columnSamples: Record<string, unknown[]> = {};
+  for (const header of headers) {
+    columnSamples[header] = sampleRows.slice(0, 3).map(row => row[header]).filter(v => v !== undefined && v !== null && v !== "");
+  }
+
+  const prompt = `You are a medical device regulatory data expert. Analyze these spreadsheet columns and map them to canonical PSUR evidence fields.
+
+## Source Type Selected by User: ${sourceType}
+## Target Evidence Type: ${targetEvidenceType}
+
+## Column Headers and Sample Values:
+${headers.map(h => `- "${h}": ${JSON.stringify(columnSamples[h] || [])}`).join("\n")}
+
+## Canonical Target Fields for ${targetEvidenceType}:
+${canonicalFields.map(f => `- ${f.name}: ${f.description}`).join("\n")}
+
+## Instructions:
+1. For each source column, determine which canonical field it maps to based on:
+   - Column name semantics (what does the name mean?)
+   - Sample value patterns (dates, numbers, text, codes?)
+   - Domain knowledge of medical device data
+2. Consider common naming variations (e.g., "qty" = quantity, "prod_code" = deviceCode)
+3. If a column doesn't map to any canonical field, set targetField to null
+4. Be confident - medical device data follows predictable patterns
+
+Respond ONLY with valid JSON:
+{
+  "mappings": [
+    {
+      "sourceColumn": "original column name",
+      "targetField": "canonical_field_name or null",
+      "confidence": 0.0-1.0,
+      "reasoning": "Brief explanation of why this mapping makes sense"
+    }
+  ],
+  "evidenceType": "${targetEvidenceType}",
+  "overallConfidence": 0.0-1.0,
+  "unmappedColumns": ["columns that couldn't be mapped"],
+  "warnings": ["any data quality concerns"]
+}`;
+
+  try {
+    console.log(`[SOTA Extract] Calling Claude for schema inference on ${headers.length} columns`);
+    
+    const response = await complete({
+      messages: [
+        { role: "system", content: "You are a medical device regulatory data expert. Always respond with valid JSON only." },
+        { role: "user", content: prompt }
+      ],
+      config: {
+        provider: "anthropic",
+        model: "claude-sonnet-4-5-20250929", // SOTA reasoning model
+        temperature: 0.1, // Low temperature for consistent mappings
+        maxTokens: 2048,
+      },
+      responseFormat: "json",
+      agentId: "sota-schema-inference",
+      traceContext: { operation: "schema_inference" }
+    });
+
+    // Parse and validate response
+    const content = response.content.trim();
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.warn("[SOTA Extract] LLM response not valid JSON");
+      return null;
+    }
+    
+    const result = JSON.parse(jsonMatch[0]);
+    console.log(`[SOTA Extract] Claude mapped ${result.mappings?.length || 0} columns with ${(result.overallConfidence * 100).toFixed(0)}% confidence`);
+    
+    return result;
+  } catch (error: any) {
+    console.warn(`[SOTA Extract] LLM inference failed: ${error?.message || error}`);
+    return null;
+  }
+}
+
+/**
+ * Get canonical field definitions for evidence type
+ */
+function getCanonicalFieldsForType(evidenceType: string): Array<{ name: string; description: string }> {
+  const fieldDefs: Record<string, Array<{ name: string; description: string }>> = {
+    sales_volume: [
+      { name: "deviceCode", description: "Product/device identifier (SKU, part number, model)" },
+      { name: "region", description: "Geographic region or market" },
+      { name: "country", description: "Country code or name" },
+      { name: "quantity", description: "Number of units sold/shipped" },
+      { name: "periodStart", description: "Start of reporting period (date)" },
+      { name: "periodEnd", description: "End of reporting period (date)" },
+      { name: "revenue", description: "Sales revenue amount" },
+      { name: "distributionChannel", description: "Sales channel (direct, distributor, etc.)" },
+    ],
+    complaint_record: [
+      { name: "complaintId", description: "Unique complaint identifier" },
+      { name: "deviceCode", description: "Product/device identifier" },
+      { name: "complaintDate", description: "Date complaint was received/reported" },
+      { name: "description", description: "Complaint description or narrative" },
+      { name: "severity", description: "Severity level (critical, high, medium, low)" },
+      { name: "region", description: "Geographic region" },
+      { name: "country", description: "Country of complaint origin" },
+      { name: "rootCause", description: "Root cause determination" },
+      { name: "correctiveAction", description: "Actions taken to address complaint" },
+      { name: "patientOutcome", description: "Patient outcome (injury, death, no harm)" },
+      { name: "serious", description: "Whether this is a serious complaint (boolean)" },
+      { name: "status", description: "Current status (open, closed, investigating)" },
+    ],
+    fsca_record: [
+      { name: "fscaId", description: "FSCA identifier or reference number" },
+      { name: "deviceCode", description: "Affected product/device" },
+      { name: "initiationDate", description: "Date FSCA was initiated" },
+      { name: "description", description: "Description of field action" },
+      { name: "actionType", description: "Type of action (recall, advisory, correction)" },
+      { name: "affectedUnits", description: "Number of units affected" },
+      { name: "status", description: "Current status" },
+      { name: "region", description: "Geographic scope" },
+    ],
+    capa_record: [
+      { name: "capaId", description: "CAPA identifier" },
+      { name: "deviceCode", description: "Related product/device" },
+      { name: "openDate", description: "Date CAPA was opened" },
+      { name: "closeDate", description: "Date CAPA was closed" },
+      { name: "description", description: "CAPA description" },
+      { name: "rootCause", description: "Root cause analysis" },
+      { name: "correctiveAction", description: "Corrective actions taken" },
+      { name: "preventiveAction", description: "Preventive actions implemented" },
+      { name: "status", description: "Current status" },
+      { name: "effectiveness", description: "Effectiveness verification result" },
+    ],
+    pmcf_result: [
+      { name: "studyId", description: "Study identifier" },
+      { name: "studyType", description: "Type of PMCF activity" },
+      { name: "startDate", description: "Study start date" },
+      { name: "endDate", description: "Study end date" },
+      { name: "sampleSize", description: "Number of subjects/devices" },
+      { name: "findings", description: "Key findings" },
+      { name: "conclusions", description: "Study conclusions" },
+      { name: "status", description: "Study status" },
+    ],
+    device_registry_record: [
+      { name: "deviceName", description: "Device trade name" },
+      { name: "deviceCode", description: "Internal device code" },
+      { name: "model", description: "Model number/name" },
+      { name: "udiDi", description: "UDI Device Identifier" },
+      { name: "riskClass", description: "Risk classification" },
+      { name: "manufacturer", description: "Manufacturer name" },
+      { name: "intendedPurpose", description: "Intended purpose/use" },
+      { name: "gmdnCode", description: "GMDN code" },
+    ],
+    benefit_risk_assessment: [
+      { name: "assessmentDate", description: "Date of assessment" },
+      { name: "conclusion", description: "Overall B/R conclusion" },
+      { name: "benefits", description: "Identified benefits" },
+      { name: "risks", description: "Identified risks" },
+      { name: "residualRisk", description: "Residual risk assessment" },
+      { name: "acceptability", description: "Risk acceptability determination" },
+    ],
+  };
+  
+  return fieldDefs[evidenceType] || [];
+}
+
+/**
+ * Apply LLM-inferred mappings to extract data from rows
+ */
+function applyLLMMappings(
+  rows: Record<string, unknown>[],
+  mappings: Array<{ sourceColumn: string; targetField: string; confidence: number; reasoning: string }>,
+  evidenceType: string,
+  tableName: string
+): ExtractedEvidence[] {
+  const evidence: ExtractedEvidence[] = [];
+  
+  // Build mapping lookup
+  const mappingLookup = new Map<string, { targetField: string; confidence: number; reasoning: string }>();
+  for (const m of mappings) {
+    if (m.targetField) {
+      mappingLookup.set(m.sourceColumn.toLowerCase(), { 
+        targetField: m.targetField, 
+        confidence: m.confidence,
+        reasoning: m.reasoning 
+      });
+    }
+  }
+  
+  // Extract each row using LLM mappings
+  for (const row of rows) {
+    const data: Record<string, unknown> = {};
+    let totalConfidence = 0;
+    let mappedFields = 0;
+    
+    for (const [sourceCol, value] of Object.entries(row)) {
+      const mapping = mappingLookup.get(sourceCol.toLowerCase());
+      if (mapping && value !== undefined && value !== null && value !== "") {
+        data[mapping.targetField] = value;
+        totalConfidence += mapping.confidence;
+        mappedFields++;
+      }
+    }
+    
+    if (mappedFields > 0) {
+      const avgConfidence = totalConfidence / mappedFields;
+      evidence.push({
+        evidenceType,
+        confidence: avgConfidence,
+        source: "table",
+        sourceName: tableName,
+        data,
+        rawContent: JSON.stringify(row),
+        extractionMethod: `SOTA Claude inference (${mappedFields} fields mapped)`,
+        warnings: avgConfidence < 0.7 ? ["Some mappings have lower confidence - review recommended"] : [],
+      });
+    }
+  }
+  
+  return evidence;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN EXTRACTOR
@@ -358,6 +407,7 @@ export async function extractEvidence(
   sourceType?: string
 ): Promise<ExtractionResult> {
   const startTime = Date.now();
+  const decisionTrace: ExtractionDecisionTrace[] = [];
   const result: ExtractionResult = {
     documentId: document.contentHash,
     filename: document.filename,
@@ -365,49 +415,367 @@ export async function extractEvidence(
     unmatchedContent: [],
     suggestions: [],
     processingTime: 0,
+    decisionTrace: [],
   };
 
-  // Extract from tables
-  for (const table of document.tables) {
-    const tableEvidence = extractFromTable(table, document.filename);
-    result.extractedEvidence.push(...tableEvidence);
+  // PHASE 0: Document classification decision trace
+  const classificationTraceId = randomUUID();
+  const classificationStart = Date.now();
+  
+  decisionTrace.push({
+    traceId: classificationTraceId,
+    timestamp: new Date().toISOString(),
+    stage: "DOCUMENT_CLASSIFICATION",
+    decision: `Document type: ${document.documentType}, Source type: ${sourceType || "auto-detect"}`,
+    confidence: sourceType ? 1.0 : 0.7,
+    inputSummary: `File: ${document.filename}, ${document.tables.length} tables, ${document.sections.length} sections, ${document.rawText.length} chars`,
+    outputSummary: `Processing as ${sourceType || "general"} document`,
+    reasoning: [
+      `Document type detected: ${document.documentType}`,
+      `User-specified source type: ${sourceType || "none (auto-detect)"}`,
+      `Tables found: ${document.tables.length}`,
+      `Sections found: ${document.sections.length}`,
+    ],
+    durationMs: Date.now() - classificationStart,
+  });
+
+  // PHASE 1: CER SPECIAL HANDLING
+  // CERs are comprehensive documents requiring specialized multi-evidence extraction
+  if (sourceType?.toLowerCase() === "cer" || isCERDocument(document)) {
+    console.log(`[Evidence Extractor] CER document detected - using specialized CER extraction`);
+    
+    const cerTraceId = randomUUID();
+    const cerStart = Date.now();
+    
+    decisionTrace.push({
+      traceId: cerTraceId,
+      timestamp: new Date().toISOString(),
+      stage: "CER_EXTRACTION",
+      decision: "Invoking specialized CER extractor for multi-evidence extraction",
+      confidence: 0.95,
+      inputSummary: `CER document with ${document.sections.length} sections`,
+      outputSummary: "Starting CER-specific extraction pipeline",
+      reasoning: [
+        "CER documents contain evidence for multiple PSUR sections",
+        "Specialized extraction needed for: device description, regulatory status, literature, PMCF, sales, complaints, benefit-risk",
+        "Using SOTA Claude section classification and evidence extraction",
+      ],
+    });
+    
+    try {
+      const cerResult = await extractFromCER(document);
+      result.cerExtractionResult = cerResult;
+      
+      // Convert CER evidence to standard format
+      for (const cerEvidence of cerResult.extractedEvidence) {
+        result.extractedEvidence.push({
+          evidenceType: cerEvidence.evidenceType,
+          confidence: cerEvidence.confidence,
+          source: "section",
+          sourceName: `CER: ${cerEvidence.sourceSectionTitle}`,
+          data: cerEvidence.data,
+          rawContent: JSON.stringify(cerEvidence.data).substring(0, 500),
+          extractionMethod: `CER SOTA extraction - ${cerEvidence.extractionMethod}`,
+          warnings: cerEvidence.warnings,
+        });
+      }
+      
+      // Add CER decision traces
+      for (const cerTrace of cerResult.decisionTrace) {
+        decisionTrace.push({
+          traceId: cerTrace.traceId,
+          timestamp: cerTrace.timestamp,
+          stage: "CER_EXTRACTION",
+          decision: cerTrace.decision,
+          confidence: cerTrace.confidence,
+          inputSummary: cerTrace.inputSummary,
+          outputSummary: cerTrace.outputSummary,
+          reasoning: cerTrace.reasoning,
+          alternativesConsidered: cerTrace.alternativesConsidered,
+          warnings: cerTrace.warnings,
+        });
+      }
+      
+      decisionTrace.push({
+        traceId: randomUUID(),
+        timestamp: new Date().toISOString(),
+        stage: "CER_EXTRACTION",
+        decision: `CER extraction completed: ${cerResult.extractedEvidence.length} evidence items`,
+        confidence: 0.9,
+        inputSummary: `Processed ${cerResult.sections.length} CER sections`,
+        outputSummary: `Extracted ${Array.from(new Set(cerResult.extractedEvidence.map(e => e.evidenceType))).length} unique evidence types`,
+        reasoning: [
+          `Total extraction time: ${cerResult.processingTimeMs}ms`,
+          `Evidence types: ${Array.from(new Set(cerResult.extractedEvidence.map(e => e.evidenceType))).join(", ")}`,
+        ],
+        durationMs: Date.now() - cerStart,
+      });
+      
+      console.log(`[Evidence Extractor] CER extraction completed: ${cerResult.extractedEvidence.length} evidence items`);
+    } catch (error: any) {
+      console.error(`[Evidence Extractor] CER extraction failed: ${error?.message || error}`);
+      decisionTrace.push({
+        traceId: randomUUID(),
+        timestamp: new Date().toISOString(),
+        stage: "CER_EXTRACTION",
+        decision: "CER extraction failed - falling back to standard extraction",
+        confidence: 0.3,
+        inputSummary: document.filename,
+        outputSummary: "Error during CER extraction",
+        reasoning: [`Error: ${error?.message || String(error)}`],
+        warnings: ["CER-specific extraction failed - using standard extraction methods"],
+      });
+      // Fall through to standard extraction
+    }
   }
 
-  // Extract from sections
-  for (const section of document.sections) {
-    const sectionEvidence = extractFromSection(section, document.filename);
-    result.extractedEvidence.push(...sectionEvidence);
+  // PHASE 2: Standard table extraction (for non-CER or as supplement)
+  if (result.extractedEvidence.length === 0 || sourceType?.toLowerCase() !== "cer") {
+    for (const table of document.tables) {
+      const tableTraceId = randomUUID();
+      const tableStart = Date.now();
+      
+      const tableEvidence = await extractFromTableSOTA(table, document.filename, sourceType);
+      result.extractedEvidence.push(...tableEvidence);
+      
+      decisionTrace.push({
+        traceId: tableTraceId,
+        timestamp: new Date().toISOString(),
+        stage: "EVIDENCE_TYPE_DETECTION",
+        decision: `Table "${table.name}": extracted ${tableEvidence.length} records`,
+        confidence: tableEvidence.length > 0 ? Math.max(...tableEvidence.map(e => e.confidence)) : 0.3,
+        inputSummary: `Table "${table.name}" with ${table.headers.length} columns, ${table.rows.length} rows`,
+        outputSummary: tableEvidence.length > 0 
+          ? `Evidence types: ${Array.from(new Set(tableEvidence.map(e => e.evidenceType))).join(", ")}`
+          : "No evidence extracted from this table",
+        reasoning: [
+          `Headers: ${table.headers.slice(0, 5).join(", ")}${table.headers.length > 5 ? "..." : ""}`,
+          `Extraction method: ${tableEvidence[0]?.extractionMethod || "none"}`,
+          `Source type constraint: ${sourceType || "none"}`,
+        ],
+        durationMs: Date.now() - tableStart,
+      });
+    }
   }
 
-  // If source type is specified, prioritize matching evidence types
+  // PHASE 3: Section extraction (for non-tabular content, skip for CER as already handled)
+  if (sourceType?.toLowerCase() !== "cer") {
+    for (const section of document.sections) {
+      const sectionTraceId = randomUUID();
+      const sectionStart = Date.now();
+      
+      const sectionEvidence = extractFromSection(section, document.filename);
+      result.extractedEvidence.push(...sectionEvidence);
+      
+      if (sectionEvidence.length > 0) {
+        decisionTrace.push({
+          traceId: sectionTraceId,
+          timestamp: new Date().toISOString(),
+          stage: "EVIDENCE_TYPE_DETECTION",
+          decision: `Section "${section.title}": extracted ${sectionEvidence.length} records`,
+          confidence: Math.max(...sectionEvidence.map(e => e.confidence)),
+          inputSummary: `Section "${section.title}" with ${section.content.length} chars`,
+          outputSummary: `Evidence types: ${Array.from(new Set(sectionEvidence.map(e => e.evidenceType))).join(", ")}`,
+          reasoning: [
+            `Content matched indicators for detected evidence types`,
+            `Extraction method: section content analysis`,
+          ],
+          durationMs: Date.now() - sectionStart,
+        });
+      }
+    }
+  }
+
+  // PHASE 4: Source type prioritization
   if (sourceType) {
+    const prioritizeTraceId = randomUUID();
+    const beforePrioritize = result.extractedEvidence.length;
+    
     result.extractedEvidence = prioritizeBySourceType(result.extractedEvidence, sourceType);
+    
+    decisionTrace.push({
+      traceId: prioritizeTraceId,
+      timestamp: new Date().toISOString(),
+      stage: "VALIDATION",
+      decision: `Applied source type prioritization for "${sourceType}"`,
+      confidence: 1.0,
+      inputSummary: `${beforePrioritize} evidence items before prioritization`,
+      outputSummary: `Boosted confidence for ${sourceType}-related evidence types`,
+      reasoning: [
+        `User-specified source type: ${sourceType}`,
+        `Evidence types matching source get +0.2 confidence boost`,
+        `Results sorted by confidence`,
+      ],
+    });
   }
 
-  // Remove duplicates and low-confidence extractions
+  // PHASE 5: Deduplication
+  const dedupTraceId = randomUUID();
+  const beforeDedup = result.extractedEvidence.length;
+  
   result.extractedEvidence = deduplicateEvidence(result.extractedEvidence);
+  
+  decisionTrace.push({
+    traceId: dedupTraceId,
+    timestamp: new Date().toISOString(),
+    stage: "VALIDATION",
+    decision: `Deduplication: ${beforeDedup} -> ${result.extractedEvidence.length} items`,
+    confidence: 1.0,
+    inputSummary: `${beforeDedup} evidence items before deduplication`,
+    outputSummary: `${result.extractedEvidence.length} unique items, ${beforeDedup - result.extractedEvidence.length} removed`,
+    reasoning: [
+      `Removed duplicates based on content hash`,
+      `Filtered items below 0.3 confidence threshold`,
+      `Kept highest confidence item for each unique content`,
+    ],
+    warnings: beforeDedup - result.extractedEvidence.length > 10 
+      ? ["High duplicate count - check extraction quality"]
+      : undefined,
+  });
 
   // Generate suggestions for unmatched content
   result.suggestions = generateSuggestions(document, result.extractedEvidence);
+  
+  // Final summary trace
+  decisionTrace.push({
+    traceId: randomUUID(),
+    timestamp: new Date().toISOString(),
+    stage: "VALIDATION",
+    decision: `Extraction complete: ${result.extractedEvidence.length} evidence items`,
+    confidence: result.extractedEvidence.length > 0 ? 0.9 : 0.3,
+    inputSummary: `Document: ${document.filename}`,
+    outputSummary: `${result.extractedEvidence.length} items of ${Array.from(new Set(result.extractedEvidence.map(e => e.evidenceType))).length} types`,
+    reasoning: [
+      `Total processing time: ${Date.now() - startTime}ms`,
+      `Evidence types: ${Array.from(new Set(result.extractedEvidence.map(e => e.evidenceType))).join(", ") || "none"}`,
+      `Suggestions: ${result.suggestions.length}`,
+    ],
+  });
 
+  result.decisionTrace = decisionTrace;
   result.processingTime = Date.now() - startTime;
+  
+  console.log(`[Evidence Extractor] Completed extraction of ${document.filename} in ${result.processingTime}ms with ${decisionTrace.length} trace entries`);
+  
   return result;
+}
+
+/**
+ * Detect if a document is likely a CER based on content analysis
+ */
+function isCERDocument(document: ParsedDocument): boolean {
+  const textLower = document.rawText.toLowerCase();
+  const cerIndicators = [
+    "clinical evaluation report",
+    "clinical evaluation",
+    "cer for",
+    "mdcg 2020-6",
+    "mdcg 2020-5",
+    "meddev 2.7/1",
+    "equivalent device",
+    "literature review",
+    "post-market clinical",
+    "benefit-risk",
+    "state of the art",
+    "clinical performance",
+    "clinical safety",
+  ];
+  
+  let score = 0;
+  for (const indicator of cerIndicators) {
+    if (textLower.includes(indicator)) {
+      score++;
+    }
+  }
+  
+  // Also check section titles
+  for (const section of document.sections) {
+    const titleLower = section.title?.toLowerCase() || "";
+    if (titleLower.includes("clinical") || titleLower.includes("cer") || 
+        titleLower.includes("benefit") || titleLower.includes("literature")) {
+      score++;
+    }
+  }
+  
+  // Threshold: need at least 3 indicators to classify as CER
+  return score >= 3;
+}
+
+/**
+ * SOTA Table Extraction - Uses Claude for semantic understanding, falls back to rules
+ */
+async function extractFromTableSOTA(
+  table: ParsedTable, 
+  filename: string, 
+  sourceType?: string
+): Promise<ExtractedEvidence[]> {
+  const headers = table.headers;
+  const rows = table.rows;
+  
+  if (headers.length === 0 || rows.length === 0) {
+    return [];
+  }
+  
+  // Determine target evidence type from source type
+  const targetEvidenceType = sourceType 
+    ? SOURCE_TYPE_PRIMARY_EVIDENCE[sourceType.toLowerCase()] || "sales_volume"
+    : "sales_volume";
+  
+  // Try SOTA LLM extraction first
+  try {
+    const llmResult = await llmInferSchema(headers, rows, sourceType || "unknown", targetEvidenceType);
+    
+    if (llmResult && llmResult.mappings && llmResult.mappings.length > 0) {
+      const validMappings = llmResult.mappings.filter(m => m.targetField);
+      
+      if (validMappings.length > 0) {
+        console.log(`[SOTA Extract] Using Claude mappings for ${filename}: ${validMappings.length} fields`);
+        return applyLLMMappings(rows, validMappings, llmResult.evidenceType, table.name);
+      }
+    }
+  } catch (error: any) {
+    console.warn(`[SOTA Extract] LLM extraction failed for ${filename}, using rule-based fallback: ${error?.message}`);
+  }
+  
+  // Fallback to rule-based extraction
+  console.log(`[SOTA Extract] Using rule-based fallback for ${filename}`);
+  return extractFromTable(table, filename, sourceType);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TABLE EXTRACTION
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function extractFromTable(table: ParsedTable, filename: string): ExtractedEvidence[] {
+// Map source types to their primary evidence types - used for forced mapping
+const SOURCE_TYPE_PRIMARY_EVIDENCE: Record<string, string> = {
+  sales: "sales_volume",
+  complaints: "complaint_record",
+  fsca: "fsca_record",
+  capa: "capa_record",
+  pmcf: "pmcf_result",
+  risk: "benefit_risk_assessment",
+  cer: "cer_extract",
+  admin: "device_registry_record",
+};
+
+function extractFromTable(table: ParsedTable, filename: string, sourceType?: string): ExtractedEvidence[] {
   const evidence: ExtractedEvidence[] = [];
   const headers = table.headers.map(h => h.toLowerCase());
   const headerText = headers.join(" ");
+
+  // If source type is explicitly provided, force the primary evidence type for that source
+  const forcedEvidenceType = sourceType ? SOURCE_TYPE_PRIMARY_EVIDENCE[sourceType.toLowerCase()] : null;
 
   // Score each evidence type against this table's headers
   const scores: { type: EvidenceType; score: number }[] = [];
   
   for (const evidenceType of EVIDENCE_TYPES) {
     let score = 0;
+    
+    // MASSIVE bonus if this evidence type matches the user-selected source type
+    if (forcedEvidenceType && evidenceType.type === forcedEvidenceType) {
+      score += 100; // Guarantees this type wins
+    }
     
     // Check required fields
     let hasRequired = true;
@@ -447,7 +815,11 @@ function extractFromTable(table: ParsedTable, filename: string): ExtractedEviden
   
   if (scores.length > 0 && scores[0].score >= 2) {
     const bestMatch = scores[0];
-    const confidence = Math.min(1, bestMatch.score / 10);
+    // Adjust confidence - if forced, base it on header matching only (exclude the +100 bonus)
+    const actualScore = forcedEvidenceType && bestMatch.type.type === forcedEvidenceType 
+      ? bestMatch.score - 100 
+      : bestMatch.score;
+    const confidence = Math.min(1, Math.max(0.5, actualScore / 10)); // Minimum 0.5 when source type is explicit
     
     // Extract each row as a separate evidence record
     for (let i = 0; i < table.rows.length; i++) {
@@ -456,6 +828,7 @@ function extractFromTable(table: ParsedTable, filename: string): ExtractedEviden
       // Map headers to normalized field names
       const data = mapFieldsToEvidence(row, bestMatch.type);
       
+      const wasForcedBySource = forcedEvidenceType && bestMatch.type.type === forcedEvidenceType;
       evidence.push({
         evidenceType: bestMatch.type.type,
         confidence,
@@ -463,7 +836,9 @@ function extractFromTable(table: ParsedTable, filename: string): ExtractedEviden
         sourceName: table.name,
         data,
         rawContent: JSON.stringify(row),
-        extractionMethod: `Table header matching (score: ${bestMatch.score})`,
+        extractionMethod: wasForcedBySource 
+          ? `Source type mapping (${sourceType} -> ${bestMatch.type.type})`
+          : `Table header matching (score: ${bestMatch.score})`,
         warnings: confidence < 0.5 ? ["Low confidence match - review recommended"] : [],
       });
     }
@@ -600,15 +975,16 @@ function extractFromSection(section: ParsedSection, filename: string): Extracted
 
 function prioritizeBySourceType(evidence: ExtractedEvidence[], sourceType: string): ExtractedEvidence[] {
   const sourceTypeMap: Record<string, string[]> = {
-    sales: ["sales_summary", "sales_by_region", "distribution_summary", "usage_estimate"],
-    complaints: ["complaint_record", "complaint_summary", "complaints_by_region", "serious_incident_summary", "serious_incident_records_imdrf", "vigilance_report", "customer_feedback_summary"],
-    fsca: ["fsca_record", "fsca_summary"],
-    capa: ["capa_record", "capa_summary"],
-    pmcf: ["pmcf_summary", "pmcf_activity_record", "pmcf_report_extract"],
-    literature: ["literature_search_strategy", "literature_review_summary"],
+    sales: ["sales_volume", "sales_summary", "sales_by_region", "distribution_summary", "usage_estimate"],
+    complaints: ["complaint_record", "complaint_summary", "complaints_by_region", "serious_incident_summary", "serious_incident_record", "serious_incident_records_imdrf", "vigilance_report", "customer_feedback_summary"],
+    fsca: ["fsca_record", "fsca_summary", "recall_record"],
+    capa: ["capa_record", "capa_summary", "ncr_record"],
+    pmcf: ["pmcf_result", "pmcf_summary", "pmcf_activity_record", "pmcf_report_extract"],
+    literature: ["literature_result", "literature_search_strategy", "literature_review_summary"],
     external_db: ["external_db_query_log", "external_db_summary"],
-    risk: ["benefit_risk_assessment", "rmf_extract", "trend_analysis", "signal_log"],
-    cer: ["cer_extract", "clinical_evaluation_extract", "device_registry_record"],
+    risk: ["benefit_risk_assessment", "risk_assessment", "rmf_extract", "trend_analysis", "signal_log"],
+    cer: ["cer_extract", "clinical_evaluation_extract"],
+    admin: ["device_registry_record", "manufacturer_profile", "regulatory_certificate_record", "pms_plan_extract", "data_source_register", "change_control_record", "previous_psur_extract"],
   };
   
   const priorityTypes = sourceTypeMap[sourceType.toLowerCase()] || [];
@@ -678,5 +1054,5 @@ export function getEvidenceTypesByCategory(category: string): EvidenceType[] {
 }
 
 export function getAllCategories(): string[] {
-  return [...new Set(EVIDENCE_TYPES.map(t => t.category))];
+  return Array.from(new Set(EVIDENCE_TYPES.map(t => t.category)));
 }

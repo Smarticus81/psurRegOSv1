@@ -174,7 +174,7 @@ export function computeSalesExposure(
   }
   
   const regionBreakdown: RegionSalesBreakdown[] = [];
-  for (const [region, data] of regionMap) {
+  for (const [region, data] of Array.from(regionMap)) {
     const percentOfGlobal = totalUnitsSoldInPeriod > 0 
       ? (data.units / totalUnitsSoldInPeriod) * 100 
       : 0;

@@ -529,7 +529,7 @@ function renderAppendices(document: PSURDocument, opts: RenderOptions): string[]
     }
   }
   
-  for (const [atomId, sections] of atomSections) {
+  for (const [atomId, sections] of Array.from(atomSections)) {
     lines.push(`| ${atomId} | ${sections.join(", ")} |`);
   }
   

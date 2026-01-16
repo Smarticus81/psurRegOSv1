@@ -52,21 +52,81 @@ const SALES_COLUMN_MAPPINGS: Record<string, string[]> = {
 };
 
 const COMPLAINT_COLUMN_MAPPINGS: Record<string, string[]> = {
-  complaintId: ["complaint_id", "complaintid", "id", "case_id", "reference", "ticket_id"],
-  deviceCode: ["device_code", "devicecode", "sku", "part_number", "product_code", "basic_udi_di", "catalog_number"],
-  productName: ["product_name", "productname", "device_name", "item_name"],
-  complaintDate: ["complaint_date", "complaintdate", "date", "reported_date", "received_date", "created_date", "event_date", "eventdate"],
-  reportedBy: ["reported_by", "reportedby", "reporter", "customer", "source"],
-  description: ["description", "complaint_description", "details", "summary", "issue", "problem", "narrative_summary", "narrative"],
-  category: ["category", "type", "complaint_type", "issue_type", "event_type"],
-  severity: ["severity", "priority", "risk_level", "criticality", "seriousness"],
-  deviceRelated: ["device_related", "devicerelated", "product_related", "is_device_related"],
-  patientInjury: ["patient_injury", "patientinjury", "injury", "harm", "patient_harm"],
-  investigationStatus: ["investigation_status", "status", "case_status", "investigation"],
-  rootCause: ["root_cause", "rootcause", "cause", "reason"],
-  correctiveAction: ["corrective_action", "action", "capa", "resolution"],
-  imdrfCode: ["imdrf_code", "imdrfcode", "event_code", "adverse_event_code"],
-  country: ["country", "country_code", "region"],
+  // Complaint ID - expanded to include common QMS column names
+  complaintId: [
+    "complaint_id", "complaintid", "id", "case_id", "reference", "ticket_id",
+    "complaint_number", "complaintnumber", "case_number", "casenumber",
+    "ccr_number", "ccrnumber", "qms_number", "qmsnumber", "record_id", "recordid"
+  ],
+  // Device/Product Code - expanded for common naming
+  deviceCode: [
+    "device_code", "devicecode", "sku", "part_number", "product_code", "basic_udi_di", "catalog_number",
+    "product_number", "productnumber", "item_number", "itemnumber", "material_number", "materialnumber",
+    "partnumber", "pn", "catalog_no", "catalogno"
+  ],
+  productName: [
+    "product_name", "productname", "device_name", "item_name",
+    "description_product", "product_description", "device"
+  ],
+  // Complaint Date - expanded for various date formats
+  complaintDate: [
+    "complaint_date", "complaintdate", "date", "reported_date", "received_date", "created_date", "event_date", "eventdate",
+    "csi_notification_date", "notification_date", "notificationdate", "date_entered", "dateentered",
+    "date_received", "datereceived", "logged_date", "loggeddate", "entry_date", "entrydate"
+  ],
+  reportedBy: [
+    "reported_by", "reportedby", "reporter", "customer", "source",
+    "source_of_complaint", "sourceofcomplaint", "customer_name", "customername"
+  ],
+  // Description - expanded for narrative fields
+  description: [
+    "description", "complaint_description", "details", "summary", "issue", "problem", "narrative_summary", "narrative",
+    "nonconformity", "issue_description", "issuedescription", "complaint_details", "complaintdetails",
+    "complaint_text", "complainttext", "notes", "comments"
+  ],
+  category: [
+    "category", "type", "complaint_type", "issue_type", "event_type",
+    "complainttype", "symptom_code", "symptomcode", "fault_code", "faultcode"
+  ],
+  severity: [
+    "severity", "priority", "risk_level", "criticality", "seriousness",
+    "severity_level", "severitylevel", "harm_level", "harmlevel"
+  ],
+  deviceRelated: [
+    "device_related", "devicerelated", "product_related", "is_device_related",
+    "confirmed", "complaint_confirmed", "complaintconfirmed"
+  ],
+  patientInjury: [
+    "patient_injury", "patientinjury", "injury", "harm", "patient_harm",
+    "patient_involvement", "patientinvolvement", "patient_outcome", "patientoutcome",
+    "additional_medical_attention", "additionalmedicalattention"
+  ],
+  investigationStatus: [
+    "investigation_status", "status", "case_status", "investigation",
+    "date_closed", "dateclosed", "closed_date", "closeddate"
+  ],
+  rootCause: [
+    "root_cause", "rootcause", "cause", "reason",
+    "investigation_findings", "investigationfindings", "findings", "determination",
+    "failure_code", "failurecode", "failure_mode", "failuremode"
+  ],
+  correctiveAction: [
+    "corrective_action", "action", "capa", "resolution",
+    "corrective_actions", "correctiveactions", "action_taken", "actiontaken",
+    "remediation", "response_action", "responseaction"
+  ],
+  imdrfCode: [
+    "imdrf_code", "imdrfcode", "event_code", "adverse_event_code",
+    "problem_code", "problemcode", "mdr_code", "mdrcode"
+  ],
+  country: [
+    "country", "country_code", "region",
+    "distribution_location", "distributionlocation", "market", "territory"
+  ],
+  serious: [
+    "serious", "mdr_issued", "mdrisssued", "reportable",
+    "is_serious", "isserious", "mdr_number", "mdrnumber"
+  ],
 };
 
 function normalizeColumnName(col: string): string {

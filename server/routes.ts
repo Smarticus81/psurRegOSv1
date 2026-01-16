@@ -49,7 +49,6 @@ import {
   normalizeSalesVolumeRow,
 } from "./evidence/normalize";
 import { EVIDENCE_DEFINITIONS } from "@shared/schema";
-import { getAllSamples } from "./sample-data";
 import { loadTemplate, listTemplates, getTemplateDirsDebugInfo, getAllRequiredEvidenceTypes } from "./src/templateStore";
 import { type EvidenceAtomData } from "./src/orchestrator/render/psurTableGenerator";
 import {
@@ -74,7 +73,6 @@ import {
   getObligations as getGrkbObligations,
   getConstraints as getGrkbConstraints
 } from "./src/services/grkbService";
-import { orchestratorRunRequestSchema } from "@shared/schema";
 import ingestionRoutes from "./src/parsers/ingestionRoutes";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
@@ -163,6 +161,15 @@ export async function registerRoutes(
 
   // Mount evidence ingestion routes
   app.use("/api/ingest", ingestionRoutes);
+
+  // Client error reporting (from frontend)
+  app.post("/api/client-errors", (req, res) => {
+    const payload = typeof req.body === "object" && req.body !== null
+      ? req.body
+      : { raw: req.body };
+    console.error("[ClientError]", JSON.stringify(payload));
+    res.json({ ok: true });
+  });
 
   // Template endpoints
   app.get("/api/templates", (_req, res) => {
@@ -598,6 +605,269 @@ export async function registerRoutes(
     }
   });
 
+  // ============== ENHANCED PSUR-GRKB API ==============
+  // State-of-the-art PSUR-specific regulatory knowledge base endpoints
+
+  const { psurGrkbService } = await import("./src/services/psurGrkbService");
+
+  // Get GRKB statistics summary
+  app.get("/api/psur-grkb/statistics", async (req, res) => {
+    try {
+      const stats = await psurGrkbService.getGrkbStatistics();
+      res.json(stats);
+    } catch (error) {
+      console.error("[PSUR-GRKB] Statistics error:", error);
+      res.status(500).json({ error: "Failed to fetch GRKB statistics" });
+    }
+  });
+
+  // Evidence Types
+  app.get("/api/psur-grkb/evidence-types", async (req, res) => {
+    try {
+      const category = req.query.category as string | undefined;
+      const evidenceTypes = category
+        ? await psurGrkbService.getEvidenceTypesByCategory(category)
+        : await psurGrkbService.getAllEvidenceTypes();
+      res.json(evidenceTypes);
+    } catch (error) {
+      console.error("[PSUR-GRKB] Evidence types error:", error);
+      res.status(500).json({ error: "Failed to fetch evidence types" });
+    }
+  });
+
+  app.get("/api/psur-grkb/evidence-types/:evidenceTypeId", async (req, res) => {
+    try {
+      const evType = await psurGrkbService.getEvidenceTypeById(req.params.evidenceTypeId);
+      if (!evType) {
+        return res.status(404).json({ error: "Evidence type not found" });
+      }
+      res.json(evType);
+    } catch (error) {
+      console.error("[PSUR-GRKB] Evidence type error:", error);
+      res.status(500).json({ error: "Failed to fetch evidence type" });
+    }
+  });
+
+  app.get("/api/psur-grkb/evidence-types/:evidenceTypeId/schema", async (req, res) => {
+    try {
+      const schema = await psurGrkbService.getEvidenceTypeSchema(req.params.evidenceTypeId);
+      if (!schema) {
+        return res.status(404).json({ error: "Evidence type not found" });
+      }
+      res.json(schema);
+    } catch (error) {
+      console.error("[PSUR-GRKB] Evidence type schema error:", error);
+      res.status(500).json({ error: "Failed to fetch evidence type schema" });
+    }
+  });
+
+  app.post("/api/psur-grkb/evidence-types/:evidenceTypeId/validate", async (req, res) => {
+    try {
+      const result = await psurGrkbService.validateEvidenceData(req.params.evidenceTypeId, req.body);
+      res.json(result);
+    } catch (error) {
+      console.error("[PSUR-GRKB] Validation error:", error);
+      res.status(500).json({ error: "Failed to validate evidence data" });
+    }
+  });
+
+  // PSUR Sections
+  app.get("/api/psur-grkb/sections/:templateId", async (req, res) => {
+    try {
+      const sections = await psurGrkbService.getSectionsForTemplate(req.params.templateId);
+      res.json(sections);
+    } catch (error) {
+      console.error("[PSUR-GRKB] Sections error:", error);
+      res.status(500).json({ error: "Failed to fetch sections" });
+    }
+  });
+
+  app.get("/api/psur-grkb/sections/:templateId/hierarchy", async (req, res) => {
+    try {
+      const hierarchy = await psurGrkbService.getSectionHierarchy(req.params.templateId);
+      res.json(hierarchy);
+    } catch (error) {
+      console.error("[PSUR-GRKB] Section hierarchy error:", error);
+      res.status(500).json({ error: "Failed to fetch section hierarchy" });
+    }
+  });
+
+  // Obligations
+  app.get("/api/psur-grkb/obligations", async (req, res) => {
+    try {
+      const jurisdictions = req.query.jurisdictions 
+        ? (req.query.jurisdictions as string).split(",")
+        : [];
+      const mandatoryOnly = req.query.mandatory === "true";
+
+      const obligations = mandatoryOnly
+        ? await psurGrkbService.getMandatoryObligations(jurisdictions)
+        : jurisdictions.length > 0 
+          ? await psurGrkbService.getObligationsForJurisdictions(jurisdictions)
+          : await psurGrkbService.getObligationsForJurisdictions(["EU_MDR", "UK_MDR"]);
+
+      res.json(obligations);
+    } catch (error) {
+      console.error("[PSUR-GRKB] Obligations error:", error);
+      res.status(500).json({ error: "Failed to fetch obligations" });
+    }
+  });
+
+  app.get("/api/psur-grkb/obligations/search", async (req, res) => {
+    try {
+      const query = req.query.q as string;
+      if (!query) {
+        return res.status(400).json({ error: "Search query required" });
+      }
+      const jurisdictions = req.query.jurisdictions 
+        ? (req.query.jurisdictions as string).split(",")
+        : undefined;
+
+      const results = await psurGrkbService.searchObligations(query, jurisdictions);
+      res.json(results);
+    } catch (error) {
+      console.error("[PSUR-GRKB] Search error:", error);
+      res.status(500).json({ error: "Failed to search obligations" });
+    }
+  });
+
+  app.get("/api/psur-grkb/obligations/:obligationId", async (req, res) => {
+    try {
+      const obligation = await psurGrkbService.getObligationById(req.params.obligationId);
+      if (!obligation) {
+        return res.status(404).json({ error: "Obligation not found" });
+      }
+      res.json(obligation);
+    } catch (error) {
+      console.error("[PSUR-GRKB] Obligation error:", error);
+      res.status(500).json({ error: "Failed to fetch obligation" });
+    }
+  });
+
+  app.get("/api/psur-grkb/obligations/:obligationId/dependencies", async (req, res) => {
+    try {
+      const deps = await psurGrkbService.getObligationDependencies(req.params.obligationId);
+      res.json(deps);
+    } catch (error) {
+      console.error("[PSUR-GRKB] Dependencies error:", error);
+      res.status(500).json({ error: "Failed to fetch obligation dependencies" });
+    }
+  });
+
+  app.get("/api/psur-grkb/obligations/:obligationId/graph", async (req, res) => {
+    try {
+      const maxDepth = req.query.maxDepth ? parseInt(req.query.maxDepth as string) : 5;
+      const graph = await psurGrkbService.getObligationDependencyGraph(req.params.obligationId, maxDepth);
+      
+      // Convert Map to array for JSON serialization
+      const entries = Array.from(graph.entries()).map(([id, data]) => ({
+        obligationId: id,
+        ...data,
+      }));
+      res.json(entries);
+    } catch (error) {
+      console.error("[PSUR-GRKB] Graph error:", error);
+      res.status(500).json({ error: "Failed to fetch obligation graph" });
+    }
+  });
+
+  // Slot-Obligation Mappings
+  app.get("/api/psur-grkb/mappings/:templateId", async (req, res) => {
+    try {
+      const mappings = await psurGrkbService.getSlotObligationsForTemplate(req.params.templateId);
+      res.json(mappings);
+    } catch (error) {
+      console.error("[PSUR-GRKB] Mappings error:", error);
+      res.status(500).json({ error: "Failed to fetch slot mappings" });
+    }
+  });
+
+  app.get("/api/psur-grkb/mappings/:templateId/slot/:slotId", async (req, res) => {
+    try {
+      const obligations = await psurGrkbService.getObligationsForSlot(
+        req.params.templateId, 
+        req.params.slotId
+      );
+      res.json(obligations);
+    } catch (error) {
+      console.error("[PSUR-GRKB] Slot obligations error:", error);
+      res.status(500).json({ error: "Failed to fetch obligations for slot" });
+    }
+  });
+
+  app.get("/api/psur-grkb/coverage/:templateId", async (req, res) => {
+    try {
+      const jurisdictions = req.query.jurisdictions 
+        ? (req.query.jurisdictions as string).split(",")
+        : ["EU_MDR"];
+
+      const coverage = await psurGrkbService.checkTemplateCoverage(
+        req.params.templateId, 
+        jurisdictions
+      );
+      res.json(coverage);
+    } catch (error) {
+      console.error("[PSUR-GRKB] Coverage error:", error);
+      res.status(500).json({ error: "Failed to check template coverage" });
+    }
+  });
+
+  // Compliance Checklist
+  app.post("/api/psur-grkb/compliance/:psurCaseId/initialize", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      const { jurisdictions } = req.body;
+      
+      if (!jurisdictions || !Array.isArray(jurisdictions)) {
+        return res.status(400).json({ error: "jurisdictions array required" });
+      }
+
+      const checklist = await psurGrkbService.initializeComplianceChecklist(psurCaseId, jurisdictions);
+      res.json(checklist);
+    } catch (error) {
+      console.error("[PSUR-GRKB] Compliance init error:", error);
+      res.status(500).json({ error: "Failed to initialize compliance checklist" });
+    }
+  });
+
+  app.get("/api/psur-grkb/compliance/:psurCaseId/summary", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      const summary = await psurGrkbService.getComplianceSummary(psurCaseId);
+      res.json(summary);
+    } catch (error) {
+      console.error("[PSUR-GRKB] Compliance summary error:", error);
+      res.status(500).json({ error: "Failed to fetch compliance summary" });
+    }
+  });
+
+  app.get("/api/psur-grkb/compliance/:psurCaseId/unresolved", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      const unresolved = await psurGrkbService.getUnresolvedObligations(psurCaseId);
+      res.json(unresolved);
+    } catch (error) {
+      console.error("[PSUR-GRKB] Unresolved obligations error:", error);
+      res.status(500).json({ error: "Failed to fetch unresolved obligations" });
+    }
+  });
+
+  app.put("/api/psur-grkb/compliance/:psurCaseId/:obligationId", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      const obligationId = req.params.obligationId;
+      
+      const updated = await psurGrkbService.updateChecklistItem(psurCaseId, obligationId, req.body);
+      if (!updated) {
+        return res.status(404).json({ error: "Checklist item not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      console.error("[PSUR-GRKB] Compliance update error:", error);
+      res.status(500).json({ error: "Failed to update compliance item" });
+    }
+  });
+
   app.get("/api/audit-events", async (req, res) => {
     try {
       const entityType = req.query.entityType as string | undefined;
@@ -971,6 +1241,75 @@ export async function registerRoutes(
       res.status(201).json(profile);
     } catch (error) {
       res.status(500).json({ error: "Failed to create column mapping profile" });
+    }
+  });
+
+  // Find matching profile for given columns and evidence type
+  app.post("/api/column-mapping-profiles/match", async (req, res) => {
+    try {
+      const { evidenceType, sourceColumns } = req.body;
+      if (!evidenceType || !sourceColumns || !Array.isArray(sourceColumns)) {
+        return res.status(400).json({ error: "evidenceType and sourceColumns array are required" });
+      }
+      
+      const matchingProfile = await storage.findMatchingMappingProfile(evidenceType, sourceColumns);
+      
+      if (matchingProfile) {
+        // Auto-apply: return the profile with a flag indicating it can be used directly
+        res.json({
+          found: true,
+          profile: matchingProfile,
+          canAutoApply: matchingProfile.usageCount >= 1, // Profile has been verified at least once
+          message: `Found verified mapping profile "${matchingProfile.name}" (used ${matchingProfile.usageCount} times)`
+        });
+      } else {
+        res.json({
+          found: false,
+          profile: null,
+          canAutoApply: false,
+          message: "No matching profile found. Manual mapping required."
+        });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to find matching profile" });
+    }
+  });
+
+  // Update an existing profile
+  app.put("/api/column-mapping-profiles/:id", async (req, res) => {
+    try {
+      const profileId = parseInt(req.params.id);
+      const { name, columnMappings, sourceSystemHint } = req.body;
+      
+      const updated = await storage.updateColumnMappingProfile(profileId, {
+        name,
+        columnMappings,
+        sourceSystemHint,
+      });
+      
+      if (updated) {
+        res.json(updated);
+      } else {
+        res.status(404).json({ error: "Profile not found" });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update profile" });
+    }
+  });
+
+  // Delete a profile
+  app.delete("/api/column-mapping-profiles/:id", async (req, res) => {
+    try {
+      const profileId = parseInt(req.params.id);
+      const deleted = await storage.deleteColumnMappingProfile(profileId);
+      
+      if (deleted) {
+        res.json({ success: true });
+      } else {
+        res.status(404).json({ error: "Profile not found" });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete profile" });
     }
   });
 
@@ -1390,7 +1729,9 @@ export async function registerRoutes(
 
   // ============== EVIDENCE ATOM COUNTS (for PSUR Wizard) ==============
   // GET /api/evidence/atoms/counts?psur_case_id=12
-  // Returns totals and counts by evidenceType for this PSUR case.
+  // Returns totals, counts by evidenceType, and coverage information for this PSUR case.
+  // Coverage includes ALL evidence types from any source that has been uploaded,
+  // not just the types that have explicit atoms.
   app.get("/api/evidence/atoms/counts", async (req, res) => {
     try {
       const psurCaseId = req.query.psur_case_id ? parseInt(req.query.psur_case_id as string) : undefined;
@@ -1412,10 +1753,41 @@ export async function registerRoutes(
         total += 1;
       }
 
+      // Get evidence types that have at least one atom
+      const typesWithData = Object.keys(byType);
+      
+      // Import source mapping to expand coverage
+      const { getExpandedCoveredTypes } = await import("./src/parsers/sourceMapping");
+      const { coveredTypes, coveredSources, coverageBySource } = getExpandedCoveredTypes(typesWithData);
+      
+      // Mark types as "covered" even if they have 0 atoms
+      // This happens when a source is uploaded but a specific type has no data (e.g., "N/A" for recalls)
+      const coveredByType: Record<string, { count: number; covered: boolean; source: string | null }> = {};
+      
+      for (const type of coveredTypes) {
+        const count = byType[type] || 0;
+        // Find which source this type belongs to
+        let sourceForType: string | null = null;
+        for (const [source, types] of Object.entries(coverageBySource)) {
+          if (types.includes(type)) {
+            sourceForType = source;
+            break;
+          }
+        }
+        coveredByType[type] = { count, covered: true, source: sourceForType };
+      }
+
       res.json({
         psurCaseId,
         totals: { all: total },
         byType,
+        // Enhanced coverage information
+        coverage: {
+          coveredSources,            // e.g., ["fsca", "complaints", "sales"]
+          coveredTypes,              // ALL types from uploaded sources
+          coverageBySource,          // e.g., { fsca: ["fsca_record", "recall_record", "fsca_summary"] }
+          coveredByType,             // Detailed per-type coverage with counts
+        },
       });
     } catch (error) {
       console.error("[GET /api/evidence/atoms/counts] Error:", error);
@@ -1423,10 +1795,31 @@ export async function registerRoutes(
     }
   });
 
-  // POST /api/evidence/atoms/batch - Create multiple atoms at once
+  // POST /api/evidence/atoms/batch - Create multiple atoms at once with optional decision tracing
   app.post("/api/evidence/atoms/batch", async (req, res) => {
+    // Helper to convert Excel serial dates to ISO strings
+    function excelSerialToISODate(value: unknown): string {
+      if (typeof value === "string") {
+        // Already a string - check if it's a valid date
+        const parsed = new Date(value);
+        if (!isNaN(parsed.getTime())) {
+          return parsed.toISOString().slice(0, 10);
+        }
+        return value;
+      }
+      if (typeof value === "number") {
+        // Excel serial date: days since 1899-12-30 (with leap year bug adjustment)
+        // Excel considers 1900 a leap year incorrectly, so dates after Feb 28, 1900 need adjustment
+        const excelEpoch = new Date(1899, 11, 30); // Dec 30, 1899
+        const msPerDay = 24 * 60 * 60 * 1000;
+        const dateValue = new Date(excelEpoch.getTime() + value * msPerDay);
+        return dateValue.toISOString().slice(0, 10);
+      }
+      return String(value);
+    }
+
     try {
-      const { atoms } = req.body;
+      const { atoms, decisionTrace, psurCaseId: batchPsurCaseId, sourceType, filename } = req.body;
       
       if (!Array.isArray(atoms) || atoms.length === 0) {
         return res.status(400).json({ error: "atoms must be a non-empty array" });
@@ -1434,35 +1827,142 @@ export async function registerRoutes(
       
       let created = 0;
       const errors: Array<{ index: number; error: string }> = [];
+      const createdAtomIds: string[] = [];
       
       for (let i = 0; i < atoms.length; i++) {
         const atom = atoms[i];
         try {
-          const atomId = makeAtomId();
+          const atomId = makeAtomId(coerceEvType(atom.evidence_type), atom.normalized_data || {});
           const contentHash = makeContentHash(atom.normalized_data || {});
+          
+          // Normalize provenance fields - client may send different field names
+          const rawProvenance = atom.provenance || {};
+          const extractDate = rawProvenance.extractDate || 
+                              rawProvenance.extracted_at || 
+                              rawProvenance.uploadedAt || 
+                              new Date().toISOString();
+          const uploadedAt = rawProvenance.uploadedAt || 
+                             rawProvenance.extracted_at || 
+                             new Date().toISOString();
           
           const record: EvidenceAtomRecord = {
             atomId,
-            psurCaseId: atom.psur_case_id,
             evidenceType: coerceEvType(atom.evidence_type),
-            deviceCode: atom.device_code,
-            periodStart: atom.period_start,
-            periodEnd: atom.period_end,
             normalizedData: atom.normalized_data || {},
             contentHash,
-            provenance: atom.provenance || {},
+            provenance: {
+              uploadId: rawProvenance.uploadId || rawProvenance.upload_id || 0,
+              sourceFile: rawProvenance.source_file || rawProvenance.sourceFile || filename || "upload",
+              extractDate,
+              uploadedAt,
+              deviceRef: rawProvenance.deviceRef || { deviceCode: atom.device_code || "" },
+              psurPeriod: rawProvenance.psurPeriod || { periodStart: atom.period_start, periodEnd: atom.period_end },
+              ...(rawProvenance.mapping && { mapping: rawProvenance.mapping }),
+              ...(rawProvenance.filters && { filters: rawProvenance.filters }),
+              ...(sourceType && { sourceType }),
+            },
           };
           
-          await persistEvidenceAtoms([record]);
+          // Convert Excel serial dates to ISO date strings
+          const periodStart = excelSerialToISODate(atom.period_start);
+          const periodEnd = excelSerialToISODate(atom.period_end);
+          
+          await persistEvidenceAtoms({
+            psurCaseId: atom.psur_case_id || batchPsurCaseId,
+            deviceCode: atom.device_code,
+            periodStart,
+            periodEnd,
+            atoms: [record],
+          });
           created++;
+          createdAtomIds.push(atomId);
         } catch (err: any) {
           errors.push({ index: i, error: err?.message || String(err) });
+        }
+      }
+      
+      // Store EVIDENCE_ATOM_CREATED trace events for each created atom
+      if (createdAtomIds.length > 0 && batchPsurCaseId) {
+        try {
+          const { startTrace, resumeTrace, logTraceEvent } = await import("./src/services/decisionTraceService");
+          let ctx = await resumeTrace(batchPsurCaseId);
+          if (!ctx) {
+            ctx = await startTrace(batchPsurCaseId);
+          }
+          
+          for (const atomId of createdAtomIds) {
+            const atom = atoms.find((a: any) => makeAtomId(coerceEvType(a.evidence_type), a.normalized_data || {}) === atomId);
+            if (atom) {
+              await logTraceEvent(ctx, {
+                eventType: "EVIDENCE_ATOM_CREATED",
+                actor: "batchUpload",
+                workflowStep: 2,
+                entityType: "evidence_atom",
+                entityId: atomId,
+                outputData: {
+                  evidenceType: atom.evidence_type,
+                  sourceFile: filename || "batch_upload",
+                  sourceType: sourceType || "unknown",
+                },
+              });
+            }
+          }
+        } catch (traceErr) {
+          console.error("[batch] Failed to store atom traces:", traceErr);
+        }
+      }
+      
+      // Store ingestion decision traces if provided
+      let tracesStored = 0;
+      if (decisionTrace && Array.isArray(decisionTrace) && decisionTrace.length > 0) {
+        try {
+          const psurCaseIdForTrace = batchPsurCaseId || atoms[0]?.psur_case_id;
+          if (psurCaseIdForTrace) {
+            const { startTrace, resumeTrace, logTraceEventBatch } = await import("./src/services/decisionTraceService");
+            
+            // Get or create trace context
+            let ctx = await resumeTrace(psurCaseIdForTrace);
+            if (!ctx) {
+              ctx = await startTrace(psurCaseIdForTrace);
+            }
+            
+            // Log ingestion traces
+            const traceEvents = decisionTrace.map((t: any) => ({
+              eventType: "EVIDENCE_UPLOADED" as const,
+              actor: "ingestionAgent",
+              workflowStep: 3,
+              entityType: "evidence_extraction",
+              entityId: t.traceId,
+              decision: t.decision,
+              inputData: { 
+                stage: t.stage, 
+                inputSummary: t.inputSummary,
+                filename: filename || "unknown",
+                sourceType: sourceType || "unknown",
+              },
+              outputData: { 
+                outputSummary: t.outputSummary, 
+                confidence: t.confidence,
+                alternativesConsidered: t.alternativesConsidered,
+              },
+              reasons: t.reasoning,
+              relatedEntityIds: createdAtomIds.slice(0, 10), // Link to created atoms
+            }));
+            
+            await logTraceEventBatch(ctx, traceEvents);
+            tracesStored = traceEvents.length;
+            console.log(`[POST /api/evidence/atoms/batch] Stored ${tracesStored} decision traces for PSUR case ${psurCaseIdForTrace}`);
+          }
+        } catch (traceErr: any) {
+          console.warn(`[POST /api/evidence/atoms/batch] Failed to store decision traces:`, traceErr?.message);
         }
       }
       
       res.json({
         success: true,
         created,
+        atomIds: createdAtomIds,
+        tracesStored,
         errors: errors.length > 0 ? errors : undefined,
       });
     } catch (error: any) {
@@ -1471,127 +1971,111 @@ export async function registerRoutes(
     }
   });
 
-  // ============== SAMPLE DATA ==============
-  app.get("/api/samples/download-all", async (req, res) => {
+  // ============== MARK EVIDENCE TYPE AS N/A (NOT APPLICABLE) ==============
+  // Creates a "negative evidence" atom for evidence types where there is genuinely no data
+  // e.g., "No FSCAs during period", "No CAPAs", etc.
+  app.post("/api/evidence/mark-na", async (req, res) => {
     try {
-      const archiver = await import("archiver");
-      const archive = archiver.default("zip");
+      const { 
+        psurCaseId, 
+        deviceCode, 
+        periodStart, 
+        periodEnd, 
+        evidenceTypes, // Array of evidence types to mark as N/A
+        reason // Optional reason/justification
+      } = req.body;
       
-      res.setHeader("Content-Type", "application/zip");
-      res.setHeader("Content-Disposition", 'attachment; filename="psur_evidence_samples.zip"');
-      
-      archive.pipe(res);
-      
-      const samples = getAllSamples();
-      for (const sample of samples) {
-        archive.append(sample.content, { name: sample.filename });
+      if (!psurCaseId || !deviceCode || !periodStart || !periodEnd || !evidenceTypes || !Array.isArray(evidenceTypes)) {
+        return res.status(400).json({ 
+          error: "Missing required fields: psurCaseId, deviceCode, periodStart, periodEnd, evidenceTypes (array)" 
+        });
       }
       
-      await archive.finalize();
-    } catch (error) {
-      console.error("Download samples error:", error);
-      res.status(500).json({ error: "Failed to download samples" });
-    }
-  });
-
-  app.post("/api/samples/load/:psurCaseId", async (req, res) => {
-    try {
-      const psurCaseId = parseInt(req.params.psurCaseId);
-      const { templateId } = req.body;
+      const createdAtomIds: string[] = [];
+      const errors: Array<{ evidenceType: string; error: string }> = [];
       
-      if (isNaN(psurCaseId)) return res.status(400).json({ error: "Invalid Case ID" });
-      
-      const psurCase = await storage.getPSURCase(psurCaseId);
-      if (!psurCase) return res.status(404).json({ error: "PSUR Case not found" });
-      
-      // Load template requirements
-      const template = loadTemplate(templateId || psurCase.templateId);
-      const requiredTypes = getAllRequiredEvidenceTypes(template);
-      
-      const allSamples = getAllSamples();
-      // Filter samples to only those required by the template
-      const relevantSamples = allSamples.filter(s => requiredTypes.includes(s.type));
-      
-      let totalAtoms = 0;
-      const createdTypes: string[] = [];
-      
-      for (const sample of relevantSamples) {
-        // Parse sample content
-        // We need to pass periodStart/End from case to make them valid
-        const parseResult = parseEvidenceFile(sample.content, sample.type, {
-          periodStart: psurCase.startPeriod.toISOString().split("T")[0],
-          periodEnd: psurCase.endPeriod.toISOString().split("T")[0],
-          defaultDeviceCode: "CM-PRO-001" // Sample device code
-        }, undefined); // No pre-parsed rows
-        
-        if (!parseResult.success) {
-          console.warn(`Failed to parse sample ${sample.filename}: ${parseResult.errors}`);
-          continue;
-        }
-        
-        // Create upload record for tracking
-        const upload = await storage.createEvidenceUpload({
-          filename: `SAMPLE_${sample.filename}`,
-          originalFilename: sample.filename,
-          mimeType: "text/csv",
-          fileSize: Buffer.byteLength(sample.content),
-          sha256Hash: createHash("sha256").update(sample.content).digest("hex"),
-          evidenceType: sample.type,
-          psurCaseId,
-          uploadedBy: "system_sample_loader",
-          sourceSystem: "SAMPLE_DATA",
-          periodStart: psurCase.startPeriod,
-          periodEnd: psurCase.endPeriod,
-          status: "completed",
-          recordsParsed: parseResult.records.length,
-          atomsCreated: parseResult.validRecords,
-          deviceScopeId: null,
-          extractionNotes: "Loaded from sample data",
-          storagePath: null
-        });
-        
-        const batch = createEvidenceAtomBatch(parseResult, upload.id, {
-          psurCaseId,
-          sourceSystem: "SAMPLE_DATA",
-          periodStart: psurCase.startPeriod,
-          periodEnd: psurCase.endPeriod,
-        });
-        
-        if (batch.atoms.length > 0) {
-           // Convert to EvidenceAtomRecord for persistence service
-           const atomRecords: EvidenceAtomRecord[] = batch.atoms.map(a => ({
-             atomId: a.atomId,
-             evidenceType: a.evidenceType,
-             contentHash: a.contentHash,
-             normalizedData: a.normalizedData,
-             provenance: {
-               uploadId: upload.id,
-               sourceFile: sample.filename,
-               uploadedAt: new Date().toISOString(),
-               deviceRef: { deviceCode: "CM-PRO-001" },
-               psurPeriod: { start: psurCase.startPeriod, end: psurCase.endPeriod }
-             }
-           }));
-
-           await persistEvidenceAtoms({
-             psurCaseId,
-             deviceCode: "CM-PRO-001",
-             periodStart: psurCase.startPeriod,
-             periodEnd: psurCase.endPeriod,
-             uploadId: upload.id,
-             atoms: atomRecords
-           });
-           
-           totalAtoms += batch.atoms.length;
-           createdTypes.push(sample.type);
+      for (const evidenceType of evidenceTypes) {
+        try {
+          const normalizedType = coerceEvType(evidenceType);
+          
+          // Create negative evidence atom
+          const normalizedData = {
+            isNegativeEvidence: true,
+            count: 0,
+            periodStart,
+            periodEnd,
+            deviceCode,
+            statement: reason || `No ${evidenceType.replace(/_/g, " ")} events reported during the PSUR period.`,
+            verificationDate: new Date().toISOString(),
+            verifiedBy: "user",
+          };
+          
+          const atomId = makeAtomId(normalizedType, normalizedData);
+          const contentHash = makeContentHash(normalizedData);
+          
+          const record: EvidenceAtomRecord = {
+            atomId,
+            evidenceType: normalizedType,
+            normalizedData,
+            contentHash,
+            provenance: {
+              uploadId: 0,
+              sourceFile: "user_marked_na",
+              extractDate: new Date().toISOString(),
+              uploadedAt: new Date().toISOString(),
+              deviceRef: { deviceCode },
+              psurPeriod: { periodStart, periodEnd },
+              verificationMethod: "user_confirmation",
+            },
+          };
+          
+          await persistEvidenceAtoms({
+            psurCaseId,
+            deviceCode,
+            periodStart,
+            periodEnd,
+            atoms: [record],
+          });
+          
+          createdAtomIds.push(atomId);
+          
+          // Log trace event
+          try {
+            const { startTrace, resumeTrace, logTraceEvent } = await import("./src/services/decisionTraceService");
+            let ctx = await resumeTrace(psurCaseId);
+            if (!ctx) {
+              ctx = await startTrace(psurCaseId);
+            }
+            
+            await logTraceEvent(ctx, {
+              eventType: "NEGATIVE_EVIDENCE_CREATED",
+              actor: "user",
+              workflowStep: 2,
+              entityType: "evidence_atom",
+              entityId: atomId,
+              decision: `User marked ${evidenceType} as N/A`,
+              inputData: { evidenceType, reason },
+              outputData: { atomId, isNegative: true },
+              reasons: [reason || "User confirmed no data for this evidence type"],
+            });
+          } catch (traceErr) {
+            console.warn("[mark-na] Failed to log trace:", traceErr);
+          }
+          
+        } catch (err: any) {
+          errors.push({ evidenceType, error: err?.message || String(err) });
         }
       }
       
-      res.json({ success: true, atomsCreated: totalAtoms, typesLoaded: createdTypes });
-      
+      res.json({
+        success: true,
+        created: createdAtomIds.length,
+        atomIds: createdAtomIds,
+        errors: errors.length > 0 ? errors : undefined,
+      });
     } catch (error: any) {
-      console.error("Load samples error:", error);
-      res.status(500).json({ error: "Failed to load samples", details: error.message });
+      console.error("[POST /api/evidence/mark-na] Error:", error);
+      res.status(500).json({ error: error?.message || "Failed to mark evidence as N/A" });
     }
   });
 
@@ -2140,8 +2624,30 @@ export async function registerRoutes(
       const proposals = await storage.getSlotProposals(psurCaseId);
       const acceptedProposals = proposals.filter(p => p.status === "accepted");
 
-      // Build the bundle files
-      const traceData = {
+      // Build the bundle files - fetch complete decision trace from database
+      const { 
+        exportTraceAsJsonl: exportTrace, 
+        exportTraceSummary: exportSummary,
+        verifyTraceChain: verifyChain 
+      } = await import("./src/services/decisionTraceService");
+      
+      // Get complete trace JSONL from database
+      let traceJsonlContent = "";
+      let traceSummaryData: any = null;
+      let traceVerification: any = null;
+      
+      try {
+        traceJsonlContent = await exportTrace(psurCaseId);
+        traceSummaryData = await exportSummary(psurCaseId);
+        if (traceSummaryData.summary?.traceId) {
+          traceVerification = await verifyChain(traceSummaryData.summary.traceId);
+        }
+      } catch (e) {
+        console.warn("Could not fetch decision trace from database, using fallback:", e);
+      }
+      
+      // Fallback trace data if DB trace not available
+      const traceData = traceJsonlContent ? null : {
         bundleReference: bundle.bundleReference,
         psurCaseId: psurCaseId,
         psurReference: psurCase.psurReference,
@@ -2149,7 +2655,8 @@ export async function registerRoutes(
         events: [
           { timestamp: psurCase.createdAt, event: "case_created", data: { psurReference: psurCase.psurReference } },
           { timestamp: bundle.exportedAt, event: "bundle_exported", data: { bundleReference: bundle.bundleReference } },
-        ]
+        ],
+        warning: "Decision trace database not populated - this is a minimal fallback trace"
       };
 
       const coverageReport = latestCoverage ? {
@@ -2214,17 +2721,54 @@ export async function registerRoutes(
         blockingErrors: ["No qualification report found - run the workflow first"],
       };
 
-      // Generate PSUR markdown document
-      const psurMarkdown = generatePsurMarkdown(psurCase, evidenceAtoms, proposals, qualificationReport);
+      // SOTA: Generate PSUR using CompileOrchestrator with LLM-powered agents
+      console.log(`[Audit Bundle] Generating SOTA documents for case ${psurCaseId}`);
+      
+      const devices = await storage.getDevices();
+      const psurCaseAny = psurCase as any;
+      const deviceCode = psurCaseAny.deviceCode || (psurCaseAny.deviceId ? devices.find((d: any) => d.id === psurCaseAny.deviceId)?.deviceCode : null) || devices[0]?.deviceCode || "DEVICE-001";
+      
+      const { CompileOrchestrator } = await import("./src/agents/runtime/compileOrchestrator");
+      const orchestrator = new CompileOrchestrator();
+      
+      const compileResult = await orchestrator.compile({
+        psurCaseId,
+        templateId: psurCase.templateId,
+        deviceCode: deviceCode,
+        periodStart: psurCase.startPeriod.toISOString().split("T")[0],
+        periodEnd: psurCase.endPeriod.toISOString().split("T")[0],
+        documentStyle: "corporate",
+        enableCharts: true,
+      });
 
-      // Generate PSUR Word document
-      let psurDocx: Buffer | null = null;
-      try {
-        const { generatePsurDocx } = await import("./src/orchestrator/render/renderPsurDocx");
-        psurDocx = await generatePsurDocx(psurCase, evidenceAtoms, proposals, qualificationReport);
-      } catch (e) {
-        console.error("Failed to generate DOCX:", e);
+      // Build markdown from SOTA sections
+      const markdownParts: string[] = [];
+      markdownParts.push(`# PERIODIC SAFETY UPDATE REPORT`);
+      markdownParts.push(``);
+      markdownParts.push(`**PSUR Reference:** ${psurCase.psurReference}`);
+      markdownParts.push(`**Reporting Period:** ${psurCase.startPeriod.toISOString().split("T")[0]} to ${psurCase.endPeriod.toISOString().split("T")[0]}`);
+      markdownParts.push(`**Generated:** ${new Date().toISOString()}`);
+      markdownParts.push(``);
+      markdownParts.push(`---`);
+      markdownParts.push(``);
+      
+      for (const section of compileResult.sections) {
+        markdownParts.push(`## ${section.title}`);
+        markdownParts.push(``);
+        markdownParts.push(section.content);
+        markdownParts.push(``);
+        if (section.evidenceAtomIds.length > 0) {
+          markdownParts.push(`*Evidence: ${section.evidenceAtomIds.slice(0, 5).join(", ")}${section.evidenceAtomIds.length > 5 ? ` +${section.evidenceAtomIds.length - 5} more` : ""}*`);
+          markdownParts.push(``);
+        }
+        markdownParts.push(`---`);
+        markdownParts.push(``);
       }
+      
+      const psurMarkdown = markdownParts.join("\n");
+      const psurDocx = compileResult.success && compileResult.document ? compileResult.document.buffer : null;
+      
+      console.log(`[Audit Bundle] SOTA compilation: ${compileResult.sections.length} sections, success=${compileResult.success}`);
 
       // Create ZIP file using archiver
       const archiver = await import("archiver");
@@ -2235,11 +2779,34 @@ export async function registerRoutes(
 
       archive.pipe(res);
 
-      archive.append(JSON.stringify(traceData, null, 2), { name: "trace.jsonl" });
+      // Append trace.jsonl - use database trace if available, fallback otherwise
+      if (traceJsonlContent) {
+        archive.append(traceJsonlContent, { name: "trace.jsonl" });
+      } else {
+        archive.append(JSON.stringify(traceData, null, 2), { name: "trace.jsonl" });
+      }
+      
+      // Append trace summary with verification info
+      if (traceSummaryData) {
+        archive.append(JSON.stringify({
+          ...traceSummaryData,
+          verification: traceVerification,
+        }, null, 2), { name: "trace_summary.json" });
+      }
+      
       archive.append(JSON.stringify(coverageReport, null, 2), { name: "coverage_report.json" });
       archive.append(JSON.stringify(evidenceRegister, null, 2), { name: "evidence_register.json" });
       archive.append(JSON.stringify(qualificationReport, null, 2), { name: "qualification_report.json" });
       archive.append(psurMarkdown, { name: "psur.md" });
+      
+      // Include compile result details
+      archive.append(JSON.stringify({
+        success: compileResult.success,
+        errors: compileResult.errors,
+        warnings: compileResult.warnings,
+        sectionCount: compileResult.sections.length,
+        chartCount: compileResult.charts.length,
+      }, null, 2), { name: "compile_report.json" });
       
       if (psurDocx) {
         archive.append(psurDocx, { name: "psur.docx" });
@@ -2252,105 +2819,276 @@ export async function registerRoutes(
     }
   });
 
-  // Download just the Word document
+  // ============== DECISION TRACE API ==============
+  // Import decision trace service
+  const {
+    queryTraceEntries,
+    getTraceSummary,
+    getSlotDecisionChain,
+    getEntityTrace,
+    verifyTraceChain,
+    exportTraceAsJsonl,
+    exportTraceSummary,
+  } = await import("./src/services/decisionTraceService");
+
+  // Get trace summary for a PSUR case
+  app.get("/api/psur-cases/:psurCaseId/trace/summary", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      const summary = await getTraceSummary(psurCaseId);
+      
+      if (!summary) {
+        return res.status(404).json({ error: "No trace found for this case" });
+      }
+      
+      res.json(summary);
+    } catch (error: any) {
+      console.error("[GET /api/psur-cases/:psurCaseId/trace/summary] Error:", error);
+      res.status(500).json({ error: "Failed to get trace summary", details: error.message });
+    }
+  });
+
+  // Get trace entries with filters
+  app.get("/api/psur-cases/:psurCaseId/trace/entries", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      const eventTypes = req.query.eventTypes 
+        ? (req.query.eventTypes as string).split(",") as any[]
+        : undefined;
+      const entityType = req.query.entityType as string | undefined;
+      const entityId = req.query.entityId as string | undefined;
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 100;
+      const offset = req.query.offset ? parseInt(req.query.offset as string) : 0;
+      const orderBy = (req.query.orderBy as "asc" | "desc") || "asc";
+      
+      const entries = await queryTraceEntries({
+        psurCaseId,
+        eventTypes,
+        entityType,
+        entityId,
+        limit,
+        offset,
+        orderBy,
+      });
+      
+      res.json({
+        psurCaseId,
+        count: entries.length,
+        limit,
+        offset,
+        entries,
+      });
+    } catch (error: any) {
+      console.error("[GET /api/psur-cases/:psurCaseId/trace/entries] Error:", error);
+      res.status(500).json({ error: "Failed to get trace entries", details: error.message });
+    }
+  });
+
+  // Get decision chain for a specific slot
+  app.get("/api/psur-cases/:psurCaseId/trace/slots/:slotId", async (req, res) => {
+    try {
+      const slotId = req.params.slotId;
+      const chain = await getSlotDecisionChain(slotId);
+      
+      res.json({
+        slotId,
+        decisionChain: chain,
+      });
+    } catch (error: any) {
+      console.error("[GET /api/psur-cases/:psurCaseId/trace/slots/:slotId] Error:", error);
+      res.status(500).json({ error: "Failed to get slot decision chain", details: error.message });
+    }
+  });
+
+  // Get trace for a specific entity (evidence atom, obligation, etc.)
+  app.get("/api/trace/entity/:entityType/:entityId", async (req, res) => {
+    try {
+      const { entityType, entityId } = req.params;
+      const entries = await getEntityTrace(entityType, entityId);
+      
+      res.json({
+        entityType,
+        entityId,
+        traceCount: entries.length,
+        entries,
+      });
+    } catch (error: any) {
+      console.error("[GET /api/trace/entity/:entityType/:entityId] Error:", error);
+      res.status(500).json({ error: "Failed to get entity trace", details: error.message });
+    }
+  });
+
+  // Verify trace chain integrity
+  app.get("/api/psur-cases/:psurCaseId/trace/verify", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      const summary = await getTraceSummary(psurCaseId);
+      
+      if (!summary) {
+        return res.status(404).json({ error: "No trace found for this case" });
+      }
+      
+      const validation = await verifyTraceChain(summary.traceId);
+      
+      res.json({
+        psurCaseId,
+        traceId: summary.traceId,
+        validation,
+      });
+    } catch (error: any) {
+      console.error("[GET /api/psur-cases/:psurCaseId/trace/verify] Error:", error);
+      res.status(500).json({ error: "Failed to verify trace chain", details: error.message });
+    }
+  });
+
+  // Export trace as JSONL (for audit bundle)
+  app.get("/api/psur-cases/:psurCaseId/trace/export", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      const format = req.query.format as string || "jsonl";
+      
+      if (format === "jsonl") {
+        const jsonl = await exportTraceAsJsonl(psurCaseId);
+        res.setHeader("Content-Type", "application/x-ndjson");
+        res.setHeader("Content-Disposition", `attachment; filename="trace-${psurCaseId}.jsonl"`);
+        res.send(jsonl);
+      } else if (format === "summary") {
+        const exportData = await exportTraceSummary(psurCaseId);
+        res.json(exportData);
+      } else {
+        res.status(400).json({ error: "Invalid format. Use 'jsonl' or 'summary'" });
+      }
+    } catch (error: any) {
+      console.error("[GET /api/psur-cases/:psurCaseId/trace/export] Error:", error);
+      res.status(500).json({ error: "Failed to export trace", details: error.message });
+    }
+  });
+
+  // Download PSUR as Word document - ALWAYS uses SOTA LLM-powered agents
+  // Supports ?style=corporate|regulatory|premium for document styling
   app.get("/api/psur-cases/:psurCaseId/psur.docx", async (req, res) => {
     try {
       const psurCaseId = parseInt(req.params.psurCaseId);
+      const documentStyle = (req.query.style as string) || "corporate";
+      
+      console.log(`[PSUR DOCX] Generating SOTA document for case ${psurCaseId} with style: ${documentStyle}`);
       
       const psurCase = await storage.getPSURCase(psurCaseId);
       if (!psurCase) {
         return res.status(404).json({ error: "PSUR case not found" });
       }
 
-      const evidenceAtoms = await storage.getEvidenceAtoms(psurCaseId);
-      const proposals = await storage.getSlotProposals(psurCaseId);
-      const dbQualReport = await storage.getQualificationReport(psurCaseId);
+      // Get device info
+      const devices = await storage.getDevices();
+      const psurCaseAny = psurCase as any;
+      const deviceCode = psurCaseAny.deviceCode || (psurCaseAny.deviceId ? devices.find((d: any) => d.id === psurCaseAny.deviceId)?.deviceCode : null) || devices[0]?.deviceCode || "DEVICE-001";
 
-      const qualificationReport = dbQualReport ? {
+      // ALWAYS use SOTA CompileOrchestrator with LLM-powered narrative agents
+      const { CompileOrchestrator } = await import("./src/agents/runtime/compileOrchestrator");
+      const orchestrator = new CompileOrchestrator();
+      
+      const result = await orchestrator.compile({
         psurCaseId,
-        psurReference: psurCase.psurReference,
-        templateId: dbQualReport.templateId,
-        jurisdictions: dbQualReport.jurisdictions,
-        status: dbQualReport.status,
-        slotCount: dbQualReport.slotCount,
-        mappingCount: dbQualReport.mappingCount,
-        mandatoryObligationsTotal: dbQualReport.mandatoryObligationsTotal,
-        mandatoryObligationsFound: dbQualReport.mandatoryObligationsFound,
-        missingObligations: dbQualReport.missingObligations,
-        constraints: dbQualReport.constraints,
-        blockingErrors: dbQualReport.blockingErrors,
-        validatedAt: dbQualReport.validatedAt,
-      } : {
-        psurCaseId,
-        psurReference: psurCase.psurReference,
         templateId: psurCase.templateId,
-        jurisdictions: psurCase.jurisdictions,
-        status: "NO_QUALIFICATION_RUN",
-        mandatoryObligationsTotal: 0,
-        mandatoryObligationsFound: 0,
-        missingObligations: [],
-        blockingErrors: ["No qualification report found - run the workflow first"],
-      };
+        deviceCode: deviceCode,
+        periodStart: psurCase.startPeriod.toISOString().split("T")[0],
+        periodEnd: psurCase.endPeriod.toISOString().split("T")[0],
+        documentStyle: documentStyle as "corporate" | "regulatory" | "premium",
+        enableCharts: true,
+      });
 
-      const { generatePsurDocx } = await import("./src/orchestrator/render/renderPsurDocx");
-      const psurDocx = await generatePsurDocx(psurCase, evidenceAtoms, proposals, qualificationReport);
-
-      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-      res.setHeader("Content-Disposition", `attachment; filename="PSUR-${psurCase.psurReference}.docx"`);
-      res.send(psurDocx);
+      if (result.success && result.document) {
+        console.log(`[PSUR DOCX] Successfully generated ${result.sections.length} sections, ${result.charts.length} charts`);
+        res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+        res.setHeader("Content-Disposition", `attachment; filename="PSUR-${psurCase.psurReference}.docx"`);
+        res.send(result.document.buffer);
+      } else {
+        console.error("[PSUR DOCX] Compilation failed:", result.errors);
+        res.status(500).json({ 
+          error: "PSUR compilation failed", 
+          details: result.errors.join("; "),
+          warnings: result.warnings 
+        });
+      }
     } catch (error: any) {
-      console.error("[GET /api/psur-cases/:psurCaseId/psur.docx] Error:", error);
+      console.error("[PSUR DOCX] Error:", error);
       res.status(500).json({ error: "Failed to generate PSUR document", details: error.message });
     }
   });
 
-  // Download just the Markdown document
+  // Download PSUR as Markdown - ALWAYS uses SOTA LLM-powered agents
   app.get("/api/psur-cases/:psurCaseId/psur.md", async (req, res) => {
     try {
       const psurCaseId = parseInt(req.params.psurCaseId);
+      const documentStyle = (req.query.style as string) || "corporate";
+      
+      console.log(`[PSUR MD] Generating SOTA markdown for case ${psurCaseId}`);
       
       const psurCase = await storage.getPSURCase(psurCaseId);
       if (!psurCase) {
         return res.status(404).json({ error: "PSUR case not found" });
       }
 
-      const evidenceAtoms = await storage.getEvidenceAtoms(psurCaseId);
-      const proposals = await storage.getSlotProposals(psurCaseId);
-      const dbQualReport = await storage.getQualificationReport(psurCaseId);
+      // Get device info
+      const devices = await storage.getDevices();
+      const psurCaseAny = psurCase as any;
+      const deviceCode = psurCaseAny.deviceCode || (psurCaseAny.deviceId ? devices.find((d: any) => d.id === psurCaseAny.deviceId)?.deviceCode : null) || devices[0]?.deviceCode || "DEVICE-001";
 
-      const qualificationReport = dbQualReport ? {
+      // ALWAYS use SOTA CompileOrchestrator
+      const { CompileOrchestrator } = await import("./src/agents/runtime/compileOrchestrator");
+      const orchestrator = new CompileOrchestrator();
+      
+      const result = await orchestrator.compile({
         psurCaseId,
-        psurReference: psurCase.psurReference,
-        templateId: dbQualReport.templateId,
-        jurisdictions: dbQualReport.jurisdictions,
-        status: dbQualReport.status,
-        slotCount: dbQualReport.slotCount,
-        mappingCount: dbQualReport.mappingCount,
-        mandatoryObligationsTotal: dbQualReport.mandatoryObligationsTotal,
-        mandatoryObligationsFound: dbQualReport.mandatoryObligationsFound,
-        missingObligations: dbQualReport.missingObligations,
-        constraints: dbQualReport.constraints,
-        blockingErrors: dbQualReport.blockingErrors,
-        validatedAt: dbQualReport.validatedAt,
-      } : {
-        psurCaseId,
-        psurReference: psurCase.psurReference,
         templateId: psurCase.templateId,
-        jurisdictions: psurCase.jurisdictions,
-        status: "NO_QUALIFICATION_RUN",
-        mandatoryObligationsTotal: 0,
-        mandatoryObligationsFound: 0,
-        missingObligations: [],
-        blockingErrors: ["No qualification report found - run the workflow first"],
-      };
+        deviceCode: deviceCode,
+        periodStart: psurCase.startPeriod.toISOString().split("T")[0],
+        periodEnd: psurCase.endPeriod.toISOString().split("T")[0],
+        documentStyle: documentStyle as "corporate" | "regulatory" | "premium",
+        enableCharts: false, // No charts for markdown
+      });
 
-      const psurMarkdown = generatePsurMarkdown(psurCase, evidenceAtoms, proposals, qualificationReport);
-
-      res.setHeader("Content-Type", "text/markdown; charset=utf-8");
-      res.setHeader("Content-Disposition", `attachment; filename="PSUR-${psurCase.psurReference}.md"`);
-      res.send(psurMarkdown);
+      if (result.success && result.sections.length > 0) {
+        // Convert sections to markdown
+        const markdownParts: string[] = [];
+        markdownParts.push(`# PERIODIC SAFETY UPDATE REPORT`);
+        markdownParts.push(``);
+        markdownParts.push(`**PSUR Reference:** ${psurCase.psurReference}`);
+        markdownParts.push(`**Reporting Period:** ${psurCase.startPeriod.toISOString().split("T")[0]} to ${psurCase.endPeriod.toISOString().split("T")[0]}`);
+        markdownParts.push(`**Generated:** ${new Date().toISOString()}`);
+        markdownParts.push(``);
+        markdownParts.push(`---`);
+        markdownParts.push(``);
+        
+        for (const section of result.sections) {
+          markdownParts.push(`## ${section.title}`);
+          markdownParts.push(``);
+          markdownParts.push(section.content);
+          markdownParts.push(``);
+          if (section.evidenceAtomIds.length > 0) {
+            markdownParts.push(`*Evidence: ${section.evidenceAtomIds.slice(0, 5).join(", ")}${section.evidenceAtomIds.length > 5 ? ` +${section.evidenceAtomIds.length - 5} more` : ""}*`);
+            markdownParts.push(``);
+          }
+          markdownParts.push(`---`);
+          markdownParts.push(``);
+        }
+        
+        const psurMarkdown = markdownParts.join("\n");
+        
+        console.log(`[PSUR MD] Successfully generated ${result.sections.length} sections`);
+        res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+        res.setHeader("Content-Disposition", `attachment; filename="PSUR-${psurCase.psurReference}.md"`);
+        res.send(psurMarkdown);
+      } else {
+        console.error("[PSUR MD] Compilation failed:", result.errors);
+        res.status(500).json({ 
+          error: "PSUR compilation failed", 
+          details: result.errors.join("; "),
+          warnings: result.warnings 
+        });
+      }
     } catch (error: any) {
-      console.error("[GET /api/psur-cases/:psurCaseId/psur.md] Error:", error);
+      console.error("[PSUR MD] Error:", error);
       res.status(500).json({ error: "Failed to generate PSUR document", details: error.message });
     }
   });
@@ -2424,6 +3162,365 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Failed to build coverage slot queue:", error);
       res.status(500).json({ error: "Failed to build coverage slot queue" });
+    }
+  });
+
+  // ============== AI AGENT ROUTES ==============
+  
+  // Health check for AI agents
+  app.get("/api/agents/health", async (req, res) => {
+    try {
+      const { getOrchestrator } = await import("./src/agents/agentOrchestrator");
+      const orchestrator = getOrchestrator();
+      const health = await orchestrator.checkHealth();
+      res.json(health);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to check agent health", details: error.message });
+    }
+  });
+
+  // Get system configuration
+  app.get("/api/agents/config", async (req, res) => {
+    try {
+      const { getConfig, CONFIG_PRESETS } = await import("./src/agents/config");
+      res.json({
+        current: getConfig(),
+        availablePresets: Object.keys(CONFIG_PRESETS),
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to get config", details: error.message });
+    }
+  });
+
+  // Update system configuration
+  app.put("/api/agents/config", async (req, res) => {
+    try {
+      const { updateConfig } = await import("./src/agents/config");
+      const newConfig = updateConfig(req.body);
+      res.json(newConfig);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to update config", details: error.message });
+    }
+  });
+
+  // Apply configuration preset
+  app.post("/api/agents/config/preset/:presetName", async (req, res) => {
+    try {
+      const { applyPreset } = await import("./src/agents/config");
+      const newConfig = applyPreset(req.params.presetName as any);
+      res.json(newConfig);
+    } catch (error: any) {
+      res.status(400).json({ error: "Failed to apply preset", details: error.message });
+    }
+  });
+
+  // Get evidence type mappings
+  app.get("/api/agents/evidence-types", async (req, res) => {
+    try {
+      const { EVIDENCE_TYPE_MAPPINGS, getEvidenceTypesByCategory } = await import("./src/agents/config");
+      const category = req.query.category as string;
+      
+      if (category) {
+        res.json(getEvidenceTypesByCategory(category as any));
+      } else {
+        res.json(EVIDENCE_TYPE_MAPPINGS);
+      }
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to get evidence types", details: error.message });
+    }
+  });
+
+  // Run AI-powered document ingestion workflow
+  app.post("/api/agents/ingest", upload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      const { psurCaseId, evidenceType, sourceType, userMappings, deviceCode, periodStart, periodEnd } = req.body;
+
+      if (!psurCaseId || !evidenceType) {
+        return res.status(400).json({ error: "psurCaseId and evidenceType are required" });
+      }
+
+      // Parse the file
+      const parseResult = await parseFileBuffer(req.file.buffer, req.file.originalname, "xlsx");
+
+      // Run the ingestion workflow
+      const { getOrchestrator } = await import("./src/agents/agentOrchestrator");
+      const orchestrator = getOrchestrator();
+
+      const result = await orchestrator.runIngestionWorkflow({
+        psurCaseId: parseInt(psurCaseId),
+        parsedContent: {
+          type: "tabular",
+          rows: parseResult.data,
+        },
+        sourceFile: req.file.originalname,
+        sourceType: sourceType || "excel",
+        evidenceType,
+        userMappings: userMappings ? JSON.parse(userMappings) : undefined,
+        deviceCode: deviceCode || "UNKNOWN",
+        periodStart: periodStart || new Date().toISOString().split("T")[0],
+        periodEnd: periodEnd || new Date().toISOString().split("T")[0],
+      });
+
+      res.json(result);
+    } catch (error: any) {
+      console.error("[POST /api/agents/ingest] Error:", error);
+      res.status(500).json({ error: "Ingestion workflow failed", details: error.message });
+    }
+  });
+
+  // Get field mapping suggestions for a file
+  app.post("/api/agents/suggest-mappings", upload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      const { evidenceType } = req.body;
+      if (!evidenceType) {
+        return res.status(400).json({ error: "evidenceType is required" });
+      }
+
+      // Parse the file to get columns
+      const parseResult = await parseFileBuffer(req.file.buffer, req.file.originalname, "xlsx");
+
+      // Extract source columns
+      const sourceColumns = Object.keys(parseResult.data[0] || {}).map(name => ({
+        name,
+        sampleValues: parseResult.data.slice(0, 10).map((r: any) => r[name]).filter((v: any) => v != null),
+        dataType: typeof parseResult.data[0]?.[name],
+      }));
+
+      // Get target schema
+      const { getEvidenceTypeMapping } = await import("./src/agents/config");
+      const schema = getEvidenceTypeMapping(evidenceType);
+
+      if (!schema) {
+        return res.status(400).json({ error: `Unknown evidence type: ${evidenceType}` });
+      }
+
+      const targetSchema = [
+        ...schema.requiredFields.map(f => ({ fieldName: f, displayName: f.replace(/_/g, " "), type: "string", required: true })),
+        ...schema.optionalFields.map(f => ({ fieldName: f, displayName: f.replace(/_/g, " "), type: "string", required: false })),
+      ];
+
+      // Run the mapping agent
+      const { FieldMappingAgent } = await import("./src/agents/ingestion/fieldMappingAgent");
+      const { startTrace } = await import("./src/services/decisionTraceService");
+      
+      const agent = new FieldMappingAgent();
+      const traceCtx = await startTrace(0); // No case yet
+      
+      const result = await agent.run(
+        { sourceColumns, targetSchema, evidenceType },
+        { psurCaseId: 0, traceCtx }
+      );
+
+      res.json({
+        success: result.success,
+        mappings: result.data?.mappings || [],
+        sourceColumns,
+        targetSchema,
+        overallConfidence: result.data?.overallConfidence || 0,
+        suggestedActions: result.data?.suggestedActions || [],
+      });
+    } catch (error: any) {
+      console.error("[POST /api/agents/suggest-mappings] Error:", error);
+      res.status(500).json({ error: "Mapping suggestion failed", details: error.message });
+    }
+  });
+
+  // Run runtime agents for a PSUR case (generate narrative content)
+  app.post("/api/agents/generate-content/:psurCaseId", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      const psurCase = await storage.getPSURCase(psurCaseId);
+      
+      if (!psurCase) {
+        return res.status(404).json({ error: "PSUR case not found" });
+      }
+
+      // Load template
+      const template = loadTemplate(psurCase.templateId);
+      if (!template) {
+        return res.status(400).json({ error: `Template ${psurCase.templateId} not found` });
+      }
+
+      // Prepare slots for runtime agents
+      const slots = template.slots.filter(s => s.slot_kind === "NARRATIVE").map(s => ({
+        slotId: s.slot_id,
+        title: s.title,
+        sectionPath: s.section_path,
+        slotKind: s.slot_kind,
+        requirements: s.output_requirements?.guidance,
+        guidance: s.output_requirements?.guidance,
+        requiredEvidenceTypes: s.evidence_requirements?.required_types || [],
+      }));
+
+      // Run runtime workflow
+      const { getOrchestrator } = await import("./src/agents/agentOrchestrator");
+      const orchestrator = getOrchestrator();
+
+      const result = await orchestrator.runRuntimeWorkflow({
+        psurCaseId,
+        templateId: psurCase.templateId,
+        slots,
+        deviceCode: psurCase.deviceCode,
+        periodStart: new Date(psurCase.startPeriod).toISOString().split("T")[0],
+        periodEnd: new Date(psurCase.endPeriod).toISOString().split("T")[0],
+      });
+
+      res.json(result);
+    } catch (error: any) {
+      console.error("[POST /api/agents/generate-content/:psurCaseId] Error:", error);
+      res.status(500).json({ error: "Content generation failed", details: error.message });
+    }
+  });
+
+  // Test LLM connection
+  app.post("/api/agents/test-llm", async (req, res) => {
+    try {
+      const { complete } = await import("./src/agents/llmService");
+      
+      const response = await complete({
+        messages: [
+          { role: "system", content: "You are a test assistant." },
+          { role: "user", content: "Say 'LLM connection successful' and nothing else." },
+        ],
+        config: {
+          provider: req.body.provider || "auto",
+          maxTokens: 50,
+        },
+      });
+
+      res.json({
+        success: true,
+        provider: response.provider,
+        model: response.model,
+        content: response.content,
+        latencyMs: response.latencyMs,
+        usage: response.usage,
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        success: false,
+        error: error.message,
+        hint: "Make sure OPENAI_API_KEY or ANTHROPIC_API_KEY is set in .env",
+      });
+    }
+  });
+
+  // ============== COMPILE TRACE ENDPOINTS ==============
+  
+  // Get full compile trace for a PSUR case
+  app.get("/api/trace/compile/:psurCaseId", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      const { getCompileTrace } = await import("./src/services/compileTraceRepository");
+      
+      const entries = await getCompileTrace(psurCaseId);
+      res.json({ psurCaseId, entries, count: entries.length });
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to get compile trace", details: error.message });
+    }
+  });
+
+  // Get compile trace summary for a PSUR case
+  app.get("/api/trace/compile/:psurCaseId/summary", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      const { getTraceSummary } = await import("./src/services/compileTraceRepository");
+      
+      const summary = await getTraceSummary(psurCaseId);
+      res.json(summary);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to get compile trace summary", details: error.message });
+    }
+  });
+
+  // Get compile trace by slot
+  app.get("/api/trace/compile/:psurCaseId/by-slot/:slotId", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      const slotId = req.params.slotId;
+      const { getTraceBySlot } = await import("./src/services/compileTraceRepository");
+      
+      const entries = await getTraceBySlot(psurCaseId, slotId);
+      res.json({ psurCaseId, slotId, entries, count: entries.length });
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to get compile trace by slot", details: error.message });
+    }
+  });
+
+  // Get compile trace by agent type
+  app.get("/api/trace/compile/:psurCaseId/by-agent/:agentType", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      const agentType = req.params.agentType;
+      const { getTraceByAgent } = await import("./src/services/compileTraceRepository");
+      
+      const entries = await getTraceByAgent(psurCaseId, agentType);
+      res.json({ psurCaseId, agentType, entries, count: entries.length });
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to get compile trace by agent", details: error.message });
+    }
+  });
+
+  // Get compile trace by phase
+  app.get("/api/trace/compile/:psurCaseId/by-phase/:phase", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      const phase = req.params.phase as "NARRATIVE" | "TABLE" | "CHART" | "FORMAT" | "ORCHESTRATION";
+      const { getTraceByPhase } = await import("./src/services/compileTraceRepository");
+      
+      const entries = await getTraceByPhase(psurCaseId, phase);
+      res.json({ psurCaseId, phase, entries, count: entries.length });
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to get compile trace by phase", details: error.message });
+    }
+  });
+
+  // Get identified gaps
+  app.get("/api/trace/compile/:psurCaseId/gaps", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      const { getGaps } = await import("./src/services/compileTraceRepository");
+      
+      const gaps = await getGaps(psurCaseId);
+      res.json({ psurCaseId, gaps, count: gaps.length });
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to get compile gaps", details: error.message });
+    }
+  });
+
+  // Verify trace integrity
+  app.get("/api/trace/compile/:psurCaseId/verify", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      const { verifyTraceIntegrity } = await import("./src/services/compileTraceRepository");
+      
+      const verification = await verifyTraceIntegrity(psurCaseId);
+      res.json({ psurCaseId, ...verification });
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to verify compile trace", details: error.message });
+    }
+  });
+
+  // Export trace as JSON
+  app.get("/api/trace/compile/:psurCaseId/export", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      const { exportTraceJSON } = await import("./src/services/compileTraceRepository");
+      
+      const json = await exportTraceJSON(psurCaseId);
+      res.setHeader("Content-Type", "application/json");
+      res.setHeader("Content-Disposition", `attachment; filename=compile-trace-${psurCaseId}.json`);
+      res.send(json);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to export compile trace", details: error.message });
     }
   });
 

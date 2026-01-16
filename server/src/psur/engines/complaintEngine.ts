@@ -231,7 +231,7 @@ export function computeComplaintAnalysis(
   }
   
   const byCategory: CategoryBreakdown[] = [];
-  for (const [category, data] of categoryMap) {
+  for (const [category, data] of Array.from(categoryMap)) {
     const percentage = totalComplaints > 0 ? (data.count / totalComplaints) * 100 : 0;
     const rate = unitsSoldInPeriod > 0 ? (data.count / unitsSoldInPeriod) * 1000 : 0;
     
@@ -270,7 +270,7 @@ export function computeComplaintAnalysis(
   }
   
   const bySeverity: SeverityBreakdown[] = [];
-  for (const [severity, count] of severityMap) {
+  for (const [severity, count] of Array.from(severityMap)) {
     bySeverity.push({
       severity,
       count,

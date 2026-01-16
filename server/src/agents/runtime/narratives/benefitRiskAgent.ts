@@ -1,0 +1,177 @@
+/**
+ * Benefit-Risk Narrative Agent
+ * 
+ * SOTA agent for generating Benefit-Risk Assessment sections.
+ * Specializes in balanced argumentation and regulatory conclusions.
+ */
+
+import { BaseNarrativeAgent, NarrativeInput } from "./baseNarrativeAgent";
+
+export class BenefitRiskNarrativeAgent extends BaseNarrativeAgent {
+  protected readonly sectionType = "BENEFIT_RISK";
+  
+  protected readonly systemPrompt = `You are an expert medical device regulatory scientist specializing in benefit-risk assessment under EU MDR.
+
+## YOUR ROLE
+Generate comprehensive benefit-risk narratives that provide balanced, evidence-based conclusions on whether the device's benefits continue to outweigh its risks.
+
+## REGULATORY REQUIREMENTS (EU MDR Article 2, Article 61, Article 86)
+Benefit-Risk section MUST include:
+1. Summary of known benefits (clinical data, intended purpose)
+2. Summary of known risks (PMS data, complaints, incidents)
+3. Emerging risks from current period
+4. Comparison with state of the art
+5. Overall benefit-risk conclusion
+6. Acceptability determination
+
+## BENEFIT-RISK FRAMEWORK
+- Benefits: Clinical effectiveness, patient outcomes, quality of life
+- Risks: Adverse events, device failures, use errors
+- Risk mitigation: Labeling, training, design controls
+- Residual risk: Acceptable vs. unacceptable
+
+## WRITING STANDARDS
+- Be balanced - present both benefits and risks objectively
+- Use specific data to support conclusions
+- Reference evidence using [ATOM-xxx] format
+- Clearly state the conclusion
+- Justify acceptability determination
+
+## STRUCTURE:
+1. Benefits summary
+   - Intended purpose and clinical context
+   - Clinical evidence of effectiveness
+   - Patient outcomes data
+2. Risks summary
+   - Known risks (from risk management)
+   - Emerging risks (from current PMS)
+   - Risk rates and severity
+3. Benefit-risk comparison
+   - Balance assessment
+   - Comparison with alternatives
+4. Conclusion
+   - Overall determination
+   - Acceptability statement
+   - Any conditions or recommendations
+
+## OUTPUT FORMAT
+Write the narrative section content. After the narrative, provide a JSON block:
+\`\`\`json
+{
+  "citedAtoms": ["ATOM-xxx", ...],
+  "uncitedAtoms": ["ATOM-yyy", ...],
+  "dataGaps": ["description of missing data", ...],
+  "confidence": 0.0-1.0,
+  "reasoning": "explanation of content decisions"
+}
+\`\`\``;
+
+  constructor() {
+    super(
+      "BenefitRiskNarrativeAgent",
+      "Benefit-Risk Narrative Agent"
+    );
+  }
+
+  protected identifyGaps(input: NarrativeInput): string[] {
+    const gaps: string[] = [];
+    const evidenceTypes = new Set(input.evidenceAtoms.map(a => a.evidenceType));
+
+    // B/R assessment needs comprehensive data
+    if (!evidenceTypes.has("benefit_risk_assessment") && !evidenceTypes.has("clinical_evaluation_extract")) {
+      gaps.push("No existing benefit-risk assessment or clinical evaluation data");
+    }
+
+    if (!evidenceTypes.has("risk_analysis") && !evidenceTypes.has("hazard_analysis")) {
+      gaps.push("No risk management data for risk side of B/R");
+    }
+
+    // Need PMS data for current period risks
+    const hasPMSData = input.evidenceAtoms.some(a => 
+      a.evidenceType.includes("complaint") || 
+      a.evidenceType.includes("incident")
+    );
+    if (!hasPMSData) {
+      gaps.push("No PMS data for current period risk assessment");
+    }
+
+    return gaps;
+  }
+
+  protected buildUserPrompt(
+    input: NarrativeInput,
+    evidenceSummary: string,
+    evidenceRecords: string
+  ): string {
+    // Calculate risk metrics
+    const complaintAtoms = input.evidenceAtoms.filter(a => 
+      a.evidenceType.includes("complaint")
+    );
+    const incidentAtoms = input.evidenceAtoms.filter(a => 
+      a.evidenceType.includes("incident")
+    );
+    const salesAtoms = input.evidenceAtoms.filter(a => 
+      a.evidenceType.includes("sales")
+    );
+    const clinicalAtoms = input.evidenceAtoms.filter(a => 
+      a.evidenceType.includes("clinical") || 
+      a.evidenceType.includes("pmcf") ||
+      a.evidenceType.includes("benefit")
+    );
+
+    const totalSales = salesAtoms.reduce((sum, a) => {
+      const qty = Number(a.normalizedData.quantity || a.normalizedData.units_sold || 0);
+      return sum + qty;
+    }, 0);
+
+    // Severity breakdown
+    const seriousComplaints = complaintAtoms.filter(a => 
+      a.normalizedData.severity === "HIGH" || 
+      a.normalizedData.severity === "CRITICAL" ||
+      a.normalizedData.serious === true
+    );
+
+    const complaintRate = totalSales > 0 
+      ? ((complaintAtoms.length / totalSales) * 1000).toFixed(2)
+      : "N/A";
+
+    const seriousRate = totalSales > 0 
+      ? ((seriousComplaints.length / totalSales) * 1000).toFixed(4)
+      : "N/A";
+
+    return `## Section: ${input.slot.title}
+## Section Path: ${input.slot.sectionPath}
+## Purpose: Comprehensive benefit-risk assessment
+
+## Device Context:
+- Device Code: ${input.context.deviceCode}
+- Reporting Period: ${input.context.periodStart} to ${input.context.periodEnd}
+
+## RISK METRICS:
+- Total Complaints: ${complaintAtoms.length}
+- Serious Incidents: ${incidentAtoms.length}
+- Serious/High Severity Complaints: ${seriousComplaints.length}
+- Units Sold: ${totalSales.toLocaleString()}
+- Complaint Rate: ${complaintRate} per 1,000 units
+- Serious Event Rate: ${seriousRate} per 1,000 units
+
+## BENEFIT DATA:
+- Clinical Evidence Records: ${clinicalAtoms.length}
+
+## Evidence Summary:
+${evidenceSummary}
+
+## Detailed Evidence Records:
+${evidenceRecords}
+
+## CRITICAL INSTRUCTIONS:
+1. This is a CRITICAL section - conclusion must be clear and justified
+2. Present BOTH benefits and risks with equal rigor
+3. Use specific numbers and rates
+4. Compare to state of the art if data available
+5. Reference specific evidence atoms [ATOM-xxx]
+6. MUST END WITH CLEAR CONCLUSION:
+   - "The benefit-risk profile remains FAVORABLE/ACCEPTABLE/UNFAVORABLE"
+   - Include any conditions or recommendations`;
+  }
+}

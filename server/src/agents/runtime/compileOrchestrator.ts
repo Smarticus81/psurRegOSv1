@@ -57,10 +57,21 @@ export interface CompileOrchestratorInput {
   psurCaseId: number;
   templateId: string;
   deviceCode: string;
+  deviceName?: string;
   periodStart: string;
   periodEnd: string;
   documentStyle: DocumentStyle;
+  outputFormat?: "docx" | "pdf" | "html" | "all";
   enableCharts: boolean;
+  enableLLMOptimization?: boolean;
+  enableAccessibility?: boolean;
+  prepareForSignature?: boolean;
+  companyName?: string;
+  companyLogo?: Buffer;
+  author?: string;
+  reviewers?: string[];
+  approvers?: string[];
+  confidentiality?: "Public" | "Internal" | "Confidential" | "Restricted";
 }
 
 export interface CompiledSection {
@@ -416,15 +427,27 @@ export class CompileOrchestrator {
         sections,
         charts,
         style: input.documentStyle,
+        outputFormat: input.outputFormat || "docx",
+        enableLLMOptimization: input.enableLLMOptimization !== false,
+        enableAccessibility: input.enableAccessibility !== false,
+        prepareForSignature: input.prepareForSignature,
         metadata: {
           psurCaseId: input.psurCaseId,
           deviceCode: input.deviceCode,
+          deviceName: input.deviceName,
           periodStart: input.periodStart,
           periodEnd: input.periodEnd,
           templateId: input.templateId,
           generatedAt: new Date().toISOString(),
+          companyName: input.companyName,
+          companyLogo: input.companyLogo,
+          documentVersion: "1.0",
+          author: input.author,
+          reviewers: input.reviewers,
+          approvers: input.approvers,
+          confidentiality: input.confidentiality,
         },
-      }, { psurCaseId: input.psurCaseId } as any);
+      }, this.createAgentTraceContext(input.psurCaseId, "DOCUMENT_FORMATTER"));
 
       // Get trace summary
       const traceSummary = await getTraceSummary(input.psurCaseId);

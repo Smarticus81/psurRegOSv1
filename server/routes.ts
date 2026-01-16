@@ -2964,14 +2964,17 @@ export async function registerRoutes(
     }
   });
 
-  // Download PSUR as Word document - ALWAYS uses SOTA LLM-powered agents
-  // Supports ?style=corporate|regulatory|premium for document styling
+  // Download PSUR as Word document - SOTA with LLM optimization, accessibility, and signature prep
+  // Query params: ?style=corporate|regulatory|premium&llm=true&accessibility=true&signature=true
   app.get("/api/psur-cases/:psurCaseId/psur.docx", async (req, res) => {
     try {
       const psurCaseId = parseInt(req.params.psurCaseId);
       const documentStyle = (req.query.style as string) || "corporate";
+      const enableLLM = req.query.llm !== "false";
+      const enableAccessibility = req.query.accessibility !== "false";
+      const prepareForSignature = req.query.signature === "true";
       
-      console.log(`[PSUR DOCX] Generating SOTA document for case ${psurCaseId} with style: ${documentStyle}`);
+      console.log(`[PSUR DOCX] SOTA generation: case=${psurCaseId}, style=${documentStyle}, LLM=${enableLLM}, accessibility=${enableAccessibility}`);
       
       const psurCase = await storage.getPSURCase(psurCaseId);
       if (!psurCase) {
@@ -2981,27 +2984,36 @@ export async function registerRoutes(
       // Get device info
       const devices = await storage.getDevices();
       const psurCaseAny = psurCase as any;
-      const deviceCode = psurCaseAny.deviceCode || (psurCaseAny.deviceId ? devices.find((d: any) => d.id === psurCaseAny.deviceId)?.deviceCode : null) || devices[0]?.deviceCode || "DEVICE-001";
+      const device = psurCaseAny.deviceId ? devices.find((d: any) => d.id === psurCaseAny.deviceId) : devices[0];
+      const deviceCode = psurCaseAny.deviceCode || device?.deviceCode || "DEVICE-001";
+      const deviceName = device?.deviceName || device?.name;
 
-      // ALWAYS use SOTA CompileOrchestrator with LLM-powered narrative agents
+      // SOTA CompileOrchestrator with all enhancements
       const { CompileOrchestrator } = await import("./src/agents/runtime/compileOrchestrator");
       const orchestrator = new CompileOrchestrator();
       
       const result = await orchestrator.compile({
         psurCaseId,
         templateId: psurCase.templateId,
-        deviceCode: deviceCode,
+        deviceCode,
+        deviceName,
         periodStart: psurCase.startPeriod.toISOString().split("T")[0],
         periodEnd: psurCase.endPeriod.toISOString().split("T")[0],
         documentStyle: documentStyle as "corporate" | "regulatory" | "premium",
+        outputFormat: "docx",
         enableCharts: true,
+        enableLLMOptimization: enableLLM,
+        enableAccessibility,
+        prepareForSignature,
       });
 
-      if (result.success && result.document) {
-        console.log(`[PSUR DOCX] Successfully generated ${result.sections.length} sections, ${result.charts.length} charts`);
+      if (result.success && result.document?.docx) {
+        console.log(`[PSUR DOCX] Generated: ${result.document.pageCount} pages, ${result.sections.length} sections, accessibility: ${JSON.stringify(result.document.accessibility)}`);
         res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
         res.setHeader("Content-Disposition", `attachment; filename="PSUR-${psurCase.psurReference}.docx"`);
-        res.send(result.document.buffer);
+        res.setHeader("X-PSUR-Pages", result.document.pageCount.toString());
+        res.setHeader("X-PSUR-Content-Hash", result.document.contentHash);
+        res.send(result.document.docx);
       } else {
         console.error("[PSUR DOCX] Compilation failed:", result.errors);
         res.status(500).json({ 
@@ -3013,6 +3025,126 @@ export async function registerRoutes(
     } catch (error: any) {
       console.error("[PSUR DOCX] Error:", error);
       res.status(500).json({ error: "Failed to generate PSUR document", details: error.message });
+    }
+  });
+
+  // Download PSUR as PDF/A - SOTA with regulatory-compliant archival format
+  // Query params: ?style=corporate|regulatory|premium&signature=true
+  app.get("/api/psur-cases/:psurCaseId/psur.pdf", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      const documentStyle = (req.query.style as string) || "regulatory"; // Default to regulatory for PDF
+      const prepareForSignature = req.query.signature === "true";
+      
+      console.log(`[PSUR PDF] SOTA PDF/A generation: case=${psurCaseId}, style=${documentStyle}, signature=${prepareForSignature}`);
+      
+      const psurCase = await storage.getPSURCase(psurCaseId);
+      if (!psurCase) {
+        return res.status(404).json({ error: "PSUR case not found" });
+      }
+
+      // Get device info
+      const devices = await storage.getDevices();
+      const psurCaseAny = psurCase as any;
+      const device = psurCaseAny.deviceId ? devices.find((d: any) => d.id === psurCaseAny.deviceId) : devices[0];
+      const deviceCode = psurCaseAny.deviceCode || device?.deviceCode || "DEVICE-001";
+      const deviceName = device?.deviceName || device?.name;
+
+      // SOTA CompileOrchestrator with PDF output
+      const { CompileOrchestrator } = await import("./src/agents/runtime/compileOrchestrator");
+      const orchestrator = new CompileOrchestrator();
+      
+      const result = await orchestrator.compile({
+        psurCaseId,
+        templateId: psurCase.templateId,
+        deviceCode,
+        deviceName,
+        periodStart: psurCase.startPeriod.toISOString().split("T")[0],
+        periodEnd: psurCase.endPeriod.toISOString().split("T")[0],
+        documentStyle: documentStyle as "corporate" | "regulatory" | "premium",
+        outputFormat: "pdf",
+        enableCharts: true,
+        enableLLMOptimization: true,
+        enableAccessibility: true,
+        prepareForSignature,
+      });
+
+      if (result.success && result.document?.pdf) {
+        console.log(`[PSUR PDF] Generated: ${result.document.pageCount} pages, PDF/UA compliant: ${result.document.accessibility.pdfUaCompliant}`);
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", `attachment; filename="PSUR-${psurCase.psurReference}.pdf"`);
+        res.setHeader("X-PSUR-Pages", result.document.pageCount.toString());
+        res.setHeader("X-PSUR-Content-Hash", result.document.contentHash);
+        res.setHeader("X-PDF-UA-Compliant", result.document.accessibility.pdfUaCompliant.toString());
+        res.send(result.document.pdf);
+      } else {
+        console.error("[PSUR PDF] Compilation failed:", result.errors);
+        res.status(500).json({ 
+          error: "PSUR PDF generation failed", 
+          details: result.errors.join("; "),
+          warnings: result.warnings 
+        });
+      }
+    } catch (error: any) {
+      console.error("[PSUR PDF] Error:", error);
+      res.status(500).json({ error: "Failed to generate PSUR PDF", details: error.message });
+    }
+  });
+
+  // Download PSUR as accessible HTML
+  app.get("/api/psur-cases/:psurCaseId/psur.html", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      const documentStyle = (req.query.style as string) || "premium"; // Default to premium for HTML
+      
+      console.log(`[PSUR HTML] SOTA HTML generation: case=${psurCaseId}, style=${documentStyle}`);
+      
+      const psurCase = await storage.getPSURCase(psurCaseId);
+      if (!psurCase) {
+        return res.status(404).json({ error: "PSUR case not found" });
+      }
+
+      // Get device info
+      const devices = await storage.getDevices();
+      const psurCaseAny = psurCase as any;
+      const device = psurCaseAny.deviceId ? devices.find((d: any) => d.id === psurCaseAny.deviceId) : devices[0];
+      const deviceCode = psurCaseAny.deviceCode || device?.deviceCode || "DEVICE-001";
+      const deviceName = device?.deviceName || device?.name;
+
+      // SOTA CompileOrchestrator with HTML output
+      const { CompileOrchestrator } = await import("./src/agents/runtime/compileOrchestrator");
+      const orchestrator = new CompileOrchestrator();
+      
+      const result = await orchestrator.compile({
+        psurCaseId,
+        templateId: psurCase.templateId,
+        deviceCode,
+        deviceName,
+        periodStart: psurCase.startPeriod.toISOString().split("T")[0],
+        periodEnd: psurCase.endPeriod.toISOString().split("T")[0],
+        documentStyle: documentStyle as "corporate" | "regulatory" | "premium",
+        outputFormat: "html",
+        enableCharts: true,
+        enableLLMOptimization: true,
+        enableAccessibility: true,
+      });
+
+      if (result.success && result.document?.html) {
+        console.log(`[PSUR HTML] Generated: WCAG ${result.document.accessibility.wcagLevel} compliant`);
+        res.setHeader("Content-Type", "text/html; charset=utf-8");
+        res.setHeader("Content-Disposition", `attachment; filename="PSUR-${psurCase.psurReference}.html"`);
+        res.send(result.document.html);
+      } else {
+        console.error("[PSUR HTML] Compilation failed:", result.errors);
+        res.status(500).json({ 
+          error: "PSUR HTML generation failed", 
+          details: result.errors.join("; "),
+          warnings: result.warnings 
+        });
+      }
+    } catch (error: any) {
+      console.error("[PSUR HTML] Error:", error);
+      res.status(500).json({ error: "Failed to generate PSUR HTML", details: error.message });
     }
   });
 

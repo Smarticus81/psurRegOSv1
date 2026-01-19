@@ -5,6 +5,442 @@ import multer from "multer";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { storage } from "./storage";
+import { isDatabaseConnectionError } from "./db";
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PREVIEW CACHE - Fast in-memory cache for document previews
+// ═══════════════════════════════════════════════════════════════════════════════
+interface CachedPreview {
+  html: string;
+  generatedAt: number;
+  expiresAt: number;
+}
+const previewCache = new Map<string, CachedPreview>();
+const PREVIEW_CACHE_TTL = 60000; // 1 minute cache
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// COMPILED DOCUMENT CACHE - Stores generated DOCX/PDF buffers to avoid re-generation
+// ═══════════════════════════════════════════════════════════════════════════════
+interface CachedDocument {
+  docx?: Buffer;
+  pdf?: Buffer;
+  html?: string;
+  pageCount: number;
+  sectionCount: number;
+  chartCount: number;
+  contentHash: string;
+  style: string;
+  generatedAt: number;
+  expiresAt: number;
+}
+const compiledDocumentCache = new Map<string, CachedDocument>();
+const COMPILED_DOC_CACHE_TTL = 3600000; // 1 hour cache for compiled documents
+
+export function cacheCompiledDocument(psurCaseId: number, style: string, doc: CachedDocument): void {
+  const key = `${psurCaseId}:${style}`;
+  compiledDocumentCache.set(key, {
+    ...doc,
+    generatedAt: Date.now(),
+    expiresAt: Date.now() + COMPILED_DOC_CACHE_TTL,
+  });
+  console.log(`[DocumentCache] Cached compiled document for case ${psurCaseId} style ${style}`);
+}
+
+export function getCachedCompiledDocument(psurCaseId: number, style: string): CachedDocument | null {
+  const key = `${psurCaseId}:${style}`;
+  const cached = compiledDocumentCache.get(key);
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached;
+  }
+  compiledDocumentCache.delete(key);
+  return null;
+}
+
+export function invalidateCompiledDocumentCache(psurCaseId: number): void {
+  for (const key of compiledDocumentCache.keys()) {
+    if (key.startsWith(`${psurCaseId}:`)) {
+      compiledDocumentCache.delete(key);
+    }
+  }
+}
+
+// Live content cache - stores sections as they're generated for incremental preview
+interface LiveContent {
+  sections: Map<string, { title: string; content: string; status: "pending" | "generating" | "done" }>;
+  lastUpdated: number;
+  isGenerating: boolean;
+}
+const liveContentCache = new Map<number, LiveContent>();
+
+export function initLiveContent(psurCaseId: number, slotIds: string[]): void {
+  const sections = new Map<string, { title: string; content: string; status: "pending" | "generating" | "done" }>();
+  for (const slotId of slotIds) {
+    sections.set(slotId, { title: slotId, content: "", status: "pending" });
+  }
+  liveContentCache.set(psurCaseId, {
+    sections,
+    lastUpdated: Date.now(),
+    isGenerating: true,
+  });
+}
+
+export function updateLiveContent(psurCaseId: number, slotId: string, title: string, content: string, status: "pending" | "generating" | "done"): void {
+  const live = liveContentCache.get(psurCaseId);
+  if (live) {
+    live.sections.set(slotId, { title, content, status });
+    live.lastUpdated = Date.now();
+  }
+}
+
+export function finishLiveContent(psurCaseId: number): void {
+  const live = liveContentCache.get(psurCaseId);
+  if (live) {
+    live.isGenerating = false;
+    live.lastUpdated = Date.now();
+  }
+}
+
+export function getLiveContent(psurCaseId: number): LiveContent | null {
+  return liveContentCache.get(psurCaseId) || null;
+}
+
+function getCachedPreview(psurCaseId: number, style: string): CachedPreview | null {
+  const key = `${psurCaseId}:${style}`;
+  const cached = previewCache.get(key);
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached;
+  }
+  previewCache.delete(key);
+  return null;
+}
+
+function setCachedPreview(psurCaseId: number, style: string, html: string): void {
+  const key = `${psurCaseId}:${style}`;
+  previewCache.set(key, {
+    html,
+    generatedAt: Date.now(),
+    expiresAt: Date.now() + PREVIEW_CACHE_TTL,
+  });
+}
+
+function invalidatePreviewCache(psurCaseId: number): void {
+  for (const key of previewCache.keys()) {
+    if (key.startsWith(`${psurCaseId}:`)) {
+      previewCache.delete(key);
+    }
+  }
+  // Also clear live content when cache is invalidated for new generation
+  liveContentCache.delete(psurCaseId);
+}
+
+// Generate fast preview HTML without LLM calls (with optional live content)
+function generateFastPreviewHTML(params: {
+  psurCase: any;
+  template: any;
+  slots: any[];
+  atomsByType: Record<string, number>;
+  totalAtoms: number;
+  documentStyle: string;
+  liveContent?: LiveContent | null;
+}): string {
+  const { psurCase, template, slots, atomsByType, totalAtoms, documentStyle, liveContent } = params;
+  
+  const periodStart = psurCase.startPeriod instanceof Date 
+    ? psurCase.startPeriod.toISOString().split("T")[0] 
+    : String(psurCase.startPeriod).split("T")[0];
+  const periodEnd = psurCase.endPeriod instanceof Date 
+    ? psurCase.endPeriod.toISOString().split("T")[0] 
+    : String(psurCase.endPeriod).split("T")[0];
+
+  // Group slots by section
+  const sections: { path: string; title: string; slots: any[] }[] = [];
+  const sectionMap = new Map<string, any[]>();
+  
+  for (const slot of slots) {
+    const parts = (slot.section_path || "").split(" > ");
+    const sectionKey = parts.slice(0, 2).join(" > ");
+    if (!sectionMap.has(sectionKey)) {
+      sectionMap.set(sectionKey, []);
+    }
+    sectionMap.get(sectionKey)!.push(slot);
+  }
+  
+  sectionMap.forEach((slotList, path) => {
+    sections.push({
+      path,
+      title: path.split(" > ").pop() || path,
+      slots: slotList
+    });
+  });
+
+  // Evidence summary
+  const evidenceSummaryRows = Object.entries(atomsByType)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([type, count]) => `<tr><td>${type.replace(/_/g, " ")}</td><td class="count">${count}</td></tr>`)
+    .join("");
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PSUR Preview - ${psurCase.psurReference}</title>
+  <style>
+    :root {
+      --primary: #1e40af;
+      --primary-light: #3b82f6;
+      --success: #059669;
+      --warning: #d97706;
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+    .header {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+      color: white;
+      padding: 32px 40px;
+    }
+    .header h1 { font-size: 24px; font-weight: 600; margin-bottom: 8px; }
+    .header .meta { opacity: 0.9; font-size: 14px; }
+    .header .meta span { margin-right: 24px; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 32px 40px; }
+    .status-bar {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 32px;
+    }
+    .status-card {
+      flex: 1;
+      background: var(--card);
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .status-card .label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    .status-card .value { font-size: 28px; font-weight: 700; color: var(--primary); margin-top: 4px; }
+    .status-card .value.success { color: var(--success); }
+    .section {
+      background: var(--card);
+      border-radius: 12px;
+      margin-bottom: 16px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .section-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .section-number {
+      width: 28px;
+      height: 28px;
+      background: var(--primary);
+      color: white;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .section-title { font-size: 16px; font-weight: 600; }
+    .section-content { padding: 20px; }
+    .slot-list { display: flex; flex-direction: column; gap: 8px; }
+    .slot-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      background: var(--bg);
+      border-radius: 8px;
+    }
+    .slot-icon { color: var(--text-muted); }
+    .slot-title { flex: 1; font-size: 14px; }
+    .slot-type {
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      background: var(--border);
+      color: var(--text-muted);
+      text-transform: uppercase;
+    }
+    .evidence-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .evidence-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      font-size: 14px;
+    }
+    .evidence-table td:first-child { text-transform: capitalize; }
+    .evidence-table td.count {
+      text-align: right;
+      font-weight: 600;
+      color: var(--primary);
+    }
+    .slot-item { padding: 12px 16px; background: var(--bg); border-radius: 8px; margin-bottom: 8px; }
+    .slot-item.done { border-left: 3px solid var(--success); }
+    .slot-item.generating { border-left: 3px solid var(--warning); background: #fffbeb; }
+    .slot-item.pending { border-left: 3px solid var(--border); }
+    .slot-header { display: flex; align-items: center; gap: 12px; }
+    .status-icon { flex-shrink: 0; }
+    .status-icon.done { color: var(--success); }
+    .status-icon.generating { color: var(--warning); animation: pulse 1.5s infinite; }
+    .status-icon.pending { color: var(--text-muted); opacity: 0.5; }
+    .slot-content { 
+      margin-top: 12px; padding: 12px; background: white; border-radius: 6px; 
+      font-size: 13px; color: var(--text-muted); line-height: 1.5; 
+      border: 1px solid var(--border);
+    }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    .spinning { animation: spin 2s linear infinite; }
+    .preview-notice {
+      text-align: center;
+      padding: 40px;
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+    .preview-notice svg { margin-bottom: 16px; opacity: 0.5; }
+    .toc { margin-bottom: 32px; }
+    .toc-title { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: var(--text-muted); }
+    .toc-list { display: flex; flex-wrap: wrap; gap: 8px; }
+    .toc-item {
+      font-size: 12px;
+      padding: 6px 12px;
+      background: var(--card);
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Periodic Safety Update Report</h1>
+    <div class="meta">
+      <span>Reference: ${psurCase.psurReference}</span>
+      <span>Period: ${periodStart} to ${periodEnd}</span>
+      <span>Template: ${template.template_id || psurCase.templateId}</span>
+    </div>
+  </div>
+  
+  <div class="container">
+    <div class="status-bar">
+      <div class="status-card">
+        <div class="label">Total Sections</div>
+        <div class="value">${slots.length}</div>
+      </div>
+      <div class="status-card">
+        <div class="label">Evidence Records</div>
+        <div class="value success">${totalAtoms}</div>
+      </div>
+      <div class="status-card">
+        <div class="label">Evidence Types</div>
+        <div class="value">${Object.keys(atomsByType).length}</div>
+      </div>
+      <div class="status-card">
+        <div class="label">Status</div>
+        <div class="value" style="font-size: 16px; color: var(--warning);">Draft Preview</div>
+      </div>
+    </div>
+
+    <div class="toc">
+      <div class="toc-title">Document Sections</div>
+      <div class="toc-list">
+        ${sections.map((s, i) => `<span class="toc-item">${i + 1}. ${s.title}</span>`).join("")}
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <div class="section-number">i</div>
+        <div class="section-title">Evidence Summary</div>
+      </div>
+      <div class="section-content">
+        <table class="evidence-table">
+          ${evidenceSummaryRows || "<tr><td colspan='2' style='text-align:center;color:var(--text-muted)'>No evidence uploaded yet</td></tr>"}
+        </table>
+      </div>
+    </div>
+
+    ${sections.map((section, sIndex) => {
+      // Check if we have live content for any slots in this section
+      const hasLiveContent = liveContent && section.slots.some(slot => {
+        const live = liveContent.sections.get(slot.slot_id);
+        return live && live.status === "done" && live.content;
+      });
+      
+      return `
+    <div class="section">
+      <div class="section-header">
+        <div class="section-number">${sIndex + 1}</div>
+        <div class="section-title">${section.title}</div>
+      </div>
+      <div class="section-content">
+        ${section.slots.map(slot => {
+          const live = liveContent?.sections.get(slot.slot_id);
+          const statusClass = live?.status === "done" ? "done" : live?.status === "generating" ? "generating" : "pending";
+          const statusIcon = live?.status === "done" 
+            ? '<svg class="status-icon done" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>'
+            : live?.status === "generating"
+            ? '<svg class="status-icon generating" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>'
+            : '<svg class="status-icon pending" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>';
+          
+          return `
+          <div class="slot-item ${statusClass}">
+            <div class="slot-header">
+              ${statusIcon}
+              <span class="slot-title">${slot.title}</span>
+              <span class="slot-type">${slot.slot_kind || "narrative"}</span>
+            </div>
+            ${live?.content ? `<div class="slot-content">${live.content.substring(0, 500)}${live.content.length > 500 ? '...' : ''}</div>` : ''}
+          </div>`;
+        }).join("")}
+      </div>
+    </div>`;
+    }).join("")}
+
+    <div class="preview-notice">
+      ${liveContent?.isGenerating 
+        ? `<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="spinning">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 6v6l4 2"/>
+          </svg>
+          <p>Document generation in progress...</p>
+          <p>Sections will appear as they are completed.</p>`
+        : liveContent && !liveContent.isGenerating
+        ? `<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+            <polyline points="22 4 12 14.01 9 11.01"/>
+          </svg>
+          <p>Document generation complete.</p>
+          <p>Click "Refresh" to see the final document.</p>`
+        : `<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 6v6l4 2"/>
+          </svg>
+          <p>This is a preview of the PSUR structure.</p>
+          <p>Full document content will be generated when the report is finalized.</p>`
+      }
+    </div>
+  </div>
+</body>
+</html>`;
+}
 import {
   insertCompanySchema,
   insertDeviceSchema,
@@ -67,7 +503,7 @@ import {
   persistEvidenceAtoms,
   type EvidenceAtom as EvidenceAtomRecord,
 } from "./src/services/evidenceStore";
-import { runOrchestratorWorkflow, getWorkflowResultForCase } from "./src/orchestrator/workflowRunner";
+import { startOrchestratorWorkflow, cancelOrchestratorWorkflow, getWorkflowResultForCase, getCachedWorkflowResult, attachRuntimeStream } from "./src/orchestrator/workflowRunner";
 import {
   listGrkbEntries,
   getObligations as getGrkbObligations,
@@ -169,6 +605,25 @@ export async function registerRoutes(
       : { raw: req.body };
     console.error("[ClientError]", JSON.stringify(payload));
     res.json({ ok: true });
+  });
+
+  // Health check endpoint with database connectivity test
+  app.get("/api/health", async (_req, res) => {
+    const { isPoolHealthy, pool } = await import("./db");
+    const dbHealthy = await isPoolHealthy();
+    const status = dbHealthy ? "healthy" : "degraded";
+    
+    res.status(dbHealthy ? 200 : 503).json({
+      status,
+      timestamp: new Date().toISOString(),
+      database: {
+        connected: dbHealthy,
+        poolTotal: pool.totalCount,
+        poolIdle: pool.idleCount,
+        poolWaiting: pool.waitingCount,
+      },
+      uptime: process.uptime(),
+    });
   });
 
   // Template endpoints
@@ -1002,12 +1457,65 @@ export async function registerRoutes(
         });
       }
 
-      const result = await runOrchestratorWorkflow(parsed.data);
-      res.json(result);
+      const started = startOrchestratorWorkflow(parsed.data);
+      res.status(202).json(started);
     } catch (error: any) {
       console.error("[POST /api/orchestrator/run] Error:", error);
+      if (isDatabaseConnectionError(error)) {
+        return res.status(503).json({
+          error: "Database unavailable",
+          code: "DATABASE_UNAVAILABLE",
+        });
+      }
       res.status(500).json({ error: error.message || "Failed to run workflow" });
     }
+  });
+
+  app.post("/api/orchestrator/cases/:psurCaseId/cancel", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      if (isNaN(psurCaseId)) {
+        return res.status(400).json({ error: "Invalid psurCaseId" });
+      }
+      const ok = cancelOrchestratorWorkflow(psurCaseId, "Cancelled by user");
+      res.status(200).json({ ok });
+    } catch (error: any) {
+      console.error("[POST /api/orchestrator/cases/:psurCaseId/cancel] Error:", error);
+      res.status(500).json({ error: error.message || "Failed to cancel workflow" });
+    }
+  });
+
+  app.get("/api/orchestrator/cases/:psurCaseId/stream", async (req, res) => {
+    const psurCaseId = parseInt(req.params.psurCaseId);
+    if (isNaN(psurCaseId)) {
+      return res.status(400).json({ error: "Invalid psurCaseId" });
+    }
+
+    res.status(200);
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+
+    // initial ping
+    res.write(`event: ping\ndata: ${JSON.stringify({ ts: Date.now(), psurCaseId })}\n\n`);
+
+    // attach stream
+    const detach = attachRuntimeStream(psurCaseId, res);
+
+    // keepalive
+    const ping = setInterval(() => {
+      try {
+        res.write(`event: ping\ndata: ${JSON.stringify({ ts: Date.now(), psurCaseId })}\n\n`);
+      } catch {
+        // ignore
+      }
+    }, 15000);
+
+    req.on("close", () => {
+      clearInterval(ping);
+      detach();
+    });
   });
 
   app.get("/api/orchestrator/cases/:psurCaseId", async (req, res) => {
@@ -1025,6 +1533,17 @@ export async function registerRoutes(
       res.json(result);
     } catch (error: any) {
       console.error("[GET /api/orchestrator/cases/:psurCaseId] Error:", error);
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      const cached = Number.isNaN(psurCaseId) ? null : getCachedWorkflowResult(psurCaseId);
+      if (cached) {
+        return res.status(200).json(cached);
+      }
+      if (isDatabaseConnectionError(error)) {
+        return res.status(503).json({
+          error: "Database unavailable",
+          code: "DATABASE_UNAVAILABLE",
+        });
+      }
       res.status(500).json({ error: error.message || "Failed to get workflow state" });
     }
   });
@@ -1065,6 +1584,49 @@ export async function registerRoutes(
       if (!parsed.success) {
         return res.status(400).json({ error: parsed.error.errors });
       }
+
+      // Validate: Check if a case already exists for this device and period
+      const deviceId = parsed.data.leadingDeviceId;
+      const startPeriod = parsed.data.startPeriod;
+      const endPeriod = parsed.data.endPeriod;
+
+      if (deviceId && startPeriod && endPeriod) {
+        // Check for existing cases with the same device and surveillance period
+        const existingCases = await storage.getPSURCasesByDeviceAndPeriod(
+          deviceId,
+          startPeriod,
+          endPeriod
+        );
+
+        // Filter to find cases that would block creation
+        const blockingCases = existingCases.filter(c => {
+          // A case blocks creation if it's NOT closed, voided, or exported (reviewed)
+          const status = c.status;
+          return status !== "closed" && status !== "voided" && status !== "exported";
+        });
+
+        if (blockingCases.length > 0) {
+          const existingCase = blockingCases[0];
+          console.log(`[POST /api/psur-cases] Blocked: existing case ${existingCase.psurReference} (status: ${existingCase.status}) for device ${deviceId}`);
+          return res.status(409).json({
+            error: "A PSUR case already exists for this device and surveillance period",
+            existingCase: {
+              id: existingCase.id,
+              psurReference: existingCase.psurReference,
+              status: existingCase.status,
+              startPeriod: existingCase.startPeriod,
+              endPeriod: existingCase.endPeriod,
+            },
+            message: "A new case can only be created if the existing case is closed, voided, or exported (reviewed). Alternatively, change the surveillance period dates.",
+          });
+        }
+
+        // Log if creating alongside closed/voided/exported cases
+        if (existingCases.length > 0) {
+          console.log(`[POST /api/psur-cases] Creating new case - existing cases are closed/voided/exported: ${existingCases.map(c => `${c.psurReference}(${c.status})`).join(', ')}`);
+        }
+      }
+
       const psurCase = await storage.createPSURCase(parsed.data);
       res.status(201).json(psurCase);
     } catch (error) {
@@ -1513,6 +2075,9 @@ export async function registerRoutes(
           uploadId: evidenceUpload.id,
           atoms: atomRecords,
         });
+        
+        // Invalidate preview cache when new evidence is added
+        invalidatePreviewCache(parseInt(psurCaseId));
       }
 
       await storage.updateEvidenceUpload(evidenceUpload.id, {
@@ -2107,6 +2672,12 @@ export async function registerRoutes(
         return res.status(400).json({ error: parsed.error.errors });
       }
       const atom = await storage.createEvidenceAtom(parsed.data);
+      
+      // Invalidate preview cache when new evidence is added
+      if (parsed.data.psurCaseId) {
+        invalidatePreviewCache(parsed.data.psurCaseId);
+      }
+      
       res.status(201).json(atom);
     } catch (error) {
       res.status(500).json({ error: "Failed to create evidence atom" });
@@ -3187,7 +3758,8 @@ export async function registerRoutes(
   });
 
   // Download PSUR as Word document - SOTA with LLM optimization, accessibility, and signature prep
-  // Query params: ?style=corporate|regulatory|premium&llm=true&accessibility=true&signature=true
+  // Uses cached document from workflow if available for instant download
+  // Query params: ?style=corporate|regulatory|premium&llm=true&accessibility=true&signature=true&nocache=true
   app.get("/api/psur-cases/:psurCaseId/psur.docx", async (req, res) => {
     try {
       const psurCaseId = parseInt(req.params.psurCaseId);
@@ -3195,13 +3767,28 @@ export async function registerRoutes(
       const enableLLM = req.query.llm !== "false";
       const enableAccessibility = req.query.accessibility !== "false";
       const prepareForSignature = req.query.signature === "true";
-      
-      console.log(`[PSUR DOCX] SOTA generation: case=${psurCaseId}, style=${documentStyle}, LLM=${enableLLM}, accessibility=${enableAccessibility}`);
+      const noCache = req.query.nocache === "true";
       
       const psurCase = await storage.getPSURCase(psurCaseId);
       if (!psurCase) {
         return res.status(404).json({ error: "PSUR case not found" });
       }
+
+      // Check cache first for instant download (unless nocache requested)
+      if (!noCache) {
+        const cached = getCachedCompiledDocument(psurCaseId, documentStyle);
+        if (cached?.docx) {
+          console.log(`[PSUR DOCX] Serving cached document for case ${psurCaseId}`);
+          res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+          res.setHeader("Content-Disposition", `attachment; filename="PSUR-${psurCase.psurReference}.docx"`);
+          res.setHeader("X-PSUR-Pages", cached.pageCount.toString());
+          res.setHeader("X-PSUR-Content-Hash", cached.contentHash);
+          res.setHeader("X-PSUR-Cached", "true");
+          return res.send(cached.docx);
+        }
+      }
+      
+      console.log(`[PSUR DOCX] SOTA generation: case=${psurCaseId}, style=${documentStyle}, LLM=${enableLLM}, accessibility=${enableAccessibility}`);
 
       // Get device info
       const devices = await storage.getDevices();
@@ -3230,11 +3817,26 @@ export async function registerRoutes(
       });
 
       if (result.success && result.document?.docx) {
+        // Cache the result for future downloads
+        cacheCompiledDocument(psurCaseId, documentStyle, {
+          docx: result.document.docx,
+          pdf: result.document.pdf,
+          html: result.document.html,
+          pageCount: result.document.pageCount,
+          sectionCount: result.sections.length,
+          chartCount: result.charts.length,
+          contentHash: result.document.contentHash,
+          style: documentStyle,
+          generatedAt: Date.now(),
+          expiresAt: Date.now() + COMPILED_DOC_CACHE_TTL,
+        });
+        
         console.log(`[PSUR DOCX] Generated: ${result.document.pageCount} pages, ${result.sections.length} sections, accessibility: ${JSON.stringify(result.document.accessibility)}`);
         res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
         res.setHeader("Content-Disposition", `attachment; filename="PSUR-${psurCase.psurReference}.docx"`);
         res.setHeader("X-PSUR-Pages", result.document.pageCount.toString());
         res.setHeader("X-PSUR-Content-Hash", result.document.contentHash);
+        res.setHeader("X-PSUR-Cached", "false");
         res.send(result.document.docx);
       } else {
         console.error("[PSUR DOCX] Compilation failed:", result.errors);
@@ -3251,19 +3853,35 @@ export async function registerRoutes(
   });
 
   // Download PSUR as PDF/A - SOTA with regulatory-compliant archival format
-  // Query params: ?style=corporate|regulatory|premium&signature=true
+  // Uses cached document from workflow if available for instant download
+  // Query params: ?style=corporate|regulatory|premium&signature=true&nocache=true
   app.get("/api/psur-cases/:psurCaseId/psur.pdf", async (req, res) => {
     try {
       const psurCaseId = parseInt(req.params.psurCaseId);
       const documentStyle = (req.query.style as string) || "regulatory"; // Default to regulatory for PDF
       const prepareForSignature = req.query.signature === "true";
-      
-      console.log(`[PSUR PDF] SOTA PDF/A generation: case=${psurCaseId}, style=${documentStyle}, signature=${prepareForSignature}`);
+      const noCache = req.query.nocache === "true";
       
       const psurCase = await storage.getPSURCase(psurCaseId);
       if (!psurCase) {
         return res.status(404).json({ error: "PSUR case not found" });
       }
+
+      // Check cache first for instant download (unless nocache requested)
+      if (!noCache) {
+        const cached = getCachedCompiledDocument(psurCaseId, documentStyle);
+        if (cached?.pdf) {
+          console.log(`[PSUR PDF] Serving cached document for case ${psurCaseId}`);
+          res.setHeader("Content-Type", "application/pdf");
+          res.setHeader("Content-Disposition", `attachment; filename="PSUR-${psurCase.psurReference}.pdf"`);
+          res.setHeader("X-PSUR-Pages", cached.pageCount.toString());
+          res.setHeader("X-PSUR-Content-Hash", cached.contentHash);
+          res.setHeader("X-PSUR-Cached", "true");
+          return res.send(cached.pdf);
+        }
+      }
+      
+      console.log(`[PSUR PDF] SOTA PDF/A generation: case=${psurCaseId}, style=${documentStyle}, signature=${prepareForSignature}`);
 
       // Get device info
       const devices = await storage.getDevices();
@@ -3292,12 +3910,27 @@ export async function registerRoutes(
       });
 
       if (result.success && result.document?.pdf) {
+        // Cache the result for future downloads
+        cacheCompiledDocument(psurCaseId, documentStyle, {
+          docx: result.document.docx,
+          pdf: result.document.pdf,
+          html: result.document.html,
+          pageCount: result.document.pageCount,
+          sectionCount: result.sections.length,
+          chartCount: result.charts.length,
+          contentHash: result.document.contentHash,
+          style: documentStyle,
+          generatedAt: Date.now(),
+          expiresAt: Date.now() + COMPILED_DOC_CACHE_TTL,
+        });
+        
         console.log(`[PSUR PDF] Generated: ${result.document.pageCount} pages, PDF/UA compliant: ${result.document.accessibility.pdfUaCompliant}`);
         res.setHeader("Content-Type", "application/pdf");
         res.setHeader("Content-Disposition", `attachment; filename="PSUR-${psurCase.psurReference}.pdf"`);
         res.setHeader("X-PSUR-Pages", result.document.pageCount.toString());
         res.setHeader("X-PSUR-Content-Hash", result.document.contentHash);
         res.setHeader("X-PDF-UA-Compliant", result.document.accessibility.pdfUaCompliant.toString());
+        res.setHeader("X-PSUR-Cached", "false");
         res.send(result.document.pdf);
       } else {
         console.error("[PSUR PDF] Compilation failed:", result.errors);
@@ -3313,11 +3946,391 @@ export async function registerRoutes(
     }
   });
 
-  // Download PSUR as accessible HTML
+  // Live Content API - Returns sections as they're being generated for real-time UI updates
+  app.get("/api/psur-cases/:psurCaseId/live-content", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      
+      const liveContent = getLiveContent(psurCaseId);
+      
+      if (!liveContent) {
+        // No live content yet, return empty but valid response
+        return res.json({
+          psurCaseId,
+          sections: [],
+          isGenerating: false,
+          lastUpdated: null,
+        });
+      }
+      
+      // Convert Map to array for JSON serialization
+      const sections = Array.from(liveContent.sections.entries()).map(([slotId, data]) => ({
+        slotId,
+        title: data.title,
+        content: data.content,
+        status: data.status,
+      }));
+      
+      res.json({
+        psurCaseId,
+        sections,
+        isGenerating: liveContent.isGenerating,
+        lastUpdated: liveContent.lastUpdated,
+      });
+    } catch (error: any) {
+      console.error("[Live Content] Error:", error);
+      res.status(500).json({ error: "Failed to get live content", details: error.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // DECISION TRACE API - Natural language decision tracking and audit trail
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  // Get all decision traces for a PSUR case
+  app.get("/api/psur-cases/:psurCaseId/decision-traces", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      const limit = parseInt(req.query.limit as string) || 100;
+      const offset = parseInt(req.query.offset as string) || 0;
+      const eventTypes = req.query.eventTypes ? (req.query.eventTypes as string).split(",") : undefined;
+      const orderBy = (req.query.orderBy as string) === "desc" ? "desc" : "asc";
+      
+      const { queryTraceEntries } = await import("./src/services/decisionTraceService");
+      
+      const entries = await queryTraceEntries({
+        psurCaseId,
+        eventTypes: eventTypes as any,
+        limit,
+        offset,
+        orderBy,
+      });
+      
+      res.json({
+        psurCaseId,
+        total: entries.length,
+        offset,
+        limit,
+        entries: entries.map(e => ({
+          id: e.id,
+          traceId: e.traceId,
+          sequenceNum: e.sequenceNum,
+          eventType: e.eventType,
+          timestamp: e.eventTimestamp,
+          actor: e.actor,
+          entityType: e.entityType,
+          entityId: e.entityId,
+          decision: e.decision,
+          humanSummary: e.humanSummary,
+          regulatoryContext: e.regulatoryContext,
+          complianceAssertion: e.complianceAssertion,
+          reasons: e.reasons,
+          workflowStep: e.workflowStep,
+        })),
+      });
+    } catch (error: any) {
+      console.error("[Decision Traces] Error:", error);
+      res.status(500).json({ error: "Failed to get decision traces", details: error.message });
+    }
+  });
+
+  // Get decision trace summary
+  app.get("/api/psur-cases/:psurCaseId/decision-traces/summary", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      
+      const { getTraceSummary, verifyTraceChain } = await import("./src/services/decisionTraceService");
+      
+      const summary = await getTraceSummary(psurCaseId);
+      
+      if (!summary) {
+        return res.json({
+          psurCaseId,
+          exists: false,
+          summary: null,
+          chainValidation: null,
+        });
+      }
+      
+      const chainValidation = await verifyTraceChain(summary.traceId);
+      
+      res.json({
+        psurCaseId,
+        exists: true,
+        summary: {
+          traceId: summary.traceId,
+          workflowStatus: summary.workflowStatus,
+          totalEvents: summary.totalEvents,
+          acceptedSlots: summary.acceptedSlots,
+          rejectedSlots: summary.rejectedSlots,
+          traceGaps: summary.traceGaps,
+          evidenceAtoms: summary.evidenceAtoms,
+          negativeEvidence: summary.negativeEvidence,
+          obligationsSatisfied: summary.obligationsSatisfied,
+          obligationsUnsatisfied: summary.obligationsUnsatisfied,
+          completedSteps: summary.completedSteps,
+          chainValid: summary.chainValid,
+          startedAt: summary.startedAt,
+          completedAt: summary.completedAt,
+          failedStep: summary.failedStep,
+          failureReason: summary.failureReason,
+        },
+        chainValidation,
+      });
+    } catch (error: any) {
+      console.error("[Decision Traces Summary] Error:", error);
+      res.status(500).json({ error: "Failed to get trace summary", details: error.message });
+    }
+  });
+
+  // Natural language search in decision traces
+  app.get("/api/psur-cases/:psurCaseId/decision-traces/search", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      const searchText = req.query.q as string;
+      const limit = parseInt(req.query.limit as string) || 50;
+      
+      if (!searchText || searchText.trim().length < 2) {
+        return res.status(400).json({ error: "Search query must be at least 2 characters" });
+      }
+      
+      const { searchTraces } = await import("./src/services/decisionTraceService");
+      
+      const entries = await searchTraces(psurCaseId, searchText.trim(), limit);
+      
+      res.json({
+        psurCaseId,
+        query: searchText,
+        total: entries.length,
+        entries: entries.map(e => ({
+          id: e.id,
+          sequenceNum: e.sequenceNum,
+          eventType: e.eventType,
+          timestamp: e.eventTimestamp,
+          actor: e.actor,
+          entityType: e.entityType,
+          entityId: e.entityId,
+          decision: e.decision,
+          humanSummary: e.humanSummary,
+          workflowStep: e.workflowStep,
+        })),
+      });
+    } catch (error: any) {
+      console.error("[Decision Traces Search] Error:", error);
+      res.status(500).json({ error: "Failed to search traces", details: error.message });
+    }
+  });
+
+  // Get audit narrative (plain English export)
+  app.get("/api/psur-cases/:psurCaseId/decision-traces/narrative", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      const format = req.query.format as string || "text";
+      
+      const { exportAuditNarrative, exportTraceSummary } = await import("./src/services/decisionTraceService");
+      
+      if (format === "json") {
+        const data = await exportTraceSummary(psurCaseId);
+        res.json(data);
+      } else {
+        const narrative = await exportAuditNarrative(psurCaseId);
+        res.setHeader("Content-Type", "text/plain; charset=utf-8");
+        res.send(narrative);
+      }
+    } catch (error: any) {
+      console.error("[Decision Traces Narrative] Error:", error);
+      res.status(500).json({ error: "Failed to export narrative", details: error.message });
+    }
+  });
+
+  // Get decision timeline view
+  app.get("/api/psur-cases/:psurCaseId/decision-traces/timeline", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      
+      const { queryTraceEntries, getTraceSummary } = await import("./src/services/decisionTraceService");
+      
+      const summary = await getTraceSummary(psurCaseId);
+      const entries = await queryTraceEntries({
+        psurCaseId,
+        orderBy: "asc",
+        limit: 500,
+      });
+      
+      // Group by workflow step
+      const byStep: Record<number, any[]> = {};
+      const stepNames: Record<number, string> = {
+        0: "Initialization",
+        1: "Template Qualification",
+        2: "Case Creation",
+        3: "Evidence Ingestion",
+        4: "Slot Proposal",
+        5: "Adjudication",
+        6: "Coverage Report",
+        7: "Document Rendering",
+        8: "Bundle Export",
+      };
+      
+      for (const entry of entries) {
+        const step = entry.workflowStep || 0;
+        if (!byStep[step]) byStep[step] = [];
+        byStep[step].push({
+          id: entry.id,
+          sequenceNum: entry.sequenceNum,
+          eventType: entry.eventType,
+          timestamp: entry.eventTimestamp,
+          actor: entry.actor,
+          decision: entry.decision,
+          humanSummary: entry.humanSummary,
+          entityType: entry.entityType,
+          entityId: entry.entityId,
+        });
+      }
+      
+      const timeline = Object.entries(byStep)
+        .map(([step, events]) => ({
+          step: parseInt(step),
+          name: stepNames[parseInt(step)] || `Step ${step}`,
+          eventCount: events.length,
+          events: events.slice(0, 20), // Limit events per step for performance
+          hasMore: events.length > 20,
+        }))
+        .sort((a, b) => a.step - b.step);
+      
+      res.json({
+        psurCaseId,
+        summary: summary ? {
+          workflowStatus: summary.workflowStatus,
+          totalEvents: summary.totalEvents,
+          completedSteps: summary.completedSteps,
+        } : null,
+        timeline,
+      });
+    } catch (error: any) {
+      console.error("[Decision Traces Timeline] Error:", error);
+      res.status(500).json({ error: "Failed to get timeline", details: error.message });
+    }
+  });
+
+  // Get traces for a specific entity (slot, evidence, etc.)
+  app.get("/api/psur-cases/:psurCaseId/decision-traces/entity/:entityId", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      const entityId = req.params.entityId;
+      
+      const { getEntityTrace, getSlotDecisionChain } = await import("./src/services/decisionTraceService");
+      
+      // Try to get full slot decision chain if it's a slot
+      const slotChain = await getSlotDecisionChain(entityId);
+      const entityTrace = await getEntityTrace("", entityId);
+      
+      res.json({
+        psurCaseId,
+        entityId,
+        slotChain: slotChain.proposal || slotChain.adjudication ? slotChain : null,
+        entries: entityTrace.map(e => ({
+          id: e.id,
+          sequenceNum: e.sequenceNum,
+          eventType: e.eventType,
+          timestamp: e.eventTimestamp,
+          actor: e.actor,
+          decision: e.decision,
+          humanSummary: e.humanSummary,
+          regulatoryContext: e.regulatoryContext,
+          complianceAssertion: e.complianceAssertion,
+        })),
+      });
+    } catch (error: any) {
+      console.error("[Decision Traces Entity] Error:", error);
+      res.status(500).json({ error: "Failed to get entity traces", details: error.message });
+    }
+  });
+
+  // Fast Preview - lightweight HTML preview without full LLM generation
+  app.get("/api/psur-cases/:psurCaseId/preview.html", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      const documentStyle = (req.query.style as string) || "premium";
+      const noCache = (req.query.nocache as string) === "1";
+      
+      // Check cache first (unless nocache)
+      if (!noCache) {
+        const cached = getCachedPreview(psurCaseId, documentStyle);
+        if (cached) {
+          console.log(`[PSUR Preview] Serving cached preview for case ${psurCaseId}`);
+          res.setHeader("Content-Type", "text/html; charset=utf-8");
+          res.setHeader("X-Preview-Cached", "true");
+          res.setHeader("X-Preview-Age", (Date.now() - cached.generatedAt).toString());
+          return res.send(cached.html);
+        }
+      }
+      
+      const psurCase = await storage.getPSURCase(psurCaseId);
+      if (!psurCase) {
+        return res.status(404).json({ error: "PSUR case not found" });
+      }
+
+      // Generate fast preview - use template structure without full LLM generation
+      const template = loadTemplate(psurCase.templateId);
+      const slots = template.slots || [];
+      
+      // Get evidence counts for display
+      const atoms = await storage.getEvidenceAtoms(psurCaseId);
+      const atomsByType: Record<string, number> = {};
+      atoms.forEach((a: any) => {
+        atomsByType[a.evidenceType] = (atomsByType[a.evidenceType] || 0) + 1;
+      });
+      
+      // Get live content if available
+      const liveContent = getLiveContent(psurCaseId);
+      
+      // Generate lightweight HTML preview with live content
+      const html = generateFastPreviewHTML({
+        psurCase,
+        template,
+        slots,
+        atomsByType,
+        totalAtoms: atoms.length,
+        documentStyle,
+        liveContent,
+      });
+      
+      // Only cache if not actively generating (live content updates frequently)
+      if (!liveContent?.isGenerating) {
+        setCachedPreview(psurCaseId, documentStyle, html);
+      }
+      
+      console.log(`[PSUR Preview] Generated fast preview for case ${psurCaseId}`);
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.setHeader("X-Preview-Cached", "false");
+      res.send(html);
+    } catch (error: any) {
+      console.error("[PSUR Preview] Error:", error);
+      // Return a minimal error page instead of JSON
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.send(`<!DOCTYPE html><html><head><title>Preview Error</title><style>body{font-family:system-ui;padding:40px;color:#666}h1{color:#dc2626}</style></head><body><h1>Preview Unavailable</h1><p>${error.message || "Failed to generate preview"}</p></body></html>`);
+    }
+  });
+
+  // Download PSUR as accessible HTML (full generation with caching)
   app.get("/api/psur-cases/:psurCaseId/psur.html", async (req, res) => {
     try {
       const psurCaseId = parseInt(req.params.psurCaseId);
-      const documentStyle = (req.query.style as string) || "premium"; // Default to premium for HTML
+      const documentStyle = (req.query.style as string) || "premium";
+      const download = (req.query.download as string) === "1";
+      const noCache = (req.query.nocache as string) === "1";
+      
+      // Check cache first for non-download requests
+      if (!download && !noCache) {
+        const cached = getCachedPreview(psurCaseId, `full:${documentStyle}`);
+        if (cached) {
+          console.log(`[PSUR HTML] Serving cached HTML for case ${psurCaseId}`);
+          res.setHeader("Content-Type", "text/html; charset=utf-8");
+          res.setHeader("Content-Disposition", `inline; filename="PSUR-${psurCaseId}.html"`);
+          res.setHeader("X-Cached", "true");
+          return res.send(cached.html);
+        }
+      }
       
       console.log(`[PSUR HTML] SOTA HTML generation: case=${psurCaseId}, style=${documentStyle}`);
       
@@ -3352,9 +4365,16 @@ export async function registerRoutes(
       });
 
       if (result.success && result.document?.html) {
+        // Cache the full HTML
+        setCachedPreview(psurCaseId, `full:${documentStyle}`, result.document.html);
+        
         console.log(`[PSUR HTML] Generated: WCAG ${result.document.accessibility.wcagLevel} compliant`);
         res.setHeader("Content-Type", "text/html; charset=utf-8");
-        res.setHeader("Content-Disposition", `attachment; filename="PSUR-${psurCase.psurReference}.html"`);
+        if (download) {
+          res.setHeader("Content-Disposition", `attachment; filename="PSUR-${psurCase.psurReference}.html"`);
+        } else {
+          res.setHeader("Content-Disposition", `inline; filename="PSUR-${psurCase.psurReference}.html"`);
+        }
         res.send(result.document.html);
       } else {
         console.error("[PSUR HTML] Compilation failed:", result.errors);

@@ -26,10 +26,10 @@ The Executive Summary MUST include:
 ## WRITING STANDARDS
 - Use formal regulatory language appropriate for Notified Body submission
 - Be precise and factual - no speculation
-- Reference evidence using [ATOM-xxx] format
 - Include specific numbers, dates, and statistics
 - State conclusions with confidence levels
 - Identify any data gaps explicitly
+- Write clear, professional prose without markdown formatting symbols
 
 ## STRUCTURE
 1. Opening statement (device, period, scope)
@@ -38,12 +38,18 @@ The Executive Summary MUST include:
 4. Benefit-risk conclusion
 5. Recommended actions (if any)
 
+## CRITICAL: DO NOT USE CITATIONS IN OUTPUT
+- Do NOT include [ATOM-xxx] or any citation markers in the narrative text
+- Evidence references will be added automatically from metadata
+- Write clean, readable prose without inline citations
+- Focus on content quality and regulatory compliance
+
 ## OUTPUT FORMAT
-Write the narrative section content. After the narrative, provide a JSON block:
+Write the narrative section content WITHOUT any citation markers. After the narrative, provide a JSON block with the actual atom IDs used:
 \`\`\`json
 {
-  "citedAtoms": ["ATOM-xxx", ...],
-  "uncitedAtoms": ["ATOM-yyy", ...],
+  "citedAtoms": ["actual-atom-id-from-evidence", ...],
+  "uncitedAtoms": [],
   "dataGaps": ["description of missing data", ...],
   "confidence": 0.0-1.0,
   "reasoning": "explanation of content decisions"

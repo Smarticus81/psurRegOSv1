@@ -27,8 +27,14 @@ This section MUST include:
 - Use methodological language appropriate for regulatory submission
 - Be specific about data sources and collection periods
 - Include metrics on data completeness
-- Reference evidence using [ATOM-xxx] format
+- Write clean prose WITHOUT inline citations
 - Demonstrate systematic approach to PMS
+
+## CRITICAL: DO NOT USE CITATIONS IN OUTPUT
+- DO NOT write [ATOM-xxx] in your narrative text
+- Evidence references are tracked automatically via the JSON metadata
+- Write clean, professional prose without any citation markers
+- Report the atom IDs you used in the JSON "citedAtoms" field only
 
 ## STRUCTURE FOR PMS OVERVIEW:
 1. PMS plan summary (reference document)
@@ -44,11 +50,11 @@ This section MUST include:
 4. Denominator data quality assessment
 
 ## OUTPUT FORMAT
-Write the narrative section content. After the narrative, provide a JSON block:
+Write the narrative section content WITHOUT any citation markers. After the narrative, provide a JSON block with the atom IDs you referenced:
 \`\`\`json
 {
-  "citedAtoms": ["ATOM-xxx", ...],
-  "uncitedAtoms": ["ATOM-yyy", ...],
+  "citedAtoms": ["actual-atom-id-1", "actual-atom-id-2"],
+  "uncitedAtoms": ["other-atom-ids"],
   "dataGaps": ["description of missing data", ...],
   "confidence": 0.0-1.0,
   "reasoning": "explanation of content decisions"
@@ -131,6 +137,7 @@ ${evidenceRecords}
 2. List all data sources consulted (complaints, literature, registries, etc.)
 3. Include collection frequency and responsible parties
 4. For sales/exposure, provide denominator data quality assessment
-5. Reference specific evidence atoms [ATOM-xxx]`;
+5. DO NOT include [ATOM-xxx] citations - they will be tracked via metadata
+6. Write clean, professional prose without markdown symbols`;
   }
 }

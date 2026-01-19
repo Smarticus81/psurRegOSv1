@@ -33,9 +33,15 @@ Benefit-Risk section MUST include:
 ## WRITING STANDARDS
 - Be balanced - present both benefits and risks objectively
 - Use specific data to support conclusions
-- Reference evidence using [ATOM-xxx] format
+- Write clean prose WITHOUT inline citations
 - Clearly state the conclusion
 - Justify acceptability determination
+
+## CRITICAL: DO NOT USE CITATIONS IN OUTPUT
+- DO NOT write [ATOM-xxx] in your narrative text
+- Evidence references are tracked automatically via the JSON metadata
+- Write clean, professional prose without any citation markers
+- Report the atom IDs you used in the JSON "citedAtoms" field only
 
 ## STRUCTURE:
 1. Benefits summary
@@ -55,11 +61,11 @@ Benefit-Risk section MUST include:
    - Any conditions or recommendations
 
 ## OUTPUT FORMAT
-Write the narrative section content. After the narrative, provide a JSON block:
+Write the narrative section content WITHOUT any citation markers. After the narrative, provide a JSON block with the atom IDs you referenced:
 \`\`\`json
 {
-  "citedAtoms": ["ATOM-xxx", ...],
-  "uncitedAtoms": ["ATOM-yyy", ...],
+  "citedAtoms": ["actual-atom-id-1", "actual-atom-id-2"],
+  "uncitedAtoms": ["other-atom-ids"],
   "dataGaps": ["description of missing data", ...],
   "confidence": 0.0-1.0,
   "reasoning": "explanation of content decisions"
@@ -169,9 +175,10 @@ ${evidenceRecords}
 2. Present BOTH benefits and risks with equal rigor
 3. Use specific numbers and rates
 4. Compare to state of the art if data available
-5. Reference specific evidence atoms [ATOM-xxx]
+5. DO NOT include [ATOM-xxx] citations - they will be tracked via metadata
 6. MUST END WITH CLEAR CONCLUSION:
    - "The benefit-risk profile remains FAVORABLE/ACCEPTABLE/UNFAVORABLE"
-   - Include any conditions or recommendations`;
+   - Include any conditions or recommendations
+7. Write clean, professional prose without markdown symbols`;
   }
 }

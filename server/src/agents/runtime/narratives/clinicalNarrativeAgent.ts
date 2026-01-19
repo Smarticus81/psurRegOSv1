@@ -13,7 +13,7 @@ export class ClinicalNarrativeAgent extends BaseNarrativeAgent {
   protected readonly systemPrompt = `You are an expert medical device clinical scientist specializing in clinical evidence review and PMCF documentation under EU MDR.
 
 ## YOUR ROLE
-Generate comprehensive clinical narratives for literature reviews, PMCF activities, and external database searches with appropriate scientific language and citation formatting.
+Generate comprehensive clinical narratives for literature reviews, PMCF activities, and external database searches with appropriate scientific language.
 
 ## REGULATORY REQUIREMENTS (EU MDR Annex III, Article 61)
 Clinical sections MUST include:
@@ -34,9 +34,15 @@ Clinical sections MUST include:
 ## WRITING STANDARDS
 - Be precise about methodology
 - Include specific publication counts
-- Reference evidence using [ATOM-xxx] format
 - Summarize key findings objectively
 - Identify safety signals from literature
+- Write clean prose WITHOUT inline citations
+
+## CRITICAL: DO NOT USE CITATIONS IN OUTPUT
+- DO NOT write [ATOM-xxx] in your narrative text
+- Evidence references are tracked automatically via the JSON metadata
+- Write clean, professional prose without any citation markers
+- Report the atom IDs you used in the JSON "citedAtoms" field only
 
 ## STRUCTURE FOR LITERATURE:
 1. Search methodology (databases, strings, period)
@@ -59,11 +65,11 @@ Clinical sections MUST include:
 5. Conclusions
 
 ## OUTPUT FORMAT
-Write the narrative section content. After the narrative, provide a JSON block:
+Write the narrative section content WITHOUT any citation markers. After the narrative, provide a JSON block with the atom IDs you referenced:
 \`\`\`json
 {
-  "citedAtoms": ["ATOM-xxx", ...],
-  "uncitedAtoms": ["ATOM-yyy", ...],
+  "citedAtoms": ["actual-atom-id-1", "actual-atom-id-2"],
+  "uncitedAtoms": ["other-atom-ids"],
   "dataGaps": ["description of missing data", ...],
   "confidence": 0.0-1.0,
   "reasoning": "explanation of content decisions"
@@ -160,8 +166,9 @@ ${evidenceRecords}
 1. Use appropriate scientific/clinical language
 2. Document methodology (search strings, databases, dates)
 3. Include specific counts and metrics
-4. Cite publications properly where available
-5. Reference specific evidence atoms [ATOM-xxx]
-6. Clearly identify any safety signals found`;
+4. Cite publications properly where available (Author, Year)
+5. DO NOT include [ATOM-xxx] citations - they will be tracked via metadata
+6. Clearly identify any safety signals found
+7. Write clean, professional prose without markdown symbols`;
   }
 }

@@ -1,10 +1,12 @@
 /**
- * Trend Line Chart Agent
+ * SOTA Trend Line Chart Agent
  * 
- * SOTA agent for generating Article 88 trend line charts with threshold visualization.
+ * Generates Article 88 trend line charts with threshold visualization.
+ * Uses pure SVG generation - no native dependencies.
  */
 
 import { BaseChartAgent, ChartInput, CHART_THEMES, DocumentStyle } from "./baseChartAgent";
+import { ChartConfig, DataSeries } from "./svgChartGenerator";
 
 export class TrendLineChartAgent extends BaseChartAgent {
   protected readonly chartType = "TREND_LINE";
@@ -12,14 +14,14 @@ export class TrendLineChartAgent extends BaseChartAgent {
   constructor() {
     super(
       "TrendLineChartAgent",
-      "Trend Line Chart Agent"
+      "SOTA Trend Line Chart Agent"
     );
   }
 
   protected async generateChartConfig(
     input: ChartInput,
     theme: typeof CHART_THEMES[DocumentStyle]
-  ): Promise<any> {
+  ): Promise<Omit<ChartConfig, "width" | "height" | "style">> {
     // Extract trend data from atoms
     const trendAtoms = input.atoms.filter(a => 
       ["trend_analysis", "complaint_record", "sales_volume"].includes(a.evidenceType)
@@ -51,108 +53,202 @@ export class TrendLineChartAgent extends BaseChartAgent {
     // Calculate rates
     const periodSet = new Set([...Object.keys(complaintsByPeriod), ...Object.keys(salesByPeriod)]);
     const periods = Array.from(periodSet).sort();
-    const rateData: number[] = [];
-    const labels: string[] = [];
+    
+    const rateData: { label: string; value: number }[] = [];
 
     for (const period of periods) {
       const complaints = complaintsByPeriod[period] || 0;
       const sales = salesByPeriod[period] || 1;
       const rate = (complaints / sales) * 1000;
-      rateData.push(rate);
-      labels.push(period);
+      rateData.push({ label: period, value: rate });
     }
 
     // Calculate threshold (2x average baseline)
     const avgRate = rateData.length > 0 
-      ? rateData.reduce((a, b) => a + b, 0) / rateData.length 
+      ? rateData.reduce((a, b) => a + b.value, 0) / rateData.length 
       : 1;
     const threshold = avgRate * 2;
 
+    const series: DataSeries[] = [
+      {
+        name: "Complaint Rate",
+        data: rateData,
+        color: theme.primaryColors[0],
+      },
+    ];
+
     return {
       type: "line",
-      data: {
-        labels,
-        datasets: [
-          {
-            label: "Complaint Rate (per 1,000 units)",
-            data: rateData,
-            borderColor: theme.primaryColors[0],
-            backgroundColor: theme.primaryColors[0] + "40",
-            fill: true,
-            tension: 0.3,
-            pointRadius: 4,
-            pointHoverRadius: 6,
-          },
-          {
-            label: "Signal Threshold",
-            data: labels.map(() => threshold),
-            borderColor: input.style === "premium" ? "#ef4444" : "#dc2626",
-            borderDash: [5, 5],
-            fill: false,
-            pointRadius: 0,
-          },
-          {
-            label: "Baseline",
-            data: labels.map(() => avgRate),
-            borderColor: theme.primaryColors[2],
-            borderDash: [2, 2],
-            fill: false,
-            pointRadius: 0,
-          },
-        ],
-      },
-      options: {
-        ...this.getBaseChartOptions(theme, input.chartTitle),
-        plugins: {
-          ...this.getBaseChartOptions(theme, input.chartTitle).plugins,
-          annotation: {
-            annotations: {
-              thresholdLine: {
-                type: "line",
-                yMin: threshold,
-                yMax: threshold,
-                borderColor: "#dc2626",
-                borderWidth: 2,
-                borderDash: [5, 5],
-              },
-            },
-          },
-        },
-        scales: {
-          x: {
-            ...this.getBaseChartOptions(theme, input.chartTitle).scales.x,
-            title: {
-              display: true,
-              text: "Period",
-              color: theme.textColor,
-            },
-          },
-          y: {
-            ...this.getBaseChartOptions(theme, input.chartTitle).scales.y,
-            beginAtZero: true,
-            title: {
-              display: true,
-              text: "Rate per 1,000 Units",
-              color: theme.textColor,
-            },
-          },
-        },
+      title: input.chartTitle || "Complaint Rate Trend Analysis",
+      subtitle: "Per 1,000 units sold",
+      series,
+      showLegend: true,
+      showGrid: true,
+      showValues: false,
+      yAxisLabel: "Rate (per 1,000)",
+      xAxisLabel: "Period",
+      thresholdLine: {
+        value: threshold,
+        label: `Threshold (${threshold.toFixed(2)})`,
+        color: "#ef4444",
       },
     };
   }
+}
 
-  private extractPeriod(dateStr: string): string | null {
-    if (!dateStr) return null;
-    try {
-      const date = new Date(dateStr);
-      if (!isNaN(date.getTime())) {
-        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+// ═══════════════════════════════════════════════════════════════════════════════
+// ADDITIONAL CHART AGENTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export class ComplaintDistributionChartAgent extends BaseChartAgent {
+  protected readonly chartType = "COMPLAINT_DISTRIBUTION";
+
+  constructor() {
+    super(
+      "ComplaintDistributionChartAgent",
+      "SOTA Complaint Distribution Chart Agent"
+    );
+  }
+
+  protected async generateChartConfig(
+    input: ChartInput,
+    theme: typeof CHART_THEMES[DocumentStyle]
+  ): Promise<Omit<ChartConfig, "width" | "height" | "style">> {
+    // Group complaints by category/type
+    const byCategory: Record<string, number> = {};
+
+    for (const atom of input.atoms) {
+      if (atom.evidenceType === "complaint_record") {
+        const category = String(this.getValue(atom.normalizedData, "complaint_type", "category", "type") || "Other");
+        byCategory[category] = (byCategory[category] || 0) + 1;
       }
-    } catch {
-      // Fall through
     }
-    // Try to extract YYYY-MM from string
-    const match = dateStr.match(/(\d{4})-(\d{2})/);
-    return match ? `${match[1]}-${match[2]}` : null;
+
+    const sortedCategories = Object.entries(byCategory)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8);
+
+    const series: DataSeries[] = [
+      {
+        name: "Complaints",
+        data: sortedCategories.map(([label, value]) => ({ label, value })),
+      },
+    ];
+
+    return {
+      type: "bar",
+      title: input.chartTitle || "Complaint Distribution by Category",
+      series,
+      showLegend: false,
+      showGrid: true,
+      showValues: true,
+      yAxisLabel: "Count",
+      xAxisLabel: "Category",
+    };
+  }
+}
+
+export class SeverityPieChartAgent extends BaseChartAgent {
+  protected readonly chartType = "SEVERITY_PIE";
+
+  constructor() {
+    super(
+      "SeverityPieChartAgent",
+      "SOTA Severity Distribution Chart Agent"
+    );
+  }
+
+  protected async generateChartConfig(
+    input: ChartInput,
+    theme: typeof CHART_THEMES[DocumentStyle]
+  ): Promise<Omit<ChartConfig, "width" | "height" | "style">> {
+    // Group by severity level
+    const bySeverity: Record<string, number> = {};
+    const severityColors: Record<string, string> = {
+      "Critical": "#dc2626",
+      "High": "#ea580c",
+      "Medium": "#f59e0b",
+      "Low": "#22c55e",
+      "Negligible": "#6b7280",
+    };
+
+    for (const atom of input.atoms) {
+      const severity = String(this.getValue(atom.normalizedData, "severity", "severity_level", "risk_level") || "Unknown");
+      bySeverity[severity] = (bySeverity[severity] || 0) + 1;
+    }
+
+    const series: DataSeries[] = [
+      {
+        name: "Severity",
+        data: Object.entries(bySeverity).map(([label, value]) => ({
+          label,
+          value,
+          color: severityColors[label] || theme.primaryColors[Object.keys(bySeverity).indexOf(label) % theme.primaryColors.length],
+        })),
+      },
+    ];
+
+    return {
+      type: "donut",
+      title: input.chartTitle || "Event Severity Distribution",
+      series,
+      showLegend: true,
+    };
+  }
+}
+
+export class TimelineAreaChartAgent extends BaseChartAgent {
+  protected readonly chartType = "TIMELINE_AREA";
+
+  constructor() {
+    super(
+      "TimelineAreaChartAgent",
+      "SOTA Timeline Area Chart Agent"
+    );
+  }
+
+  protected async generateChartConfig(
+    input: ChartInput,
+    theme: typeof CHART_THEMES[DocumentStyle]
+  ): Promise<Omit<ChartConfig, "width" | "height" | "style">> {
+    // Group events by period and type
+    const eventsByPeriodAndType: Record<string, Record<string, number>> = {};
+    const eventTypes = new Set<string>();
+
+    for (const atom of input.atoms) {
+      const date = String(this.getValue(atom.normalizedData, "date", "event_date", "reported_date") || "");
+      const period = this.extractPeriod(date);
+      const type = atom.evidenceType;
+      
+      if (period) {
+        eventTypes.add(type);
+        if (!eventsByPeriodAndType[period]) {
+          eventsByPeriodAndType[period] = {};
+        }
+        eventsByPeriodAndType[period][type] = (eventsByPeriodAndType[period][type] || 0) + 1;
+      }
+    }
+
+    const periods = Object.keys(eventsByPeriodAndType).sort();
+    const types = Array.from(eventTypes);
+
+    const series: DataSeries[] = types.map((type, i) => ({
+      name: type.replace(/_/g, " "),
+      data: periods.map(period => ({
+        label: period,
+        value: eventsByPeriodAndType[period]?.[type] || 0,
+      })),
+      color: theme.primaryColors[i % theme.primaryColors.length],
+    }));
+
+    return {
+      type: "area",
+      title: input.chartTitle || "Event Timeline",
+      series,
+      showLegend: true,
+      showGrid: true,
+      yAxisLabel: "Count",
+      xAxisLabel: "Period",
+    };
   }
 }

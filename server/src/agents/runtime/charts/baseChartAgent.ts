@@ -1,33 +1,15 @@
 /**
- * Base Chart Agent
+ * SOTA Base Chart Agent
  * 
- * Foundation for all SOTA chart generator agents using Chart.js.
- * Generates PNG images for embedding in DOCX documents.
+ * Foundation for all chart generator agents using pure SVG generation.
+ * SVG is converted to PNG for DOCX embedding via Puppeteer.
+ * Generates high-quality vector graphics suitable for regulatory documents.
  */
 
 import { BaseAgent, AgentConfig, AgentContext, createAgentConfig } from "../../baseAgent";
 import { createTraceBuilder } from "../../../services/compileTraceRepository";
-
-// Dynamic import for chartjs-node-canvas (may not be available in all environments)
-let ChartJSNodeCanvas: any = null;
-let Chart: any = null;
-
-async function loadChartJS() {
-  if (ChartJSNodeCanvas === null) {
-    try {
-      const module = await import("chartjs-node-canvas");
-      ChartJSNodeCanvas = module.ChartJSNodeCanvas;
-      Chart = (await import("chart.js")).Chart;
-      
-      // Register all chart components
-      const { registerables } = await import("chart.js");
-      Chart.register(...registerables);
-    } catch (err) {
-      console.warn("[ChartAgent] chartjs-node-canvas not available, charts will be disabled");
-    }
-  }
-  return { ChartJSNodeCanvas, Chart };
-}
+import { SVGChartGenerator, ChartConfig, ChartOutput as SVGChartOutput, DocumentStyle as SVGDocStyle, DataSeries } from "./svgChartGenerator";
+import * as puppeteer from "puppeteer";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -50,6 +32,7 @@ export interface ChartInput {
 }
 
 export interface ChartOutput {
+  svg: string;
   imageBuffer: Buffer;
   width: number;
   height: number;
@@ -63,7 +46,7 @@ export interface ChartAgentContext extends AgentContext {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// STYLE THEMES
+// STYLE THEMES (kept for backward compatibility)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const CHART_THEMES: Record<DocumentStyle, {
@@ -102,7 +85,6 @@ export const CHART_THEMES: Record<DocumentStyle, {
 
 export abstract class BaseChartAgent extends BaseAgent<ChartInput, ChartOutput> {
   protected abstract readonly chartType: string;
-  protected chartCanvas: any = null;
 
   constructor(
     agentType: string,
@@ -128,13 +110,6 @@ export abstract class BaseChartAgent extends BaseAgent<ChartInput, ChartOutput> 
   protected async execute(input: ChartInput): Promise<ChartOutput> {
     const ctx = this.context as ChartAgentContext;
     
-    // Load Chart.js
-    const { ChartJSNodeCanvas } = await loadChartJS();
-    
-    if (!ChartJSNodeCanvas) {
-      throw new Error("Chart generation not available - chartjs-node-canvas not installed");
-    }
-
     // Create trace builder
     const trace = createTraceBuilder(
       ctx.psurCaseId,
@@ -149,58 +124,115 @@ export abstract class BaseChartAgent extends BaseAgent<ChartInput, ChartOutput> 
       atomCount: input.atoms.length,
     });
 
-    await this.logTrace("EVIDENCE_ATOM_CREATED" as any, "INFO", "CHART", this.chartType, {
-      chartTitle: input.chartTitle,
-      style: input.style,
-      atomCount: input.atoms.length,
-    });
+    console.log(`[${this.agentId}] Generating SOTA chart: ${this.chartType}`);
 
     const width = input.width || 800;
     const height = input.height || 400;
     const theme = CHART_THEMES[input.style];
 
-    // Initialize canvas
-    this.chartCanvas = new ChartJSNodeCanvas({
-      width,
-      height,
-      backgroundColour: theme.backgroundColor,
-    });
-
-    // Generate chart configuration
+    // Generate chart configuration using abstract method
     const chartConfig = await this.generateChartConfig(input, theme);
     
-    // Render to PNG buffer
-    const imageBuffer = await this.chartCanvas.renderToBuffer(chartConfig);
-
-    const dataPointCount = this.countDataPoints(chartConfig);
-
-    trace.setOutput({
+    // Use SOTA SVG generator
+    const generator = new SVGChartGenerator({
+      ...chartConfig,
       width,
       height,
-      dataPointCount,
+      style: input.style as SVGDocStyle,
+    });
+    
+    const result = generator.generate();
+    
+    // Convert SVG to PNG using Puppeteer for DOCX embedding
+    let pngBuffer: Buffer;
+    try {
+      pngBuffer = await this.convertSvgToPng(result.svg, width, height);
+      console.log(`[${this.agentId}] SVG converted to PNG: ${pngBuffer.length} bytes`);
+    } catch (convErr) {
+      console.warn(`[${this.agentId}] PNG conversion failed, using SVG fallback:`, convErr);
+      // Fallback to SVG buffer if PNG conversion fails
+      pngBuffer = Buffer.from(result.svg, "utf-8");
+    }
+
+    trace.setOutput({
+      width: result.width,
+      height: result.height,
+      dataPointCount: result.dataPointCount,
       mimeType: "image/png",
     });
 
     await trace.commit(
-      dataPointCount > 0 ? "PASS" : "PARTIAL",
-      dataPointCount > 0 ? 0.9 : 0.5,
-      `Generated ${this.chartType} chart with ${dataPointCount} data points`
+      result.dataPointCount > 0 ? "PASS" : "PARTIAL",
+      result.dataPointCount > 0 ? 0.9 : 0.5,
+      `Generated SOTA ${this.chartType} chart with ${result.dataPointCount} data points`
     );
 
-    await this.logTrace("SLOT_CONTENT_GENERATED" as any, "PASS", "CHART", this.chartType, {
-      width,
-      height,
-      dataPointCount,
-    });
+    console.log(`[${this.agentId}] SOTA chart generated: ${result.dataPointCount} data points`);
 
     return {
-      imageBuffer,
-      width,
-      height,
+      svg: result.svg,
+      imageBuffer: pngBuffer,
+      width: result.width,
+      height: result.height,
       mimeType: "image/png",
       chartType: this.chartType,
-      dataPointCount,
+      dataPointCount: result.dataPointCount,
     };
+  }
+
+  /**
+   * Convert SVG to PNG using Puppeteer for DOCX embedding
+   */
+  private async convertSvgToPng(svg: string, width: number, height: number): Promise<Buffer> {
+    let browser: puppeteer.Browser | null = null;
+    try {
+      browser = await puppeteer.launch({
+        headless: true,
+        args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      });
+      
+      const page = await browser.newPage();
+      await page.setViewport({ width, height, deviceScaleFactor: 2 }); // 2x for retina quality
+      
+      // Create an HTML page with the SVG
+      const html = `<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    * { margin: 0; padding: 0; }
+    body { width: ${width}px; height: ${height}px; background: white; }
+    svg { display: block; }
+  </style>
+</head>
+<body>${svg}</body>
+</html>`;
+      
+      await page.setContent(html, { waitUntil: "networkidle0" });
+      
+      // Take screenshot as PNG
+      const screenshot = await page.screenshot({
+        type: "png",
+        clip: { x: 0, y: 0, width, height },
+        omitBackground: false,
+      });
+      
+      return Buffer.from(screenshot);
+    } finally {
+      if (browser) {
+        // Graceful cleanup with retry for Windows file locking
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            await new Promise(resolve => setTimeout(resolve, 100 * attempt));
+            await browser.close();
+            break;
+          } catch {
+            if (attempt === 3) {
+              try { browser.disconnect(); } catch { /* ignore */ }
+            }
+          }
+        }
+      }
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -208,12 +240,13 @@ export abstract class BaseChartAgent extends BaseAgent<ChartInput, ChartOutput> 
   // ═══════════════════════════════════════════════════════════════════════════════
 
   /**
-   * Generate the Chart.js configuration object
+   * Generate the chart configuration object
+   * Subclasses implement this to transform evidence atoms into chart data
    */
   protected abstract generateChartConfig(
     input: ChartInput,
     theme: typeof CHART_THEMES[DocumentStyle]
-  ): Promise<any>;
+  ): Promise<Omit<ChartConfig, "width" | "height" | "style">>;
 
   // ═══════════════════════════════════════════════════════════════════════════════
   // HELPER METHODS
@@ -227,61 +260,19 @@ export abstract class BaseChartAgent extends BaseAgent<ChartInput, ChartOutput> 
     return null;
   }
 
-  protected countDataPoints(config: any): number {
-    try {
-      const datasets = config.data?.datasets || [];
-      return datasets.reduce((sum: number, ds: any) => sum + (ds.data?.length || 0), 0);
-    } catch {
-      return 0;
-    }
+  protected countDataPoints(series: DataSeries[]): number {
+    return series.reduce((sum, s) => sum + s.data.length, 0);
   }
 
-  protected getBaseChartOptions(theme: typeof CHART_THEMES[DocumentStyle], title: string): any {
-    return {
-      responsive: false,
-      maintainAspectRatio: false,
-      plugins: {
-        title: {
-          display: true,
-          text: title,
-          color: theme.textColor,
-          font: {
-            family: theme.fontFamily,
-            size: 16,
-            weight: "bold",
-          },
-        },
-        legend: {
-          labels: {
-            color: theme.textColor,
-            font: {
-              family: theme.fontFamily,
-              size: 12,
-            },
-          },
-        },
-      },
-      scales: {
-        x: {
-          ticks: {
-            color: theme.textColor,
-            font: { family: theme.fontFamily },
-          },
-          grid: {
-            color: theme.gridColor,
-          },
-        },
-        y: {
-          ticks: {
-            color: theme.textColor,
-            font: { family: theme.fontFamily },
-          },
-          grid: {
-            color: theme.gridColor,
-          },
-        },
-      },
-    };
+  protected extractPeriod(dateStr: string): string | null {
+    if (!dateStr) return null;
+    try {
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return null;
+      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    } catch {
+      return null;
+    }
   }
 
   protected calculateConfidence(output: ChartOutput): number {

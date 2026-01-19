@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { EvidenceIngestionPanel } from "@/components/evidence-ingestion-panel";
+import { cn } from "@/lib/utils";
+import { FileText, Settings, Info, LayoutDashboard, Search, CheckCircle2, AlertCircle, Trash2, ArrowRight, Loader2, ChevronDown, ChevronUp } from "lucide-react";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -60,23 +62,251 @@ type MappingConfig = {
 // UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════════
 
+interface ApiError extends Error {
+    status?: number;
+    existingCase?: { id: number; psurReference: string; status: string; startPeriod: string; endPeriod: string };
+}
+
 async function api<T>(url: string, opts?: RequestInit): Promise<T> {
     const resp = await fetch(url, { ...opts, headers: { "Content-Type": "application/json", ...(opts?.headers || {}) } });
     const text = await resp.text();
     const json = text ? JSON.parse(text) : null;
-    if (!resp.ok) throw new Error(json?.message || json?.error || `HTTP ${resp.status}`);
+    if (!resp.ok) {
+        const err = new Error(json?.message || json?.error || `HTTP ${resp.status}`) as ApiError;
+        err.status = resp.status;
+        if (json?.existingCase) err.existingCase = json.existingCase;
+        throw err;
+    }
     return json as T;
 }
 
 function formatType(t: string): string { return t.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" "); }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// MODAL COMPONENT (Redesigned)
+// LIVE CONTENT VIEWER - Shows sections as they're rendered in real-time
+// ═══════════════════════════════════════════════════════════════════════════════
+
+interface LiveSection {
+    slotId: string;
+    title: string;
+    content: string;
+    status: "pending" | "generating" | "done";
+}
+
+function LiveContentViewer({ 
+    psurCaseId, 
+    documentStyle, 
+    runtimeEvents,
+    isGenerating 
+}: { 
+    psurCaseId: number;
+    documentStyle: string;
+    runtimeEvents: any[];
+    isGenerating: boolean;
+}) {
+    const [sections, setSections] = useState<LiveSection[]>([]);
+    const [isExpanded, setIsExpanded] = useState(false);
+    const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+    const [lastFetch, setLastFetch] = useState(0);
+    
+    // Fetch live content periodically while generating
+    useEffect(() => {
+        if (!psurCaseId) return;
+        
+        const fetchLiveContent = async () => {
+            try {
+                const res = await fetch(`/api/psur-cases/${psurCaseId}/live-content`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.sections && Array.isArray(data.sections)) {
+                        setSections(data.sections);
+                        // Auto-expand newly completed sections
+                        const newlyDone = data.sections.filter((s: LiveSection) => s.status === "done" && s.content);
+                        if (newlyDone.length > 0) {
+                            setExpandedSections(prev => {
+                                const next = new Set(prev);
+                                newlyDone.forEach((s: LiveSection) => next.add(s.slotId));
+                                return next;
+                            });
+                        }
+                    }
+                }
+            } catch (e) {
+                // Silently fail
+            }
+            setLastFetch(Date.now());
+        };
+        
+        fetchLiveContent();
+        
+        // Poll while generating
+        let interval: NodeJS.Timeout | null = null;
+        if (isGenerating) {
+            interval = setInterval(fetchLiveContent, 2000);
+        }
+        
+        return () => { if (interval) clearInterval(interval); };
+    }, [psurCaseId, isGenerating]);
+    
+    const toggleSection = (slotId: string) => {
+        setExpandedSections(prev => {
+            const next = new Set(prev);
+            if (next.has(slotId)) {
+                next.delete(slotId);
+            } else {
+                next.add(slotId);
+            }
+            return next;
+        });
+    };
+    
+    const doneCount = sections.filter(s => s.status === "done").length;
+    const generatingCount = sections.filter(s => s.status === "generating").length;
+    const pendingCount = sections.filter(s => s.status === "pending").length;
+    
+    return (
+        <div className="mt-6 w-full glass-card overflow-hidden rounded-2xl border border-border/30">
+            {/* Header */}
+            <div className="px-4 py-3 border-b border-border/30 flex items-center justify-between bg-background/80">
+                <div className="flex items-center gap-3">
+                    <button 
+                        onClick={() => setIsExpanded(!isExpanded)}
+                        className="p-1.5 rounded-lg hover:bg-muted transition-colors"
+                    >
+                        <svg className={`w-4 h-4 text-muted-foreground transition-transform ${isExpanded ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                    </button>
+                    <div className="text-sm font-semibold text-foreground">Live Document Preview</div>
+                    <div className="flex items-center gap-2 text-xs">
+                        {doneCount > 0 && (
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                                {doneCount} done
+                            </span>
+                        )}
+                        {generatingCount > 0 && (
+                            <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 animate-pulse">
+                                {generatingCount} generating
+                            </span>
+                        )}
+                        {pendingCount > 0 && (
+                            <span className="px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                                {pendingCount} pending
+                            </span>
+                        )}
+                    </div>
+                </div>
+                <div className="flex items-center gap-2">
+                    {runtimeEvents.length > 0 && (
+                        <span className="text-xs text-muted-foreground">
+                            {runtimeEvents[0]?.agent && `Agent: ${runtimeEvents[0].agent}`}
+                        </span>
+                    )}
+                </div>
+            </div>
+            
+            {/* Content */}
+            {isExpanded && (
+                <div className="max-h-[60vh] overflow-y-auto bg-background/50">
+                    {sections.length === 0 ? (
+                        <div className="p-8 text-center text-muted-foreground">
+                            <svg className="w-8 h-8 mx-auto mb-3 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            <p className="text-sm">Waiting for content generation to begin...</p>
+                        </div>
+                    ) : (
+                        <div className="divide-y divide-border/30">
+                            {sections.map((section) => (
+                                <div key={section.slotId} className="group">
+                                    {/* Section Header */}
+                                    <button
+                                        onClick={() => section.content && toggleSection(section.slotId)}
+                                        className={cn(
+                                            "w-full px-4 py-3 flex items-center justify-between text-left transition-colors",
+                                            section.content ? "hover:bg-muted/50 cursor-pointer" : "cursor-default"
+                                        )}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            {/* Status Indicator */}
+                                            <div className={cn(
+                                                "w-2 h-2 rounded-full shrink-0",
+                                                section.status === "done" ? "bg-emerald-500" :
+                                                section.status === "generating" ? "bg-primary animate-pulse" :
+                                                "bg-muted-foreground/30"
+                                            )} />
+                                            
+                                            {/* Title */}
+                                            <span className={cn(
+                                                "text-sm font-medium",
+                                                section.status === "done" ? "text-foreground" :
+                                                section.status === "generating" ? "text-primary" :
+                                                "text-muted-foreground"
+                                            )}>
+                                                {section.title || section.slotId}
+                                            </span>
+                                            
+                                            {/* Status Badge */}
+                                            {section.status === "generating" && (
+                                                <span className="text-xs text-primary animate-pulse">Writing...</span>
+                                            )}
+                                        </div>
+                                        
+                                        {/* Expand Arrow */}
+                                        {section.content && (
+                                            <svg className={cn(
+                                                "w-4 h-4 text-muted-foreground transition-transform",
+                                                expandedSections.has(section.slotId) && "rotate-90"
+                                            )} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                            </svg>
+                                        )}
+                                    </button>
+                                    
+                                    {/* Section Content */}
+                                    {expandedSections.has(section.slotId) && section.content && (
+                                        <div className="px-4 pb-4 animate-in slide-in-from-top-2">
+                                            <div className="ml-5 pl-4 border-l-2 border-border/50">
+                                                <div className="prose prose-sm dark:prose-invert max-w-none text-sm text-muted-foreground leading-relaxed">
+                                                    {section.content.split("\n\n").slice(0, 3).map((para, i) => (
+                                                        <p key={i} className="mb-2">{para.substring(0, 500)}{para.length > 500 && "..."}</p>
+                                                    ))}
+                                                    {section.content.split("\n\n").length > 3 && (
+                                                        <p className="text-xs text-muted-foreground/60 italic">
+                                                            ... and {section.content.split("\n\n").length - 3} more paragraphs
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MODAL COMPONENT (Redesigned - Fixed centering and shadows)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function Modal({ open, onClose, title, size = "lg", children }: { 
     open: boolean; onClose: () => void; title: string; size?: "md" | "lg" | "xl" | "full"; children: React.ReactNode 
 }) {
+    // Prevent body scroll when modal is open
+    useEffect(() => {
+        if (open) {
+            document.body.style.overflow = "hidden";
+        } else {
+            document.body.style.overflow = "";
+        }
+        return () => { document.body.style.overflow = ""; };
+    }, [open]);
+    
     if (!open) return null;
     const sizeClass = {
         md: "max-w-2xl",
@@ -86,30 +316,44 @@ function Modal({ open, onClose, title, size = "lg", children }: {
     }[size];
     
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
-            {/* Backdrop */}
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+        <div 
+            className="fixed inset-0 z-[100] overflow-y-auto"
+            onClick={onClose}
+            role="dialog"
+            aria-modal="true"
+        >
+            {/* Backdrop - no shadow, just blur */}
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity" />
             
-            {/* Modal */}
-            <div 
-                className={`relative ${sizeClass} w-full max-h-[90vh] flex flex-col rounded-xl border border-border/50 bg-background shadow-2xl`}
-                onClick={e => e.stopPropagation()}
-            >
-                {/* Header */}
-                <div className="flex items-center justify-between px-5 py-4 border-b border-border/50">
-                    <h3 className="text-lg font-semibold">{title}</h3>
-                    <button 
-                        onClick={onClose} 
-                        className="p-2 rounded-lg hover:bg-muted transition-colors"
-                    >
-                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                    </button>
+            {/* Centering container */}
+            <div className="flex min-h-full items-center justify-center p-4">
+                {/* Modal */}
+                <div 
+                    className={cn(
+                        "relative w-full transform transition-all",
+                        sizeClass,
+                        "bg-background border border-border rounded-2xl shadow-lg",
+                        "max-h-[85vh] flex flex-col",
+                        "animate-scale-in"
+                    )}
+                    onClick={e => e.stopPropagation()}
+                >
+                    {/* Header */}
+                    <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
+                        <h3 className="text-lg font-semibold tracking-tight text-foreground">{title}</h3>
+                        <button 
+                            onClick={onClose} 
+                            className="p-2 rounded-lg hover:bg-muted transition-colors"
+                        >
+                            <svg className="w-5 h-5 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+                    
+                    {/* Content */}
+                    <div className="flex-1 overflow-y-auto p-6">{children}</div>
                 </div>
-                
-                {/* Content */}
-                <div className="flex-1 overflow-y-auto p-5">{children}</div>
             </div>
         </div>
     );
@@ -790,7 +1034,7 @@ function EnhancedIngestionPanel({
                 }
             }
             
-            // Create atoms from mapped data
+            // Create records from mapped data
             const formData = new FormData();
             formData.append("psur_case_id", String(psurCaseId));
             formData.append("device_code", deviceCode);
@@ -903,14 +1147,14 @@ function EnhancedIngestionPanel({
                         />
                     </div>
                     
-                    {/* Create Atoms */}
+                    {/* Create Records */}
                     {mappings.length > 0 && (
                         <button
                             onClick={createAtoms}
                             disabled={creating}
                             className="w-full py-3 rounded-lg bg-green-600 text-white font-medium hover:bg-green-700 disabled:opacity-50"
                         >
-                            {creating ? "Creating Evidence Atoms..." : `Create ${parsedData.rows.length || parsedData.preview.length} Evidence Atoms`}
+                            {creating ? "Processing Records..." : `Import ${parsedData.rows.length || parsedData.preview.length} Records`}
                         </button>
                     )}
                 </div>
@@ -1042,174 +1286,157 @@ function ReconcileStep({
     };
 
     return (
-        <div className="h-full flex flex-col bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 rounded-xl p-4 -mx-4 -my-2 overflow-hidden">
+        <div className="h-full flex flex-col space-y-8 animate-slide-up">
             {/* Header */}
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between">
                 <div>
-                    <h2 className="text-xl font-bold text-white mb-1">Reconcile Evidence</h2>
-                    <p className="text-sm text-slate-400">Review missing evidence types and provide data or mark as N/A</p>
+                    <h2 className="text-2xl font-semibold tracking-tight text-foreground mb-1">Reconcile Evidence</h2>
+                    <p className="text-muted-foreground">Review requirement status and mark non-applicable evidence types.</p>
                 </div>
-                <div className="flex items-center gap-2">
-                    <div className="px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm">
-                        {requiredTypes.length - missingTypes.length}/{requiredTypes.length} Covered
+                <div className="flex items-center gap-3">
+                    <div className="ios-pill bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
+                        {requiredTypes.length - missingTypes.length} Complete
                     </div>
                     {missingTypes.length > 0 && (
-                        <div className="px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 text-sm">
+                        <div className="ios-pill bg-amber-500/10 text-amber-600 border-amber-500/20">
                             {missingTypes.length} Missing
                         </div>
                     )}
                 </div>
             </div>
 
-            {/* Stats Row */}
-            <div className="grid grid-cols-4 gap-3 mb-4">
-                <div className="p-3 rounded-xl bg-slate-800/50 border border-slate-700/50">
-                    <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Required</div>
-                    <div className="text-xl font-bold text-white">{requiredTypes.length}</div>
-                </div>
-                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-                    <div className="text-[10px] text-emerald-400 uppercase tracking-wider mb-1">Covered</div>
-                    <div className="text-xl font-bold text-emerald-400">{requiredTypes.length - missingTypes.length}</div>
-                </div>
-                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
-                    <div className="text-[10px] text-amber-400 uppercase tracking-wider mb-1">Missing</div>
-                    <div className="text-xl font-bold text-amber-400">{missingTypes.length}</div>
-                </div>
-                <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20">
-                    <div className="text-[10px] text-blue-400 uppercase tracking-wider mb-1">Selected</div>
-                    <div className="text-xl font-bold text-blue-400">{selectedTypes.size}</div>
-                </div>
-            </div>
-
             {/* Action Bar */}
             {missingTypes.length > 0 && (
-                <div className="flex items-center justify-between mb-4 p-3 rounded-lg bg-slate-800/30 border border-slate-700/30">
+                <div className="glass-card p-4 flex items-center justify-between shadow-xl">
                     <div className="flex items-center gap-2">
                         <button 
                             onClick={selectAllMissing}
-                            className="px-3 py-1.5 rounded text-xs font-medium bg-slate-700 text-slate-300 hover:bg-slate-600"
+                            className="ios-pill hover:bg-white/80 active:scale-95 transition-all"
                         >
                             Select All Missing
                         </button>
                         {selectedTypes.size > 0 && (
                             <button 
                                 onClick={clearSelection}
-                                className="px-3 py-1.5 rounded text-xs font-medium text-slate-400 hover:text-white"
+                                className="text-sm font-medium text-muted-foreground hover:text-foreground px-4"
                             >
-                                Clear ({selectedTypes.size})
+                                Clear Selection
                             </button>
                         )}
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-4">
                         <button 
                             onClick={onUpload}
-                            className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-500 flex items-center gap-2"
+                            className="glossy-button bg-primary text-primary-foreground shadow-lg"
                         >
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                             </svg>
-                            Upload More Data
+                            <span>Upload Data</span>
                         </button>
                         <button 
                             onClick={() => selectedTypes.size > 0 && setShowNAModal(true)}
                             disabled={selectedTypes.size === 0}
-                            className="px-4 py-2 rounded-lg text-sm font-medium bg-amber-600 text-white hover:bg-amber-500 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+                            className="glossy-button bg-white text-foreground border-border/50 disabled:opacity-40"
                         >
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
                             </svg>
-                            Mark as N/A ({selectedTypes.size})
+                            <span>Mark as N/A ({selectedTypes.size})</span>
                         </button>
                     </div>
                 </div>
             )}
 
             {/* Evidence Type Grid */}
-            <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+            <div className="flex-1 overflow-visible">
                 {missingTypes.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center text-center">
-                        <div className="w-16 h-16 rounded-full bg-emerald-500/20 flex items-center justify-center mb-4">
-                            <svg className="w-8 h-8 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    <div className="h-full flex flex-col items-center justify-center text-center space-y-6 animate-scale-in">
+                        <div className="w-24 h-24 rounded-full bg-emerald-500/10 flex items-center justify-center shadow-inner">
+                            <svg className="w-12 h-12 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                             </svg>
                         </div>
-                        <h3 className="text-lg font-semibold text-white mb-2">All Evidence Types Covered</h3>
-                        <p className="text-sm text-slate-400 max-w-md">
-                            All required evidence types have been addressed. You can proceed to the Review step.
+                        <h3 className="text-2xl font-bold text-foreground tracking-tight">System Fully Synchronized</h3>
+                        <p className="text-lg text-muted-foreground max-w-md">
+                            All required regulatory evidence has been successfully reconciled and mapped.
                         </p>
                     </div>
                 ) : (
-                    <div className="space-y-6">
+                    <div className="space-y-12">
                         {/* Missing Types */}
                         <div>
-                            <h3 className="text-sm font-semibold text-amber-400 mb-3 flex items-center gap-2">
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                                </svg>
-                                Missing Evidence Types ({missingTypes.length})
+                            <h3 className="text-xl font-bold text-foreground mb-6 flex items-center gap-2">
+                                <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                                Action Required ({missingTypes.length})
                             </h3>
-                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 {missingTypes.map(t => (
                                     <div 
                                         key={t} 
                                         onClick={() => toggleType(t)}
-                                        className={`p-3 rounded-lg border cursor-pointer transition-all ${
+                                        className={cn(
+                                            "glass-card p-6 cursor-pointer group hover:scale-105",
                                             selectedTypes.has(t) 
-                                                ? "bg-blue-500/20 border-blue-500/50" 
-                                                : "bg-slate-800/50 border-slate-700 hover:border-amber-500/30"
-                                        }`}
+                                                ? "border-primary bg-primary/5 shadow-2xl scale-[1.02]" 
+                                                : "hover:bg-white/80"
+                                        )}
                                     >
-                                        <div className="flex items-center justify-between mb-2">
-                                            <div className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${
-                                                selectedTypes.has(t) ? "bg-blue-500 border-blue-500" : "border-slate-600"
-                                            }`}>
+                                        <div className="flex items-center justify-between mb-6">
+                                            <div className={cn(
+                                                "w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all duration-300",
+                                                selectedTypes.has(t) ? "bg-primary border-primary" : "border-muted-foreground/30"
+                                            )}>
                                                 {selectedTypes.has(t) && (
-                                                    <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                                                     </svg>
                                                 )}
                                             </div>
                                             <button 
                                                 onClick={(e) => { e.stopPropagation(); openUploadForType(t); }}
-                                                className="p-1 rounded hover:bg-slate-700 text-slate-400 hover:text-white"
-                                                title="Upload data for this type"
+                                                className="w-10 h-10 rounded-full flex items-center justify-center bg-secondary/50 hover:bg-white transition-all text-muted-foreground hover:text-primary shadow-sm"
                                             >
-                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                                                 </svg>
                                             </button>
                                         </div>
-                                        <div className="text-xs font-medium text-slate-300">{formatType(t)}</div>
-                                        <div className="text-[10px] text-amber-400 mt-1">No data</div>
+                                        <div className="space-y-1">
+                                            <div className="text-lg font-bold text-foreground group-hover:text-primary transition-colors">{formatType(t)}</div>
+                                            <div className="text-sm font-medium text-amber-600/80">Missing Evidence</div>
+                                        </div>
                                     </div>
                                 ))}
                             </div>
                         </div>
 
-                        {/* Covered Types */}
+                        {/* Completed Requirements */}
                         <div>
-                            <h3 className="text-sm font-semibold text-emerald-400 mb-3 flex items-center gap-2">
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                </svg>
-                                Covered Evidence Types ({requiredTypes.length - missingTypes.length})
+                            <h3 className="text-xl font-bold text-foreground mb-6 flex items-center gap-2">
+                                <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                                Verified Evidence ({requiredTypes.length - missingTypes.length})
                             </h3>
-                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 opacity-80">
                                 {requiredTypes.filter(t => isTypeCovered(t)).map(t => {
                                     const atomCount = counts?.byType?.[t] || 0;
                                     const coverageInfo = counts?.coverage?.coveredByType?.[t];
                                     return (
-                                        <div key={t} className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20">
-                                            <div className="flex items-center justify-between mb-2">
-                                                <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                                </svg>
-                                                <span className="text-xs text-emerald-400">{atomCount > 0 ? atomCount : "via source"}</span>
+                                        <div key={t} className="glass-card p-6 bg-emerald-500/[0.02] border-emerald-500/10">
+                                            <div className="flex items-center justify-between mb-6">
+                                                <div className="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center shadow-sm">
+                                                    <svg className="w-5 h-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                                    </svg>
+                                                </div>
+                                                <span className="ios-pill bg-emerald-500/5 text-emerald-600 font-bold border-none text-sm">{atomCount > 0 ? atomCount : "Synced"}</span>
                                             </div>
-                                            <div className="text-xs font-medium text-emerald-300">{formatType(t)}</div>
-                                            {coverageInfo?.source && atomCount === 0 && (
-                                                <div className="text-[10px] text-blue-400 mt-1">from {coverageInfo.source}</div>
-                                            )}
+                                            <div className="space-y-1">
+                                                <div className="text-lg font-bold text-foreground">{formatType(t)}</div>
+                                                {coverageInfo?.source && atomCount === 0 && (
+                                                    <div className="text-xs font-medium text-muted-foreground">Certified via {coverageInfo.source}</div>
+                                                )}
+                                            </div>
                                         </div>
                                     );
                                 })}
@@ -1223,16 +1450,16 @@ function ReconcileStep({
             {showNAModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setShowNAModal(false)}>
                     <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-                    <div className="relative max-w-lg w-full rounded-xl border border-slate-700 bg-slate-900 shadow-2xl" onClick={e => e.stopPropagation()}>
-                        <div className="p-5 border-b border-slate-700">
-                            <h3 className="text-lg font-semibold text-white">Mark Evidence as N/A</h3>
-                            <p className="text-sm text-slate-400 mt-1">
+                    <div className="relative max-w-lg w-full rounded-xl border border-border bg-card shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <div className="p-5 border-b border-border">
+                            <h3 className="text-lg font-semibold text-foreground">Mark Evidence as N/A</h3>
+                            <p className="text-sm text-muted-foreground mt-1">
                                 Confirm that the selected evidence types have no applicable data for this PSUR period.
                             </p>
                         </div>
                         <div className="p-5">
                             <div className="mb-4">
-                                <label className="text-sm font-medium text-slate-300 mb-2 block">Selected Types ({selectedTypes.size})</label>
+                                <label className="text-sm font-medium text-foreground mb-2 block">Selected Types ({selectedTypes.size})</label>
                                 <div className="flex flex-wrap gap-1">
                                     {Array.from(selectedTypes).map(t => (
                                         <span key={t} className="px-2 py-1 rounded bg-amber-500/20 text-amber-300 text-xs">
@@ -1242,12 +1469,12 @@ function ReconcileStep({
                                 </div>
                             </div>
                             <div className="mb-4">
-                                <label className="text-sm font-medium text-slate-300 mb-2 block">Justification (Optional)</label>
+                                <label className="text-sm font-medium text-foreground mb-2 block">Justification (Optional)</label>
                                 <textarea
                                     value={naReason}
                                     onChange={e => setNaReason(e.target.value)}
                                     placeholder="e.g., No FSCAs were issued during this reporting period..."
-                                    className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 resize-none"
+                                    className="w-full px-3 py-2 rounded-lg bg-secondary border border-border text-foreground text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-amber-500/50 resize-none"
                                     rows={3}
                                 />
                             </div>
@@ -1262,10 +1489,10 @@ function ReconcileStep({
                                 </div>
                             </div>
                         </div>
-                        <div className="p-5 border-t border-slate-700 flex items-center justify-end gap-3">
+                        <div className="p-5 border-t border-border flex items-center justify-end gap-3">
                             <button 
                                 onClick={() => setShowNAModal(false)}
-                                className="px-4 py-2 rounded-lg text-sm font-medium text-slate-400 hover:text-white"
+                                className="px-4 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground"
                             >
                                 Cancel
                             </button>
@@ -1337,7 +1564,7 @@ function SingleTypeUploadForm({
             const resp = await fetch("/api/evidence/upload", { method: "POST", body: form });
             const data = await resp.json();
             if (!resp.ok) throw new Error(data.error);
-            setMsg(`Uploaded ${data.summary?.atomsCreated || 0} atoms`);
+            setMsg(`Imported ${data.summary?.atomsCreated || 0} records`);
             setFile(null);
             setTimeout(onSuccess, 1000);
         } catch (e: any) { setMsg(`Error: ${e.message}`); }
@@ -1395,7 +1622,7 @@ interface ExistingCase {
 export default function PsurWizard() {
     const [step, setStep] = useState<WizardStep>(1);
 
-    // Case state
+    // Draft state
     const [deviceCode, setDeviceCode] = useState("JS3000X");
     const [deviceId, setDeviceId] = useState(1);
     const [templateId, setTemplateId] = useState("MDCG_2022_21_ANNEX_I");
@@ -1406,17 +1633,92 @@ export default function PsurWizard() {
     const [psurRef, setPsurRef] = useState<string | null>(null);
     const [createBusy, setCreateBusy] = useState(false);
     const [createError, setCreateError] = useState("");
+    const [conflictCase, setConflictCase] = useState<{ id: number; psurReference: string; status: string } | null>(null);
 
     // Data
     const [devices, setDevices] = useState<Device[]>([]);
-    const [existingCases, setExistingCases] = useState<ExistingCase[]>([]);
+    const [existingDrafts, setExistingDrafts] = useState<ExistingCase[]>([]);
     const [counts, setCounts] = useState<AtomCountsResponse | null>(null);
     const [requiredTypes, setRequiredTypes] = useState<string[]>([]);
-    const [loadingCase, setLoadingCase] = useState(false);
+    const [loadingDraft, setLoadingDraft] = useState(false);
 
     // Workflow
     const [runBusy, setRunBusy] = useState(false);
     const [runResult, setRunResult] = useState<RunWorkflowResponse | null>(null);
+    const [pollingActive, setPollingActive] = useState(false);
+    const [pollFailures, setPollFailures] = useState(0);
+    const [pollError, setPollError] = useState("");
+    const [runtimeEvents, setRuntimeEvents] = useState<any[]>([]);
+    const [runtimeConnected, setRuntimeConnected] = useState(false);
+    const runtimeEsRef = useRef<EventSource | null>(null);
+
+    // Polling for workflow progress
+    useEffect(() => {
+        let interval: NodeJS.Timeout | null = null;
+        
+        if (pollingActive && psurCaseId) {
+            interval = setInterval(async () => {
+                try {
+                    const data = await api<RunWorkflowResponse>(`/api/orchestrator/cases/${psurCaseId}`);
+                    setRunResult(data);
+                    setPollError("");
+                    setPollFailures(0);
+                    
+                    // Check if everything is finished
+                    const isFinished = data.steps.every(s => s.status === "COMPLETED" || s.status === "FAILED" || s.status === "BLOCKED");
+                    if (isFinished) {
+                        setPollingActive(false);
+                        setRunBusy(false);
+                    }
+                } catch (e: any) {
+                    const message = e?.message || "Connection lost";
+                    setPollError(message);
+                    setPollFailures(prev => {
+                        const next = prev + 1;
+                        if (next >= 3) {
+                            setPollingActive(false);
+                            setRunBusy(false);
+                        }
+                        return next;
+                    });
+                }
+            }, 5000);
+        }
+        
+        return () => { if (interval) clearInterval(interval); };
+    }, [pollingActive, psurCaseId]);
+
+    // Realtime runtime events (SSE)
+    useEffect(() => {
+        if (!psurCaseId) return;
+        // connect when we are running/polling or in compile step
+        if (!pollingActive && !runBusy) return;
+
+        // close any previous stream
+        try { runtimeEsRef.current?.close(); } catch {}
+        setRuntimeConnected(false);
+
+        const es = new EventSource(`/api/orchestrator/cases/${psurCaseId}/stream`);
+        runtimeEsRef.current = es;
+
+        es.addEventListener("open", () => setRuntimeConnected(true));
+        es.addEventListener("error", () => setRuntimeConnected(false));
+        es.addEventListener("runtime", (msg: any) => {
+            try {
+                const data = JSON.parse(msg.data);
+                setRuntimeEvents(prev => {
+                    const next = [data, ...prev];
+                    return next.slice(0, 200);
+                });
+            } catch {}
+        });
+
+        return () => {
+            try { es.close(); } catch {}
+            runtimeEsRef.current = null;
+            setRuntimeConnected(false);
+        };
+    }, [psurCaseId, pollingActive, runBusy]);
     const [traceSummary, setTraceSummary] = useState<TraceSummary | null>(null);
     
     // AI Options - Default to ON for SOTA narrative generation
@@ -1430,12 +1732,13 @@ export default function PsurWizard() {
     // Modals
     const [showIngestionModal, setShowIngestionModal] = useState(false);
     const [showEvidenceModal, setShowEvidenceModal] = useState(false);
+    const [isEvidenceGridOpen, setIsEvidenceGridOpen] = useState(true);
 
     // Load data
     useEffect(() => { api<Device[]>("/api/devices").then(setDevices).catch(() => {}); }, []);
     useEffect(() => { 
         api<ExistingCase[]>("/api/psur-cases")
-            .then(cases => setExistingCases(cases.filter(c => c.status === "draft")))
+            .then(cases => setExistingDrafts(cases.filter(c => c.status === "draft")))
             .catch(() => {}); 
     }, []);
     useEffect(() => {
@@ -1453,8 +1756,8 @@ export default function PsurWizard() {
     useEffect(() => { if (psurCaseId) refreshCounts(); }, [psurCaseId, refreshCounts]);
 
     // Actions
-    async function createCase() {
-        setCreateBusy(true); setCreateError("");
+    async function createDraft() {
+        setCreateBusy(true); setCreateError(""); setConflictCase(null);
         try {
             const data = await api<CreateCaseResponse>("/api/psur-cases", {
                 method: "POST",
@@ -1465,16 +1768,45 @@ export default function PsurWizard() {
                 }),
             });
             setPsurCaseId(data.id); setPsurRef(data.psurReference); setStep(2);
-            // Remove from existing cases list since it's now active
-            setExistingCases(prev => prev.filter(c => c.id !== data.id));
-        } catch (e: any) { setCreateError(e?.message || "Failed"); }
+            // Remove from existing drafts list since it's now active
+            setExistingDrafts(prev => prev.filter(c => c.id !== data.id));
+        } catch (e: any) {
+            const apiErr = e as ApiError;
+            if (apiErr.status === 409 && apiErr.existingCase) {
+                // Conflict - case already exists for this device/period
+                setConflictCase(apiErr.existingCase);
+                setCreateError(`A case already exists: ${apiErr.existingCase.psurReference} (${apiErr.existingCase.status}). Resume it or change the surveillance period.`);
+            } else {
+                setCreateError(e?.message || "Failed");
+            }
+        }
         finally { setCreateBusy(false); }
     }
 
-    async function resumeCase(caseData: ExistingCase) {
-        setLoadingCase(true); setCreateError("");
+    async function resumeConflictCase() {
+        if (!conflictCase) return;
+        // Fetch the full case data and resume it
+        setLoadingDraft(true); setCreateError("");
         try {
-            // Load case details and set state
+            const cases = await api<ExistingCase[]>("/api/psur-cases");
+            const caseData = cases.find(c => c.id === conflictCase.id);
+            if (caseData) {
+                await resumeDraft(caseData);
+            } else {
+                setCreateError("Could not find the existing case");
+            }
+        } catch (e: any) {
+            setCreateError(e?.message || "Failed to load case");
+        } finally {
+            setLoadingDraft(false);
+            setConflictCase(null);
+        }
+    }
+
+    async function resumeDraft(caseData: ExistingCase) {
+        setLoadingDraft(true); setCreateError("");
+        try {
+            // Load draft details and set state
             setPsurCaseId(caseData.id);
             setPsurRef(caseData.psurReference);
             setTemplateId(caseData.templateId);
@@ -1487,7 +1819,7 @@ export default function PsurWizard() {
             const device = devices.find(d => d.id === caseData.leadingDeviceId);
             if (device) setDeviceCode(device.deviceCode);
             
-            // Load evidence counts for this case
+            // Load evidence counts for this draft
             const countsData = await api<AtomCountsResponse>(`/api/evidence/atoms/counts?psur_case_id=${caseData.id}`);
             setCounts(countsData);
             
@@ -1495,22 +1827,40 @@ export default function PsurWizard() {
             const hasEvidence = countsData.totals.all > 0;
             setStep(hasEvidence ? 2 : 2); // Go to upload step, user can proceed from there
             
-        } catch (e: any) { setCreateError(e?.message || "Failed to load case"); }
-        finally { setLoadingCase(false); }
+        } catch (e: any) { setCreateError(e?.message || "Failed to load draft"); }
+        finally { setLoadingDraft(false); }
     }
 
     async function runWorkflow() {
         if (!psurCaseId) return;
         setRunBusy(true);
+        setPollingActive(true);
+        setPollError("");
+        setPollFailures(0);
         try {
-            const data = await api<RunWorkflowResponse>("/api/orchestrator/run", {
+            await api<{ ok: true; psurCaseId: number; status: string }>("/api/orchestrator/run", {
                 method: "POST",
                 body: JSON.stringify({ templateId, jurisdictions, deviceCode, deviceId, periodStart, periodEnd, psurCaseId, enableAIGeneration, documentStyle, enableCharts }),
             });
-            setRunResult(data);
-            try { setTraceSummary(await api<TraceSummary>(`/api/psur-cases/${psurCaseId}/trace/summary`)); } catch {}
+            // Prime UI immediately (avoid waiting for first polling tick)
+            try {
+                const current = await api<RunWorkflowResponse>(`/api/orchestrator/cases/${psurCaseId}`);
+                setRunResult(current);
+            } catch {}
+        } catch (e) {
+            setPollingActive(false);
+            setRunBusy(false);
+        }
+    }
+
+    async function cancelDrafting() {
+        if (!psurCaseId) return;
+        try {
+            await fetch(`/api/orchestrator/cases/${psurCaseId}/cancel`, { method: "POST" });
         } catch {}
-        finally { setRunBusy(false); }
+        setPollingActive(false);
+        setRunBusy(false);
+        setPollError("Cancelled");
     }
 
 
@@ -1523,9 +1873,13 @@ export default function PsurWizard() {
         setRunResult(null);
         setTraceSummary(null);
         setCreateError("");
-        // Refresh existing cases list
+        setPollingActive(false);
+        setRunBusy(false);
+        setPollFailures(0);
+        setPollError("");
+        // Refresh existing drafts list
         api<ExistingCase[]>("/api/psur-cases")
-            .then(cases => setExistingCases(cases.filter(c => c.status === "draft")))
+            .then(cases => setExistingDrafts(cases.filter(c => c.status === "draft")))
             .catch(() => {});
     }
 
@@ -1553,68 +1907,96 @@ export default function PsurWizard() {
     const allComplete = runResult?.steps.every(s => s.status === "COMPLETED");
 
     return (
-        <div className="h-full flex flex-col p-3 overflow-hidden">
-            {/* Compact Header */}
-            <div className="flex items-center justify-between mb-3">
-                <h1 className="text-lg font-bold">PSUR Wizard</h1>
-                <div className="flex items-center gap-1 text-xs">
-                    {[1, 2, 3, 4, 5].map(n => (
-                        <button
-                            key={n}
-                            onClick={() => (n === 1 || (n === 2 && canGoStep2) || (n === 3 && canGoStep3) || (n === 4 && canGoStep4) || (n === 5 && canGoStep5)) && setStep(n as WizardStep)}
-                            disabled={n === 2 && !canGoStep2 || n === 3 && !canGoStep3 || n === 4 && !canGoStep4 || n === 5 && !canGoStep5}
-                            className={`px-2 py-1 rounded text-xs font-medium transition-all ${
-                                step === n ? "bg-blue-600 text-white" :
-                                step > n ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300" :
-                                "bg-muted text-muted-foreground disabled:opacity-40"
-                            }`}
-                        >
-                            {n}. {["Case", "Upload", "Reconcile", "Review", "Compile"][n - 1]}
-                        </button>
-                    ))}
-                </div>
+        <div className="h-full flex flex-col space-y-12 pb-24">
+            {/* Minimalist Step Indicator */}
+            <div className="flex items-center justify-center gap-4">
+                {[1, 2, 3, 4, 5].map(n => {
+                    const isCompleted = step > n;
+                    const isActive = step === n;
+                    const isDisabled = (n === 2 && !canGoStep2) || (n === 3 && !canGoStep3) || (n === 4 && !canGoStep4) || (n === 5 && !canGoStep5);
+                    const label = ["Draft", "Evidence", "Reconcile", "Review", "Compile"][n - 1];
+
+                    return (
+                        <div key={n} className="flex items-center gap-4">
+                            <button
+                                onClick={() => !isDisabled && setStep(n as WizardStep)}
+                                disabled={isDisabled}
+                                className={cn(
+                                    "group relative flex items-center gap-3 px-6 py-2.5 rounded-full transition-all duration-500",
+                                    isActive 
+                                        ? "bg-primary text-primary-foreground shadow-2xl scale-110 z-10" 
+                                        : isCompleted
+                                            ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
+                                            : "bg-white/50 text-muted-foreground border border-border/50 hover:bg-white disabled:opacity-30"
+                                )}
+                            >
+                                <div className={cn(
+                                    "w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold border",
+                                    isActive ? "bg-white text-primary border-white" : "border-current"
+                                )}>
+                                    {isCompleted ? (
+                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                        </svg>
+                                    ) : n}
+                                </div>
+                                <span className="text-sm font-bold tracking-tight">{label}</span>
+                            </button>
+                            {n < 5 && <div className="w-8 h-px bg-border/30" />}
+                        </div>
+                    );
+                })}
             </div>
 
             {/* Step Content */}
             <div className="flex-1 min-h-0">
-                {/* STEP 1: CREATE CASE (Redesigned) */}
+                {/* STEP 1: CREATE DRAFT */}
                 {step === 1 && (
-                    <div className="h-full flex flex-col bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 rounded-xl p-4 -mx-4 -my-2 overflow-hidden">
-                        <div className="flex-1 flex flex-col justify-center max-w-4xl mx-auto w-full">
-                            <div className="text-center mb-8">
-                                <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-400 mb-2">New PSUR Case</h2>
-                                <p className="text-slate-400 text-sm">Configure the regulatory parameters for your report</p>
-                            </div>
+                    <div className="max-w-4xl mx-auto space-y-12 animate-slide-up">
+                        <div className="text-center space-y-4">
+                            <h2 className="text-4xl font-semibold tracking-tight text-foreground leading-tight">Create a new PSUR Draft</h2>
+                            <p className="text-lg text-muted-foreground max-w-lg mx-auto">Configure device, reporting period, and jurisdiction to begin your periodic safety update report draft.</p>
+                        </div>
 
-                            <div className="grid grid-cols-2 gap-4 mb-6">
-                                {/* Template Selection */}
-                                <div className="p-4 rounded-xl bg-slate-900/50 border border-slate-800 hover:border-blue-500/30 transition-colors group">
-                                    <label className="text-xs font-medium text-slate-500 mb-3 block uppercase tracking-wider group-hover:text-blue-400 transition-colors">Template</label>
-                                    <div className="flex items-center gap-3 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-300">
-                                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                                        <span className="text-sm font-medium">MDCG 2022-21 Annex I</span>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            {/* Template & Jurisdictions */}
+                            <div className="glass-card p-8 space-y-8">
+                                <div className="space-y-3">
+                                    <label className="text-sm font-medium text-muted-foreground">Template</label>
+                                    <div className="p-4 rounded-xl bg-secondary/50 flex items-center gap-3">
+                                        <FileText className="w-5 h-5 text-muted-foreground" />
+                                        <div>
+                                            <div className="font-medium text-foreground">MDCG 2022-21 Annex I</div>
+                                            <div className="text-xs text-muted-foreground">EU MDR Compliant</div>
+                                        </div>
                                     </div>
                                 </div>
 
-                                {/* Jurisdiction Selection */}
-                                <div className="p-4 rounded-xl bg-slate-900/50 border border-slate-800 hover:border-blue-500/30 transition-colors group">
-                                    <label className="text-xs font-medium text-slate-500 mb-3 block uppercase tracking-wider group-hover:text-blue-400 transition-colors">Jurisdictions</label>
-                                    <div className="flex gap-2">
+                                <div className="space-y-3">
+                                    <label className="text-sm font-medium text-muted-foreground">Jurisdictions</label>
+                                    <div className="flex gap-3">
                                         {["EU_MDR", "UK_MDR"].map(j => (
-                                            <label key={j} className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-lg border cursor-pointer transition-all ${jurisdictions.includes(j) ? "bg-blue-500/20 border-blue-500/50 text-blue-300" : "bg-slate-800/50 border-slate-700 text-slate-400 hover:bg-slate-800"}`}>
+                                            <label key={j} className={cn(
+                                                "flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border cursor-pointer transition-all duration-200",
+                                                jurisdictions.includes(j) 
+                                                    ? "bg-foreground/5 border-foreground/20 text-foreground" 
+                                                    : "bg-transparent border-border text-muted-foreground hover:border-foreground/20"
+                                            )}>
                                                 <input type="checkbox" checked={jurisdictions.includes(j)} onChange={() => setJurisdictions(jurisdictions.includes(j) ? jurisdictions.filter(x => x !== j) : [...jurisdictions, j])} className="hidden" />
                                                 <span className="text-sm font-medium">{j.replace("_", " ")}</span>
                                             </label>
                                         ))}
                                     </div>
                                 </div>
+                            </div>
 
-                                {/* Device Selection */}
-                                <div className="p-4 rounded-xl bg-slate-900/50 border border-slate-800 hover:border-blue-500/30 transition-colors group">
-                                    <label className="text-xs font-medium text-slate-500 mb-3 block uppercase tracking-wider group-hover:text-blue-400 transition-colors">Device</label>
+                            {/* Device & Period */}
+                            <div className="glass-card p-8 space-y-6">
+                                <div className="space-y-3">
+                                    <label className="text-sm font-medium text-muted-foreground">Device</label>
                                     {devices.length > 0 ? (
                                         <select 
-                                            className="w-full bg-slate-800 border-slate-700 text-slate-200 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all outline-none"
+                                            className="w-full bg-secondary/50 border border-border rounded-xl px-4 py-3 font-medium focus:ring-2 focus:ring-foreground/10 focus:border-foreground/20 transition-all outline-none appearance-none cursor-pointer"
                                             value={deviceId}
                                             onChange={e => { setDeviceId(parseInt(e.target.value)); const d = devices.find(x => x.id === parseInt(e.target.value)); if (d) setDeviceCode(d.deviceCode); }}
                                         >
@@ -1622,167 +2004,208 @@ export default function PsurWizard() {
                                         </select>
                                     ) : (
                                         <input 
-                                            className="w-full bg-slate-800 border-slate-700 text-slate-200 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500/50 outline-none"
+                                            className="w-full bg-secondary/50 border border-border rounded-xl px-4 py-3 font-medium focus:ring-2 focus:ring-foreground/10 focus:border-foreground/20 outline-none"
                                             value={deviceCode} 
                                             onChange={e => setDeviceCode(e.target.value)} 
-                                            placeholder="Enter Device Code"
+                                            placeholder="Enter device code"
                                         />
                                     )}
                                 </div>
 
-                                {/* Period Selection */}
-                                <div className="p-4 rounded-xl bg-slate-900/50 border border-slate-800 hover:border-blue-500/30 transition-colors group">
-                                    <label className="text-xs font-medium text-slate-500 mb-3 block uppercase tracking-wider group-hover:text-blue-400 transition-colors">Reporting Period</label>
-                                    <div className="flex items-center gap-2">
-                                        <input type="date" className="flex-1 bg-slate-800 border-slate-700 text-slate-200 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500/50 outline-none" value={periodStart} onChange={e => setPeriodStart(e.target.value)} />
-                                        <span className="text-slate-500">→</span>
-                                        <input type="date" className="flex-1 bg-slate-800 border-slate-700 text-slate-200 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500/50 outline-none" value={periodEnd} onChange={e => setPeriodEnd(e.target.value)} />
+                                <div className="space-y-3">
+                                    <label className="text-sm font-medium text-muted-foreground">Reporting Period</label>
+                                    <div className="flex items-center gap-3">
+                                        <input type="date" className="flex-1 bg-secondary/50 border border-border rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-foreground/10 focus:border-foreground/20 outline-none" value={periodStart} onChange={e => setPeriodStart(e.target.value)} />
+                                        <span className="text-muted-foreground">to</span>
+                                        <input type="date" className="flex-1 bg-secondary/50 border border-border rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-foreground/10 focus:border-foreground/20 outline-none" value={periodEnd} onChange={e => setPeriodEnd(e.target.value)} />
                                     </div>
                                 </div>
                             </div>
+                        </div>
 
+                        <div className="space-y-6">
                             <button 
-                                onClick={createCase} 
+                                onClick={createDraft} 
                                 disabled={createBusy || !!psurCaseId}
-                                className="w-full py-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold shadow-lg shadow-blue-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                className="w-full py-4 rounded-2xl border border-border hover:border-foreground/20 hover:bg-secondary/50 text-foreground font-medium transition-all duration-200 disabled:opacity-50 flex items-center justify-center gap-3"
                             >
                                 {createBusy ? (
-                                    <><svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Creating Case...</>
+                                    <>
+                                        <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> 
+                                        <span>Creating...</span>
+                                    </>
                                 ) : psurCaseId ? (
-                                    <><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg> Case Created</>
+                                    <>
+                                        <svg className="w-5 h-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg> 
+                                        <span>Draft Created</span>
+                                    </>
                                 ) : (
-                                    "Create PSUR Case"
+                                    <>
+                                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                                        <span>Create PSUR Draft</span>
+                                    </>
                                 )}
                             </button>
                             
-                            {createError && <div className="mt-2 text-center text-sm text-red-400">{createError}</div>}
-
-                            {/* Resume Existing Case */}
-                            {existingCases.length > 0 && !psurCaseId && (
-                                <div className="mt-8 border-t border-slate-800 pt-6">
-                                    <div className="flex items-center justify-between mb-4">
-                                        <h3 className="text-sm font-semibold text-slate-300">Resume Draft</h3>
-                                        <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 text-[10px]">{existingCases.length} available</span>
-                                    </div>
-                                    <div className="grid gap-2 max-h-[200px] overflow-y-auto pr-2 custom-scrollbar">
-                                        {existingCases.map(c => {
-                                            const device = devices.find(d => d.id === c.leadingDeviceId);
-                                            return (
-                                                <div key={c.id} 
-                                                    className="flex items-center justify-between p-3 rounded-lg border border-slate-800 bg-slate-900/30 hover:border-blue-500/30 hover:bg-blue-500/5 cursor-pointer transition-all group"
-                                                    onClick={() => !loadingCase && resumeCase(c)}
-                                                >
-                                                    <div>
-                                                        <div className="flex items-center gap-2 mb-1">
-                                                            <span className="font-medium text-sm text-slate-300 group-hover:text-blue-300">{c.psurReference}</span>
-                                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">Draft</span>
-                                                        </div>
-                                                        <div className="text-xs text-slate-500">
-                                                            {device?.deviceCode || `Device #${c.leadingDeviceId}`} • {c.jurisdictions?.join(", ").replace(/_/g, " ")}
-                                                        </div>
-                                                    </div>
-                                                    <svg className="w-4 h-4 text-slate-600 group-hover:text-blue-400 transform group-hover:translate-x-1 transition-all" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
+                            {createError && (
+                                <div className="text-center space-y-2">
+                                    <div className="text-sm text-destructive">{createError}</div>
+                                    {conflictCase && (
+                                        <button
+                                            onClick={resumeConflictCase}
+                                            disabled={loadingDraft}
+                                            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 transition-colors text-sm font-medium"
+                                        >
+                                            {loadingDraft ? (
+                                                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                            ) : (
+                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                                            )}
+                                            <span>Resume {conflictCase.psurReference}</span>
+                                        </button>
+                                    )}
                                 </div>
                             )}
                         </div>
+
+                        {/* Resume Existing Draft - Limited to 3 most recent */}
+                        {existingDrafts.length > 0 && !psurCaseId && (
+                            <div className="animate-slide-up" style={{ animationDelay: "200ms" }}>
+                                <div className="flex items-center justify-between mb-4">
+                                    <h3 className="text-sm font-medium text-muted-foreground tracking-wide">Recent Drafts</h3>
+                                </div>
+                                <div className="space-y-2">
+                                    {existingDrafts.slice(0, 3).map(c => {
+                                        const device = devices.find(d => d.id === c.leadingDeviceId);
+                                        return (
+                                            <div key={c.id} 
+                                                className="p-4 rounded-2xl bg-secondary/30 hover:bg-secondary/50 cursor-pointer group transition-all duration-200 flex items-center justify-between"
+                                                onClick={() => !loadingDraft && resumeDraft(c)}
+                                            >
+                                                <div className="flex items-center gap-4">
+                                                    <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center">
+                                                        <svg className="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                        </svg>
+                                                    </div>
+                                                    <div>
+                                                        <div className="font-semibold text-foreground">{device?.deviceCode || c.psurReference}</div>
+                                                        <div className="text-xs text-muted-foreground">{c.jurisdictions?.join(", ").replace(/_/g, " ")}</div>
+                                                    </div>
+                                                </div>
+                                                <svg className="w-5 h-5 text-muted-foreground group-hover:text-foreground group-hover:translate-x-1 transition-all" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                                </svg>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
 
-                {/* STEP 2: UPLOAD (Redesigned) */}
+                {/* STEP 2: UPLOAD */}
                 {step === 2 && psurCaseId && (
-                    <div className="h-full flex flex-col bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 rounded-xl p-4 -mx-4 -my-2 overflow-hidden">
-                        {/* Header Stats */}
-                        <div className="grid grid-cols-3 gap-4 mb-6">
-                            <div className="p-4 rounded-xl bg-blue-500/10 border border-blue-500/20 backdrop-blur-sm">
-                                <div className="text-[10px] text-blue-300 uppercase tracking-wider mb-1">Evidence Atoms</div>
-                                <div className="text-2xl font-bold text-blue-400">{totalAtoms}</div>
+                    <div className="max-w-5xl mx-auto space-y-12 animate-slide-up">
+                        <div className="text-center space-y-3">
+                            <h2 className="text-3xl font-semibold tracking-tight text-foreground">Upload Evidence</h2>
+                            <p className="text-muted-foreground max-w-lg mx-auto">Add supporting documents and data files for your PSUR report.</p>
+                        </div>
+
+                        {/* Top Stats Cards */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                            <div className="glass-card p-8 bg-primary/5 border-primary/10 shadow-xl group hover:scale-105">
+                                <div className="text-sm font-black text-primary uppercase tracking-[0.2em] mb-4">Intelligence Atoms</div>
+                                <div className="text-6xl font-black text-primary tracking-tighter group-hover:scale-110 transition-transform">{totalAtoms}</div>
                             </div>
-                            <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 backdrop-blur-sm">
-                                <div className="text-[10px] text-emerald-300 uppercase tracking-wider mb-1">Coverage</div>
-                                <div className="text-2xl font-bold text-emerald-400">{((requiredTypes.length - missingTypes.length) / requiredTypes.length * 100).toFixed(0)}%</div>
+                            <div className="glass-card p-8 bg-emerald-500/5 border-emerald-500/10 shadow-xl group hover:scale-105">
+                                <div className="text-sm font-black text-emerald-600 uppercase tracking-[0.2em] mb-4">Requirements Status</div>
+                                <div className="text-6xl font-black text-emerald-600 tracking-tighter group-hover:scale-110 transition-transform">{((requiredTypes.length - missingTypes.length) / requiredTypes.length * 100).toFixed(0)}%</div>
                             </div>
-                            <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 backdrop-blur-sm">
-                                <div className="text-[10px] text-amber-300 uppercase tracking-wider mb-1">Missing Types</div>
-                                <div className="text-2xl font-bold text-amber-400">{missingTypes.length}</div>
+                            <div className="glass-card p-8 bg-amber-500/5 border-amber-500/10 shadow-xl group hover:scale-105">
+                                <div className="text-sm font-black text-amber-600 uppercase tracking-[0.2em] mb-4">Verification Gaps</div>
+                                <div className="text-6xl font-black text-amber-600 tracking-tighter group-hover:scale-110 transition-transform">{missingTypes.length}</div>
                             </div>
                         </div>
 
-                        {/* Upload Actions */}
-                        <div className="grid grid-cols-2 gap-4 mb-6">
-                            <button onClick={() => setShowIngestionModal(true)} className="group relative p-6 rounded-xl border border-slate-700 bg-slate-900/50 hover:bg-slate-800 hover:border-blue-500/50 transition-all text-left overflow-hidden">
-                                <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
-                                    <svg className="w-24 h-24 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+                        {/* Large Action Panels */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            <button onClick={() => setShowIngestionModal(true)} className="glass-card p-10 text-left space-y-8 group hover:shadow-2xl active:scale-95">
+                                <div className="w-20 h-20 rounded-3xl bg-primary/10 flex items-center justify-center text-primary group-hover:scale-110 group-hover:rotate-3 transition-all duration-500 shadow-inner">
+                                    <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
                                 </div>
-                                <div className="relative z-10">
-                                    <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform text-blue-400">
-                                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
-                                    </div>
-                                    <h3 className="text-lg font-semibold text-slate-200 mb-1 group-hover:text-blue-300">Upload Documents</h3>
-                                    <p className="text-sm text-slate-400">AI-powered extraction for CER, Risk, PMCF, Sales, Complaints</p>
+                                <div className="space-y-4">
+                                    <h3 className="text-3xl font-black tracking-tighter text-foreground group-hover:text-primary transition-colors">AI Document Ingestion</h3>
+                                    <p className="text-lg text-muted-foreground font-medium leading-relaxed">Neural-powered extraction for CER, Risk, and PMCF dossiers with automated entity recognition.</p>
                                 </div>
                             </button>
 
-                            <button onClick={() => setShowEvidenceModal(true)} className="group relative p-6 rounded-xl border border-slate-700 bg-slate-900/50 hover:bg-slate-800 hover:border-emerald-500/50 transition-all text-left overflow-hidden">
-                                <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
-                                    <svg className="w-24 h-24 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
+                            <button onClick={() => setShowEvidenceModal(true)} className="glass-card p-10 text-left space-y-8 group hover:shadow-2xl active:scale-95">
+                                <div className="w-20 h-20 rounded-3xl bg-emerald-500/10 flex items-center justify-center text-emerald-600 group-hover:scale-110 group-hover:-rotate-3 transition-all duration-500 shadow-inner">
+                                    <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
                                 </div>
-                                <div className="relative z-10">
-                                    <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform text-emerald-400">
-                                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
-                                    </div>
-                                    <h3 className="text-lg font-semibold text-slate-200 mb-1 group-hover:text-emerald-300">Advanced Upload</h3>
-                                    <p className="text-sm text-slate-400">Directly upload structured data for specific evidence types</p>
+                                <div className="space-y-4">
+                                    <h3 className="text-3xl font-black tracking-tighter text-foreground group-hover:text-emerald-600 transition-colors">Direct Evidence Mapping</h3>
+                                    <p className="text-lg text-muted-foreground font-medium leading-relaxed">High-velocity structured data import for Sales, Complaints, and FSCA repositories.</p>
                                 </div>
                             </button>
                         </div>
 
                         {/* Evidence Status Grid */}
-                        <div className="flex-1 flex flex-col min-h-0 bg-slate-900/30 border border-slate-800 rounded-xl p-4 overflow-hidden">
-                            <div className="flex items-center justify-between mb-4">
-                                <h3 className="text-sm font-semibold text-slate-300">Required Evidence</h3>
-                                <button onClick={refreshCounts} className="p-1.5 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition-colors">
-                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                        <div className="glass-card p-10 space-y-10 shadow-2xl">
+                            <div className="flex items-center justify-between cursor-pointer group" onClick={() => setIsEvidenceGridOpen(!isEvidenceGridOpen)}>
+                                <div className="flex items-center gap-4">
+                                    <h3 className="text-2xl font-black tracking-tighter text-foreground">Compliance Matrix</h3>
+                                    {isEvidenceGridOpen ? <ChevronUp className="w-6 h-6 text-muted-foreground group-hover:text-primary transition-colors" /> : <ChevronDown className="w-6 h-6 text-muted-foreground group-hover:text-primary transition-colors" />}
+                                </div>
+                                <button onClick={(e) => { e.stopPropagation(); refreshCounts(); }} className="w-12 h-12 rounded-full flex items-center justify-center bg-secondary hover:bg-white hover:text-primary transition-all active:rotate-180">
+                                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                                 </button>
                             </div>
                             
-                            <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
-                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                            {isEvidenceGridOpen && (
+                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 animate-in fade-in slide-in-from-top-4 duration-500">
                                     {requiredTypes.map(t => {
                                         const c = counts?.byType?.[t] || 0;
                                         const isCovered = isTypeCovered(t);
                                         const coverageInfo = counts?.coverage?.coveredByType?.[t];
                                         const sourceName = coverageInfo?.source;
                                         return (
-                                            <div key={t} className={`p-3 rounded-lg border flex flex-col justify-between h-24 transition-all ${
-                                                isCovered ? "bg-emerald-500/5 border-emerald-500/20" : "bg-slate-800/50 border-slate-700 hover:border-amber-500/30"
-                                            }`}>
+                                            <div key={t} className={cn(
+                                                "p-6 rounded-3xl border transition-all duration-500 flex flex-col justify-between h-40 group hover:-translate-y-2",
+                                                isCovered ? "bg-emerald-500/[0.03] border-emerald-500/20 shadow-lg shadow-emerald-500/5" : "bg-secondary/30 border-border/50 hover:border-amber-500/30"
+                                            )}>
                                                 <div className="flex items-start justify-between">
-                                                    <span className={`text-[10px] font-semibold uppercase tracking-wider ${isCovered ? "text-emerald-400" : "text-slate-500"}`}>
+                                                    <span className={cn(
+                                                        "text-[10px] font-black uppercase tracking-[0.2em]",
+                                                        isCovered ? "text-emerald-600" : "text-muted-foreground"
+                                                    )}>
                                                         {formatType(t)}
                                                     </span>
-                                                    {isCovered && <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>}
+                                                    {isCovered && <div className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-lg"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>}
                                                 </div>
-                                                <div className="flex items-end justify-between">
-                                                    <div className={`text-2xl font-bold ${isCovered ? "text-emerald-300" : "text-slate-600"}`}>
+                                                <div className="space-y-4">
+                                                    <div className={cn(
+                                                        "text-4xl font-black tracking-tighter transition-all group-hover:scale-110 origin-left",
+                                                        isCovered ? "text-foreground" : "text-muted-foreground/30"
+                                                    )}>
                                                         {c}
                                                     </div>
-                                                    <div className={`text-[10px] px-1.5 py-0.5 rounded ${
-                                                        c > 0 ? "bg-emerald-500/20 text-emerald-300" 
-                                                        : isCovered ? "bg-blue-500/20 text-blue-300" 
-                                                        : "bg-slate-800 text-slate-500"
-                                                    }`}>
-                                                        {c > 0 ? "Ready" : isCovered ? `via ${sourceName || "source"}` : "Missing"}
+                                                    <div className={cn(
+                                                        "ios-pill inline-flex border-none text-[10px] font-black",
+                                                        c > 0 ? "bg-emerald-500 text-white" 
+                                                        : isCovered ? "bg-primary text-white" 
+                                                        : "bg-muted text-muted-foreground"
+                                                    )}>
+                                                        {c > 0 ? "READY" : isCovered ? sourceName?.toUpperCase() : "MISSING"}
                                                     </div>
                                                 </div>
                                             </div>
                                         );
                                     })}
                                 </div>
-                            </div>
+                            )}
                         </div>
                     </div>
                 )}
@@ -1809,45 +2232,47 @@ export default function PsurWizard() {
                     <div className="h-full flex flex-col">
                         {/* Stats Row */}
                         <div className="grid grid-cols-4 gap-3 mb-3">
-                            <div className="p-3 rounded bg-blue-50 dark:bg-blue-950 border border-blue-200 text-center">
-                                <div className="text-2xl font-bold text-blue-700">{totalAtoms}</div>
-                                <div className="text-xs text-blue-600">Total Atoms</div>
+                            <div className="p-4 rounded-xl glass-card border border-primary/20 text-center">
+                                <div className="text-2xl font-bold text-primary">{totalAtoms}</div>
+                                <div className="text-xs text-muted-foreground">Total Atoms</div>
                             </div>
-                            <div className="p-3 rounded bg-green-50 dark:bg-green-950 border border-green-200 text-center">
-                                <div className="text-2xl font-bold text-green-700">{requiredTypes.length - missingTypes.length}</div>
-                                <div className="text-xs text-green-600">Types Covered</div>
+                            <div className="p-4 rounded-xl glass-card border border-emerald-500/20 text-center">
+                                <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{requiredTypes.length - missingTypes.length}</div>
+                                <div className="text-xs text-muted-foreground">Requirements Met</div>
                             </div>
-                            <div className="p-3 rounded bg-amber-50 dark:bg-amber-950 border border-amber-200 text-center">
-                                <div className="text-2xl font-bold text-amber-700">{missingTypes.length}</div>
-                                <div className="text-xs text-amber-600">Types Missing</div>
+                            <div className="p-4 rounded-xl glass-card border border-amber-500/20 text-center">
+                                <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">{missingTypes.length}</div>
+                                <div className="text-xs text-muted-foreground">Types Missing</div>
                             </div>
-                            <div className={`p-3 rounded border text-center ${missingTypes.length === 0 ? "bg-green-50 dark:bg-green-950 border-green-300" : "bg-amber-50 dark:bg-amber-950 border-amber-300"}`}>
-                                <div className="text-lg font-bold">{missingTypes.length === 0 ? "Ready" : "Incomplete"}</div>
+                            <div className={`p-4 rounded-xl glass-card border text-center ${missingTypes.length === 0 ? "border-emerald-500/30 bg-emerald-500/5" : "border-amber-500/30 bg-amber-500/5"}`}>
+                                <div className={`text-lg font-bold ${missingTypes.length === 0 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>{missingTypes.length === 0 ? "Ready" : "Incomplete"}</div>
                                 <div className="text-xs text-muted-foreground">Status</div>
                             </div>
                         </div>
 
                         {/* Evidence Grid */}
-                        <div className="flex-1 min-h-0 overflow-y-auto border rounded p-3">
+                        <div className="flex-1 min-h-0 overflow-y-auto glass-card rounded-xl p-4">
                             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
                                 {requiredTypes.map(t => {
                                     const c = counts?.byType?.[t] || 0;
                                     const isCovered = isTypeCovered(t);
                                     const coverageInfo = counts?.coverage?.coveredByType?.[t];
                                     return (
-                                        <div key={t} className={`flex items-center justify-between px-3 py-2 rounded border ${
+                                        <div key={t} className={cn(
+                                            "flex items-center justify-between px-3 py-2 rounded-lg border transition-all",
                                             isCovered 
                                                 ? c > 0 
-                                                    ? "bg-green-50 dark:bg-green-950 border-green-200" 
-                                                    : "bg-blue-50 dark:bg-blue-950 border-blue-200"
-                                                : "bg-red-50 dark:bg-red-950 border-red-200"
-                                        }`}>
-                                            <span className="text-sm font-medium truncate mr-2">{formatType(t)}</span>
-                                            <span className={`text-sm font-bold ${
-                                                c > 0 ? "text-green-600" 
-                                                : isCovered ? "text-blue-500" 
-                                                : "text-red-500"
-                                            }`}>
+                                                    ? "bg-emerald-500/10 border-emerald-500/30 dark:bg-emerald-500/5" 
+                                                    : "bg-primary/10 border-primary/30 dark:bg-primary/5"
+                                                : "bg-destructive/10 border-destructive/30 dark:bg-destructive/5"
+                                        )}>
+                                            <span className="text-sm font-medium truncate mr-2 text-foreground">{formatType(t)}</span>
+                                            <span className={cn(
+                                                "text-sm font-bold",
+                                                c > 0 ? "text-emerald-600 dark:text-emerald-400" 
+                                                : isCovered ? "text-primary" 
+                                                : "text-destructive"
+                                            )}>
                                                 {c > 0 ? c : isCovered ? `(${coverageInfo?.source || "covered"})` : "-"}
                                             </span>
                                         </div>
@@ -1857,278 +2282,327 @@ export default function PsurWizard() {
                         </div>
 
                         {missingTypes.length > 0 && (
-                            <div className="mt-2 p-2 rounded bg-amber-50 dark:bg-amber-950 border border-amber-200 text-xs text-amber-700">
+                            <div className="mt-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-700 dark:text-amber-300">
                                 Missing: {missingTypes.slice(0, 5).map(formatType).join(", ")}{missingTypes.length > 5 && ` +${missingTypes.length - 5} more`}
                             </div>
                         )}
                     </div>
                 )}
 
-                {/* STEP 5: COMPILE - SOTA Runtime Viewer */}
+                {/* STEP 5: COMPILE - Minimalist iOS Design */}
                 {step === 5 && psurCaseId && (
-                    <div className="h-full flex flex-col bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 rounded-xl p-4 -mx-4 -my-2">
-                        {/* Futuristic Header */}
-                        <div className="flex items-center justify-between mb-4">
-                            <div className="flex items-center gap-3">
-                                <div className="relative">
-                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${runBusy ? "bg-gradient-to-br from-blue-500 to-purple-600 animate-pulse" : allComplete ? "bg-gradient-to-br from-emerald-500 to-teal-600" : "bg-gradient-to-br from-indigo-500 to-purple-600"}`}>
-                                        <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                        </svg>
-                                    </div>
-                                    {runBusy && <div className="absolute -inset-1 rounded-xl bg-blue-500/20 animate-ping"></div>}
-                                </div>
-                                <div>
-                                    <div className="text-sm font-semibold text-white">PSUR Compiler</div>
-                                    <div className="text-[10px] text-slate-400">
-                                        {runBusy ? "Processing..." : allComplete ? "Complete" : "Ready to compile"}
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <div className="px-2 py-1 rounded bg-slate-800/50 border border-slate-700/50 text-[10px] text-slate-400">
-                                    Case #{psurCaseId}
-                                </div>
-                                <div className="px-2 py-1 rounded bg-indigo-500/20 border border-indigo-500/30 text-[10px] text-indigo-300">
-                                    {totalAtoms} atoms
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Main Content Area */}
+                    <div className="h-full flex flex-col -mx-4 -my-2">
+                        {/* Pre-compile configuration */}
                         {!runResult ? (
-                            <div className="flex-1 flex flex-col items-center justify-center">
-                                {/* Summary Cards */}
-                                <div className="grid grid-cols-4 gap-3 w-full mb-6">
-                                    {[
-                                        { label: "Template", value: templateId.split("_")[0], icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z", color: "from-pink-500/20 to-rose-500/20 border-pink-500/30" },
-                                        { label: "Jurisdictions", value: jurisdictions.join(", "), icon: "M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z", color: "from-blue-500/20 to-cyan-500/20 border-blue-500/30" },
-                                        { label: "Device", value: deviceCode, icon: "M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z", color: "from-amber-500/20 to-orange-500/20 border-amber-500/30" },
-                                        { label: "Period", value: `${periodStart.slice(5)} - ${periodEnd.slice(5)}`, icon: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z", color: "from-emerald-500/20 to-teal-500/20 border-emerald-500/30" },
-                                    ].map((item, i) => (
-                                        <div key={i} className={`p-3 rounded-xl bg-gradient-to-br ${item.color} border backdrop-blur-sm`}>
-                                            <div className="flex items-center gap-2 mb-1">
-                                                <svg className="w-3.5 h-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={item.icon} />
-                                                </svg>
-                                                <span className="text-[10px] text-slate-500 uppercase tracking-wider">{item.label}</span>
-                                            </div>
-                                            <div className="text-sm font-medium text-white truncate">{item.value}</div>
-                                        </div>
-                                    ))}
+                            <div className="flex-1 flex flex-col">
+                                {/* Header */}
+                                <div className="text-center mb-8">
+                                    <h2 className="text-2xl font-semibold tracking-tight text-foreground mb-2">Generate Document</h2>
+                                    <p className="text-muted-foreground">Configure your PSUR output settings</p>
                                 </div>
 
-                                {/* AI Toggle */}
-                                <label className="flex items-center gap-3 mb-4 cursor-pointer group">
-                                    <div className={`relative w-12 h-6 rounded-full transition-all ${enableAIGeneration ? "bg-gradient-to-r from-purple-500 to-indigo-500" : "bg-slate-700"}`}>
-                                        <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow-lg transition-all ${enableAIGeneration ? "left-7" : "left-1"}`}></div>
-                                    </div>
-                                    <span className="text-sm text-slate-300 group-hover:text-white transition-colors">
-                                        AI Narrative Generation
-                                    </span>
-                                    {enableAIGeneration && <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">Claude Sonnet</span>}
-                                </label>
-
-                                {/* Charts Toggle */}
-                                <label className="flex items-center gap-3 mb-4 cursor-pointer group">
-                                    <div className={`relative w-12 h-6 rounded-full transition-all ${enableCharts ? "bg-gradient-to-r from-teal-500 to-emerald-500" : "bg-slate-700"}`}>
-                                        <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow-lg transition-all ${enableCharts ? "left-7" : "left-1"}`}></div>
-                                    </div>
-                                    <span className="text-sm text-slate-300 group-hover:text-white transition-colors">
-                                        Include Charts & Graphs
-                                    </span>
-                                    {enableCharts && <span className="text-[10px] px-2 py-0.5 rounded-full bg-teal-500/20 text-teal-300 border border-teal-500/30">Chart.js</span>}
-                                </label>
-
-                                {/* Document Style Selector */}
-                                <div className="mb-6">
-                                    <span className="text-xs text-slate-400 mb-2 block">Document Style</span>
-                                    <div className="flex gap-2">
-                                        {([
-                                            { value: "corporate" as const, label: "Corporate Formal", desc: "Blue accents, professional tables", colors: "from-blue-500 to-indigo-500" },
-                                            { value: "regulatory" as const, label: "Regulatory Minimal", desc: "Black/white, maximum clarity", colors: "from-slate-500 to-slate-600" },
-                                            { value: "premium" as const, label: "Premium Modern", desc: "Gradient headers, branded", colors: "from-purple-500 to-pink-500" },
-                                        ]).map(style => (
-                                            <button 
-                                                key={style.value}
-                                                onClick={() => setDocumentStyle(style.value)}
-                                                className={`flex-1 p-3 rounded-xl border transition-all ${
-                                                    documentStyle === style.value 
-                                                        ? `bg-gradient-to-br ${style.colors} border-white/20 text-white shadow-lg`
-                                                        : "bg-slate-800/50 border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-300"
-                                                }`}
-                                            >
-                                                <div className="text-xs font-semibold">{style.label}</div>
-                                                <div className="text-[10px] opacity-70 mt-0.5">{style.desc}</div>
-                                            </button>
+                                {/* Configuration Grid */}
+                                <div className="grid grid-cols-2 gap-8 max-w-3xl mx-auto w-full mb-8">
+                                    {/* Left Column - Summary */}
+                                    <div className="glass-card p-6 space-y-5">
+                                        <h3 className="text-sm font-semibold text-foreground mb-4">Report Summary</h3>
+                                        {[
+                                            { label: "Template", value: templateId.split("_")[0] },
+                                            { label: "Jurisdictions", value: jurisdictions.join(", ") },
+                                            { label: "Device", value: deviceCode },
+                                            { label: "Period", value: `${periodStart} to ${periodEnd}` },
+                                            { label: "Total Inputs", value: String(totalAtoms) },
+                                        ].map((item, i) => (
+                                            <div key={i} className="flex justify-between items-center py-2 border-b border-border/30 last:border-0">
+                                                <span className="text-sm text-muted-foreground">{item.label}</span>
+                                                <span className="text-sm font-medium text-foreground">{item.value}</span>
+                                            </div>
                                         ))}
                                     </div>
+
+                                    {/* Right Column - Options */}
+                                    <div className="glass-card p-6 space-y-6">
+                                        <h3 className="text-sm font-semibold text-foreground mb-4">Output Options</h3>
+                                        
+                                        {/* Smart Narrative Toggle */}
+                                        <label className="flex items-center justify-between cursor-pointer group">
+                                            <div>
+                                                <div className="text-sm font-medium text-foreground">Smart Narrative</div>
+                                                <div className="text-xs text-muted-foreground">Auto-generate contextual summaries</div>
+                                            </div>
+                                            <div className={`relative w-11 h-6 rounded-full transition-all ${enableAIGeneration ? "bg-primary" : "bg-border"}`}>
+                                                <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${enableAIGeneration ? "left-5" : "left-0.5"}`}></div>
+                                            </div>
+                                        </label>
+
+                                        {/* Charts Toggle */}
+                                        <label className="flex items-center justify-between cursor-pointer group">
+                                            <div>
+                                                <div className="text-sm font-medium text-foreground">Visual Charts</div>
+                                                <div className="text-xs text-muted-foreground">Include trend visualizations</div>
+                                            </div>
+                                            <div className={`relative w-11 h-6 rounded-full transition-all ${enableCharts ? "bg-primary" : "bg-border"}`}>
+                                                <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${enableCharts ? "left-5" : "left-0.5"}`}></div>
+                                            </div>
+                                        </label>
+
+                                        {/* Document Style */}
+                                        <div>
+                                            <div className="text-sm font-medium text-foreground mb-3">Document Style</div>
+                                            <div className="grid grid-cols-3 gap-2">
+                                                {([
+                                                    { value: "corporate" as const, label: "Corporate" },
+                                                    { value: "regulatory" as const, label: "Regulatory" },
+                                                    { value: "premium" as const, label: "Premium" },
+                                                ]).map(style => (
+                                                    <button 
+                                                        key={style.value}
+                                                        onClick={() => setDocumentStyle(style.value)}
+                                                        className={`py-2.5 px-3 rounded-xl text-xs font-medium transition-all ${
+                                                            documentStyle === style.value 
+                                                                ? "bg-primary text-primary-foreground shadow-sm"
+                                                                : "bg-secondary/50 text-muted-foreground hover:bg-secondary"
+                                                        }`}
+                                                    >
+                                                        {style.label}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
 
-                                {/* Compile Button */}
-                                <button 
-                                    onClick={runWorkflow} 
-                                    disabled={runBusy}
-                                    className="relative group px-8 py-4 rounded-2xl bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 bg-[length:200%_100%] hover:bg-right transition-all duration-500 text-white font-semibold shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 disabled:opacity-50"
-                                >
-                                    <span className="flex items-center gap-3">
-                                        {runBusy ? (
-                                            <>
-                                                <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                                                </svg>
-                                                Compiling PSUR...
-                                            </>
-                                        ) : (
-                                            <>
-                                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                                                </svg>
-                                                Compile PSUR Document
-                                            </>
-                                        )}
-                                    </span>
-                                    <div className="absolute inset-0 rounded-2xl bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                                </button>
+                                {/* Generate Button */}
+                                <div className="flex justify-center">
+                                    <button 
+                                        onClick={runWorkflow} 
+                                        disabled={runBusy}
+                                        className="px-8 py-4 rounded-2xl bg-foreground text-background font-medium shadow-lg hover:shadow-xl transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 flex items-center gap-3"
+                                    >
+                                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                        Generate PSUR
+                                    </button>
+                                </div>
                             </div>
                         ) : (
-                            <div className="flex-1 flex flex-col gap-4 overflow-hidden">
-                                {/* Runtime Pipeline Visualization */}
-                                <div className="flex items-center gap-1 overflow-x-auto pb-2">
-                                    {runResult.steps.map((s, i) => (
-                                        <div key={s.step} className="flex items-center">
-                                            <div className={`relative px-3 py-2 rounded-lg border-2 min-w-[100px] transition-all ${
-                                                s.status === "COMPLETED" ? "bg-emerald-500/10 border-emerald-500/50" :
-                                                s.status === "FAILED" ? "bg-red-500/10 border-red-500/50" :
-                                                s.status === "RUNNING" ? "bg-blue-500/10 border-blue-500/50 animate-pulse" :
-                                                s.status === "BLOCKED" ? "bg-amber-500/10 border-amber-500/50" : 
-                                                "bg-slate-800/50 border-slate-700/50"
-                                            }`}>
-                                                <div className="flex items-center gap-2 mb-1">
-                                                    {s.status === "COMPLETED" ? (
-                                                        <div className="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center">
-                                                            <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-                                                        </div>
-                                                    ) : s.status === "FAILED" ? (
-                                                        <div className="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center">
-                                                            <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
-                                                        </div>
-                                                    ) : s.status === "RUNNING" ? (
-                                                        <div className="w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center">
-                                                            <svg className="w-2.5 h-2.5 text-white animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="w-4 h-4 rounded-full bg-slate-600 flex items-center justify-center text-[8px] text-white font-bold">{s.step}</div>
-                                                    )}
-                                                    <span className={`text-[10px] font-medium ${
-                                                        s.status === "COMPLETED" ? "text-emerald-400" :
-                                                        s.status === "FAILED" ? "text-red-400" :
-                                                        s.status === "RUNNING" ? "text-blue-400" : "text-slate-400"
-                                                    }`}>{s.name}</span>
-                                                </div>
-                                                {s.error && <div className="text-[9px] text-red-400 truncate max-w-[120px]">{s.error}</div>}
+                            /* Compilation in progress / Complete */
+                            <div className="flex-1 flex gap-6">
+                                {/* Left Panel - Progress */}
+                                <div className="w-80 flex flex-col">
+                                    <div className="glass-card p-6 flex-1">
+                                        <h3 className="text-sm font-semibold text-foreground mb-6">Generation Progress</h3>
+                                        {pollError && (
+                                            <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700">
+                                                Connection issue: {pollError}
                                             </div>
-                                            {i < runResult.steps.length - 1 && (
-                                                <div className={`w-6 h-0.5 mx-1 ${s.status === "COMPLETED" ? "bg-emerald-500" : "bg-slate-700"}`}></div>
-                                            )}
+                                        )}
+                                        
+                                        {/* Steps */}
+                                        <div className="space-y-1">
+                                            {runResult.steps.map((s, i) => (
+                                                <div key={s.step} className="flex items-start gap-3 py-3">
+                                                    {/* Status Icon */}
+                                                    <div className="mt-0.5">
+                                                        {s.status === "COMPLETED" ? (
+                                                            <div className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center">
+                                                                <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                                                            </div>
+                                                        ) : s.status === "FAILED" ? (
+                                                            <div className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center">
+                                                                <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
+                                                            </div>
+                                                        ) : s.status === "RUNNING" ? (
+                                                            <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center">
+                                                                <svg className="w-3 h-3 text-white animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="w-5 h-5 rounded-full bg-border flex items-center justify-center">
+                                                                <span className="text-[10px] text-muted-foreground font-medium">{s.step}</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    
+                                                    {/* Step Info */}
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className={`text-sm font-medium ${
+                                                            s.status === "COMPLETED" ? "text-foreground" :
+                                                            s.status === "RUNNING" ? "text-primary" :
+                                                            s.status === "FAILED" ? "text-red-500" : "text-muted-foreground"
+                                                        }`}>{s.name}</div>
+                                                        {s.status === "RUNNING" && (
+                                                            <div className="mt-1.5 h-1 bg-border rounded-full overflow-hidden">
+                                                                <div className="h-full bg-primary rounded-full animate-pulse" style={{ width: '60%' }}></div>
+                                                            </div>
+                                                        )}
+                                                        {s.error && <div className="text-xs text-red-500 mt-1">{s.error}</div>}
+                                                    </div>
+                                                </div>
+                                            ))}
                                         </div>
-                                    ))}
+
+                                        {/* Stats */}
+                                        {traceSummary && (
+                                            <div className="mt-6 pt-6 border-t border-border/30 grid grid-cols-2 gap-3">
+                                                <div className="text-center p-3 rounded-xl bg-secondary/30">
+                                                    <div className="text-lg font-semibold text-foreground">{traceSummary.totalEvents}</div>
+                                                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Events</div>
+                                                </div>
+                                                <div className="text-center p-3 rounded-xl bg-emerald-500/10">
+                                                    <div className="text-lg font-semibold text-emerald-600">{traceSummary.acceptedSlots}</div>
+                                                    <div className="text-[10px] text-emerald-600 uppercase tracking-wider">Processed</div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
 
-                                {/* Trace Metrics */}
-                                {traceSummary && (
-                                    <div className="grid grid-cols-4 gap-3">
-                                        <div className="p-3 rounded-xl bg-slate-800/30 border border-slate-700/30">
-                                            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Events</div>
-                                            <div className="text-xl font-bold text-white">{traceSummary.totalEvents}</div>
-                                        </div>
-                                        <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30">
-                                            <div className="text-[10px] text-emerald-400 uppercase tracking-wider mb-1">Accepted</div>
-                                            <div className="text-xl font-bold text-emerald-400">{traceSummary.acceptedSlots}</div>
-                                        </div>
-                                        <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30">
-                                            <div className="text-[10px] text-red-400 uppercase tracking-wider mb-1">Rejected</div>
-                                            <div className="text-xl font-bold text-red-400">{traceSummary.rejectedSlots}</div>
-                                        </div>
-                                        <div className={`p-3 rounded-xl ${traceSummary.chainValid ? "bg-emerald-500/10 border border-emerald-500/30" : "bg-red-500/10 border border-red-500/30"}`}>
-                                            <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: traceSummary.chainValid ? "#34d399" : "#f87171" }}>Chain</div>
-                                            <div className="text-xl font-bold" style={{ color: traceSummary.chainValid ? "#34d399" : "#f87171" }}>{traceSummary.chainValid ? "Valid" : "Invalid"}</div>
-                                        </div>
-                                    </div>
-                                )}
+                                {/* Right Panel - Document Preview / Success */}
+                                <div className="flex-1 flex flex-col">
+                                    <div className="glass-card flex-1 flex flex-col overflow-hidden">
+                                        {allComplete ? (
+                                            /* Success State */
+                                            <div className="flex-1 flex flex-col">
+                                                {/* Preview Header */}
+                                                <div className="px-6 py-4 border-b border-border/30 flex items-center justify-between bg-white/40">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+                                                            <svg className="w-4 h-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-sm font-semibold text-foreground">Document Ready</div>
+                                                            <div className="text-xs text-muted-foreground">PSUR_{psurCaseId}.{documentStyle}</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
 
-                                {/* Success State - Downloads */}
-                                {allComplete && (
-                                    <div className="flex-1 flex flex-col items-center justify-center">
-                                        <div className="relative mb-6">
-                                            <div className="w-20 h-20 rounded-full bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center shadow-lg shadow-emerald-500/30">
-                                                <svg className="w-10 h-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                                </svg>
+                                                {/* Document Preview */}
+                                                <div className="flex-1 p-6 overflow-auto bg-secondary/20">
+                                                    <iframe 
+                                                        src={`/api/psur-cases/${psurCaseId}/psur.html?style=${documentStyle}`}
+                                                        className="w-full h-full rounded-lg border border-border/30 bg-white shadow-sm"
+                                                        title="PSUR Preview"
+                                                    />
+                                                </div>
+
+                                                {/* Download Actions */}
+                                                <div className="px-6 py-4 border-t border-border/30 bg-white/40">
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="flex gap-2">
+                                                            <a href={`/api/psur-cases/${psurCaseId}/psur.docx?style=${documentStyle}`} download 
+                                                               className="px-4 py-2 rounded-xl bg-blue-500 text-white text-sm font-medium hover:bg-blue-600 transition-all flex items-center gap-2 shadow-sm">
+                                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                                                DOCX
+                                                            </a>
+                                                            <a href={`/api/psur-cases/${psurCaseId}/psur.pdf?style=${documentStyle}`} download 
+                                                               className="px-4 py-2 rounded-xl bg-red-500 text-white text-sm font-medium hover:bg-red-600 transition-all flex items-center gap-2 shadow-sm">
+                                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                                                PDF
+                                                            </a>
+                                                            <a href={`/api/audit-bundles/${psurCaseId}/download`} 
+                                                               className="px-4 py-2 rounded-xl bg-secondary text-foreground text-sm font-medium hover:bg-secondary/80 transition-all flex items-center gap-2">
+                                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
+                                                                Audit Bundle
+                                                            </a>
+                                                        </div>
+                                                        <button onClick={resetWizard}
+                                                            className="px-4 py-2 rounded-xl border border-border text-muted-foreground text-sm font-medium hover:bg-secondary/50 transition-all flex items-center gap-2">
+                                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                                            </svg>
+                                                            New Report
+                                                        </button>
+                                                    </div>
+                                                </div>
                                             </div>
-                                            <div className="absolute -inset-2 rounded-full bg-emerald-500/20 animate-ping"></div>
-                                        </div>
-                                        <h3 className="text-lg font-semibold text-white mb-1">PSUR Generated Successfully</h3>
-                                        <p className="text-sm text-slate-400 mb-6">Your document is ready for download</p>
-                                        
-                                        <div className="flex flex-wrap gap-3 justify-center">
-                                            <a href={`/api/psur-cases/${psurCaseId}/psur.docx?style=${documentStyle}`} download 
-                                               className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 text-white text-sm font-medium shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 transition-all flex items-center gap-2">
-                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                                                DOCX
-                                            </a>
-                                            <a href={`/api/psur-cases/${psurCaseId}/psur.pdf?style=${documentStyle}`} download 
-                                               className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-red-500 text-white text-sm font-medium shadow-lg shadow-red-500/25 hover:shadow-red-500/40 transition-all flex items-center gap-2">
-                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
-                                                PDF/A
-                                            </a>
-                                            <a href={`/api/psur-cases/${psurCaseId}/psur.html?style=${documentStyle}`} download 
-                                               className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-600 to-amber-500 text-white text-sm font-medium shadow-lg shadow-orange-500/25 hover:shadow-orange-500/40 transition-all flex items-center gap-2">
-                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
-                                                HTML
-                                            </a>
-                                            <a href={`/api/psur-cases/${psurCaseId}/psur.md?style=${documentStyle}`} download 
-                                               className="px-4 py-2.5 rounded-xl bg-slate-700 text-white text-sm font-medium hover:bg-slate-600 transition-all flex items-center gap-2">
-                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                                                Markdown
-                                            </a>
-                                            <a href={`/api/audit-bundles/${psurCaseId}/download`} 
-                                               className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-sm font-medium shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 transition-all flex items-center gap-2">
-                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
-                                                Audit Bundle
-                                            </a>
-                                            <a href={`/api/psur-cases/${psurCaseId}/trace/export?format=jsonl`} download 
-                                               className="px-4 py-2.5 rounded-xl border border-slate-600 text-slate-300 text-sm font-medium hover:bg-slate-800/50 transition-all flex items-center gap-2">
-                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                                                Trace Log
-                                            </a>
-                                        </div>
+                                        ) : (
+                                            /* Building State */
+                                            <div className="flex-1 flex flex-col items-center justify-center p-8">
+                                                <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-6">
+                                                    <svg className="w-8 h-8 text-primary animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                    </svg>
+                                                </div>
+                                                <h3 className="text-lg font-semibold text-foreground mb-2">Building Your Document</h3>
+                                                <p className="text-sm text-muted-foreground text-center max-w-xs mb-6">
+                                                    Processing inputs and generating your regulatory report...
+                                                </p>
+                                                
+                                                {/* Streaming text effect */}
+                                                <div className="w-full max-w-md glass-card p-4 rounded-xl">
+                                                    <div className="font-mono text-xs text-muted-foreground space-y-1">
+                                                        {runResult.steps.filter(s => s.status === "COMPLETED" || s.status === "RUNNING").map((s, i) => (
+                                                            <div key={i} className={`flex items-center gap-2 ${s.status === "RUNNING" ? "text-primary" : ""}`}>
+                                                                <span className="text-emerald-500">{s.status === "COMPLETED" ? "Done" : "..."}</span>
+                                                                <span>{s.name}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
 
-                                        <button onClick={resetWizard}
-                                            className="mt-8 px-6 py-3 rounded-xl border-2 border-dashed border-slate-700 text-slate-400 text-sm font-medium hover:border-blue-500/50 hover:text-blue-400 transition-all flex items-center gap-2">
-                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                            </svg>
-                                            Start New PSUR
-                                        </button>
+                                                <div className="mt-6 flex items-center gap-3">
+                                                    <button
+                                                        onClick={cancelDrafting}
+                                                        className="px-4 py-2 rounded-xl bg-destructive text-white text-sm font-medium hover:bg-destructive/90 transition-all shadow-sm"
+                                                    >
+                                                        Cancel Drafting
+                                                    </button>
+                                                    <div className={cn(
+                                                        "text-xs font-mono px-3 py-2 rounded-lg border",
+                                                        runtimeConnected ? "border-emerald-500/30 text-emerald-700 bg-emerald-500/10" : "border-border text-muted-foreground bg-secondary/30"
+                                                    )}>
+                                                        {runtimeConnected ? "runtime:connected" : "runtime:disconnected"}
+                                                    </div>
+                                                </div>
+
+                                                {/* Live Content Viewer */}
+                                                <LiveContentViewer 
+                                                    psurCaseId={psurCaseId!}
+                                                    documentStyle={documentStyle}
+                                                    runtimeEvents={runtimeEvents}
+                                                    isGenerating={!allComplete}
+                                                />
+                                            </div>
+                                        )}
                                     </div>
-                                )}
+                                </div>
                             </div>
                         )}
                     </div>
                 )}
             </div>
 
-            {/* Compact Navigation */}
-            <div className="flex items-center justify-between mt-3 pt-3 border-t">
-                <button onClick={() => setStep((step - 1) as WizardStep)} disabled={step === 1} className="px-3 py-1.5 rounded border text-xs font-medium disabled:opacity-40">Prev</button>
-                <span className="text-xs text-muted-foreground">Step {step}/5</span>
-                <button onClick={() => setStep((step + 1) as WizardStep)} disabled={step === 5 || (step === 1 && !canGoStep2) || (step === 2 && !canGoStep3) || (step === 3 && !canGoStep4) || (step === 4 && !canGoStep5)} className="px-3 py-1.5 rounded bg-blue-600 text-white text-xs font-medium disabled:opacity-40">Next</button>
-            </div>
+            {/* Compact Navigation (Hidden on Step 1) */}
+            {step > 1 && (
+                <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50">
+                    <div className="glass-card px-4 py-3 flex items-center gap-6 shadow-2xl rounded-full">
+                        <button 
+                            onClick={() => setStep((step - 1) as WizardStep)} 
+                            disabled={step === 1} 
+                            className="w-12 h-12 rounded-full flex items-center justify-center bg-secondary hover:bg-white text-muted-foreground hover:text-foreground transition-all active:scale-90 disabled:opacity-20"
+                        >
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 19l-7-7 7-7" /></svg>
+                        </button>
+                        
+                        <div className="flex flex-col items-center">
+                            <span className="text-[10px] font-black text-muted-foreground tracking-[0.2em] uppercase">Phase</span>
+                            <span className="text-lg font-black text-foreground tabular-nums">{step} <span className="text-muted-foreground/30 mx-1">/</span> 5</span>
+                        </div>
 
-            {/* AI Ingestion Modal (Enhanced with Mapping) */}
-            <Modal open={showIngestionModal} onClose={() => setShowIngestionModal(false)} title="Upload Evidence Documents" size="xl">
+                        <button 
+                            onClick={() => setStep((step + 1) as WizardStep)} 
+                            disabled={step === 5 || (step === 1 && !canGoStep2) || (step === 2 && !canGoStep3) || (step === 3 && !canGoStep4) || (step === 4 && !canGoStep5)} 
+                            className="w-12 h-12 rounded-full flex items-center justify-center bg-primary text-primary-foreground shadow-lg hover:scale-110 transition-all active:scale-90 disabled:opacity-20"
+                        >
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" /></svg>
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Smart Ingestion Modal */}
+            <Modal open={showIngestionModal} onClose={() => setShowIngestionModal(false)} title="Import Data Source" size="xl">
                 <EvidenceIngestionPanel 
                     psurCaseId={psurCaseId!} 
                     deviceCode={deviceCode} 
@@ -2139,7 +2613,7 @@ export default function PsurWizard() {
             </Modal>
 
             {/* Manual Upload Modal */}
-            <Modal open={showEvidenceModal} onClose={() => setShowEvidenceModal(false)} title="Manual Evidence Upload" size="md">
+            <Modal open={showEvidenceModal} onClose={() => setShowEvidenceModal(false)} title="Structured Evidence Import" size="md">
                 <ManualUploadForm psurCaseId={psurCaseId!} deviceCode={deviceCode} periodStart={periodStart} periodEnd={periodEnd} requiredTypes={requiredTypes} onSuccess={() => { refreshCounts(); setShowEvidenceModal(false); }} />
             </Modal>
         </div>
@@ -2172,7 +2646,7 @@ function ManualUploadForm({ psurCaseId, deviceCode, periodStart, periodEnd, requ
             const resp = await fetch("/api/evidence/upload", { method: "POST", body: form });
             const data = await resp.json();
             if (!resp.ok) throw new Error(data.error);
-            setMsg(`Uploaded ${data.summary?.atomsCreated || 0} atoms`);
+            setMsg(`Imported ${data.summary?.atomsCreated || 0} records`);
             setFile(null);
             setTimeout(onSuccess, 1000);
         } catch (e: any) { setMsg(`Error: ${e.message}`); }
@@ -2180,22 +2654,53 @@ function ManualUploadForm({ psurCaseId, deviceCode, periodStart, periodEnd, requ
     }
 
     return (
-        <div className="space-y-4">
-            <div>
-                <label className="text-sm font-medium mb-1 block">Evidence Type</label>
-                <select className="w-full border rounded px-3 py-2 bg-background" value={evidenceType} onChange={e => setEvidenceType(e.target.value)}>
+        <div className="space-y-8 animate-slide-up">
+            <div className="space-y-4">
+                <label className="text-sm font-black uppercase tracking-widest text-muted-foreground">Evidence Category</label>
+                <select 
+                    className="w-full bg-secondary/50 border-none rounded-2xl px-6 py-4 font-bold text-lg focus:ring-2 focus:ring-primary/50 outline-none cursor-pointer" 
+                    value={evidenceType} 
+                    onChange={e => setEvidenceType(e.target.value)}
+                >
                     {requiredTypes.map(t => <option key={t} value={t}>{formatType(t)}</option>)}
                 </select>
             </div>
-            <div>
-                <label className="text-sm font-medium mb-1 block">File (.xlsx, .csv)</label>
-                <input type="file" accept=".xlsx,.csv,.xls" className="w-full border rounded px-3 py-2 bg-background" onChange={e => setFile(e.target.files?.[0] || null)} />
+            
+            <div className="space-y-4">
+                <label className="text-sm font-black uppercase tracking-widest text-muted-foreground">Intelligence Payload (.xlsx, .csv)</label>
+                <div className="relative group">
+                    <input 
+                        type="file" 
+                        accept=".xlsx,.csv,.xls" 
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" 
+                        onChange={e => setFile(e.target.files?.[0] || null)} 
+                    />
+                    <div className="glass-card p-8 border-2 border-dashed border-border/50 group-hover:border-primary/50 transition-all flex flex-col items-center justify-center text-center gap-4">
+                        <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
+                            <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                        </div>
+                        <div>
+                            <div className="font-bold text-foreground">{file ? file.name : "Select Intelligence Source"}</div>
+                            <div className="text-sm text-muted-foreground font-medium">Drag and drop or click to browse</div>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div className="flex items-center gap-3">
-                <button onClick={upload} disabled={busy || !file} className="px-4 py-2 rounded bg-blue-600 text-white text-sm font-medium disabled:opacity-50">
-                    {busy ? "Uploading..." : "Upload"}
+
+            <div className="flex items-center gap-6">
+                <button 
+                    onClick={upload} 
+                    disabled={busy || !file} 
+                    className="glossy-button bg-primary text-primary-foreground py-4 px-10 shadow-xl disabled:opacity-50"
+                >
+                    {busy ? (
+                        <div className="flex items-center gap-2">
+                            <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                            <span>INGESTING...</span>
+                        </div>
+                    ) : "INGEST PAYLOAD"}
                 </button>
-                {msg && <span className="text-sm">{msg}</span>}
+                {msg && <span className="font-bold text-emerald-600 animate-pulse">{msg.toUpperCase()}</span>}
             </div>
         </div>
     );

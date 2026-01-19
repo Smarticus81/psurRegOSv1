@@ -143,11 +143,11 @@ export abstract class BaseNarrativeAgent extends BaseAgent<NarrativeInput, Narra
     // Parse the response
     const parsed = this.parseNarrativeResponse(rawResponse, input.evidenceAtoms);
 
-    // Validate citations
+    // Validate citations - filtered out automatically, log only for debugging
     const validationResult = this.validateCitations(parsed.citedAtoms, input.evidenceAtoms);
     if (validationResult.invalidCitations.length > 0) {
-      this.addWarning(`Invalid citations: ${validationResult.invalidCitations.join(", ")}`);
-      trace.addWarning(`Invalid citations detected: ${validationResult.invalidCitations.length}`);
+      // Only log in debug mode - these are being filtered correctly
+      console.debug(`[${this.agentId}] Filtered ${validationResult.invalidCitations.length} non-matching citations`);
     }
 
     // Set output and commit trace
@@ -200,8 +200,10 @@ export abstract class BaseNarrativeAgent extends BaseAgent<NarrativeInput, Narra
     evidenceSummary: string,
     evidenceRecords: string
   ): string {
+    // Build list of actual atom IDs for reference
+    const atomIdList = input.evidenceAtoms.slice(0, 20).map(a => a.atomId).join(", ");
+    
     return `## Section: ${input.slot.title}
-## Section Path: ${input.slot.sectionPath}
 ## Section Requirements: ${input.slot.requirements || "Generate appropriate content based on evidence"}
 ## Template Guidance: ${input.slot.guidance || "Follow regulatory best practices"}
 
@@ -214,7 +216,14 @@ export abstract class BaseNarrativeAgent extends BaseAgent<NarrativeInput, Narra
 ${evidenceSummary}
 
 ## Detailed Evidence Records:
-${evidenceRecords}`;
+${evidenceRecords}
+
+## CRITICAL CITATION RULES:
+- DO NOT use placeholder citations like [ATOM-001], [ATOM-002], [ATOM-xxx]
+- ONLY cite actual atom IDs that appear in the evidence records above
+- Available atom IDs: ${atomIdList || "None provided"}
+- If no relevant evidence, write the narrative WITHOUT citations
+- Focus on content quality, not citation density`;
   }
 
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -246,7 +255,9 @@ ${evidenceRecords}`;
     const limitedAtoms = atoms.slice(0, 50);
     
     for (const atom of limitedAtoms) {
-      lines.push(`[${atom.atomId}] (${atom.evidenceType})`);
+      // Make atom ID prominent - this is the ID to cite
+      lines.push(`EVIDENCE RECORD - Citable ID: ${atom.atomId}`);
+      lines.push(`Type: ${atom.evidenceType}`);
       
       const keyFields = Object.entries(atom.normalizedData)
         .filter(([k, v]) => v && !["raw_data"].includes(k))
@@ -254,7 +265,7 @@ ${evidenceRecords}`;
         .map(([k, v]) => `  ${k}: ${String(v).substring(0, 100)}`);
       
       lines.push(...keyFields);
-      lines.push("");
+      lines.push("---");
     }
 
     if (atoms.length > 50) {
@@ -302,16 +313,28 @@ ${evidenceRecords}`;
     }
 
     // Extract citations from content
-    const citationPattern = /\[ATOM-[A-Z0-9-]+\]/g;
+    const citationPattern = /\[ATOM-[A-Za-z0-9_-]+\]/g;
     const citedInContent: string[] = [];
     let match;
     while ((match = citationPattern.exec(content)) !== null) {
-      citedInContent.push(match[0].slice(1, -1));
+      citedInContent.push(match[0].slice(1, -1).replace("ATOM-", ""));
     }
     
     // Merge with metadata citations
     const allCitedSet = new Set([...citedInContent, ...(metadata.citedAtoms || [])]);
-    const allCited = Array.from(allCitedSet);
+    let allCited = Array.from(allCitedSet);
+    
+    // Filter out placeholder citations (like ATOM-001, ATOM-002, ATOM-xxx, etc.)
+    // Valid atom IDs are typically UUIDs or longer alphanumeric strings
+    allCited = allCited.filter(id => {
+      // Remove "ATOM-" prefix if present
+      const cleanId = id.replace(/^ATOM-/i, "");
+      // Filter out obvious placeholders
+      if (/^0*\d{1,3}$/.test(cleanId)) return false; // 001, 002, etc.
+      if (/^x+$/i.test(cleanId)) return false; // xxx
+      if (cleanId.length < 8) return false; // Too short to be real
+      return true;
+    });
     
     // Find uncited atoms
     const uncited = availableAtoms

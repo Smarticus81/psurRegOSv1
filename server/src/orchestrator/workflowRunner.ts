@@ -1,6 +1,7 @@
 import { db } from "../../db";
 import { storage } from "../../storage";
 import { loadTemplate, getSlots, getEffectiveMapping, getTemplateDefaults, type Template } from "../templateStore";
+import { cacheCompiledDocument } from "../../routes";
 import { lintTemplate, type LintResult } from "../templates/lintTemplates";
 import { listEvidenceAtomsByCase, EvidenceAtomRecord } from "../services/evidenceStore";
 import { ingestEvidenceStep } from "./steps/ingestEvidence";
@@ -26,6 +27,7 @@ import {
   auditBundles,
   evidenceAtoms,
   qualificationReports,
+  decisionTraceSummaries,
   WorkflowStep,
   WorkflowStepStatus,
   OrchestratorWorkflowResult,
@@ -38,6 +40,7 @@ import {
   ExportBundleReport,
 } from "@shared/schema";
 import { eq } from "drizzle-orm";
+import type { Response } from "express";
 
 const STEP_NAMES: Record<number, string> = {
   1: "Qualify Template",
@@ -49,6 +52,134 @@ const STEP_NAMES: Record<number, string> = {
   7: "Render Document",
   8: "Export Bundle",
 };
+
+const workflowResultCache = new Map<number, OrchestratorWorkflowResult>();
+
+type RuntimeEvent =
+  | { kind: "workflow.started"; ts: number; psurCaseId: number }
+  | { kind: "workflow.completed"; ts: number; psurCaseId: number; durationMs: number }
+  | { kind: "workflow.failed"; ts: number; psurCaseId: number; error: string }
+  | { kind: "workflow.cancelled"; ts: number; psurCaseId: number; reason: string }
+  | { kind: "step.started"; ts: number; psurCaseId: number; step: number; name: string }
+  | { kind: "step.completed"; ts: number; psurCaseId: number; step: number; name: string }
+  | { kind: "step.failed"; ts: number; psurCaseId: number; step: number; name: string; error: string }
+  | { kind: "agent.created"; ts: number; psurCaseId: number; phase: string; slotId: string; agent: string; runId: string }
+  | { kind: "agent.started"; ts: number; psurCaseId: number; phase: string; slotId: string; agent: string; runId: string }
+  | { kind: "agent.completed"; ts: number; psurCaseId: number; phase: string; slotId: string; agent: string; runId: string; durationMs: number }
+  | { kind: "agent.failed"; ts: number; psurCaseId: number; phase: string; slotId: string; agent: string; runId: string; error: string }
+  | { kind: "agent.destroyed"; ts: number; psurCaseId: number; phase: string; slotId: string; agent: string; runId: string };
+
+const runtimeStreams = new Map<number, Set<Response>>();
+
+export function attachRuntimeStream(psurCaseId: number, res: Response): () => void {
+  let set = runtimeStreams.get(psurCaseId);
+  if (!set) {
+    set = new Set<Response>();
+    runtimeStreams.set(psurCaseId, set);
+  }
+  set.add(res);
+
+  // initial state snapshot (best-effort)
+  try {
+    const cached = getCachedWorkflowResult(psurCaseId);
+    res.write(
+      `event: snapshot\ndata: ${JSON.stringify({
+        ts: Date.now(),
+        psurCaseId,
+        cached,
+      })}\n\n`,
+    );
+  } catch {
+    // ignore
+  }
+
+  return () => {
+    const current = runtimeStreams.get(psurCaseId);
+    current?.delete(res);
+    if (current && current.size === 0) runtimeStreams.delete(psurCaseId);
+  };
+}
+
+export function emitRuntimeEvent(psurCaseId: number, event: RuntimeEvent): void {
+  const streams = runtimeStreams.get(psurCaseId);
+  if (!streams || streams.size === 0) return;
+
+  const payload = `event: runtime\ndata: ${JSON.stringify(event)}\n\n`;
+  for (const res of streams) {
+    try {
+      res.write(payload);
+    } catch {
+      // ignore broken streams
+    }
+  }
+}
+
+const activeRuns = new Map<
+  number,
+  {
+    controller: AbortController;
+    startedAt: number;
+    promise: Promise<void>;
+  }
+>();
+
+export function cancelOrchestratorWorkflow(psurCaseId: number, reason = "Cancelled"): boolean {
+  const run = activeRuns.get(psurCaseId);
+  if (!run) return false;
+  try {
+    run.controller.abort(reason);
+  } catch {
+    // ignore
+  }
+  emitRuntimeEvent(psurCaseId, { kind: "workflow.cancelled", ts: Date.now(), psurCaseId, reason });
+  return true;
+}
+
+export function startOrchestratorWorkflow(
+  params: RunWorkflowParams,
+): { ok: true; psurCaseId: number; status: "STARTED" | "ALREADY_RUNNING" } {
+  const psurCaseId = params.psurCaseId;
+  if (!psurCaseId || typeof psurCaseId !== "number") {
+    throw new Error("psurCaseId is required to run workflow");
+  }
+
+  if (activeRuns.has(psurCaseId)) {
+    return { ok: true, psurCaseId, status: "ALREADY_RUNNING" };
+  }
+
+  const controller = new AbortController();
+  const startedAt = Date.now();
+
+  emitRuntimeEvent(psurCaseId, { kind: "workflow.started", ts: startedAt, psurCaseId });
+
+  const promise = (async () => {
+    try {
+      await runOrchestratorWorkflow({ ...params, signal: controller.signal });
+      emitRuntimeEvent(psurCaseId, {
+        kind: "workflow.completed",
+        ts: Date.now(),
+        psurCaseId,
+        durationMs: Date.now() - startedAt,
+      });
+    } catch (e: any) {
+      const error = e?.message || String(e);
+      emitRuntimeEvent(psurCaseId, { kind: "workflow.failed", ts: Date.now(), psurCaseId, error });
+    } finally {
+      activeRuns.delete(psurCaseId);
+    }
+  })();
+
+  activeRuns.set(psurCaseId, { controller, startedAt, promise });
+  return { ok: true, psurCaseId, status: "STARTED" };
+}
+
+export function getCachedWorkflowResult(psurCaseId: number): OrchestratorWorkflowResult | null {
+  return workflowResultCache.get(psurCaseId) || null;
+}
+
+function cacheWorkflowResult(psurCaseId: number, result: OrchestratorWorkflowResult) {
+  workflowResultCache.set(psurCaseId, result);
+}
 
 function makeStep(step: number, status: WorkflowStepStatus = "NOT_STARTED"): WorkflowStep {
   return {
@@ -93,6 +224,8 @@ export interface RunWorkflowParams {
   documentStyle?: DocumentStyle;
   /** Enable chart generation in the output document */
   enableCharts?: boolean;
+  /** Internal cancellation signal */
+  signal?: AbortSignal;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -164,7 +297,7 @@ function adjudicateProposals(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promise<OrchestratorWorkflowResult> {
-  const { templateId, jurisdictions, deviceCode, deviceId, periodStart, periodEnd, psurCaseId: existingCaseId, runSteps, enableAIGeneration } = params;
+  const { templateId, jurisdictions, deviceCode, deviceId, periodStart, periodEnd, psurCaseId: existingCaseId, runSteps, enableAIGeneration, signal } = params;
 
   const steps: WorkflowStep[] = Array.from({ length: 8 }, (_, i) => makeStep(i + 1));
   const stepsToRun = runSteps || [1, 2, 3, 4, 5, 6, 7, 8];
@@ -190,6 +323,15 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
   let traceCtx: TraceContext | null = null;
   
   try {
+    const throwIfAborted = () => {
+      if (signal?.aborted) {
+        const reason = typeof (signal as any).reason === "string" ? (signal as any).reason : "Cancelled";
+        throw new Error(`Cancelled: ${reason}`);
+      }
+    };
+
+    throwIfAborted();
+
     // Start or resume trace
     if (existingCaseId) {
       traceCtx = await resumeTrace(existingCaseId);
@@ -202,12 +344,31 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
     const startResult = await TraceEvents.workflowStarted(traceCtx, templateId, jurisdictions);
     traceCtx = startResult.ctx;
 
+    // Initial status update to RUNNING
+    try {
+      await db.insert(decisionTraceSummaries)
+        .values({
+          psurCaseId: psurCaseId || 0,
+          traceId: traceCtx.traceId,
+          workflowStatus: "RUNNING",
+          lastUpdatedAt: new Date()
+        })
+        .onConflictDoUpdate({
+          target: decisionTraceSummaries.psurCaseId,
+          set: { workflowStatus: "RUNNING", lastUpdatedAt: new Date() }
+        });
+    } catch (err) {
+      console.error('[WorkflowRunner] Failed to set initial RUNNING status:', err);
+    }
+
     // ==================== STEP 1: QUALIFY TEMPLATE ====================
     if (stepsToRun.includes(1)) {
       steps[0].status = "RUNNING";
       steps[0].startedAt = new Date().toISOString();
+      if (psurCaseId) emitRuntimeEvent(psurCaseId, { kind: "step.started", ts: Date.now(), psurCaseId, step: 1, name: steps[0].name });
 
       try {
+        throwIfAborted();
         // 1a. Lint template JSON against strict Zod schema
         const templatesDir = path.resolve(process.cwd(), "server", "templates");
         const templatePath = path.join(templatesDir, `${templateId}.json`);
@@ -279,6 +440,7 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
         } else {
           steps[0].status = "COMPLETED";
           steps[0].endedAt = new Date().toISOString();
+        if (psurCaseId) emitRuntimeEvent(psurCaseId, { kind: "step.completed", ts: Date.now(), psurCaseId, step: 1, name: steps[0].name });
           steps[0].summary = {
             slotCount: qualReport.slotCount,
             mappingCount: qualReport.mappingCount,
@@ -303,6 +465,7 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
         steps[0].status = "FAILED";
         steps[0].endedAt = new Date().toISOString();
         steps[0].error = e.message || String(e);
+        if (psurCaseId) emitRuntimeEvent(psurCaseId, { kind: "step.failed", ts: Date.now(), psurCaseId, step: 1, name: steps[0].name, error: steps[0].error });
         
         // Log workflow failure
         if (traceCtx && psurCaseId) {
@@ -319,8 +482,10 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
     if (stepsToRun.includes(2)) {
       steps[1].status = "RUNNING";
       steps[1].startedAt = new Date().toISOString();
+      if (psurCaseId) emitRuntimeEvent(psurCaseId, { kind: "step.started", ts: Date.now(), psurCaseId, step: 2, name: steps[1].name });
 
       try {
+        throwIfAborted();
         if (existingCaseId) {
           const existingCase = await storage.getPSURCase(existingCaseId);
           if (existingCase) {
@@ -350,6 +515,7 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
         steps[1].endedAt = new Date().toISOString();
         steps[1].summary = { psurCaseId, psurRef };
         steps[1].report = { psurCaseId, psurRef, version, created: !existingCaseId };
+        if (psurCaseId) emitRuntimeEvent(psurCaseId, { kind: "step.completed", ts: Date.now(), psurCaseId, step: 2, name: steps[1].name });
         
         // Update trace context with case ID and log case created (enhanced with period context)
         if (traceCtx) {
@@ -362,6 +528,7 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
         steps[1].status = "FAILED";
         steps[1].endedAt = new Date().toISOString();
         steps[1].error = e.message || String(e);
+        if (psurCaseId) emitRuntimeEvent(psurCaseId, { kind: "step.failed", ts: Date.now(), psurCaseId, step: 2, name: steps[1].name, error: steps[1].error });
         
         if (traceCtx && psurCaseId) {
           await TraceEvents.workflowFailed(traceCtx, 2, e.message || String(e));
@@ -382,8 +549,10 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
     if (stepsToRun.includes(3)) {
       steps[2].status = "RUNNING";
       steps[2].startedAt = new Date().toISOString();
+      if (psurCaseId) emitRuntimeEvent(psurCaseId, { kind: "step.started", ts: Date.now(), psurCaseId, step: 3, name: steps[2].name });
 
       try {
+        throwIfAborted();
         // Get required evidence types from template for negative evidence generation
         let requiredTypes: string[] = [];
         if (template) {
@@ -424,6 +593,7 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
         steps[2].endedAt = new Date().toISOString();
         steps[2].summary = { linkedToCaseAtoms: report.linkedToCaseAtoms, byType: Object.keys(byType).join(", ") };
         steps[2].report = report;
+        if (psurCaseId) emitRuntimeEvent(psurCaseId, { kind: "step.completed", ts: Date.now(), psurCaseId, step: 3, name: steps[2].name });
 
         // Log evidence atoms created with enhanced context
         if (traceCtx) {
@@ -461,6 +631,7 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
         steps[2].status = "FAILED";
         steps[2].endedAt = new Date().toISOString();
         steps[2].error = e.message || String(e);
+        if (psurCaseId) emitRuntimeEvent(psurCaseId, { kind: "step.failed", ts: Date.now(), psurCaseId, step: 3, name: steps[2].name, error: steps[2].error });
         
         if (traceCtx && psurCaseId) {
           await TraceEvents.workflowFailed(traceCtx, 3, e.message || String(e));
@@ -480,8 +651,10 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
       } else {
         steps[3].status = "RUNNING";
         steps[3].startedAt = new Date().toISOString();
+        if (psurCaseId) emitRuntimeEvent(psurCaseId, { kind: "step.started", ts: Date.now(), psurCaseId, step: 4, name: steps[3].name });
 
         try {
+          throwIfAborted();
           slotProposalsData = await proposeSlotsStep({
             psurCaseId,
             templateId,
@@ -533,6 +706,7 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
 
           steps[3].status = "COMPLETED";
           steps[3].endedAt = new Date().toISOString();
+          if (psurCaseId) emitRuntimeEvent(psurCaseId, { kind: "step.completed", ts: Date.now(), psurCaseId, step: 4, name: steps[3].name });
           steps[3].summary = { 
             totalProposals: slotProposalsData.length, 
             ready: readyCount,
@@ -592,6 +766,7 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
           steps[3].status = "FAILED";
           steps[3].endedAt = new Date().toISOString();
           steps[3].error = e.message || String(e);
+          if (psurCaseId) emitRuntimeEvent(psurCaseId, { kind: "step.failed", ts: Date.now(), psurCaseId, step: 4, name: steps[3].name, error: steps[3].error });
           
           if (traceCtx && psurCaseId) {
             await TraceEvents.workflowFailed(traceCtx, 4, e.message || String(e));
@@ -609,8 +784,10 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
       } else {
         steps[4].status = "RUNNING";
         steps[4].startedAt = new Date().toISOString();
+        if (psurCaseId) emitRuntimeEvent(psurCaseId, { kind: "step.started", ts: Date.now(), psurCaseId, step: 5, name: steps[4].name });
 
         try {
+          throwIfAborted();
           // Get template defaults for adjudication rules
           const defaults = template ? getTemplateDefaults(template) : { min_method_chars: 10 };
           
@@ -642,6 +819,7 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
 
           steps[4].status = "COMPLETED";
           steps[4].endedAt = new Date().toISOString();
+          if (psurCaseId) emitRuntimeEvent(psurCaseId, { kind: "step.completed", ts: Date.now(), psurCaseId, step: 5, name: steps[4].name });
           steps[4].summary = { acceptedCount: report.acceptedCount, rejectedCount: report.rejectedCount };
           steps[4].report = report;
           
@@ -688,6 +866,7 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
           steps[4].status = "FAILED";
           steps[4].endedAt = new Date().toISOString();
           steps[4].error = e.message || String(e);
+          if (psurCaseId) emitRuntimeEvent(psurCaseId, { kind: "step.failed", ts: Date.now(), psurCaseId, step: 5, name: steps[4].name, error: steps[4].error });
           
           if (traceCtx && psurCaseId) {
             await TraceEvents.workflowFailed(traceCtx, 5, e.message || String(e));
@@ -705,8 +884,10 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
       } else {
         steps[5].status = "RUNNING";
         steps[5].startedAt = new Date().toISOString();
+        if (psurCaseId) emitRuntimeEvent(psurCaseId, { kind: "step.started", ts: Date.now(), psurCaseId, step: 6, name: steps[5].name });
 
         try {
+          throwIfAborted();
           const obligations = await getObligations(jurisdictions, "PSUR");
           const totalObligations = obligations.length;
 
@@ -757,6 +938,7 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
 
           steps[5].status = "COMPLETED";
           steps[5].endedAt = new Date().toISOString();
+          if (psurCaseId) emitRuntimeEvent(psurCaseId, { kind: "step.completed", ts: Date.now(), psurCaseId, step: 6, name: steps[5].name });
           steps[5].summary = {
             coverage: `${filledSlots}/${totalSlots} slots`,
             obligations: `${satisfiedObligations}/${totalObligations}`,
@@ -804,6 +986,7 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
           steps[5].status = "FAILED";
           steps[5].endedAt = new Date().toISOString();
           steps[5].error = e.message || String(e);
+          if (psurCaseId) emitRuntimeEvent(psurCaseId, { kind: "step.failed", ts: Date.now(), psurCaseId, step: 6, name: steps[5].name, error: steps[5].error });
           
           if (traceCtx && psurCaseId) {
             await TraceEvents.workflowFailed(traceCtx, 6, e.message || String(e));
@@ -821,8 +1004,10 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
       } else {
         steps[6].status = "RUNNING";
         steps[6].startedAt = new Date().toISOString();
+        if (psurCaseId) emitRuntimeEvent(psurCaseId, { kind: "step.started", ts: Date.now(), psurCaseId, step: 7, name: steps[6].name });
 
         try {
+          throwIfAborted();
           // Use SOTA CompileOrchestrator for document generation
           const { CompileOrchestrator } = await import("../agents/runtime/compileOrchestrator");
           const compileOrchestrator = new CompileOrchestrator();
@@ -840,14 +1025,35 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
             periodEnd: params.periodEnd,
             documentStyle,
             enableCharts,
+            signal,
           });
           
           if (compileResult.success && compileResult.document) {
             // Store the generated document
             const docPath = `bundles/PSUR-${psurRef}/${compileResult.document.filename}`;
             
+            // Cache the compiled document for instant download
+            try {
+              cacheCompiledDocument(psurCaseId, documentStyle, {
+                docx: compileResult.document.docx,
+                pdf: compileResult.document.pdf,
+                html: compileResult.document.html,
+                pageCount: compileResult.document.pageCount,
+                sectionCount: compileResult.sections.length,
+                chartCount: compileResult.charts.length,
+                contentHash: compileResult.document.contentHash,
+                style: documentStyle,
+                generatedAt: Date.now(),
+                expiresAt: Date.now() + 3600000,
+              });
+              console.log(`[Workflow] Cached compiled document for case ${psurCaseId}`);
+            } catch (cacheErr: any) {
+              console.warn(`[Workflow] Failed to cache document:`, cacheErr?.message);
+            }
+            
             steps[6].status = "COMPLETED";
             steps[6].endedAt = new Date().toISOString();
+            if (psurCaseId) emitRuntimeEvent(psurCaseId, { kind: "step.completed", ts: Date.now(), psurCaseId, step: 7, name: steps[6].name });
             steps[6].summary = { 
               documentType: "docx", 
               sections: compileResult.sections.length,
@@ -883,6 +1089,7 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
           steps[6].status = "FAILED";
           steps[6].endedAt = new Date().toISOString();
           steps[6].error = e.message || String(e);
+          if (psurCaseId) emitRuntimeEvent(psurCaseId, { kind: "step.failed", ts: Date.now(), psurCaseId, step: 7, name: steps[6].name, error: steps[6].error });
           
           if (traceCtx && psurCaseId) {
             await TraceEvents.workflowFailed(traceCtx, 7, e.message || String(e));
@@ -900,8 +1107,10 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
       } else {
         steps[7].status = "RUNNING";
         steps[7].startedAt = new Date().toISOString();
+        if (psurCaseId) emitRuntimeEvent(psurCaseId, { kind: "step.started", ts: Date.now(), psurCaseId, step: 8, name: steps[7].name });
 
         try {
+          throwIfAborted();
           const bundleRef = `BUNDLE-${psurRef}-${Date.now().toString(36).toUpperCase()}`;
 
           await db.insert(auditBundles).values({
@@ -931,6 +1140,7 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
 
           steps[7].status = "COMPLETED";
           steps[7].endedAt = new Date().toISOString();
+          if (psurCaseId) emitRuntimeEvent(psurCaseId, { kind: "step.completed", ts: Date.now(), psurCaseId, step: 8, name: steps[7].name });
           steps[7].summary = { bundleRef, files: report.bundleFiles.length };
           steps[7].report = report;
           
@@ -948,6 +1158,7 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
           steps[7].status = "FAILED";
           steps[7].endedAt = new Date().toISOString();
           steps[7].error = e.message || String(e);
+          if (psurCaseId) emitRuntimeEvent(psurCaseId, { kind: "step.failed", ts: Date.now(), psurCaseId, step: 8, name: steps[7].name, error: steps[7].error });
           
           if (traceCtx && psurCaseId) {
             await TraceEvents.workflowFailed(traceCtx, 8, e.message || String(e));
@@ -976,7 +1187,20 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
     kernelStatus.templateSlots = getSlots(template).length;
   }
 
-  return {
+  // Final update to trace summary to mark as COMPLETED or FAILED
+  try {
+    const isSuccess = steps.every(s => s.status === "COMPLETED" || s.status === "NOT_STARTED" || s.status === "BLOCKED");
+    await db.update(decisionTraceSummaries)
+      .set({ 
+        workflowStatus: isSuccess ? "COMPLETED" : "FAILED",
+        lastUpdatedAt: new Date()
+      })
+      .where(eq(decisionTraceSummaries.psurCaseId, psurCaseId));
+  } catch (err) {
+    console.error('[WorkflowRunner] Failed to update final status:', err);
+  }
+
+  const result: OrchestratorWorkflowResult = {
     scope,
     case: {
       psurCaseId,
@@ -986,6 +1210,10 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
     steps,
     kernelStatus,
   };
+
+  cacheWorkflowResult(psurCaseId, result);
+
+  return result;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1012,6 +1240,10 @@ export async function getWorkflowResultForCase(psurCaseId: number): Promise<Orch
 
   const bundle = await db.query.auditBundles.findFirst({
     where: eq(auditBundles.psurCaseId, psurCaseId),
+  });
+
+  const traceSummary = await db.query.decisionTraceSummaries.findFirst({
+    where: eq(decisionTraceSummaries.psurCaseId, psurCaseId),
   });
 
   const scope: WorkflowScope = {
@@ -1103,7 +1335,7 @@ export async function getWorkflowResultForCase(psurCaseId: number): Promise<Orch
   steps.push({
     step: 7,
     name: "Render Document",
-    status: bundle ? "COMPLETED" : "NOT_STARTED",
+    status: bundle ? "COMPLETED" : (traceSummary?.workflowStatus === "RUNNING" ? "RUNNING" : traceSummary?.workflowStatus === "FAILED" ? "FAILED" : "NOT_STARTED"),
     summary: {},
   });
 
@@ -1133,7 +1365,7 @@ export async function getWorkflowResultForCase(psurCaseId: number): Promise<Orch
     kernelStatus.templateSlots = 0;
   }
 
-  return {
+  const result: OrchestratorWorkflowResult = {
     scope,
     case: {
       psurCaseId: psurCase.id,
@@ -1143,4 +1375,8 @@ export async function getWorkflowResultForCase(psurCaseId: number): Promise<Orch
     steps,
     kernelStatus,
   };
+
+  cacheWorkflowResult(psurCaseId, result);
+
+  return result;
 }

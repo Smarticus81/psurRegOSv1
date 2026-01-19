@@ -1,10 +1,12 @@
 /**
- * Complaint Bar Chart Agent
+ * SOTA Complaint Bar Chart Agent
  * 
- * SOTA agent for generating stacked/grouped bar charts for complaints by severity/region.
+ * Generates complaint distribution bar charts using pure SVG.
+ * No native dependencies - works on all platforms.
  */
 
 import { BaseChartAgent, ChartInput, CHART_THEMES, DocumentStyle } from "./baseChartAgent";
+import { ChartConfig, DataSeries } from "./svgChartGenerator";
 
 export class ComplaintBarChartAgent extends BaseChartAgent {
   protected readonly chartType = "COMPLAINT_BAR";
@@ -12,92 +14,59 @@ export class ComplaintBarChartAgent extends BaseChartAgent {
   constructor() {
     super(
       "ComplaintBarChartAgent",
-      "Complaint Bar Chart Agent"
+      "SOTA Complaint Bar Chart Agent"
     );
   }
 
   protected async generateChartConfig(
     input: ChartInput,
     theme: typeof CHART_THEMES[DocumentStyle]
-  ): Promise<any> {
-    // Extract complaint data
-    const complaintAtoms = input.atoms.filter(a => 
-      ["complaint_record", "complaint_summary"].includes(a.evidenceType)
-    );
+  ): Promise<Omit<ChartConfig, "width" | "height" | "style">> {
+    // Group complaints by category/type
+    const byCategory: Record<string, number> = {};
 
-    // Group by region and severity
-    const grouped: Record<string, Record<string, number>> = {};
-    const severities = new Set<string>();
-
-    for (const atom of complaintAtoms) {
-      const data = atom.normalizedData;
-      const region = String(this.getValue(data, "region", "country") || "Unknown");
-      const severity = String(this.getValue(data, "severity", "seriousness") || "Unknown");
-
-      if (!grouped[region]) grouped[region] = {};
-      grouped[region][severity] = (grouped[region][severity] || 0) + 1;
-      severities.add(severity);
+    for (const atom of input.atoms) {
+      if (atom.evidenceType === "complaint_record" || atom.evidenceType === "customer_complaint") {
+        const category = String(this.getValue(atom.normalizedData, "complaint_type", "category", "type", "complaint_category") || "Uncategorized");
+        byCategory[category] = (byCategory[category] || 0) + 1;
+      }
     }
 
-    // Order severities by importance
-    const severityOrder = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFORMATIONAL", "Unknown"];
-    const orderedSeverities = Array.from(severities).sort((a, b) => {
-      const indexA = severityOrder.indexOf(a);
-      const indexB = severityOrder.indexOf(b);
-      return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
-    });
+    // Sort by count and take top categories
+    const sortedCategories = Object.entries(byCategory)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10);
 
-    // Prepare data
-    const regions = Object.keys(grouped).sort();
-    const datasets = orderedSeverities.map((severity, idx) => ({
-      label: severity,
-      data: regions.map(region => grouped[region][severity] || 0),
-      backgroundColor: theme.primaryColors[idx % theme.primaryColors.length],
-      borderColor: theme.primaryColors[idx % theme.primaryColors.length],
-      borderWidth: 1,
-    }));
+    const series: DataSeries[] = [
+      {
+        name: "Complaints",
+        data: sortedCategories.map(([label, value], i) => ({
+          label: this.formatCategoryLabel(label),
+          value,
+          color: theme.primaryColors[i % theme.primaryColors.length],
+        })),
+      },
+    ];
 
     return {
       type: "bar",
-      data: {
-        labels: regions,
-        datasets,
-      },
-      options: {
-        ...this.getBaseChartOptions(theme, input.chartTitle),
-        plugins: {
-          ...this.getBaseChartOptions(theme, input.chartTitle).plugins,
-          legend: {
-            position: "bottom",
-            labels: {
-              color: theme.textColor,
-              font: { family: theme.fontFamily, size: 11 },
-              padding: 15,
-            },
-          },
-        },
-        scales: {
-          x: {
-            ...this.getBaseChartOptions(theme, input.chartTitle).scales.x,
-            stacked: true,
-            title: {
-              display: true,
-              text: "Region",
-              color: theme.textColor,
-            },
-          },
-          y: {
-            ...this.getBaseChartOptions(theme, input.chartTitle).scales.y,
-            stacked: true,
-            beginAtZero: true,
-            title: {
-              display: true,
-              text: "Number of Complaints",
-              color: theme.textColor,
-            },
-          },
-        },
-      },
+      title: input.chartTitle || "Complaint Distribution by Category",
+      series,
+      showLegend: false,
+      showGrid: true,
+      showValues: true,
+      yAxisLabel: "Number of Complaints",
+      xAxisLabel: "Category",
     };
+  }
+
+  private formatCategoryLabel(label: string): string {
+    return label
+      .replace(/_/g, " ")
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .split(" ")
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(" ")
+      .substring(0, 15);
   }
 }

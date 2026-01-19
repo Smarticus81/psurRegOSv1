@@ -352,7 +352,7 @@ export type QualificationReport = typeof qualificationReports.$inferSelect;
 export type InsertQualificationReport = z.infer<typeof insertQualificationReportSchema>;
 
 // ============== PSUR CASES ==============
-export const psurCaseStatusEnum = ["draft", "qualified", "in_progress", "rendered", "exported"] as const;
+export const psurCaseStatusEnum = ["draft", "qualified", "in_progress", "rendered", "exported", "closed", "voided"] as const;
 export type PSURCaseStatus = typeof psurCaseStatusEnum[number];
 
 export const psurCases = pgTable("psur_cases", {

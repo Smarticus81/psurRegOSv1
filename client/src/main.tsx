@@ -85,27 +85,31 @@ class AppErrorBoundary extends Component<{ children: React.ReactNode }, ErrorBou
     }
 
     return (
-      <div className="flex h-screen w-full items-center justify-center bg-background">
-        <div className="max-w-2xl rounded border border-destructive/30 bg-card p-6 text-card-foreground shadow">
-          <h1 className="mb-2 text-xl font-semibold">Application Error</h1>
-          <p className="mb-4 text-sm text-muted-foreground">
-            A runtime error occurred. The details have been recorded.
-          </p>
-          <div className="mb-4 rounded bg-muted p-3 text-sm text-foreground">
-            <div className="font-medium">Message</div>
-            <div className="break-words">{this.state.errorMessage}</div>
+      <div className="flex h-screen w-full items-center justify-center p-6">
+        <div className="glass-card max-w-2xl w-full p-12 text-center space-y-8 shadow-2xl animate-scale-in">
+          <div className="w-20 h-20 rounded-3xl bg-destructive/10 flex items-center justify-center mx-auto text-destructive shadow-sm">
+            <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
           </div>
-          {this.state.stack ? (
-            <pre className="mb-4 max-h-64 overflow-auto rounded bg-muted p-3 text-xs text-foreground">
-              {this.state.stack}
-            </pre>
-          ) : null}
+          <div className="space-y-2">
+            <h1 className="text-4xl font-black tracking-tighter text-foreground">Kernel Panic</h1>
+            <p className="text-lg text-muted-foreground font-medium">
+              A critical runtime exception has been identified and reported to the orchestration layer.
+            </p>
+          </div>
+          <div className="text-left space-y-4">
+            <div className="p-6 rounded-3xl bg-secondary/50 font-mono text-sm text-foreground/80 break-words shadow-inner">
+              <div className="font-black text-[10px] uppercase tracking-widest text-muted-foreground mb-2">Diagnostic Data</div>
+              {this.state.errorMessage}
+            </div>
+          </div>
           <button
             type="button"
             onClick={this.handleReload}
-            className="rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+            className="glossy-button bg-primary text-white py-4 px-12 text-lg font-black shadow-xl hover:scale-105 active:scale-95 transition-all w-full"
           >
-            Reload
+            REINITIALIZE SYSTEM
           </button>
         </div>
       </div>

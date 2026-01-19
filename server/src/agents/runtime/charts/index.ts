@@ -1,12 +1,19 @@
 /**
- * Chart Agents Index
+ * SOTA Chart Agents Index
  * 
- * Exports all SOTA chart generator agents for PSUR compilation.
+ * All chart agents use pure SVG generation - no native dependencies.
+ * Works on all platforms including Windows without build tools.
  */
 
-export { BaseChartAgent, ChartInput, ChartOutput, ChartEvidenceAtom, DocumentStyle, CHART_THEMES } from "./baseChartAgent";
-export { TrendLineChartAgent } from "./trendLineChartAgent";
+// Core SVG generator
+export * from "./svgChartGenerator";
+
+// Base chart agent
+export * from "./baseChartAgent";
+
+// Specific chart agents
+export { TrendLineChartAgent, ComplaintDistributionChartAgent, SeverityPieChartAgent, TimelineAreaChartAgent } from "./trendLineChartAgent";
 export { ComplaintBarChartAgent } from "./complaintBarChartAgent";
 export { DistributionPieChartAgent } from "./distributionPieChartAgent";
-export { GeographicHeatMapAgent } from "./geographicHeatMapAgent";
 export { TimeSeriesChartAgent } from "./timeSeriesChartAgent";
+export { GeographicHeatMapAgent } from "./geographicHeatMapAgent";

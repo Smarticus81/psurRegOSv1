@@ -21,6 +21,7 @@ import {
   BookOpen,
   FileSpreadsheet,
   AlertTriangle,
+  AlertCircle,
   CheckCircle2,
   Info,
   Download,
@@ -41,6 +42,7 @@ import {
   Search,
   Globe,
   FileWarning,
+  ArrowRight,
 } from "lucide-react";
 // Remove CANONICAL_EVIDENCE_TYPES import as we are using string literals
 import { EVIDENCE_DEFINITIONS } from "@shared/schema";
@@ -319,383 +321,229 @@ export default function Instructions() {
 
 
   return (
-    <div className="h-full overflow-auto" data-testid="instructions-page">
-      <div className="p-4 max-w-5xl mx-auto space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-semibold flex items-center gap-2">
-              <BookOpen className="h-5 w-5" />
-              Evidence Upload Instructions
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Complete guide for preparing and uploading evidence files
-            </p>
-          </div>
+    <div className="h-full overflow-auto animate-slide-up" data-testid="instructions-page">
+      <div className="max-w-5xl mx-auto space-y-12 py-8">
+        <div className="text-center space-y-3">
+          <h1 className="text-3xl font-semibold tracking-tight text-foreground">
+            Documentation
+          </h1>
+          <p className="text-muted-foreground max-w-lg mx-auto">
+            Learn how to prepare evidence files and understand the data requirements for PSUR generation.
+          </p>
         </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="evidence-types">Evidence Types</TabsTrigger>
-            <TabsTrigger value="troubleshooting">Troubleshooting</TabsTrigger>
-          </TabsList>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8">
+          <div className="flex justify-center">
+            <TabsList className="bg-secondary/50 p-1 rounded-xl border border-border">
+              <TabsTrigger value="overview" className="rounded-lg px-6 py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm font-medium text-sm transition-all">Getting Started</TabsTrigger>
+              <TabsTrigger value="evidence-types" className="rounded-lg px-6 py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm font-medium text-sm transition-all">Evidence Types</TabsTrigger>
+              <TabsTrigger value="troubleshooting" className="rounded-lg px-6 py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm font-medium text-sm transition-all">Troubleshooting</TabsTrigger>
+            </TabsList>
+          </div>
 
-          <TabsContent value="overview" className="space-y-4 mt-4">
-            <Card>
-              <CardHeader className="py-3 px-4">
-                <CardTitle className="text-sm font-medium">Getting Started</CardTitle>
-                <CardDescription className="text-xs">
-                  How to prepare and upload evidence for your PSUR
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="px-4 pb-4 pt-0 space-y-4">
+          <TabsContent value="overview" className="space-y-8 mt-0 focus-visible:outline-none">
+            <div className="glass-card p-10 space-y-10 shadow-2xl">
+              <div className="space-y-2">
+                <h3 className="text-2xl font-black tracking-tighter text-foreground">Operational Sequence</h3>
+                <p className="text-muted-foreground font-medium italic">Standard procedure for initializing reporting cycles.</p>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                {[
+                  { step: "01", title: "Artifact Preparation", desc: "Export intelligence from quality management systems into high-fidelity CSV or Excel formats. Ensure structural integrity of all metadata." },
+                  { step: "02", title: "Draft Orchestration", desc: "Initialize a new PSUR instance. Select framework templates (MDR/UK MDR) and define the intelligence period." },
+                  { step: "03", title: "Neural Ingestion", desc: "Deploy evidence files via the ingestion engine. Our models will automatically extract and map compliance atoms." },
+                  { step: "04", title: "Gap Verification", desc: "Audit extraction results against the compliance matrix. Certify all required intelligence categories." }
+                ].map((s, i) => (
+                  <div key={i} className="flex gap-6 group hover:-translate-y-1 transition-transform duration-500">
+                    <div className="flex-shrink-0 w-14 h-14 rounded-2xl bg-secondary flex items-center justify-center text-xl font-black text-primary/40 shadow-inner group-hover:bg-primary group-hover:text-white transition-all duration-500">{s.step}</div>
+                    <div className="space-y-2">
+                      <h4 className="text-lg font-black tracking-tight text-foreground">{s.title}</h4>
+                      <p className="text-sm text-muted-foreground font-medium leading-relaxed">{s.desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="glass-card p-8 space-y-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-600 shadow-sm"><FileSpreadsheet className="h-5 w-5" /></div>
+                  <h3 className="text-xl font-black tracking-tight text-foreground uppercase tracking-widest">Supported Architectures</h3>
+                </div>
                 <div className="space-y-4">
-                  <div className="flex gap-3">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-semibold text-sm">1</div>
-                    <div>
-                      <h4 className="font-medium text-sm">Prepare Your Data</h4>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Export data from your quality management system, ERP, or other sources into CSV or Excel format. 
-                        Each evidence type has specific required columns - see the Evidence Types tab for details.
-                      </p>
+                  <div className="p-5 rounded-2xl bg-white/50 border border-border/50 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-black text-xs uppercase tracking-widest text-foreground">CSV Protocol</span>
+                      <span className="ios-pill bg-emerald-500 text-white text-[9px] font-black border-none">OPTIMIZED</span>
                     </div>
+                    <p className="text-xs text-muted-foreground font-medium leading-relaxed">UTF-8 encoding required. First row must contain valid semantic headers. Quotes mandatory for complex values.</p>
                   </div>
-                  
-                  <div className="flex gap-3">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-semibold text-sm">2</div>
-                    <div>
-                      <h4 className="font-medium text-sm">Create a PSUR Case</h4>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        In the PSUR Wizard, create a new case by selecting your template (EU MDR Annex I or UK MDR), 
-                        device, and reporting period. The system will create a case reference for you.
-                      </p>
+                  <div className="p-5 rounded-2xl bg-white/50 border border-border/50 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-black text-xs uppercase tracking-widest text-foreground">XLSX Engine</span>
+                      <span className="ios-pill bg-blue-500 text-white text-[9px] font-black border-none">COMPATIBLE</span>
                     </div>
-                  </div>
-                  
-                  <div className="flex gap-3">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-semibold text-sm">3</div>
-                    <div>
-                      <h4 className="font-medium text-sm">Upload Evidence Files</h4>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        In Step 2, upload your evidence files one at a time. Select the correct evidence type 
-                        from the dropdown before uploading. The system will validate and parse your data automatically.
-                      </p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex gap-3">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-semibold text-sm">4</div>
-                    <div>
-                      <h4 className="font-medium text-sm">Complete Required Evidence</h4>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        The wizard shows which evidence types are required for your template. You must upload 
-                        at least one file for each required type before proceeding to report generation.
-                      </p>
-                    </div>
+                    <p className="text-xs text-muted-foreground font-medium leading-relaxed">Primary workbook ingestion. Auto-detection of semantic headers. Date columns verified against ISO protocols.</p>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
 
-            <Card>
-              <CardHeader className="py-3 px-4">
-                <div className="flex items-center gap-2">
-                  <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
-                  <CardTitle className="text-sm font-medium">Supported File Formats</CardTitle>
+              <div className="glass-card p-8 space-y-6 bg-amber-500/[0.02] border-amber-500/20 shadow-xl shadow-amber-500/5">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-600 shadow-sm"><AlertTriangle className="h-5 w-5" /></div>
+                  <h3 className="text-xl font-black tracking-tight text-foreground uppercase tracking-widest">Compliance Alerts</h3>
                 </div>
-              </CardHeader>
-              <CardContent className="px-4 pb-4 pt-0">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="rounded-lg border p-3">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Badge variant="secondary" className="text-xs">CSV</Badge>
-                      <span className="text-sm font-medium">Comma-Separated Values</span>
-                    </div>
-                    <ul className="text-xs text-muted-foreground space-y-1">
-                      <li>UTF-8 encoding recommended</li>
-                      <li>First row must be column headers</li>
-                      <li>Use quotes for values containing commas</li>
-                    </ul>
-                  </div>
-                  <div className="rounded-lg border p-3">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Badge variant="secondary" className="text-xs">XLSX</Badge>
-                      <span className="text-sm font-medium">Excel Workbook</span>
-                    </div>
-                    <ul className="text-xs text-muted-foreground space-y-1">
-                      <li>First sheet is used by default</li>
-                      <li>First row must be column headers</li>
-                      <li>Date columns should be formatted as dates</li>
-                    </ul>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20">
-              <CardHeader className="py-3 px-4">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                  <CardTitle className="text-sm font-medium text-amber-700 dark:text-amber-300">Important Notes</CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent className="px-4 pb-4 pt-0">
-                <ul className="text-xs text-amber-700 dark:text-amber-300 space-y-2">
-                  <li className="flex items-start gap-2">
-                    <span className="font-bold">1.</span>
-                    <span><strong>Device Code Matching:</strong> The device_code in your data must exactly match the device code registered in the Admin panel.</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="font-bold">2.</span>
-                    <span><strong>Date Format:</strong> All dates should be in ISO format (YYYY-MM-DD). Other formats may cause parsing errors.</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="font-bold">3.</span>
-                    <span><strong>Empty Rows:</strong> Rows with all empty values or only placeholder text (N/A, null, etc.) will be skipped.</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="font-bold">4.</span>
-                    <span><strong>File Size:</strong> Maximum file size is 10MB. For larger datasets, split into multiple files.</span>
-                  </li>
-                </ul>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="evidence-types" className="space-y-4 mt-4">
-            <Card>
-              <CardHeader className="py-3 px-4">
-                <CardTitle className="text-sm font-medium">Evidence Types Reference (EU MDR & UK MDR)</CardTitle>
-                <CardDescription className="text-xs">
-                  Click each type to see column specifications and sample data. 
-                  <br/>
-                  Types marked as <strong>summary</strong> or <strong>extract</strong> can be uploaded as simple CSVs with "summary" or "content" columns.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="px-4 pb-4 pt-0">
-                <Accordion type="single" collapsible className="w-full">
-                  {EVIDENCE_EXAMPLES.map((example) => (
-                    <AccordionItem key={example.type} value={example.type}>
-                      <AccordionTrigger className="text-sm hover:no-underline">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted">
-                            <example.icon className="h-4 w-4 text-muted-foreground" />
-                          </div>
-                          <div className="text-left">
-                            <div className="font-medium">{example.label}</div>
-                            <div className="text-xs text-muted-foreground font-normal">{example.type}</div>
-                          </div>
-                        </div>
-                      </AccordionTrigger>
-                      <AccordionContent>
-                        <div className="space-y-4 pt-2">
-                          <p className="text-sm text-muted-foreground">{example.description}</p>
-                          
-                          <div>
-                            <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                              <Info className="h-4 w-4" />
-                              Column Specifications
-                            </h4>
-                            <ScrollArea className="w-full">
-                              <Table>
-                                <TableHeader>
-                                  <TableRow>
-                                    <TableHead className="text-xs">Column Name</TableHead>
-                                    <TableHead className="text-xs">Required</TableHead>
-                                    <TableHead className="text-xs">Data Type</TableHead>
-                                    <TableHead className="text-xs">Description</TableHead>
-                                    <TableHead className="text-xs">Example</TableHead>
-                                  </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                  {example.columns.map((col) => (
-                                    <TableRow key={col.name}>
-                                      <TableCell className="text-xs font-mono">{col.name}</TableCell>
-                                      <TableCell>
-                                        {col.required ? (
-                                          <Badge variant="destructive" className="text-xs">Required</Badge>
-                                        ) : (
-                                          <Badge variant="secondary" className="text-xs">Optional</Badge>
-                                        )}
-                                      </TableCell>
-                                      <TableCell className="text-xs">{col.dataType}</TableCell>
-                                      <TableCell className="text-xs text-muted-foreground max-w-48">{col.description}</TableCell>
-                                      <TableCell className="text-xs font-mono text-muted-foreground">{col.example}</TableCell>
-                                    </TableRow>
-                                  ))}
-                                </TableBody>
-                              </Table>
-                            </ScrollArea>
-                          </div>
-
-                          <div>
-                            <div className="flex items-center justify-between mb-2">
-                              <h4 className="text-sm font-medium flex items-center gap-2">
-                                <FileSpreadsheet className="h-4 w-4" />
-                                Sample Data
-                              </h4>
-                            </div>
-                            <ScrollArea className="w-full">
-                              <div className="rounded border bg-muted/30 p-2 overflow-x-auto">
-                                <pre className="text-xs font-mono whitespace-pre">
-                                  {generateCSVContent(example)}
-                                </pre>
-                              </div>
-                            </ScrollArea>
-                          </div>
-
-                          <div className="grid gap-4 md:grid-cols-2">
-                            <div>
-                              <h4 className="text-sm font-medium mb-2 flex items-center gap-2 text-green-600 dark:text-green-400">
-                                <CheckCircle2 className="h-4 w-4" />
-                                Tips
-                              </h4>
-                              <ul className="text-xs text-muted-foreground space-y-1">
-                                {example.tips.map((tip, i) => (
-                                  <li key={i} className="flex items-start gap-2">
-                                    <span className="text-green-600 dark:text-green-400">-</span>
-                                    {tip}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                            <div>
-                              <h4 className="text-sm font-medium mb-2 flex items-center gap-2 text-red-600 dark:text-red-400">
-                                <AlertTriangle className="h-4 w-4" />
-                                Common Errors
-                              </h4>
-                              <ul className="text-xs text-muted-foreground space-y-1">
-                                {example.commonErrors.map((error, i) => (
-                                  <li key={i} className="flex items-start gap-2">
-                                    <span className="text-red-600 dark:text-red-400">-</span>
-                                    {error}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          </div>
-                        </div>
-                      </AccordionContent>
-                    </AccordionItem>
+                <ul className="space-y-4">
+                  {[
+                    { t: "DEVICE SYNCHRONIZATION", d: "Device codes must match the core registry exactly. Draft-sensitive verification in effect." },
+                    { t: "TEMPORAL PROTOCOLS", d: "All dates must adhere to ISO-8601 (YYYY-MM-DD). Non-standard formats trigger extraction bypass." },
+                    { t: "STRUCTURAL INTEGRITY", d: "Empty rows or placeholder records (N/A, null) are automatically filtered from intelligence atoms." }
+                  ].map((note, i) => (
+                    <li key={i} className="flex gap-4">
+                      <div className="mt-1 w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" />
+                      <div className="space-y-1">
+                        <div className="text-[10px] font-black text-amber-700 tracking-widest">{note.t}</div>
+                        <p className="text-xs text-amber-900/70 font-medium leading-relaxed">{note.d}</p>
+                      </div>
+                    </li>
                   ))}
-                </Accordion>
-              </CardContent>
-            </Card>
+                </ul>
+              </div>
+            </div>
           </TabsContent>
 
-          <TabsContent value="troubleshooting" className="space-y-4 mt-4">
-            <Card>
-              <CardHeader className="py-3 px-4">
-                <CardTitle className="text-sm font-medium">Common Issues and Solutions</CardTitle>
-              </CardHeader>
-              <CardContent className="px-4 pb-4 pt-0">
-                <Accordion type="single" collapsible className="w-full">
-                  <AccordionItem value="no-records">
-                    <AccordionTrigger className="text-sm">
-                      "No data records found in file"
+          <TabsContent value="evidence-types" className="mt-0 focus-visible:outline-none">
+            <div className="glass-card p-10 space-y-10 shadow-2xl">
+              <div className="space-y-2 text-center">
+                <h3 className="text-3xl font-black tracking-tighter text-foreground italic">Intelligence Dictionary</h3>
+                <p className="text-lg text-muted-foreground font-medium">Canonical specification for all synchronized evidence types.</p>
+              </div>
+              
+              <Accordion type="single" collapsible className="w-full space-y-4">
+                {EVIDENCE_EXAMPLES.map((example) => (
+                  <AccordionItem key={example.type} value={example.type} className="border-none">
+                    <AccordionTrigger className="glass-card px-8 py-6 hover:no-underline hover:bg-white transition-all group data-[state=open]:bg-white data-[state=open]:shadow-xl border border-border/50">
+                      <div className="flex items-center gap-6">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-secondary group-hover:bg-primary group-hover:text-white transition-all duration-500 shadow-sm">
+                          <example.icon className="h-6 w-6" />
+                        </div>
+                        <div className="text-left space-y-1">
+                          <div className="text-xl font-black tracking-tight text-foreground">{example.label}</div>
+                          <div className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">{example.type}</div>
+                        </div>
+                      </div>
                     </AccordionTrigger>
-                    <AccordionContent className="text-xs text-muted-foreground space-y-2">
-                      <p>This error occurs when the file contains only headers or empty rows.</p>
-                      <p><strong>Solutions:</strong></p>
-                      <ul className="list-disc pl-4 space-y-1">
-                        <li>Verify your file has actual data rows below the header row</li>
-                        <li>Check that data rows don't contain only placeholder values like "N/A" or "null"</li>
-                        <li>Ensure the file encoding is UTF-8</li>
-                      </ul>
+                    <AccordionContent className="glass-card mt-2 p-10 bg-white/40 border border-primary/10 shadow-inner">
+                      <div className="space-y-10">
+                        <p className="text-lg text-muted-foreground font-medium italic leading-relaxed">"{example.description}"</p>
+                        
+                        <div className="space-y-6">
+                          <h4 className="text-sm font-black uppercase tracking-[0.2em] text-foreground flex items-center gap-3">
+                            <Info className="h-4 w-4 text-primary" />
+                            Neural Mapping Schema
+                          </h4>
+                          <div className="rounded-3xl border border-border/50 overflow-hidden bg-white shadow-xl">
+                            <Table>
+                              <TableHeader className="bg-secondary/50">
+                                <TableRow>
+                                  <TableHead className="text-[10px] font-black uppercase tracking-widest px-6 py-4">Attribute</TableHead>
+                                  <TableHead className="text-[10px] font-black uppercase tracking-widest px-6 py-4 text-center">Protocol</TableHead>
+                                  <TableHead className="text-[10px] font-black uppercase tracking-widest px-6 py-4">Definition</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {example.columns.map((col) => (
+                                  <TableRow key={col.name} className="hover:bg-primary/[0.02] transition-colors">
+                                    <TableCell className="px-6 py-4 font-black text-sm text-foreground">{col.name}</TableCell>
+                                    <TableCell className="px-6 py-4 text-center">
+                                      {col.required ? (
+                                        <span className="ios-pill bg-destructive text-white text-[8px] font-black border-none px-3 py-1">MANDATORY</span>
+                                      ) : (
+                                        <span className="ios-pill bg-muted text-muted-foreground text-[8px] font-black border-none px-3 py-1">OPTIONAL</span>
+                                      )}
+                                    </TableCell>
+                                    <TableCell className="px-6 py-4 text-xs text-muted-foreground font-medium leading-relaxed">{col.description}</TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                          <div className="space-y-4">
+                            <h4 className="text-sm font-black uppercase tracking-[0.2em] text-emerald-600 flex items-center gap-3">
+                              <CheckCircle2 className="h-4 w-4" />
+                              Optimization Tips
+                            </h4>
+                            <div className="p-6 rounded-3xl bg-emerald-500/[0.03] border border-emerald-500/10 space-y-3">
+                              {example.tips.map((tip, i) => (
+                                <div key={i} className="flex gap-3 text-xs text-emerald-900/70 font-medium">
+                                  <div className="mt-1.5 w-1 h-1 rounded-full bg-emerald-500 flex-shrink-0" />
+                                  {tip}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="space-y-4">
+                            <h4 className="text-sm font-black uppercase tracking-[0.2em] text-destructive flex items-center gap-3">
+                              <AlertCircle className="h-4 w-4" />
+                              Critical Bypass Triggers
+                            </h4>
+                            <div className="p-6 rounded-3xl bg-destructive/[0.03] border border-destructive/10 space-y-3">
+                              {example.commonErrors.map((error, i) => (
+                                <div key={i} className="flex gap-3 text-xs text-destructive/70 font-medium">
+                                  <div className="mt-1.5 w-1 h-1 rounded-full bg-destructive flex-shrink-0" />
+                                  {error}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                     </AccordionContent>
                   </AccordionItem>
+                ))}
+              </Accordion>
+            </div>
+          </TabsContent>
 
-                  <AccordionItem value="missing-device-code">
-                    <AccordionTrigger className="text-sm">
-                      "Missing required field: deviceCode"
-                    </AccordionTrigger>
-                    <AccordionContent className="text-xs text-muted-foreground space-y-2">
-                      <p>The device code column is required for most evidence types.</p>
-                      <p><strong>Solutions:</strong></p>
-                      <ul className="list-disc pl-4 space-y-1">
-                        <li>Add a column named "device_code" to your file</li>
-                        <li>Or, if your file has the device code in a differently-named column, rename it to "device_code"</li>
-                        <li>Alternatively, select a device in the upload form - this will be used as the default device code</li>
-                      </ul>
-                    </AccordionContent>
-                  </AccordionItem>
+          <TabsContent value="troubleshooting" className="mt-0 focus-visible:outline-none">
+            <div className="glass-card p-10 space-y-10 shadow-2xl animate-slide-up">
+              <div className="space-y-2 text-center">
+                <h3 className="text-3xl font-black tracking-tighter text-foreground italic">Optimization Center</h3>
+                <p className="text-lg text-muted-foreground font-medium">Diagnostics and resolution protocols for ingestion anomalies.</p>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {[
+                  { q: "NO RECORDS DETECTED", a: "Verify artifact payload contains structural data below header index. Ensure UTF-8 encoding integrity." },
+                  { q: "DEVICE SYNC FAILURE", a: "Renaming non-canonical headers to 'device_code' or mapping them via the orchestration panel is required." },
+                  { q: "TEMPORAL PROTOCOL ERROR", a: "ISO-8601 strictness in effect. Excel users: deploy YYYY-MM-DD custom cell formatting." },
+                  { q: "SYNCHRONIZATION BYPASS", a: "Duplicates identified within the same case reference are automatically filtered to maintain intelligence purity." }
+                ].map((item, i) => (
+                  <div key={i} className="glass-card p-8 bg-white/50 border border-border/50 hover:border-primary/30 transition-all space-y-4 group">
+                    <div className="flex items-center gap-3">
+                      <div className="w-2 h-2 rounded-full bg-primary shadow-[0_0_8px_rgba(var(--primary),0.5)]" />
+                      <h4 className="text-xs font-black uppercase tracking-widest text-foreground group-hover:text-primary transition-colors">{item.q}</h4>
+                    </div>
+                    <p className="text-sm text-muted-foreground font-medium leading-relaxed">{item.a}</p>
+                  </div>
+                ))}
+              </div>
 
-                  <AccordionItem value="unsupported-type">
-                    <AccordionTrigger className="text-sm">
-                      "Unsupported evidence type"
-                    </AccordionTrigger>
-                    <AccordionContent className="text-xs text-muted-foreground space-y-2">
-                      <p>The selected evidence type is not recognized by the system.</p>
-                      <p><strong>Solutions:</strong></p>
-                      <ul className="list-disc pl-4 space-y-1">
-                        <li>Use one of the 8 high-level input types: CER, Sales, Complaints, FSCA, PMCF, Risk, CAPA, Admin</li>
-                        <li>The system will extract appropriate canonical evidence types from your documents</li>
-                      </ul>
-                    </AccordionContent>
-                  </AccordionItem>
-
-                  <AccordionItem value="date-format">
-                    <AccordionTrigger className="text-sm">
-                      "Invalid date format"
-                    </AccordionTrigger>
-                    <AccordionContent className="text-xs text-muted-foreground space-y-2">
-                      <p>Date columns must be in ISO format.</p>
-                      <p><strong>Solutions:</strong></p>
-                      <ul className="list-disc pl-4 space-y-1">
-                        <li>Use YYYY-MM-DD format (e.g., 2024-06-15)</li>
-                        <li>If using Excel, format the column as "YYYY-MM-DD" custom format</li>
-                        <li>Avoid formats like MM/DD/YYYY or DD-MM-YYYY</li>
-                      </ul>
-                    </AccordionContent>
-                  </AccordionItem>
-
-                  <AccordionItem value="atoms-not-created">
-                    <AccordionTrigger className="text-sm">
-                      Upload succeeds but "atomsCreated: 0"
-                    </AccordionTrigger>
-                    <AccordionContent className="text-xs text-muted-foreground space-y-2">
-                      <p>Records were parsed but not saved to the database.</p>
-                      <p><strong>Solutions:</strong></p>
-                      <ul className="list-disc pl-4 space-y-1">
-                        <li>Check if you're re-uploading duplicate data - atoms with the same ID for the same case are skipped</li>
-                        <li>Verify that required fields have valid values</li>
-                        <li>Check the server logs for specific validation errors</li>
-                      </ul>
-                    </AccordionContent>
-                  </AccordionItem>
-
-                  <AccordionItem value="step3-blocked">
-                    <AccordionTrigger className="text-sm">
-                      Cannot proceed to Step 3 (Generate PSUR)
-                    </AccordionTrigger>
-                    <AccordionContent className="text-xs text-muted-foreground space-y-2">
-                      <p>Step 3 requires all mandatory evidence types to have at least one atom.</p>
-                      <p><strong>Solutions:</strong></p>
-                      <ul className="list-disc pl-4 space-y-1">
-                        <li>Check the "Required Evidence" section - any showing "0" must have data uploaded</li>
-                        <li>For the EU MDR Annex I template, upload documents for: CER, Sales, Complaints, FSCA, PMCF, Risk, CAPA, Admin</li>
-                        <li>Upload files with real data (not just headers or placeholder rows)</li>
-                      </ul>
-                    </AccordionContent>
-                  </AccordionItem>
-                </Accordion>
-              </CardContent>
-            </Card>
-
-            <Card className="border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20">
-              <CardHeader className="py-3 px-4">
-                <div className="flex items-center gap-2">
-                  <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                  <CardTitle className="text-sm font-medium text-blue-700 dark:text-blue-300">Need More Help?</CardTitle>
+              <div className="ios-pill bg-primary/10 text-primary border-primary/20 py-8 px-10 flex items-center justify-between group cursor-pointer hover:bg-primary hover:text-white transition-all duration-700 shadow-xl shadow-primary/5">
+                <div className="space-y-1 text-left">
+                  <div className="text-xl font-black tracking-tighter">Need Advanced Support?</div>
+                  <p className="text-sm font-medium opacity-70 group-hover:opacity-100">Our regulatory engineers are monitoring the intelligence stream 24/7.</p>
                 </div>
-              </CardHeader>
-              <CardContent className="px-4 pb-4 pt-0">
-                <p className="text-xs text-blue-700 dark:text-blue-300">
-                  If you continue to experience issues, check the browser console (F12) and server logs for detailed error messages.
-                  Ensure your CSV files are properly formatted and contain valid data in all required columns.
-                </p>
-              </CardContent>
-            </Card>
+                <div className="w-14 h-14 rounded-2xl bg-white/20 flex items-center justify-center backdrop-blur-md group-hover:scale-110 transition-transform">
+                  <ArrowRight className="w-6 h-6" />
+                </div>
+              </div>
+            </div>
           </TabsContent>
         </Tabs>
       </div>

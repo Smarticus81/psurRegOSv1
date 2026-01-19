@@ -1,11 +1,13 @@
 /**
- * Geographic Heat Map Agent
+ * SOTA Geographic Heat Map Agent
  * 
- * SOTA agent for generating regional distribution visualizations.
- * Uses a horizontal bar chart as a heat map proxy for document embedding.
+ * Generates geographic distribution charts using pure SVG.
+ * Uses a stacked bar chart to show regional distribution.
+ * No native dependencies - works on all platforms.
  */
 
 import { BaseChartAgent, ChartInput, CHART_THEMES, DocumentStyle } from "./baseChartAgent";
+import { ChartConfig, DataSeries } from "./svgChartGenerator";
 
 export class GeographicHeatMapAgent extends BaseChartAgent {
   protected readonly chartType = "GEOGRAPHIC_HEATMAP";
@@ -13,116 +15,111 @@ export class GeographicHeatMapAgent extends BaseChartAgent {
   constructor() {
     super(
       "GeographicHeatMapAgent",
-      "Geographic Heat Map Agent"
+      "SOTA Geographic Distribution Chart Agent"
     );
   }
 
   protected async generateChartConfig(
     input: ChartInput,
     theme: typeof CHART_THEMES[DocumentStyle]
-  ): Promise<any> {
-    // Extract regional data from atoms
-    const regionData: Record<string, { complaints: number; sales: number }> = {};
+  ): Promise<Omit<ChartConfig, "width" | "height" | "style">> {
+    // Group events by region/country
+    const byRegion: Record<string, number> = {};
+    const byRegionAndType: Record<string, Record<string, number>> = {};
+    const eventTypes = new Set<string>();
 
     for (const atom of input.atoms) {
       const data = atom.normalizedData;
-      const region = String(this.getValue(data, "region", "country") || "Unknown");
-
-      if (!regionData[region]) {
-        regionData[region] = { complaints: 0, sales: 0 };
+      const region = String(this.getValue(data, "region", "country", "location", "geographic_region", "market") || "Unknown");
+      const type = atom.evidenceType;
+      
+      byRegion[region] = (byRegion[region] || 0) + 1;
+      eventTypes.add(type);
+      
+      if (!byRegionAndType[region]) {
+        byRegionAndType[region] = {};
       }
-
-      if (atom.evidenceType.includes("complaint") || atom.evidenceType.includes("incident")) {
-        regionData[region].complaints++;
-      } else if (atom.evidenceType.includes("sales")) {
-        regionData[region].sales += Number(this.getValue(data, "quantity", "units_sold") || 0);
-      }
+      byRegionAndType[region][type] = (byRegionAndType[region][type] || 0) + 1;
     }
 
-    // Calculate rates and sort by rate descending
-    const ratesWithRegion = Object.entries(regionData)
-      .map(([region, data]) => ({
-        region,
-        rate: data.sales > 0 ? (data.complaints / data.sales) * 1000 : 0,
-        complaints: data.complaints,
-        sales: data.sales,
-      }))
-      .sort((a, b) => b.rate - a.rate);
+    // Sort regions by total count and take top 10
+    const sortedRegions = Object.entries(byRegion)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([region]) => region);
 
-    const labels = ratesWithRegion.map(r => r.region);
-    const rates = ratesWithRegion.map(r => r.rate);
+    const types = Array.from(eventTypes).slice(0, 5);
 
-    // Color by rate intensity
-    const maxRate = Math.max(...rates, 1);
-    const backgroundColors = rates.map(rate => {
-      const intensity = rate / maxRate;
-      if (input.style === "premium") {
-        // Purple gradient for premium
-        return `rgba(139, 92, 246, ${0.3 + intensity * 0.7})`;
-      } else if (input.style === "regulatory") {
-        // Grayscale for regulatory
-        const gray = Math.round(200 - intensity * 150);
-        return `rgb(${gray}, ${gray}, ${gray})`;
-      } else {
-        // Blue gradient for corporate
-        return `rgba(44, 82, 130, ${0.3 + intensity * 0.7})`;
-      }
-    });
+    // If we have multiple types, create a stacked bar chart
+    if (types.length > 1) {
+      const series: DataSeries[] = types.map((type, i) => ({
+        name: this.formatTypeName(type),
+        data: sortedRegions.map(region => ({
+          label: this.formatRegionName(region),
+          value: byRegionAndType[region]?.[type] || 0,
+        })),
+        color: theme.primaryColors[i % theme.primaryColors.length],
+      }));
+
+      return {
+        type: "stacked-bar",
+        title: input.chartTitle || "Geographic Distribution by Event Type",
+        series,
+        showLegend: true,
+        showGrid: true,
+        yAxisLabel: "Event Count",
+        xAxisLabel: "Region",
+      };
+    }
+
+    // Single type - simple bar chart
+    const series: DataSeries[] = [
+      {
+        name: "Events",
+        data: sortedRegions.map((region, i) => ({
+          label: this.formatRegionName(region),
+          value: byRegion[region],
+          color: theme.primaryColors[i % theme.primaryColors.length],
+        })),
+      },
+    ];
 
     return {
       type: "bar",
-      data: {
-        labels,
-        datasets: [{
-          label: "Complaint Rate (per 1,000 units)",
-          data: rates,
-          backgroundColor: backgroundColors,
-          borderColor: theme.primaryColors[0],
-          borderWidth: 1,
-        }],
-      },
-      options: {
-        ...this.getBaseChartOptions(theme, input.chartTitle),
-        indexAxis: "y", // Horizontal bar chart
-        plugins: {
-          ...this.getBaseChartOptions(theme, input.chartTitle).plugins,
-          legend: {
-            display: false,
-          },
-          tooltip: {
-            callbacks: {
-              label: (context: any) => {
-                const idx = context.dataIndex;
-                const data = ratesWithRegion[idx];
-                return [
-                  `Rate: ${data.rate.toFixed(2)} per 1,000`,
-                  `Complaints: ${data.complaints}`,
-                  `Units: ${data.sales.toLocaleString()}`,
-                ];
-              },
-            },
-          },
-        },
-        scales: {
-          x: {
-            ...this.getBaseChartOptions(theme, input.chartTitle).scales.x,
-            beginAtZero: true,
-            title: {
-              display: true,
-              text: "Rate per 1,000 Units",
-              color: theme.textColor,
-            },
-          },
-          y: {
-            ...this.getBaseChartOptions(theme, input.chartTitle).scales.y,
-            title: {
-              display: true,
-              text: "Region",
-              color: theme.textColor,
-            },
-          },
-        },
-      },
+      title: input.chartTitle || "Geographic Distribution of Events",
+      series,
+      showLegend: false,
+      showGrid: true,
+      showValues: true,
+      yAxisLabel: "Event Count",
+      xAxisLabel: "Region",
     };
+  }
+
+  private formatRegionName(region: string): string {
+    // Common region/country abbreviations
+    const abbreviations: Record<string, string> = {
+      "United States": "US",
+      "United Kingdom": "UK",
+      "Germany": "DE",
+      "France": "FR",
+      "Japan": "JP",
+      "China": "CN",
+      "Canada": "CA",
+      "Australia": "AU",
+      "European Union": "EU",
+      "Asia Pacific": "APAC",
+    };
+    
+    return abbreviations[region] || region.substring(0, 10);
+  }
+
+  private formatTypeName(type: string): string {
+    return type
+      .replace(/_/g, " ")
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .split(" ")
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(" ");
   }
 }

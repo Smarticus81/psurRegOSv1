@@ -1,10 +1,12 @@
 /**
- * Distribution Pie Chart Agent
+ * SOTA Distribution Pie Chart Agent
  * 
- * SOTA agent for generating pie/donut charts for complaint type distributions.
+ * Generates distribution pie/donut charts using pure SVG.
+ * No native dependencies - works on all platforms.
  */
 
 import { BaseChartAgent, ChartInput, CHART_THEMES, DocumentStyle } from "./baseChartAgent";
+import { ChartConfig, DataSeries } from "./svgChartGenerator";
 
 export class DistributionPieChartAgent extends BaseChartAgent {
   protected readonly chartType = "DISTRIBUTION_PIE";
@@ -12,105 +14,93 @@ export class DistributionPieChartAgent extends BaseChartAgent {
   constructor() {
     super(
       "DistributionPieChartAgent",
-      "Distribution Pie Chart Agent"
+      "SOTA Distribution Pie Chart Agent"
     );
   }
 
   protected async generateChartConfig(
     input: ChartInput,
     theme: typeof CHART_THEMES[DocumentStyle]
-  ): Promise<any> {
-    // Extract complaint data
-    const complaintAtoms = input.atoms.filter(a => 
-      ["complaint_record", "complaint_summary"].includes(a.evidenceType)
-    );
+  ): Promise<Omit<ChartConfig, "width" | "height" | "style">> {
+    // Determine distribution type based on evidence
+    const bySeverity: Record<string, number> = {};
+    const byStatus: Record<string, number> = {};
+    const byType: Record<string, number> = {};
 
-    // Group by complaint type/category
-    const grouped: Record<string, number> = {};
+    const severityColors: Record<string, string> = {
+      "Critical": "#dc2626",
+      "High": "#ea580c",
+      "Medium": "#f59e0b",
+      "Low": "#22c55e",
+      "Negligible": "#6b7280",
+      "Unknown": "#9ca3af",
+    };
 
-    for (const atom of complaintAtoms) {
+    for (const atom of input.atoms) {
       const data = atom.normalizedData;
-      const type = String(
-        this.getValue(data, "complaint_type", "category", "type", "description") || "Other"
-      ).substring(0, 30);
-
-      grouped[type] = (grouped[type] || 0) + 1;
+      
+      // Severity distribution
+      const severity = String(this.getValue(data, "severity", "severity_level", "risk_level", "seriousness") || "Unknown");
+      bySeverity[severity] = (bySeverity[severity] || 0) + 1;
+      
+      // Status distribution
+      const status = String(this.getValue(data, "status", "outcome", "resolution_status") || "");
+      if (status) byStatus[status] = (byStatus[status] || 0) + 1;
+      
+      // Type distribution
+      byType[atom.evidenceType] = (byType[atom.evidenceType] || 0) + 1;
     }
 
-    // Sort by count and limit to top 8 + "Other"
-    const sorted = Object.entries(grouped).sort((a, b) => b[1] - a[1]);
-    const topCategories = sorted.slice(0, 8);
-    const otherCount = sorted.slice(8).reduce((sum, [, count]) => sum + count, 0);
-    
-    if (otherCount > 0) {
-      topCategories.push(["Other", otherCount]);
+    // Use severity if we have meaningful data, otherwise fall back to type
+    let distributionData: Record<string, number>;
+    let chartTitle: string;
+    let useColors: boolean;
+
+    if (Object.keys(bySeverity).filter(k => k !== "Unknown").length >= 2) {
+      distributionData = bySeverity;
+      chartTitle = input.chartTitle || "Event Severity Distribution";
+      useColors = true;
+    } else if (Object.keys(byStatus).length >= 2) {
+      distributionData = byStatus;
+      chartTitle = input.chartTitle || "Event Status Distribution";
+      useColors = false;
+    } else {
+      distributionData = byType;
+      chartTitle = input.chartTitle || "Evidence Type Distribution";
+      useColors = false;
     }
 
-    const labels = topCategories.map(([label]) => label);
-    const data = topCategories.map(([, count]) => count);
+    const sortedEntries = Object.entries(distributionData)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8);
+
+    const series: DataSeries[] = [
+      {
+        name: "Distribution",
+        data: sortedEntries.map(([label, value], i) => ({
+          label: this.formatLabel(label),
+          value,
+          color: useColors 
+            ? (severityColors[label] || theme.primaryColors[i % theme.primaryColors.length])
+            : theme.primaryColors[i % theme.primaryColors.length],
+        })),
+      },
+    ];
 
     return {
-      type: "doughnut",
-      data: {
-        labels,
-        datasets: [{
-          data,
-          backgroundColor: theme.primaryColors.slice(0, labels.length),
-          borderColor: theme.backgroundColor,
-          borderWidth: 2,
-        }],
-      },
-      options: {
-        responsive: false,
-        maintainAspectRatio: false,
-        plugins: {
-          title: {
-            display: true,
-            text: input.chartTitle,
-            color: theme.textColor,
-            font: {
-              family: theme.fontFamily,
-              size: 16,
-              weight: "bold",
-            },
-          },
-          legend: {
-            position: "right",
-            labels: {
-              color: theme.textColor,
-              font: { family: theme.fontFamily, size: 11 },
-              padding: 10,
-              generateLabels: (chart: any) => {
-                const datasets = chart.data.datasets;
-                return chart.data.labels.map((label: string, i: number) => {
-                  const value = datasets[0].data[i];
-                  const total = datasets[0].data.reduce((a: number, b: number) => a + b, 0);
-                  const percentage = ((value / total) * 100).toFixed(1);
-                  return {
-                    text: `${label} (${percentage}%)`,
-                    fillStyle: datasets[0].backgroundColor[i],
-                    strokeStyle: datasets[0].borderColor,
-                    lineWidth: datasets[0].borderWidth,
-                    hidden: false,
-                    index: i,
-                  };
-                });
-              },
-            },
-          },
-          tooltip: {
-            callbacks: {
-              label: (context: any) => {
-                const value = context.parsed;
-                const total = context.dataset.data.reduce((a: number, b: number) => a + b, 0);
-                const percentage = ((value / total) * 100).toFixed(1);
-                return `${context.label}: ${value} (${percentage}%)`;
-              },
-            },
-          },
-        },
-        cutout: "50%", // Makes it a donut chart
-      },
+      type: "donut",
+      title: chartTitle,
+      series,
+      showLegend: true,
     };
+  }
+
+  private formatLabel(label: string): string {
+    return label
+      .replace(/_/g, " ")
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .split(" ")
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(" ");
   }
 }

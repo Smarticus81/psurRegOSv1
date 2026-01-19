@@ -33,8 +33,13 @@ CAPA section MUST include:
 - Use quality management terminology
 - Include CAPA reference numbers
 - Document clear linkage to PMS triggers
-- Reference evidence using [ATOM-xxx] format
 - Include effectiveness criteria and verification
+- Write clean, professional prose without markdown formatting symbols
+
+## CRITICAL: DO NOT USE CITATIONS IN OUTPUT
+- Do NOT include [ATOM-xxx] or any citation markers in the narrative text
+- Evidence references will be added automatically from metadata
+- Write clean, readable prose without inline citations
 
 ## STRUCTURE:
 1. Summary of CAPA activity during period
@@ -49,11 +54,11 @@ CAPA section MUST include:
 4. Conclusions on corrective/preventive effectiveness
 
 ## OUTPUT FORMAT
-Write the narrative section content. After the narrative, provide a JSON block:
+Write the narrative section content WITHOUT any citation markers. After the narrative, provide a JSON block:
 \`\`\`json
 {
-  "citedAtoms": ["ATOM-xxx", ...],
-  "uncitedAtoms": ["ATOM-yyy", ...],
+  "citedAtoms": ["actual-atom-id-from-evidence", ...],
+  "uncitedAtoms": [],
   "dataGaps": ["description of missing data", ...],
   "confidence": 0.0-1.0,
   "reasoning": "explanation of content decisions"

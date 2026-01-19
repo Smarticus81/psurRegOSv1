@@ -88,6 +88,8 @@ export interface IStorage {
 
   getPSURCases(): Promise<PSURCase[]>;
   getPSURCase(id: number): Promise<PSURCase | undefined>;
+  getPSURCasesByDeviceAndPeriod(deviceId: number, startPeriod: Date, endPeriod: Date): Promise<PSURCase[]>;
+  getActivePSURCaseForDevice(deviceId: number): Promise<PSURCase | undefined>;
   createPSURCase(psurCase: InsertPSURCase): Promise<PSURCase>;
   updatePSURCase(id: number, psurCase: Partial<InsertPSURCase>): Promise<PSURCase | undefined>;
 
@@ -326,6 +328,27 @@ export class DatabaseStorage implements IStorage {
   async getPSURCase(id: number): Promise<PSURCase | undefined> {
     const [psurCase] = await db.select().from(psurCases).where(eq(psurCases.id, id));
     return psurCase;
+  }
+
+  async getPSURCasesByDeviceAndPeriod(deviceId: number, startPeriod: Date, endPeriod: Date): Promise<PSURCase[]> {
+    // Find all cases where the device is in deviceIds array and periods overlap or match
+    const allCases = await db.select().from(psurCases).orderBy(desc(psurCases.createdAt));
+    return allCases.filter(c => {
+      const hasDevice = c.deviceIds?.includes(deviceId) || c.leadingDeviceId === deviceId;
+      const sameStart = c.startPeriod.getTime() === startPeriod.getTime();
+      const sameEnd = c.endPeriod.getTime() === endPeriod.getTime();
+      return hasDevice && sameStart && sameEnd;
+    });
+  }
+
+  async getActivePSURCaseForDevice(deviceId: number): Promise<PSURCase | undefined> {
+    // Get the most recent non-closed, non-voided case for a device
+    const allCases = await db.select().from(psurCases).orderBy(desc(psurCases.createdAt));
+    return allCases.find(c => {
+      const hasDevice = c.deviceIds?.includes(deviceId) || c.leadingDeviceId === deviceId;
+      const isActive = c.status !== "closed" && c.status !== "voided";
+      return hasDevice && isActive;
+    });
   }
 
   async createPSURCase(psurCase: InsertPSURCase): Promise<PSURCase> {

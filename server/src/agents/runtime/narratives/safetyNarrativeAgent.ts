@@ -32,7 +32,7 @@ This section MUST include:
 - Use precise safety terminology
 - Be explicit about patient outcomes
 - Include specific counts and rates per 1000 units
-- Reference evidence using [ATOM-xxx] format
+- Write clear, professional prose without markdown formatting symbols
 - Do NOT minimize or editorialize safety data
 
 ## STRUCTURE FOR SERIOUS INCIDENTS:
@@ -50,12 +50,18 @@ This section MUST include:
 4. Rate per 1000 units by region
 5. Investigation outcomes
 
+## CRITICAL: DO NOT USE CITATIONS IN OUTPUT
+- Do NOT include [ATOM-xxx] or any citation markers in the narrative text
+- Evidence references will be added automatically from metadata
+- Write clean, readable prose without inline citations
+- Focus on content quality and regulatory compliance
+
 ## OUTPUT FORMAT
-Write the narrative section content. After the narrative, provide a JSON block:
+Write the narrative section content WITHOUT any citation markers. After the narrative, provide a JSON block with the actual atom IDs used:
 \`\`\`json
 {
-  "citedAtoms": ["ATOM-xxx", ...],
-  "uncitedAtoms": ["ATOM-yyy", ...],
+  "citedAtoms": ["actual-atom-id-from-evidence", ...],
+  "uncitedAtoms": [],
   "dataGaps": ["description of missing data", ...],
   "confidence": 0.0-1.0,
   "reasoning": "explanation of content decisions"

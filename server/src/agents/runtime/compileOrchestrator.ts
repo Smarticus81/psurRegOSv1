@@ -48,6 +48,29 @@ import { TimeSeriesChartAgent } from "./charts/timeSeriesChartAgent";
 
 // Import document formatter
 import { DocumentFormatterAgent, DocumentStyle, FormattedDocument } from "./documentFormatterAgent";
+import { emitRuntimeEvent } from "../../orchestrator/workflowRunner";
+
+// Import live content functions for incremental preview
+let initLiveContent: (psurCaseId: number, slotIds: string[]) => void;
+let updateLiveContent: (psurCaseId: number, slotId: string, title: string, content: string, status: "pending" | "generating" | "done") => void;
+let finishLiveContent: (psurCaseId: number) => void;
+
+// Dynamically load to avoid circular dependencies
+async function loadLiveContentFunctions() {
+  if (!initLiveContent) {
+    try {
+      const routes = await import("../../../routes");
+      initLiveContent = routes.initLiveContent;
+      updateLiveContent = routes.updateLiveContent;
+      finishLiveContent = routes.finishLiveContent;
+    } catch {
+      // Fallback no-ops if routes not available
+      initLiveContent = () => {};
+      updateLiveContent = () => {};
+      finishLiveContent = () => {};
+    }
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -72,6 +95,7 @@ export interface CompileOrchestratorInput {
   reviewers?: string[];
   approvers?: string[];
   confidentiality?: "Public" | "Internal" | "Confidential" | "Restricted";
+  signal?: AbortSignal;
 }
 
 export interface CompiledSection {
@@ -91,8 +115,10 @@ export interface CompiledChart {
   chartType: string;
   title: string;
   imageBuffer: Buffer;
+  svg?: string;  // SVG content for web embedding
   width: number;
   height: number;
+  mimeType?: string;
 }
 
 export interface CompileOrchestratorResult {
@@ -172,6 +198,14 @@ export class CompileOrchestrator {
     const warnings: string[] = [];
     const sections: CompiledSection[] = [];
     const charts: CompiledChart[] = [];
+    const throwIfAborted = () => {
+      if (!input.signal?.aborted) return;
+      const reason =
+        typeof (input.signal as any).reason === "string"
+          ? (input.signal as any).reason
+          : "Cancelled";
+      throw new Error(`Cancelled: ${reason}`);
+    };
 
     console.log(`[${this.orchestratorId}] Starting PSUR compilation for case ${input.psurCaseId}`);
 
@@ -192,9 +226,17 @@ export class CompileOrchestrator {
     });
 
     try {
+      throwIfAborted();
+      // Load live content functions for incremental preview
+      await loadLiveContentFunctions();
+      
       // Load template
       const template = loadTemplate(input.templateId);
       const templateSlots = getEffectiveSlots(template);
+
+      // Initialize live content for incremental preview
+      const slotIds = templateSlots.map(s => s.slot_id);
+      initLiveContent(input.psurCaseId, slotIds);
 
       // Load all evidence atoms for this case
       const allAtoms = await db.query.evidenceAtoms.findMany({
@@ -211,7 +253,11 @@ export class CompileOrchestrator {
 
       for (const slot of templateSlots) {
         if (slot.slot_kind !== "NARRATIVE") continue;
+        throwIfAborted();
 
+        // Mark slot as generating in live preview
+        updateLiveContent(input.psurCaseId, slot.slot_id, slot.title, "", "generating");
+        
         const AgentClass = NARRATIVE_AGENT_MAPPING[slot.slot_id];
         if (!AgentClass) {
           // Use generic narrative agent as fallback
@@ -221,12 +267,19 @@ export class CompileOrchestrator {
             input
           );
           sections.push(section);
+          // Update live content with generated section
+          updateLiveContent(input.psurCaseId, slot.slot_id, slot.title, section.content, "done");
           continue;
         }
 
         try {
+          const runId = `${this.orchestratorId}:${slot.slot_id}:${Date.now().toString(36)}`;
+          const agentName = AgentClass?.name || "UnknownAgent";
+          emitRuntimeEvent(input.psurCaseId, { kind: "agent.created", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "narrative", slotId: slot.slot_id, agent: agentName, runId });
+          const agentStart = Date.now();
           const agent = new AgentClass();
           const slotAtoms = this.filterAtomsForSlot(allAtoms, slot.evidence_requirements?.required_types || []);
+          emitRuntimeEvent(input.psurCaseId, { kind: "agent.started", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "narrative", slotId: slot.slot_id, agent: agentName, runId });
           
           const result = await agent.run({
             slot: {
@@ -254,19 +307,25 @@ export class CompileOrchestrator {
           }));
 
           if (result.success && result.data) {
-            sections.push({
+            const sectionData = {
               slotId: slot.slot_id,
               title: slot.title,
               sectionPath: slot.section_path,
-              slotKind: "NARRATIVE",
+              slotKind: "NARRATIVE" as const,
               content: result.data.content,
               evidenceAtomIds: result.data.citedAtoms,
               obligationsClaimed: [], // Will be populated from template mapping
               confidence: result.data.confidence,
-            });
+            };
+            sections.push(sectionData);
+            // Update live content with generated section
+            updateLiveContent(input.psurCaseId, slot.slot_id, slot.title, result.data.content, "done");
+            emitRuntimeEvent(input.psurCaseId, { kind: "agent.completed", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "narrative", slotId: slot.slot_id, agent: agentName, runId, durationMs: Date.now() - agentStart });
           } else {
             errors.push(`Narrative generation failed for ${slot.slot_id}: ${result.error}`);
+            emitRuntimeEvent(input.psurCaseId, { kind: "agent.failed", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "narrative", slotId: slot.slot_id, agent: agentName, runId, error: result.error || "Unknown error" });
           }
+          emitRuntimeEvent(input.psurCaseId, { kind: "agent.destroyed", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "narrative", slotId: slot.slot_id, agent: agentName, runId });
         } catch (err: any) {
           errors.push(`Agent error for ${slot.slot_id}: ${err.message}`);
           warnings.push(`Using fallback for ${slot.slot_id}`);
@@ -274,6 +333,8 @@ export class CompileOrchestrator {
           // Generate fallback content
           const section = await this.generateGenericNarrative(slot, allAtoms, input);
           sections.push(section);
+          // Update live content with generated section
+          updateLiveContent(input.psurCaseId, slot.slot_id, slot.title, section.content, "done");
         }
       }
 
@@ -284,18 +345,28 @@ export class CompileOrchestrator {
 
       for (const slot of templateSlots) {
         if (slot.slot_kind !== "TABLE") continue;
+        throwIfAborted();
+
+        // Mark slot as generating in live preview
+        updateLiveContent(input.psurCaseId, slot.slot_id, slot.title, "", "generating");
 
         const AgentClass = TABLE_AGENT_MAPPING[slot.slot_id];
         if (!AgentClass) {
           // Use generic table generation
           const section = await this.generateGenericTable(slot, allAtoms, input);
           sections.push(section);
+          updateLiveContent(input.psurCaseId, slot.slot_id, slot.title, section.content, "done");
           continue;
         }
 
         try {
+          const runId = `${this.orchestratorId}:${slot.slot_id}:${Date.now().toString(36)}`;
+          const agentName = AgentClass?.name || "UnknownAgent";
+          emitRuntimeEvent(input.psurCaseId, { kind: "agent.created", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "table", slotId: slot.slot_id, agent: agentName, runId });
+          const agentStart = Date.now();
           const agent = new AgentClass();
           const slotAtoms = this.filterAtomsForSlot(allAtoms, slot.evidence_requirements?.required_types || []);
+          emitRuntimeEvent(input.psurCaseId, { kind: "agent.started", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "table", slotId: slot.slot_id, agent: agentName, runId });
           
           const result = await agent.run({
             slot,
@@ -318,11 +389,18 @@ export class CompileOrchestrator {
               obligationsClaimed: [],
               confidence: result.confidence,
             });
+            updateLiveContent(input.psurCaseId, slot.slot_id, slot.title, result.data.markdown, "done");
+            emitRuntimeEvent(input.psurCaseId, { kind: "agent.completed", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "table", slotId: slot.slot_id, agent: agentName, runId, durationMs: Date.now() - agentStart });
           }
+          emitRuntimeEvent(input.psurCaseId, { kind: "agent.destroyed", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "table", slotId: slot.slot_id, agent: agentName, runId });
         } catch (err: any) {
           errors.push(`Table generation failed for ${slot.slot_id}: ${err.message}`);
+          const agentName = AgentClass?.name || "UnknownAgent";
+          const runId = `${this.orchestratorId}:${slot.slot_id}:${Date.now().toString(36)}`;
+          emitRuntimeEvent(input.psurCaseId, { kind: "agent.failed", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "table", slotId: slot.slot_id, agent: agentName, runId, error: err?.message || String(err) });
           const section = await this.generateGenericTable(slot, allAtoms, input);
           sections.push(section);
+          updateLiveContent(input.psurCaseId, slot.slot_id, slot.title, section.content, "done");
         }
       }
 
@@ -356,16 +434,19 @@ export class CompileOrchestrator {
                 chartType: "trend_line",
                 title: "Complaint Rate Trend Analysis",
                 imageBuffer: trendResult.data.imageBuffer,
+                svg: trendResult.data.svg,
                 width: trendResult.data.width,
                 height: trendResult.data.height,
+                mimeType: trendResult.data.mimeType,
               });
+              console.log(`[${this.orchestratorId}] SOTA trend chart generated: ${trendResult.data.dataPointCount} data points`);
             }
           }
 
           // Complaint bar chart
           const barAgent = new ComplaintBarChartAgent();
           const complaintAtoms = allAtoms
-            .filter(a => ["complaint_record", "complaint_summary"].includes(a.evidenceType))
+            .filter(a => ["complaint_record", "complaint_summary", "customer_complaint"].includes(a.evidenceType))
             .map(a => ({
               atomId: a.atomId,
               evidenceType: a.evidenceType,
@@ -375,7 +456,7 @@ export class CompileOrchestrator {
           if (complaintAtoms.length > 0) {
             const barResult = await barAgent.run({
               atoms: complaintAtoms,
-              chartTitle: "Complaints by Severity",
+              chartTitle: "Complaint Distribution by Category",
               style: input.documentStyle,
             }, this.createAgentContext(input.psurCaseId));
 
@@ -383,36 +464,77 @@ export class CompileOrchestrator {
               charts.push({
                 chartId: `complaints-bar-${input.psurCaseId}`,
                 chartType: "bar_chart",
-                title: "Complaints by Severity",
+                title: "Complaint Distribution by Category",
                 imageBuffer: barResult.data.imageBuffer,
+                svg: barResult.data.svg,
                 width: barResult.data.width,
                 height: barResult.data.height,
+                mimeType: barResult.data.mimeType,
               });
+              console.log(`[${this.orchestratorId}] SOTA bar chart generated: ${barResult.data.dataPointCount} data points`);
             }
           }
 
           // Distribution pie chart
           const pieAgent = new DistributionPieChartAgent();
-          if (complaintAtoms.length > 0) {
+          if (allAtoms.length > 0) {
             const pieResult = await pieAgent.run({
-              atoms: complaintAtoms,
-              chartTitle: "Complaint Type Distribution",
+              atoms: allAtoms.map(a => ({
+                atomId: a.atomId,
+                evidenceType: a.evidenceType,
+                normalizedData: (a.normalizedData || {}) as Record<string, unknown>,
+              })),
+              chartTitle: "Event Severity Distribution",
               style: input.documentStyle,
             }, this.createAgentContext(input.psurCaseId));
 
             if (pieResult.success && pieResult.data) {
               charts.push({
-                chartId: `complaints-pie-${input.psurCaseId}`,
+                chartId: `distribution-pie-${input.psurCaseId}`,
                 chartType: "pie_chart",
-                title: "Complaint Type Distribution",
+                title: "Event Severity Distribution",
                 imageBuffer: pieResult.data.imageBuffer,
+                svg: pieResult.data.svg,
                 width: pieResult.data.width,
                 height: pieResult.data.height,
+                mimeType: pieResult.data.mimeType,
               });
+              console.log(`[${this.orchestratorId}] SOTA pie chart generated: ${pieResult.data.dataPointCount} data points`);
             }
           }
 
+          // Time series area chart
+          const timeAgent = new TimeSeriesChartAgent();
+          if (allAtoms.length > 5) {
+            const timeResult = await timeAgent.run({
+              atoms: allAtoms.map(a => ({
+                atomId: a.atomId,
+                evidenceType: a.evidenceType,
+                normalizedData: (a.normalizedData || {}) as Record<string, unknown>,
+              })),
+              chartTitle: "Event Timeline",
+              style: input.documentStyle,
+            }, this.createAgentContext(input.psurCaseId));
+
+            if (timeResult.success && timeResult.data) {
+              charts.push({
+                chartId: `timeline-${input.psurCaseId}`,
+                chartType: "area_chart",
+                title: "Event Timeline",
+                imageBuffer: timeResult.data.imageBuffer,
+                svg: timeResult.data.svg,
+                width: timeResult.data.width,
+                height: timeResult.data.height,
+                mimeType: timeResult.data.mimeType,
+              });
+              console.log(`[${this.orchestratorId}] SOTA area chart generated: ${timeResult.data.dataPointCount} data points`);
+            }
+          }
+
+          console.log(`[${this.orchestratorId}] SOTA chart generation complete: ${charts.length} charts`);
+
         } catch (err: any) {
+          console.error(`[${this.orchestratorId}] Chart generation error:`, err);
           warnings.push(`Chart generation error: ${err.message}`);
         }
       }
@@ -467,6 +589,9 @@ export class CompileOrchestrator {
 
       console.log(`[${this.orchestratorId}] Compilation complete in ${Date.now() - startTime}ms`);
 
+      // Mark live content generation as finished
+      finishLiveContent(input.psurCaseId);
+
       return {
         success: formatResult.success && errors.length === 0,
         document: formatResult.data,
@@ -482,6 +607,9 @@ export class CompileOrchestrator {
       
       orchTrace.setOutput({ error: err.message });
       await orchTrace.commit("FAIL", 0, err.message);
+
+      // Mark live content generation as finished (even on error)
+      finishLiveContent(input.psurCaseId);
 
       return {
         success: false,
@@ -542,14 +670,14 @@ export class CompileOrchestrator {
       
 REQUIREMENTS:
 - Write formal, regulatory-compliant narrative content
-- Reference evidence using [ATOM-xxx] format where xxx is the atom ID
 - Be precise, factual, and comprehensive
 - Include specific numbers, dates, and statistics from the evidence
 - If no evidence is available, state this clearly and note it as a data gap
 - Follow MDCG 2022/21 guidance for PSUR content
+- Write clean, professional prose without markdown heading symbols (no ## or ###)
+- DO NOT include [ATOM-xxx] citations in the text - evidence will be tracked separately
 
 SECTION: ${slot.title}
-SECTION PATH: ${slot.section_path}
 REPORTING PERIOD: ${input.periodStart} to ${input.periodEnd}
 DEVICE: ${input.deviceCode}`;
 
@@ -562,9 +690,10 @@ ${JSON.stringify(evidenceSummary, null, 2)}
 Write a complete, professional narrative that:
 1. Summarizes the key findings from this evidence
 2. Draws regulatory-appropriate conclusions
-3. References specific evidence atoms using [ATOM-xxx] notation
-4. Identifies any trends or patterns
-5. Notes any data gaps or limitations`
+3. Identifies any trends or patterns
+4. Notes any data gaps or limitations
+
+IMPORTANT: Do NOT include [ATOM-xxx] citations in the text. Write clean prose.`
         : `Generate a regulatory-appropriate statement for the "${slot.title}" section.
 
 NO EVIDENCE WAS PROVIDED for this section during the reporting period.
@@ -573,7 +702,9 @@ Write a formal statement that:
 1. Acknowledges the absence of specific data
 2. Explains the regulatory implications
 3. Recommends actions for future PSUR submissions
-4. Maintains compliance with EU MDR requirements`;
+4. Maintains compliance with EU MDR requirements
+
+IMPORTANT: Do NOT include [ATOM-xxx] citations in the text. Write clean prose.`;
 
       const response = await client.messages.create({
         model: "claude-sonnet-4-20250514",
@@ -601,10 +732,11 @@ Write a formal statement that:
     } catch (err: any) {
       console.error(`[${this.orchestratorId}] LLM narrative generation failed: ${err.message}`);
       
-      // Minimal fallback - but still regulatory compliant
+      // Minimal fallback - regulatory compliant without inline citations
+      const evidenceTypes = Array.from(new Set(slotAtoms.map((a: any) => a.evidenceType))).join(", ");
       const content = slotAtoms.length > 0
-        ? `**${slot.title}**\n\nDuring the reporting period (${input.periodStart} to ${input.periodEnd}), ${slotAtoms.length} evidence records were collected for this section. The evidence types include: ${Array.from(new Set(slotAtoms.map((a: any) => a.evidenceType))).join(", ")}. A detailed analysis of these records indicates continued compliance with applicable regulatory requirements.\n\n*Evidence references: ${slotAtoms.slice(0, 5).map((a: any) => `[${a.atomId}]`).join(", ")}${slotAtoms.length > 5 ? ` and ${slotAtoms.length - 5} additional records` : ""}*`
-        : `**${slot.title}**\n\nNo specific evidence was collected for this section during the reporting period (${input.periodStart} to ${input.periodEnd}). In accordance with EU MDR 2017/745 and MDCG 2022/21 guidance, this data gap has been documented and will be addressed in the post-market surveillance plan for subsequent reporting periods.`;
+        ? `${slot.title}\n\nDuring the reporting period (${input.periodStart} to ${input.periodEnd}), ${slotAtoms.length} evidence records were collected for this section. The evidence types include: ${evidenceTypes}. A detailed analysis of these records indicates continued compliance with applicable regulatory requirements.`
+        : `${slot.title}\n\nNo specific evidence was collected for this section during the reporting period (${input.periodStart} to ${input.periodEnd}). In accordance with EU MDR 2017/745 and MDCG 2022/21 guidance, this data gap has been documented and will be addressed in the post-market surveillance plan for subsequent reporting periods.`;
 
       return {
         slotId: slot.slot_id,
@@ -641,7 +773,7 @@ Write a formal statement that:
         title: slot.title,
         sectionPath: slot.section_path,
         slotKind: "TABLE",
-        content: `**${slot.title}**\n\n| Status | Details |\n|--------|--------|\n| No Data | No evidence records available for this table during the reporting period (${input.periodStart} to ${input.periodEnd}). |\n\n*Note: This represents a data gap that should be addressed in subsequent PSUR submissions per MDCG 2022/21.*`,
+        content: `| Column | Data |\n|--------|------|\n| Status | No data available |\n| Period | ${input.periodStart} to ${input.periodEnd} |\n| Note | No evidence records available for this table during the reporting period. This represents a data gap that should be addressed in subsequent PSUR submissions. |`,
         evidenceAtomIds: [],
         obligationsClaimed: [],
         confidence: 0.4,
@@ -667,7 +799,8 @@ REQUIREMENTS:
 - Include totals, percentages, and rates where appropriate
 - Format dates, numbers, and text professionally
 - Add a brief summary statement after the table
-- Reference evidence using [ATOM-xxx] format`;
+- DO NOT include [ATOM-xxx] citations - they will be added separately
+- Use standard markdown table format with | column | column | format`;
 
       const userPrompt = `Generate a professional markdown table for "${slot.title}".
 
@@ -694,12 +827,15 @@ Requirements:
         ? response.content[0].text 
         : "Table generation failed.";
 
+      // Clean any ATOM citations from the LLM response
+      const cleanedContent = content.replace(/\[ATOM-[A-Za-z0-9_-]+\]/g, "").replace(/\s{2,}/g, " ");
+      
       return {
         slotId: slot.slot_id,
         title: slot.title,
         sectionPath: slot.section_path,
         slotKind: "TABLE",
-        content: `**${slot.title}**\n\n${content}`,
+        content: cleanedContent,
         evidenceAtomIds: slotAtoms.map((a: any) => a.atomId),
         obligationsClaimed: [],
         confidence: 0.85,
@@ -712,20 +848,39 @@ Requirements:
       slotAtoms.slice(0, 20).forEach((a: any) => {
         Object.keys(a.normalizedData || {}).forEach(k => allKeys.add(k));
       });
-      const columns = Array.from(allKeys).slice(0, 6);
+      // Filter out internal/technical fields
+      const columns = Array.from(allKeys)
+        .filter(k => !["raw_data", "isNegativeEvidence", "atomId", "psurCaseId"].includes(k))
+        .slice(0, 6);
       
-      let content = `**${slot.title}**\n\n`;
-      content += `| ${columns.length > 0 ? columns.join(" | ") : "Data"} |\n`;
-      content += `| ${columns.map(() => "---").join(" | ") || "---"} |\n`;
-      
-      for (const atom of slotAtoms.slice(0, 30)) {
-        const data = atom.normalizedData || {};
-        const values = columns.map(k => String(data[k] || "-").substring(0, 40));
-        content += `| ${values.join(" | ")} |\n`;
-      }
-      
-      if (slotAtoms.length > 30) {
-        content += `\n*Table shows 30 of ${slotAtoms.length} total records.*\n`;
+      let content = "";
+      if (columns.length > 0) {
+        content += `| ${columns.join(" | ")} |\n`;
+        content += `| ${columns.map(() => "---").join(" | ")} |\n`;
+        
+        for (const atom of slotAtoms.slice(0, 30)) {
+          const data = atom.normalizedData || {};
+          const values = columns.map(k => {
+            const val = data[k];
+            if (val === null || val === undefined) return "-";
+            return String(val).substring(0, 40);
+          });
+          content += `| ${values.join(" | ")} |\n`;
+        }
+        
+        if (slotAtoms.length > 30) {
+          content += `\nTable shows 30 of ${slotAtoms.length} total records.`;
+        }
+      } else {
+        content = `| Record | Type | Data |\n|--------|------|------|\n`;
+        for (const atom of slotAtoms.slice(0, 10)) {
+          const summary = Object.entries(atom.normalizedData || {})
+            .filter(([k]) => !["raw_data"].includes(k))
+            .slice(0, 2)
+            .map(([k, v]) => `${k}: ${String(v).substring(0, 30)}`)
+            .join("; ");
+          content += `| ${slotAtoms.indexOf(atom) + 1} | ${atom.evidenceType} | ${summary || "-"} |\n`;
+        }
       }
 
       return {

@@ -1233,6 +1233,62 @@ export class DocumentFormatterAgent extends BaseAgent<DocumentFormatterInput, Fo
     return paragraphs;
   }
 
+  /**
+   * Clean and format section title - removes redundancy between path and title
+   */
+  private formatSectionHeading(sectionPath: string, title: string): string {
+    // Extract section number from path like "1 > Executive Summary" -> "1"
+    // or "2 > Device Description > Scope" -> "2.1"
+    const pathParts = sectionPath.split(" > ").filter(p => p.trim());
+    
+    // Build a clean section number
+    let sectionNumber = "";
+    if (pathParts.length > 0) {
+      const firstPart = pathParts[0].trim();
+      // Check if first part is a number
+      if (/^\d+$/.test(firstPart)) {
+        sectionNumber = firstPart;
+        // Add subsection numbers based on depth
+        if (pathParts.length > 2) {
+          sectionNumber += `.${pathParts.length - 1}`;
+        }
+      }
+    }
+    
+    // Use the title directly (it's more specific than the path)
+    const cleanTitle = title
+      .replace(/^Section [A-Z] — /, "")
+      .replace(/^Section \d+ — /, "")
+      .replace(/^\d+\.\s*/, "")
+      .trim();
+    
+    return sectionNumber ? `${sectionNumber}. ${cleanTitle}` : cleanTitle;
+  }
+
+  /**
+   * Clean narrative content - removes ATOM citations and markdown artifacts
+   */
+  private cleanNarrativeContent(content: string): string {
+    let cleaned = content;
+    
+    // Remove [ATOM-xxx] citations - they'll be shown in footnotes instead
+    cleaned = cleaned.replace(/\[ATOM-[A-Za-z0-9_-]+\]/g, "");
+    
+    // Remove markdown heading prefixes that shouldn't appear in formatted content
+    // Lines starting with ## or ### should be converted, not displayed as literal
+    cleaned = cleaned.replace(/^#{1,4}\s+/gm, "");
+    
+    // Clean up excessive whitespace left by removals
+    cleaned = cleaned.replace(/\s{3,}/g, " ");
+    cleaned = cleaned.replace(/\n{3,}/g, "\n\n");
+    
+    // Remove Evidence Sources lines that appear inline (will be in footnote)
+    cleaned = cleaned.replace(/Evidence Sources:.*$/gm, "");
+    cleaned = cleaned.replace(/\*Evidence references:.*?\*/g, "");
+    
+    return cleaned.trim();
+  }
+
   private buildDocumentContent(
     sections: CompiledSection[],
     charts: CompiledChart[],
@@ -1242,21 +1298,27 @@ export class DocumentFormatterAgent extends BaseAgent<DocumentFormatterInput, Fo
     let lastMajorSection = "";
 
     for (const section of sections) {
-      const pathParts = section.sectionPath.split(".");
-      const majorSection = pathParts[0];
+      // Parse section path for hierarchy - use " > " as delimiter
+      const pathParts = section.sectionPath.split(" > ").filter(p => p.trim());
+      const majorSection = pathParts[0] || "";
 
-      // Page break for new major sections
-      if (majorSection !== lastMajorSection && lastMajorSection !== "") {
+      // Page break for new major sections (based on first number/letter)
+      const majorSectionNum = majorSection.match(/^\d+/)?.[0] || majorSection;
+      const lastMajorNum = lastMajorSection.match(/^\d+/)?.[0] || lastMajorSection;
+      if (majorSectionNum !== lastMajorNum && lastMajorSection !== "") {
         content.push(new Paragraph({ children: [new PageBreak()] }));
       }
       lastMajorSection = majorSection;
 
-      // Determine heading level
+      // Determine heading level based on path depth
       const headingLevel = Math.min(pathParts.length, 4) as 1 | 2 | 3 | 4;
       const bookmarkId = `section_${this.bookmarkCounter++}`;
 
       // Track heading structure for accessibility
       this.accessibilityReport.headingStructure.push(headingLevel);
+
+      // Generate clean section heading
+      const sectionHeading = this.formatSectionHeading(section.sectionPath, section.title);
 
       // Section heading with bookmark for cross-referencing
       content.push(
@@ -1264,7 +1326,7 @@ export class DocumentFormatterAgent extends BaseAgent<DocumentFormatterInput, Fo
           children: [
             new BookmarkStart(bookmarkId, bookmarkId),
             new TextRun({
-              text: `${section.sectionPath} ${section.title}`,
+              text: sectionHeading,
               font: this.style.fonts.heading,
               size: this.style.sizes[`h${headingLevel}` as keyof typeof this.style.sizes] * 2,
               bold: true,
@@ -1283,7 +1345,8 @@ export class DocumentFormatterAgent extends BaseAgent<DocumentFormatterInput, Fo
 
       // Section content based on type
       if (section.slotKind === "TABLE") {
-        const table = this.buildTableFromMarkdown(section.content, section.title);
+        const cleanedTableContent = this.cleanNarrativeContent(section.content);
+        const table = this.buildTableFromMarkdown(cleanedTableContent, section.title);
         if (table) {
           content.push(table);
           // Table caption for accessibility
@@ -1303,13 +1366,17 @@ export class DocumentFormatterAgent extends BaseAgent<DocumentFormatterInput, Fo
           }
         }
       } else {
-        // Narrative content
-        const paragraphs = this.parseNarrativeContent(section.content);
+        // Clean and parse narrative content
+        const cleanedContent = this.cleanNarrativeContent(section.content);
+        const paragraphs = this.parseNarrativeContent(cleanedContent);
         content.push(...paragraphs);
       }
 
-      // Evidence citation footnote
-      if (section.evidenceAtomIds.length > 0) {
+      // Evidence citation footnote - only if we have valid atom IDs
+      const validAtomIds = section.evidenceAtomIds.filter(id => 
+        id && id.length > 8 && !id.includes("xxx") && !id.startsWith("ATOM-00")
+      );
+      if (validAtomIds.length > 0) {
         content.push(
           new Paragraph({
             style: "Footnote",
@@ -1326,14 +1393,14 @@ export class DocumentFormatterAgent extends BaseAgent<DocumentFormatterInput, Fo
                 color: this.style.colors.textLight,
               }),
               new TextRun({
-                text: section.evidenceAtomIds.slice(0, 5).map(id => `[${id.substring(0, 12)}]`).join(", "),
+                text: validAtomIds.slice(0, 5).map(id => `[${id.substring(0, 12)}]`).join(", "),
                 font: this.style.fonts.code,
                 size: this.style.sizes.small * 2,
                 color: this.style.colors.accent,
               }),
-              ...(section.evidenceAtomIds.length > 5 ? [
+              ...(validAtomIds.length > 5 ? [
                 new TextRun({
-                  text: ` +${section.evidenceAtomIds.length - 5} more`,
+                  text: ` +${validAtomIds.length - 5} more`,
                   font: this.style.fonts.body,
                   size: this.style.sizes.small * 2,
                   color: this.style.colors.textLight,
@@ -1371,56 +1438,84 @@ export class DocumentFormatterAgent extends BaseAgent<DocumentFormatterInput, Fo
     const blocks = content.split(/\n\n+/).filter(b => b.trim());
 
     for (const block of blocks) {
-      const trimmed = block.trim();
+      let trimmed = block.trim();
+      
+      // Skip empty blocks
+      if (!trimmed) continue;
+      
+      // Handle markdown sub-headings within content (### Heading)
+      if (/^#{2,4}\s+/.test(trimmed)) {
+        const headingMatch = trimmed.match(/^(#{2,4})\s+(.+)/);
+        if (headingMatch) {
+          const level = headingMatch[1].length;
+          const headingText = headingMatch[2].replace(/\*\*/g, "").trim();
+          paragraphs.push(
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: headingText,
+                  font: this.style.fonts.heading,
+                  size: this.style.sizes[`h${Math.min(level + 1, 4)}` as keyof typeof this.style.sizes] * 2,
+                  bold: true,
+                  color: this.style.colors.secondary,
+                }),
+              ],
+              spacing: { before: 200, after: 100 },
+            })
+          );
+          continue;
+        }
+      }
 
       // Check for bullet lists
       if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
         const items = trimmed.split(/\n/).filter(l => l.trim());
         for (const item of items) {
-          const text = item.replace(/^[-*]\s*/, "");
-          paragraphs.push(
-            new Paragraph({
-              bullet: { level: 0 },
-              children: [
-                new TextRun({
-                  text,
-                  font: this.style.fonts.body,
-                  size: this.style.sizes.body * 2,
-                }),
-              ],
-            })
-          );
+          let text = item.replace(/^[-*]\s*/, "");
+          // Clean ATOM citations from list items
+          text = text.replace(/\[ATOM-[A-Za-z0-9_-]+\]/g, "").trim();
+          if (text) {
+            paragraphs.push(
+              new Paragraph({
+                bullet: { level: 0 },
+                children: this.parseInlineFormatting(text),
+              })
+            );
+          }
         }
       }
       // Check for numbered lists
       else if (/^\d+\.\s/.test(trimmed)) {
         const items = trimmed.split(/\n/).filter(l => l.trim());
         for (const item of items) {
-          const text = item.replace(/^\d+\.\s*/, "");
-          paragraphs.push(
-            new Paragraph({
-              numbering: { reference: "section-numbering", level: 0 },
-              children: [
-                new TextRun({
-                  text,
-                  font: this.style.fonts.body,
-                  size: this.style.sizes.body * 2,
-                }),
-              ],
-            })
-          );
+          let text = item.replace(/^\d+\.\s*/, "");
+          // Clean ATOM citations from list items
+          text = text.replace(/\[ATOM-[A-Za-z0-9_-]+\]/g, "").trim();
+          if (text) {
+            paragraphs.push(
+              new Paragraph({
+                numbering: { reference: "section-numbering", level: 0 },
+                children: this.parseInlineFormatting(text),
+              })
+            );
+          }
         }
       }
       // Regular paragraph
       else {
-        // Parse inline formatting (bold, italic, citations)
-        const runs = this.parseInlineFormatting(trimmed);
-        paragraphs.push(
-          new Paragraph({
-            children: runs,
-            spacing: { after: this.style.spacing.paragraphAfter },
-          })
-        );
+        // Clean the text of ATOM citations
+        trimmed = trimmed.replace(/\[ATOM-[A-Za-z0-9_-]+\]/g, "").trim();
+        if (trimmed) {
+          const runs = this.parseInlineFormatting(trimmed);
+          if (runs.length > 0) {
+            paragraphs.push(
+              new Paragraph({
+                children: runs,
+                spacing: { after: this.style.spacing.paragraphAfter },
+              })
+            );
+          }
+        }
       }
     }
 
@@ -1429,13 +1524,20 @@ export class DocumentFormatterAgent extends BaseAgent<DocumentFormatterInput, Fo
 
   private parseInlineFormatting(text: string): TextRun[] {
     const runs: TextRun[] = [];
-    let remaining = text;
+    
+    // First, remove all ATOM citations completely - they'll be in footnotes
+    let cleanText = text.replace(/\[ATOM-[A-Za-z0-9_-]+\]/g, "");
+    // Clean up any double spaces left behind
+    cleanText = cleanText.replace(/\s{2,}/g, " ").trim();
+    
+    if (!cleanText) return runs;
+    
+    let remaining = cleanText;
 
-    // Simple parser for **bold**, *italic*, and [ATOM-xxx] citations
+    // Simple parser for **bold** and *italic* only
     const patterns = [
       { regex: /\*\*([^*]+)\*\*/, style: { bold: true } },
       { regex: /\*([^*]+)\*/, style: { italics: true } },
-      { regex: /\[ATOM-([^\]]+)\]/, style: { color: this.style.colors.accent, size: this.style.sizes.small * 2 } },
     ];
 
     while (remaining.length > 0) {
@@ -1458,27 +1560,34 @@ export class DocumentFormatterAgent extends BaseAgent<DocumentFormatterInput, Fo
       if (earliestMatch) {
         // Add text before match
         if (earliestMatch.index > 0) {
+          const beforeText = remaining.substring(0, earliestMatch.index);
+          if (beforeText.trim()) {
+            runs.push(new TextRun({
+              text: beforeText,
+              font: this.style.fonts.body,
+              size: this.style.sizes.body * 2,
+            }));
+          }
+        }
+        // Add formatted text
+        if (earliestMatch.content.trim()) {
           runs.push(new TextRun({
-            text: remaining.substring(0, earliestMatch.index),
+            text: earliestMatch.content,
+            font: this.style.fonts.body,
+            size: this.style.sizes.body * 2,
+            ...earliestMatch.style,
+          }));
+        }
+        remaining = remaining.substring(earliestMatch.index + earliestMatch.length);
+      } else {
+        // No more matches, add remaining text
+        if (remaining.trim()) {
+          runs.push(new TextRun({
+            text: remaining,
             font: this.style.fonts.body,
             size: this.style.sizes.body * 2,
           }));
         }
-        // Add formatted text
-        runs.push(new TextRun({
-          text: earliestMatch.content,
-          font: this.style.fonts.body,
-          size: this.style.sizes.body * 2,
-          ...earliestMatch.style,
-        }));
-        remaining = remaining.substring(earliestMatch.index + earliestMatch.length);
-      } else {
-        // No more matches, add remaining text
-        runs.push(new TextRun({
-          text: remaining,
-          font: this.style.fonts.body,
-          size: this.style.sizes.body * 2,
-        }));
         break;
       }
     }
@@ -1698,7 +1807,38 @@ export class DocumentFormatterAgent extends BaseAgent<DocumentFormatterInput, Fo
       return processedPdf;
     } finally {
       if (browser) {
+        // Graceful browser cleanup with retry for Windows file locking issues
+        await this.closeBrowserSafely(browser);
+      }
+    }
+  }
+
+  /**
+   * Safely close browser with retry logic for Windows EBUSY errors
+   */
+  private async closeBrowserSafely(browser: puppeteer.Browser, retries = 3): Promise<void> {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        // Small delay to allow Windows to release file handles
+        await new Promise(resolve => setTimeout(resolve, 100 * attempt));
         await browser.close();
+        return;
+      } catch (error: any) {
+        const isFileLockError = error?.code === 'EBUSY' || error?.code === 'EPERM';
+        if (isFileLockError && attempt < retries) {
+          console.warn(`[DocumentFormatter] Browser close attempt ${attempt} failed (file locked), retrying...`);
+          await new Promise(resolve => setTimeout(resolve, 500 * attempt));
+          continue;
+        }
+        // Log but don't throw - browser will be garbage collected
+        console.warn(`[DocumentFormatter] Browser close failed after ${attempt} attempts:`, error?.message || error);
+        // Force disconnect as fallback
+        try {
+          browser.disconnect();
+        } catch {
+          // Ignore disconnect errors
+        }
+        return;
       }
     }
   }
@@ -2019,7 +2159,7 @@ export class DocumentFormatterAgent extends BaseAgent<DocumentFormatterInput, Fo
   <nav aria-label="Table of Contents">
     <h2>Table of Contents</h2>
     <ul>
-      ${sections.map((s, i) => `<li><a href="#section-${i}">${s.sectionPath} ${s.title}</a></li>`).join("\n      ")}
+      ${sections.map((s, i) => `<li><a href="#section-${i}">${this.formatSectionHeading(s.sectionPath, s.title)}</a></li>`).join("\n      ")}
       ${charts.length > 0 ? `<li><a href="#appendix-charts">Appendix A: Visual Analytics</a></li>` : ""}
     </ul>
   </nav>
@@ -2027,21 +2167,29 @@ export class DocumentFormatterAgent extends BaseAgent<DocumentFormatterInput, Fo
   <!-- Main Content -->
   <main id="main-content" role="main">
     ${sections.map((section, i) => {
-      const level = Math.min(section.sectionPath.split(".").length, 4);
+      const pathParts = section.sectionPath.split(" > ").filter(p => p.trim());
+      const level = Math.min(pathParts.length, 4);
       const headingTag = `h${level}`;
+      const sectionHeading = this.formatSectionHeading(section.sectionPath, section.title);
       
+      // Clean the content and convert to HTML
+      const cleanedContent = this.cleanNarrativeContent(section.content);
       let contentHtml = "";
       if (section.slotKind === "TABLE") {
-        contentHtml = this.markdownTableToHTML(section.content);
+        contentHtml = this.markdownTableToHTML(cleanedContent);
       } else {
-        contentHtml = this.markdownToHTML(section.content);
+        contentHtml = this.markdownToHTML(cleanedContent);
       }
       
-      const citationHtml = section.evidenceAtomIds.length > 0
+      // Only show valid evidence citations (not placeholder ATOM-xxx)
+      const validAtomIds = section.evidenceAtomIds.filter(id => 
+        id && id.length > 8 && !id.includes("xxx") && !id.startsWith("ATOM-00")
+      );
+      const citationHtml = validAtomIds.length > 0
         ? `<div class="evidence-citation">
             <strong>Evidence Sources:</strong> 
-            ${section.evidenceAtomIds.slice(0, 5).map(id => `<code>[${id.substring(0, 12)}]</code>`).join(", ")}
-            ${section.evidenceAtomIds.length > 5 ? ` +${section.evidenceAtomIds.length - 5} more` : ""}
+            ${validAtomIds.slice(0, 5).map(id => `<code>[${id.substring(0, 12)}]</code>`).join(", ")}
+            ${validAtomIds.length > 5 ? ` +${validAtomIds.length - 5} more` : ""}
            </div>`
         : "";
       
@@ -2053,7 +2201,7 @@ export class DocumentFormatterAgent extends BaseAgent<DocumentFormatterInput, Fo
       
       return `
     <section id="section-${i}" aria-labelledby="heading-${i}">
-      <${headingTag} id="heading-${i}">${section.sectionPath} ${section.title}</${headingTag}>
+      <${headingTag} id="heading-${i}">${sectionHeading}</${headingTag}>
       ${contentHtml}
       ${citationHtml}
       ${warningHtml}
@@ -2084,33 +2232,62 @@ export class DocumentFormatterAgent extends BaseAgent<DocumentFormatterInput, Fo
   }
 
   private markdownToHTML(markdown: string): string {
-    return markdown
+    // First clean ATOM citations
+    let cleaned = markdown.replace(/\[ATOM-[A-Za-z0-9_-]+\]/g, "");
+    cleaned = cleaned.replace(/\s{2,}/g, " ");
+    
+    return cleaned
       .split(/\n\n+/)
       .filter(block => block.trim())
       .map(block => {
-        const trimmed = block.trim();
+        let trimmed = block.trim();
+        
+        // Skip empty blocks
+        if (!trimmed) return "";
+        
+        // Handle markdown headings within content
+        if (/^#{2,4}\s+/.test(trimmed)) {
+          const match = trimmed.match(/^(#{2,4})\s+(.+)/);
+          if (match) {
+            const level = Math.min(match[1].length + 1, 4);
+            const text = match[2].replace(/\*\*/g, "").trim();
+            return `<h${level}>${text}</h${level}>`;
+          }
+        }
         
         // Bullet list
         if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
           const items = trimmed.split("\n").filter(l => l.trim());
-          return `<ul>${items.map(item => `<li>${item.replace(/^[-*]\s*/, "")}</li>`).join("")}</ul>`;
+          return `<ul>${items.map(item => {
+            const text = item.replace(/^[-*]\s*/, "").replace(/\[ATOM-[A-Za-z0-9_-]+\]/g, "").trim();
+            return text ? `<li>${this.formatInlineHTML(text)}</li>` : "";
+          }).filter(Boolean).join("")}</ul>`;
         }
         
         // Numbered list
         if (/^\d+\.\s/.test(trimmed)) {
           const items = trimmed.split("\n").filter(l => l.trim());
-          return `<ol>${items.map(item => `<li>${item.replace(/^\d+\.\s*/, "")}</li>`).join("")}</ol>`;
+          return `<ol>${items.map(item => {
+            const text = item.replace(/^\d+\.\s*/, "").replace(/\[ATOM-[A-Za-z0-9_-]+\]/g, "").trim();
+            return text ? `<li>${this.formatInlineHTML(text)}</li>` : "";
+          }).filter(Boolean).join("")}</ol>`;
         }
         
-        // Regular paragraph with inline formatting
-        let html = trimmed
-          .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-          .replace(/\*([^*]+)\*/g, "<em>$1</em>")
-          .replace(/\[ATOM-([^\]]+)\]/g, '<code class="citation">[ATOM-$1]</code>');
-        
-        return `<p>${html}</p>`;
+        // Regular paragraph with inline formatting (no ATOM citations)
+        const html = this.formatInlineHTML(trimmed);
+        return html ? `<p>${html}</p>` : "";
       })
+      .filter(Boolean)
       .join("\n");
+  }
+  
+  private formatInlineHTML(text: string): string {
+    return text
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+      .replace(/\[ATOM-[A-Za-z0-9_-]+\]/g, "")
+      .replace(/\s{2,}/g, " ")
+      .trim();
   }
 
   private markdownTableToHTML(markdown: string): string {

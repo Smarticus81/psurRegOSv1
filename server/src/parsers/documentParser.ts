@@ -1,19 +1,38 @@
 /**
- * Document Parser Infrastructure
+ * SOTA Document Parser Infrastructure
  * Handles parsing of Excel, DOCX, PDF, and JSON files
+ * Uses pdfjs-dist for SOTA PDF parsing - pure JavaScript, no native deps
  */
 
 import * as xlsx from "xlsx";
 import mammoth from "mammoth";
 import { createHash } from "crypto";
 
-// Dynamic import for pdf-parse (CommonJS module)
-let pdfParse: (dataBuffer: Buffer) => Promise<{ text: string; numpages: number; info: any; version: string }>;
-import("pdf-parse").then(module => {
-  pdfParse = module.default;
-}).catch(() => {
-  console.warn("[documentParser] pdf-parse not available, PDF parsing disabled");
-});
+// SOTA PDF parsing with pdfjs-dist (Mozilla's pdf.js)
+let pdfjsLib: any = null;
+let pdfParserReady = false;
+
+async function initPDFParser() {
+  if (pdfParserReady) return true;
+  
+  try {
+    const pdfjs = await import("pdfjs-dist");
+    pdfjsLib = pdfjs;
+    
+    // Disable worker for Node.js environment (runs synchronously)
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "";
+    
+    pdfParserReady = true;
+    console.log("[documentParser] SOTA PDF parser (pdfjs-dist) initialized");
+    return true;
+  } catch (err: any) {
+    console.error("[documentParser] Failed to load pdfjs-dist:", err?.message);
+    return false;
+  }
+}
+
+// Initialize PDF parser on module load
+initPDFParser();
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -410,7 +429,7 @@ function stripHtml(html: string): string {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// PDF PARSER
+// SOTA PDF PARSER (using pdfjs-dist - Mozilla's pdf.js)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 async function parsePdfDocument(
@@ -432,19 +451,88 @@ async function parsePdfDocument(
   };
 
   try {
-    if (!pdfParse) {
-      result.errors.push("PDF parsing not available");
+    // Ensure PDF parser is initialized
+    const parserReady = await initPDFParser();
+    if (!parserReady || !pdfjsLib) {
+      result.errors.push("SOTA PDF parsing not available - pdfjs-dist not loaded");
       return result;
     }
-    const data = await pdfParse(buffer);
+
+    // Convert Buffer to Uint8Array for pdfjs
+    const uint8Array = new Uint8Array(buffer);
     
-    result.rawText = data.text;
-    result.metadata.numPages = data.numpages;
-    result.metadata.info = data.info;
-    result.metadata.version = data.version;
+    // Load the PDF document
+    const loadingTask = pdfjsLib.getDocument({
+      data: uint8Array,
+      useSystemFonts: true,
+      disableFontFace: true,
+      verbosity: 0, // Suppress console output
+    });
+    
+    const pdfDoc = await loadingTask.promise;
+    
+    // Extract metadata
+    result.metadata.numPages = pdfDoc.numPages;
+    
+    try {
+      const metadata = await pdfDoc.getMetadata();
+      result.metadata.info = metadata?.info || {};
+      result.metadata.pdfVersion = metadata?.metadata?.get("pdf:PDFVersion") || "unknown";
+    } catch {
+      // Metadata extraction is optional
+    }
+
+    // Extract text from all pages
+    const textParts: string[] = [];
+    const pageStructures: { pageNum: number; text: string; items: any[] }[] = [];
+
+    for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+      const page = await pdfDoc.getPage(pageNum);
+      const textContent = await page.getTextContent();
+      
+      // Build text with position awareness for table detection
+      const items = textContent.items as any[];
+      const pageText: string[] = [];
+      let lastY: number | null = null;
+      let currentLine: string[] = [];
+      
+      for (const item of items) {
+        if (item.str === undefined) continue;
+        
+        const y = item.transform?.[5] || 0;
+        
+        // New line detection based on Y position change
+        if (lastY !== null && Math.abs(y - lastY) > 5) {
+          if (currentLine.length > 0) {
+            pageText.push(currentLine.join(" "));
+            currentLine = [];
+          }
+        }
+        
+        currentLine.push(item.str);
+        lastY = y;
+      }
+      
+      if (currentLine.length > 0) {
+        pageText.push(currentLine.join(" "));
+      }
+      
+      const fullPageText = pageText.join("\n");
+      textParts.push(`=== Page ${pageNum} ===\n${fullPageText}`);
+      
+      pageStructures.push({
+        pageNum,
+        text: fullPageText,
+        items,
+      });
+    }
+
+    result.rawText = textParts.join("\n\n");
+    result.metadata.textExtracted = true;
+    result.metadata.totalCharacters = result.rawText.length;
 
     // Parse sections from the text
-    const lines = result.rawText.split("\n").filter(l => l.trim());
+    const lines = result.rawText.split("\n").filter(l => l.trim() && !l.startsWith("=== Page"));
     let currentSection: ParsedSection | null = null;
     const contentLines: string[] = [];
 
@@ -486,14 +574,127 @@ async function parsePdfDocument(
       });
     }
 
-    // Attempt to extract tables from structured text
-    result.tables = extractTablesFromText(result.rawText);
+    // SOTA table extraction from PDF structure
+    result.tables = extractTablesFromPDFStructure(pageStructures);
+    
+    // Also try text-based table extraction as fallback
+    const textTables = extractTablesFromText(result.rawText);
+    for (const table of textTables) {
+      if (!result.tables.some(t => t.name === table.name)) {
+        result.tables.push(table);
+      }
+    }
+
+    console.log(`[documentParser] SOTA PDF parsed: ${pdfDoc.numPages} pages, ${result.sections.length} sections, ${result.tables.length} tables`);
 
   } catch (error: any) {
+    console.error(`[documentParser] PDF parse error:`, error);
     result.errors.push(`PDF parse error: ${error?.message || String(error)}`);
   }
 
   return result;
+}
+
+/**
+ * SOTA table extraction from PDF structure
+ * Uses text item positions to detect tabular data
+ */
+function extractTablesFromPDFStructure(pageStructures: { pageNum: number; text: string; items: any[] }[]): ParsedTable[] {
+  const tables: ParsedTable[] = [];
+  let tableIndex = 0;
+
+  for (const page of pageStructures) {
+    const { items, pageNum } = page;
+    if (items.length < 4) continue;
+
+    // Group items by Y position (rows)
+    const rowMap = new Map<number, { x: number; text: string }[]>();
+    
+    for (const item of items) {
+      if (!item.str || item.str.trim() === "") continue;
+      
+      const y = Math.round((item.transform?.[5] || 0) / 5) * 5; // Round to nearest 5 for row grouping
+      const x = item.transform?.[4] || 0;
+      
+      if (!rowMap.has(y)) {
+        rowMap.set(y, []);
+      }
+      rowMap.get(y)!.push({ x, text: item.str.trim() });
+    }
+
+    // Sort rows by Y position (descending for PDF coordinate system)
+    const sortedRows = Array.from(rowMap.entries())
+      .sort((a, b) => b[0] - a[0])
+      .map(([_, cells]) => cells.sort((a, b) => a.x - b.x).map(c => c.text));
+
+    // Detect potential tables (consecutive rows with similar column counts)
+    let tableRows: string[][] = [];
+    let lastColCount = 0;
+
+    for (const row of sortedRows) {
+      const colCount = row.length;
+      
+      if (colCount >= 2 && (lastColCount === 0 || Math.abs(colCount - lastColCount) <= 1)) {
+        tableRows.push(row);
+        lastColCount = colCount;
+      } else if (tableRows.length >= 3) {
+        // Save detected table
+        const table = createTableFromRows(tableRows, tableIndex++);
+        if (table) {
+          table.name = `Table_Page${pageNum}_${tables.length + 1}`;
+          tables.push(table);
+        }
+        tableRows = [];
+        lastColCount = 0;
+      } else {
+        tableRows = [];
+        lastColCount = 0;
+      }
+    }
+
+    // Handle remaining rows
+    if (tableRows.length >= 3) {
+      const table = createTableFromRows(tableRows, tableIndex++);
+      if (table) {
+        table.name = `Table_Page${pageNum}_${tables.length + 1}`;
+        tables.push(table);
+      }
+    }
+  }
+
+  return tables;
+}
+
+function createTableFromRows(rows: string[][], index: number): ParsedTable | null {
+  if (rows.length < 2) return null;
+  
+  // First row as headers
+  const maxCols = Math.max(...rows.map(r => r.length));
+  const headers = rows[0].map((h, i) => h || `Column_${i + 1}`);
+  
+  // Pad headers if needed
+  while (headers.length < maxCols) {
+    headers.push(`Column_${headers.length + 1}`);
+  }
+  
+  // Data rows
+  const dataRows: Record<string, unknown>[] = [];
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    const record: Record<string, unknown> = {};
+    for (let j = 0; j < headers.length; j++) {
+      record[headers[j]] = row[j] || "";
+    }
+    dataRows.push(record);
+  }
+  
+  if (dataRows.length === 0) return null;
+  
+  return {
+    name: `Table_${index + 1}`,
+    headers,
+    rows: dataRows,
+  };
 }
 
 function extractTablesFromText(text: string): ParsedTable[] {

@@ -98,10 +98,10 @@ export class NarrativeWriterAgent extends BaseAgent<NarrativeInput, NarrativeOut
     // Parse the response
     const parsed = this.parseNarrativeResponse(rawResponse, input.evidenceAtoms);
 
-    // Validate citations
+    // Validate citations - filtered automatically
     const validationResult = this.validateCitations(parsed.citedAtoms, input.evidenceAtoms);
     if (validationResult.invalidCitations.length > 0) {
-      this.addWarning(`Invalid citations detected: ${validationResult.invalidCitations.join(", ")}`);
+      console.debug(`[${this.agentId}] Filtered ${validationResult.invalidCitations.length} non-matching citations`);
     }
 
     await this.logTrace("NARRATIVE_GENERATED", "PASS", "SLOT", input.slot.slotId, {

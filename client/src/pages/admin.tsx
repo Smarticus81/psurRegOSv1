@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 import {
   Settings,
   Database,
@@ -200,186 +201,219 @@ export default function AdminPage() {
 
   if (loading) {
     return (
-      <div className="h-full flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
-        <RefreshCw className="w-8 h-8 animate-spin text-slate-500" />
+      <div className="h-full flex items-center justify-center">
+        <RefreshCw className="w-8 h-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   return (
-    <div className="h-full bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 p-4 flex flex-col overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-gradient-to-br from-blue-500/20 to-purple-500/20 border border-blue-500/30">
-            <Settings className="w-5 h-5 text-blue-400" />
-          </div>
-          <div>
-            <h1 className="text-lg font-semibold text-slate-100">Evidence Configuration</h1>
-            <p className="text-xs text-slate-500">Configure source mappings and extraction rules</p>
-          </div>
+    <div className="h-full overflow-auto animate-slide-up" data-testid="admin-page">
+      <div className="max-w-5xl mx-auto space-y-12 py-8">
+        <div className="text-center space-y-3">
+          <h1 className="text-3xl font-semibold tracking-tight text-foreground">
+            Configuration
+          </h1>
+          <p className="text-muted-foreground max-w-lg mx-auto">
+            Manage evidence source mappings, data schemas, and test extraction workflows.
+          </p>
         </div>
-        <Button variant="outline" size="sm" onClick={fetchData} className="text-xs">
-          <RefreshCw className="w-3 h-3 mr-1" /> Refresh
-        </Button>
-      </div>
 
-      {/* Main Tabs */}
-      <Tabs defaultValue="sources" className="flex-1 flex flex-col overflow-hidden">
-        <TabsList className="bg-slate-900/50 border border-slate-800/50 w-fit mb-4">
-          <TabsTrigger value="sources" className="text-xs data-[state=active]:bg-blue-500/20 data-[state=active]:text-blue-300">
-            <Layers className="w-3 h-3 mr-2" /> Source Mappings
-          </TabsTrigger>
-          <TabsTrigger value="types" className="text-xs data-[state=active]:bg-purple-500/20 data-[state=active]:text-purple-300">
-            <Database className="w-3 h-3 mr-2" /> Evidence Types
-          </TabsTrigger>
-          <TabsTrigger value="test" className="text-xs data-[state=active]:bg-amber-500/20 data-[state=active]:text-amber-300">
-            <Zap className="w-3 h-3 mr-2" /> Test Extraction
-          </TabsTrigger>
-        </TabsList>
+        <Tabs defaultValue="sources" className="space-y-8">
+          <div className="flex justify-center">
+            <TabsList className="bg-secondary/50 p-1 rounded-xl border border-border">
+              <TabsTrigger value="sources" className="rounded-lg px-6 py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm font-medium text-sm transition-all">Sources</TabsTrigger>
+              <TabsTrigger value="types" className="rounded-lg px-6 py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm font-medium text-sm transition-all">Evidence Types</TabsTrigger>
+              <TabsTrigger value="test" className="rounded-lg px-6 py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm font-medium text-sm transition-all">Test Extraction</TabsTrigger>
+            </TabsList>
+          </div>
 
-        <div className="flex-1 overflow-hidden relative rounded-xl border border-slate-800/50 bg-slate-900/30 p-1">
-          {/* Source Mappings Tab */}
-          <TabsContent value="sources" className="h-full m-0 overflow-auto p-3">
-            <div className="grid grid-cols-4 lg:grid-cols-5 gap-3">
-              {sourceConfigs.map(config => {
-                const visual = sourceTypeConfig[config.sourceType] || sourceTypeConfig.admin;
-                const Icon = visual.icon;
-                const enabledCount = config.evidenceTypeMappings.filter(m => m.enabled).length;
-                return (
-                  <button
-                    key={config.id}
-                    onClick={() => setSelectedSource(config)}
-                    className={`aspect-square rounded-xl border-2 ${visual.border} ${visual.bg} p-3 flex flex-col items-center justify-center gap-2 hover:scale-[1.02] transition-all hover:shadow-lg hover:shadow-${visual.color.split("-")[1]}-500/10`}
-                  >
-                    <div className={`p-2.5 rounded-lg bg-slate-900/50 ${visual.color}`}>
-                      <Icon className="w-6 h-6" />
-                    </div>
-                    <span className="text-xs font-medium text-slate-200">{config.name}</span>
-                    <div className="flex gap-1">
-                      {config.acceptedFormats.slice(0, 2).map(fmt => (
-                        <span key={fmt} className={`text-[9px] px-1.5 py-0.5 rounded ${formatColors[fmt] || "bg-slate-700 text-slate-400"}`}>
-                          {fmt}
-                        </span>
-                      ))}
-                    </div>
-                    <div className="flex items-center gap-1 text-[10px] text-slate-400">
-                      <Check className="w-3 h-3 text-emerald-400" />
-                      {enabledCount}/{config.evidenceTypeMappings.length}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </TabsContent>
-
-          {/* Evidence Types Tab */}
-          <TabsContent value="types" className="h-full m-0 overflow-auto p-3">
-            <div className="grid grid-cols-3 gap-6">
-              {categories.map(category => (
-                <div key={category} className="space-y-2">
-                  <div className="text-xs font-medium text-slate-500 uppercase tracking-wider px-1 border-b border-slate-800 pb-1">{category}</div>
-                  <div className="grid gap-2">
-                    {evidenceTypes.filter(t => t.category === category).map(type => (
-                      <button
-                        key={type.type}
-                        onClick={() => setSelectedType(type)}
-                        className="flex items-center justify-between p-2 rounded-lg bg-slate-800/50 border border-slate-700/50 hover:border-purple-500/50 hover:bg-purple-500/5 transition-all group"
-                      >
-                        <span className="text-xs font-medium text-slate-300 group-hover:text-purple-300">
-                          {type.type.replace(/_/g, " ")}
-                        </span>
-                        <Badge variant="outline" className="text-[9px] bg-slate-900/50 text-slate-500 border-slate-700 group-hover:border-purple-500/30">
-                          {type.requiredFields.length}
-                        </Badge>
-                      </button>
-                    ))}
-                  </div>
+          <TabsContent value="sources" className="mt-0 focus-visible:outline-none">
+            <div className="glass-card p-10 space-y-10 shadow-2xl">
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <h3 className="text-2xl font-black tracking-tighter text-foreground">Ingestion Repositories</h3>
+                  <p className="text-muted-foreground font-medium italic">Active source configurations and mapping protocols.</p>
                 </div>
-              ))}
-            </div>
-          </TabsContent>
-
-          {/* Test Extraction Tab */}
-          <TabsContent value="test" className="h-full m-0 p-3 flex gap-4">
-            <div className="w-1/3 flex flex-col gap-4">
-              <div className="bg-slate-800/30 rounded-lg p-4 border border-slate-700/50 space-y-4">
-                <div>
-                  <Label className="text-xs text-slate-400">Source Type</Label>
-                  <Select value={testSourceType} onValueChange={setTestSourceType}>
-                    <SelectTrigger className="h-9 text-xs bg-slate-900 border-slate-700 mt-1">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Object.keys(sourceTypeConfig).map(type => (
-                        <SelectItem key={type} value={type} className="text-xs">{type.toUpperCase()}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                
-                <div>
-                  <Label className="text-xs text-slate-400">File</Label>
-                  <Input
-                    type="file"
-                    accept=".xlsx,.xls,.csv,.docx,.pdf,.json"
-                    onChange={(e) => setTestFile(e.target.files?.[0] || null)}
-                    className="h-9 text-xs bg-slate-900 border-slate-700 mt-1"
-                  />
-                </div>
-                
-                <Button
-                  onClick={handleExtract}
-                  disabled={!testFile || extracting}
-                  className="w-full text-xs bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600"
-                >
-                  {extracting ? <RefreshCw className="w-3 h-3 mr-1 animate-spin" /> : <Zap className="w-3 h-3 mr-1" />}
-                  {extracting ? "Extracting..." : "Extract"}
-                </Button>
-              </div>
-            </div>
-
-            <div className="flex-1 bg-slate-900/50 rounded-lg border border-slate-800 p-4 overflow-hidden flex flex-col">
-              <div className="flex items-center justify-between mb-3 shrink-0">
-                <span className="text-sm font-medium text-slate-300">Extraction Results</span>
-                {extractResult && <Badge className="bg-emerald-500/20 text-emerald-300 text-[10px]">{extractResult.evidenceCount} items</Badge>}
+                <button onClick={fetchData} className="w-12 h-12 rounded-full flex items-center justify-center bg-secondary hover:bg-white hover:text-primary transition-all active:rotate-180">
+                  <RefreshCw className="w-5 h-5" />
+                </button>
               </div>
               
-              {extractResult ? (
-                <ScrollArea className="flex-1">
-                  <div className="space-y-2 pr-2">
-                    {extractResult.evidence?.map((e: any, i: number) => (
-                      <div key={i} className="p-3 rounded-lg bg-slate-800/30 border border-slate-700/30">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2">
-                            <Badge variant="outline" className="text-[10px] bg-slate-900/50">{e.evidenceType}</Badge>
-                            <span className="text-[10px] text-slate-500">{e.sourceName}</span>
-                          </div>
-                          <span className={`text-[10px] font-bold ${e.confidence >= 0.8 ? "text-emerald-400" : e.confidence >= 0.5 ? "text-amber-400" : "text-red-400"}`}>
-                            {(e.confidence * 100).toFixed(0)}%
-                          </span>
-                        </div>
-                        <div className="text-[10px] text-slate-400 font-mono bg-slate-950/30 p-2 rounded">
-                          {JSON.stringify(e.data).slice(0, 150)}...
-                        </div>
-                        <div className="text-[9px] text-slate-600 mt-1">{e.extractionMethod}</div>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                {sourceConfigs.map(config => {
+                  const visual = sourceTypeConfig[config.sourceType] || sourceTypeConfig.admin;
+                  const Icon = visual.icon;
+                  const enabledCount = config.evidenceTypeMappings.filter(m => m.enabled).length;
+                  return (
+                    <button
+                      key={config.id}
+                      onClick={() => setSelectedSource(config)}
+                      className={cn(
+                        "p-8 rounded-[2.5rem] border-2 transition-all duration-500 text-center flex flex-col items-center justify-center gap-6 group hover:scale-105 active:scale-95",
+                        visual.bg, visual.border, "shadow-sm hover:shadow-xl"
+                      )}
+                    >
+                      <div className={cn("w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg transition-transform duration-500 group-hover:rotate-12 bg-white", visual.color)}>
+                        <Icon className="w-8 h-8" />
                       </div>
-                    ))}
-                  </div>
-                </ScrollArea>
-              ) : (
-                <div className="flex-1 flex items-center justify-center text-slate-600 text-xs">
-                  Run extraction to see results
-                </div>
-              )}
+                      <div className="space-y-2">
+                        <span className="text-lg font-black tracking-tight text-foreground">{config.name}</span>
+                        <div className="flex gap-1.5 justify-center">
+                          {config.acceptedFormats.slice(0, 2).map(fmt => (
+                            <span key={fmt} className={cn("ios-pill text-[8px] font-black uppercase border-none px-2 py-0.5", formatColors[fmt] || "bg-muted text-muted-foreground")}>
+                              {fmt}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="ios-pill bg-white text-[10px] font-black tracking-widest border-none px-4 py-1 shadow-sm">
+                        {enabledCount} / {config.evidenceTypeMappings.length} MAPPED
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </TabsContent>
-        </div>
-      </Tabs>
+
+          <TabsContent value="types" className="mt-0 focus-visible:outline-none">
+            <div className="glass-card p-10 space-y-10 shadow-2xl">
+              <div className="space-y-2 text-center">
+                <h3 className="text-3xl font-black tracking-tighter text-foreground italic">Compliance Matrix Dictionary</h3>
+                <p className="text-lg text-muted-foreground font-medium">Canonical data structures for all regulatory atoms.</p>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+                {categories.map(category => (
+                  <div key={category} className="space-y-6">
+                    <div className="flex items-center gap-3 px-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+                      <h4 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">{category}</h4>
+                    </div>
+                    <div className="grid gap-3">
+                      {evidenceTypes.filter(t => t.category === category).map(type => (
+                        <button
+                          key={type.type}
+                          onClick={() => setSelectedType(type)}
+                          className="flex items-center justify-between p-5 rounded-2xl bg-white border border-border/50 hover:border-primary/30 hover:shadow-lg transition-all group"
+                        >
+                          <span className="font-bold text-sm text-foreground group-hover:text-primary transition-colors">
+                            {type.type.replace(/_/g, " ").toUpperCase()}
+                          </span>
+                          <span className="ios-pill bg-secondary text-muted-foreground text-[10px] font-black border-none px-2 py-0.5">
+                            {type.requiredFields.length} ATOMS
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="test" className="mt-0 focus-visible:outline-none">
+            <div className="glass-card p-10 space-y-10 shadow-2xl animate-slide-up">
+              <div className="space-y-2 text-center">
+                <h3 className="text-3xl font-black tracking-tighter text-foreground italic">Extraction Laboratory</h3>
+                <p className="text-lg text-muted-foreground font-medium">Test drive neural extraction models on isolated artifacts.</p>
+              </div>
+              
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+                <div className="lg:col-span-1 space-y-8">
+                  <div className="glass-card p-8 bg-white/50 border border-border/50 space-y-8">
+                    <div className="space-y-4">
+                      <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Source Architecture</Label>
+                      <Select value={testSourceType} onValueChange={setTestSourceType}>
+                        <SelectTrigger className="h-14 rounded-2xl bg-white border-border/50 font-bold text-lg shadow-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="rounded-2xl border-none shadow-2xl">
+                          {Object.keys(sourceTypeConfig).map(type => (
+                            <SelectItem key={type} value={type} className="font-bold">{type.toUpperCase()}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    
+                    <div className="space-y-4">
+                      <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Intelligence Artifact</Label>
+                      <div className="relative group">
+                        <input
+                          type="file"
+                          accept=".xlsx,.xls,.csv,.docx,.pdf,.json"
+                          onChange={(e) => setTestFile(e.target.files?.[0] || null)}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                        />
+                        <div className="p-8 rounded-2xl border-2 border-dashed border-border/50 group-hover:border-primary/50 transition-all flex flex-col items-center justify-center text-center gap-3">
+                          <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary"><Upload className="w-6 h-6" /></div>
+                          <div className="font-bold text-xs truncate max-w-full px-2">{testFile ? testFile.name : "Select File"}</div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <button
+                      onClick={handleExtract}
+                      disabled={!testFile || extracting}
+                      className="w-full glossy-button bg-primary text-white py-5 text-lg font-black shadow-xl disabled:opacity-50"
+                    >
+                      {extracting ? <RefreshCw className="w-5 h-5 mr-2 animate-spin" /> : <Zap className="w-5 h-5 mr-2" />}
+                      {extracting ? "ANALYZING..." : "RUN EXTRACTION"}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="lg:col-span-2 glass-card p-8 bg-black/[0.02] border-none shadow-inner flex flex-col min-h-[500px]">
+                  <div className="flex items-center justify-between mb-8">
+                    <span className="text-sm font-black uppercase tracking-widest text-foreground flex items-center gap-3">
+                      <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                      Extraction Diagnostics
+                    </span>
+                    {extractResult && <div className="ios-pill bg-emerald-500 text-white font-black border-none px-4 py-1">{extractResult.evidenceCount} ITEMS IDENTIFIED</div>}
+                  </div>
+                  
+                  {extractResult ? (
+                    <ScrollArea className="flex-1">
+                      <div className="space-y-4 pr-4">
+                        {extractResult.evidence?.map((e: any, i: number) => (
+                          <div key={i} className="glass-card p-6 bg-white border border-border/50 hover:border-primary/30 transition-all space-y-4 shadow-sm">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <span className="ios-pill bg-primary/10 text-primary font-black text-[9px] border-none">{e.evidenceType.toUpperCase()}</span>
+                                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{e.sourceName}</span>
+                              </div>
+                              <div className={cn(
+                                "text-lg font-black tracking-tighter",
+                                e.confidence >= 0.8 ? "text-emerald-600" : e.confidence >= 0.5 ? "text-amber-600" : "text-destructive"
+                              )}>
+                                {(e.confidence * 100).toFixed(0)}% TRUST
+                              </div>
+                            </div>
+                            <div className="p-4 rounded-xl bg-secondary/30 font-mono text-[10px] text-foreground/70 leading-relaxed overflow-x-auto">
+                              {JSON.stringify(e.data, null, 2)}
+                            </div>
+                            <div className="text-[9px] font-black text-muted-foreground uppercase tracking-widest italic">{e.extractionMethod}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  ) : (
+                    <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground/30 gap-4">
+                      <Database className="w-20 h-20 opacity-10" />
+                      <span className="font-black text-xs uppercase tracking-widest italic">Awaiting Payload Analysis</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </TabsContent>
+        </Tabs>
+      </div>
 
       {/* Source Config Modal */}
       <Dialog open={!!selectedSource} onOpenChange={() => setSelectedSource(null)}>
-        <DialogContent className="max-w-2xl bg-slate-900 border-slate-700">
+        <DialogContent className="max-w-2xl bg-card border-border">
           {selectedSource && (
             <>
               <DialogHeader>
@@ -394,26 +428,26 @@ export default function AdminPage() {
                     );
                   })()}
                   <div>
-                    <DialogTitle className="text-slate-100">{selectedSource.name}</DialogTitle>
-                    <p className="text-xs text-slate-500">{selectedSource.description}</p>
+                    <DialogTitle className="text-foreground">{selectedSource.name}</DialogTitle>
+                    <p className="text-xs text-muted-foreground">{selectedSource.description}</p>
                   </div>
                 </div>
               </DialogHeader>
               
               <div className="space-y-4 mt-4">
                 {/* Config Options */}
-                <div className="flex items-center gap-6 p-3 rounded-lg bg-slate-800/30 border border-slate-700/30">
+                <div className="flex items-center gap-6 p-3 rounded-lg bg-secondary/30 border border-border/30">
                   <div className="flex items-center gap-2">
                     <Switch checked={selectedSource.autoExtract} disabled />
-                    <Label className="text-xs text-slate-400">Auto-Extract</Label>
+                    <Label className="text-xs text-muted-foreground">Auto-Extract</Label>
                   </div>
                   <div className="flex items-center gap-2">
                     <Switch checked={selectedSource.requiresReview} disabled />
-                    <Label className="text-xs text-slate-400">Requires Review</Label>
+                    <Label className="text-xs text-muted-foreground">Requires Review</Label>
                   </div>
                   <div className="flex gap-1.5 ml-auto">
                     {selectedSource.acceptedFormats.map(fmt => (
-                      <span key={fmt} className={`text-[10px] px-2 py-1 rounded ${formatColors[fmt] || "bg-slate-700 text-slate-400"}`}>
+                      <span key={fmt} className={`text-[10px] px-2 py-1 rounded ${formatColors[fmt] || "bg-muted text-muted-foreground"}`}>
                         {fmt.toUpperCase()}
                       </span>
                     ))}
@@ -422,15 +456,15 @@ export default function AdminPage() {
 
                 {/* Evidence Type Mappings Grid */}
                 <div>
-                  <div className="text-xs font-medium text-slate-400 mb-2">Evidence Type Mappings</div>
+                  <div className="text-xs font-medium text-muted-foreground mb-2">Evidence Type Mappings</div>
                   <div className="grid grid-cols-2 gap-2 max-h-[300px] overflow-auto pr-2">
                     {selectedSource.evidenceTypeMappings.map(mapping => (
                       <div
                         key={mapping.evidenceType}
                         className={`p-3 rounded-lg border transition-all ${
                           mapping.enabled 
-                            ? "bg-slate-800/50 border-slate-600/50" 
-                            : "bg-slate-900/50 border-slate-800/30 opacity-60"
+                            ? "bg-secondary/50 border-border/50" 
+                            : "bg-muted/50 border-border/30 opacity-60"
                         }`}
                       >
                         <div className="flex items-center justify-between mb-2">
@@ -447,7 +481,7 @@ export default function AdminPage() {
                             <Edit3 className="w-3 h-3" />
                           </Button>
                         </div>
-                        <div className="text-xs font-medium text-slate-200 mb-1">{mapping.evidenceType}</div>
+                        <div className="text-xs font-medium text-foreground mb-1">{mapping.evidenceType}</div>
                         <div className="flex items-center justify-between text-[10px]">
                           <span className={`${
                             mapping.confidence >= 0.8 ? "text-emerald-400" : 
@@ -455,7 +489,7 @@ export default function AdminPage() {
                           }`}>
                             {(mapping.confidence * 100).toFixed(0)}% confidence
                           </span>
-                          <span className="text-slate-500">{mapping.fieldMappings.length} fields</span>
+                          <span className="text-muted-foreground">{mapping.fieldMappings.length} fields</span>
                         </div>
                       </div>
                     ))}
@@ -469,20 +503,20 @@ export default function AdminPage() {
 
       {/* Evidence Type Modal */}
       <Dialog open={!!selectedType} onOpenChange={() => setSelectedType(null)}>
-        <DialogContent className="max-w-md bg-slate-900 border-slate-700">
+        <DialogContent className="max-w-md bg-card border-border">
           {selectedType && (
             <>
               <DialogHeader>
-                <DialogTitle className="text-slate-100 flex items-center gap-2">
+                <DialogTitle className="text-foreground flex items-center gap-2">
                   <Database className="w-4 h-4 text-purple-400" />
                   {selectedType.type}
                 </DialogTitle>
-                <p className="text-xs text-slate-500">{selectedType.description}</p>
+                <p className="text-xs text-muted-foreground">{selectedType.description}</p>
               </DialogHeader>
               
               <div className="space-y-4 mt-4">
                 <div>
-                  <div className="text-xs font-medium text-slate-400 mb-2 flex items-center gap-1">
+                  <div className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1">
                     <span className="w-2 h-2 rounded-full bg-red-500"></span>
                     Required Fields
                   </div>
@@ -496,18 +530,18 @@ export default function AdminPage() {
                 </div>
                 
                 <div>
-                  <div className="text-xs font-medium text-slate-400 mb-2 flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-slate-500"></span>
+                  <div className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-muted-foreground"></span>
                     Optional Fields
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {selectedType.optionalFields.slice(0, 10).map(field => (
-                      <Badge key={field} variant="outline" className="text-[10px] bg-slate-800/50 text-slate-400">
+                      <Badge key={field} variant="outline" className="text-[10px] bg-secondary/50 text-muted-foreground">
                         {field}
                       </Badge>
                     ))}
                     {selectedType.optionalFields.length > 10 && (
-                      <Badge variant="outline" className="text-[10px] bg-slate-800/50 text-slate-500">
+                      <Badge variant="outline" className="text-[10px] bg-secondary/50 text-muted-foreground">
                         +{selectedType.optionalFields.length - 10} more
                       </Badge>
                     )}
@@ -521,18 +555,18 @@ export default function AdminPage() {
 
       {/* Field Mapping Edit Modal (Sub-modal) */}
       <Dialog open={!!editingMapping} onOpenChange={() => setEditingMapping(null)}>
-        <DialogContent className="max-w-xl bg-slate-900 border-slate-700">
+        <DialogContent className="max-w-xl bg-card border-border">
           {editingMapping && (
             <>
               <DialogHeader>
-                <DialogTitle className="text-slate-100">Edit Field Mappings</DialogTitle>
-                <p className="text-xs text-slate-500">{editingMapping.mapping.evidenceType}</p>
+                <DialogTitle className="text-foreground">Edit Field Mappings</DialogTitle>
+                <p className="text-xs text-muted-foreground">{editingMapping.mapping.evidenceType}</p>
               </DialogHeader>
               
               <div className="space-y-4 mt-4">
                 <div className="flex items-center gap-4">
                   <div className="flex-1">
-                    <Label className="text-xs text-slate-400">Confidence</Label>
+                    <Label className="text-xs text-muted-foreground">Confidence</Label>
                     <Input
                       type="number"
                       min="0"
@@ -543,7 +577,7 @@ export default function AdminPage() {
                         ...editingMapping,
                         mapping: { ...editingMapping.mapping, confidence: parseFloat(e.target.value) }
                       })}
-                      className="h-8 text-xs bg-slate-800 border-slate-700 mt-1"
+                      className="h-8 text-xs bg-secondary border-border mt-1"
                     />
                   </div>
                   <div className="flex items-center gap-2 pt-5">
@@ -554,16 +588,16 @@ export default function AdminPage() {
                         mapping: { ...editingMapping.mapping, enabled: checked }
                       })}
                     />
-                    <Label className="text-xs text-slate-400">Enabled</Label>
+                    <Label className="text-xs text-muted-foreground">Enabled</Label>
                   </div>
                 </div>
 
                 <div>
-                  <Label className="text-xs text-slate-400">Field Mappings</Label>
+                  <Label className="text-xs text-muted-foreground">Field Mappings</Label>
                   <ScrollArea className="h-[200px] mt-2">
                     <div className="space-y-2 pr-2">
                       {editingMapping.mapping.fieldMappings.map((fm, idx) => (
-                        <div key={idx} className="flex items-center gap-2 p-2 rounded-lg bg-slate-800/50">
+                        <div key={idx} className="flex items-center gap-2 p-2 rounded-lg bg-secondary/50">
                           <Input
                             value={fm.sourceField}
                             onChange={(e) => {
@@ -575,9 +609,9 @@ export default function AdminPage() {
                               });
                             }}
                             placeholder="Source"
-                            className="h-7 text-xs bg-slate-900 border-slate-700 flex-1"
+                            className="h-7 text-xs bg-background border-border flex-1"
                           />
-                          <ArrowRight className="w-4 h-4 text-slate-500 shrink-0" />
+                          <ArrowRight className="w-4 h-4 text-muted-foreground shrink-0" />
                           <Input
                             value={fm.targetField}
                             onChange={(e) => {
@@ -589,7 +623,7 @@ export default function AdminPage() {
                               });
                             }}
                             placeholder="Target"
-                            className="h-7 text-xs bg-slate-900 border-slate-700 flex-1"
+                            className="h-7 text-xs bg-background border-border flex-1"
                           />
                           <Select
                             value={fm.transformation || "direct"}
@@ -602,7 +636,7 @@ export default function AdminPage() {
                               });
                             }}
                           >
-                            <SelectTrigger className="h-7 w-20 text-[10px] bg-slate-900 border-slate-700">
+                            <SelectTrigger className="h-7 w-20 text-[10px] bg-background border-border">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -647,7 +681,7 @@ export default function AdminPage() {
 
                 <div className="flex justify-end gap-2 pt-2">
                   <Button variant="outline" size="sm" onClick={() => setEditingMapping(null)}>Cancel</Button>
-                  <Button size="sm" onClick={handleSaveMapping} className="bg-blue-600 hover:bg-blue-700">
+                  <Button size="sm" onClick={handleSaveMapping} className="bg-primary hover:bg-primary/90">
                     <Save className="w-3 h-3 mr-1" /> Save
                   </Button>
                 </div>

@@ -27,8 +27,14 @@ This section MUST include:
 - Use technical language appropriate for regulatory submission
 - Be precise about device specifications
 - Include UDI-DI, catalog numbers, model numbers where available
-- Reference evidence using [ATOM-xxx] format
+- Write clean prose WITHOUT inline citations
 - Clearly distinguish between device variants
+
+## CRITICAL: DO NOT USE CITATIONS IN OUTPUT
+- DO NOT write [ATOM-xxx] in your narrative text
+- Evidence references are tracked automatically via the JSON metadata
+- Write clean, professional prose without any citation markers
+- Report the atom IDs you used in the JSON "citedAtoms" field only
 
 ## STRUCTURE FOR DEVICE SCOPE:
 1. Device identification (name, UDI, classification)
@@ -45,11 +51,11 @@ This section MUST include:
 5. Impact assessment
 
 ## OUTPUT FORMAT
-Write the narrative section content. After the narrative, provide a JSON block:
+Write the narrative section content WITHOUT any citation markers. After the narrative, provide a JSON block with the atom IDs you referenced:
 \`\`\`json
 {
-  "citedAtoms": ["ATOM-xxx", ...],
-  "uncitedAtoms": ["ATOM-yyy", ...],
+  "citedAtoms": ["actual-atom-id-1", "actual-atom-id-2"],
+  "uncitedAtoms": ["other-atom-ids"],
   "dataGaps": ["description of missing data", ...],
   "confidence": 0.0-1.0,
   "reasoning": "explanation of content decisions"
@@ -131,7 +137,8 @@ ${evidenceRecords}
 1. Focus on TECHNICAL ACCURACY - this establishes the scope of the PSUR
 2. Include UDI-DI breakdown if multiple device variants exist
 3. Clearly state the intended purpose verbatim from IFU if available
-4. Reference specific evidence atoms [ATOM-xxx]
-5. If this is a "changes" section, compare to previous PSUR explicitly`;
+4. DO NOT include [ATOM-xxx] citations - they will be tracked via metadata
+5. If this is a "changes" section, compare to previous PSUR explicitly
+6. Write clean, professional prose without markdown symbols`;
   }
 }

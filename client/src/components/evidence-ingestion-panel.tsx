@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 import {
   Upload,
   FileSpreadsheet,
@@ -29,7 +30,8 @@ import {
   FileCheck,
   Database,
   ArrowRight,
-  Check
+  Check,
+  Loader2
 } from "lucide-react";
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -303,7 +305,7 @@ export function EvidenceIngestionPanel({
     if (allSelected.length === 0) {
       toast({
         title: "No Evidence Selected",
-        description: "Please select at least one evidence item to create atoms",
+        description: "Please select at least one evidence item to import",
         variant: "destructive",
       });
       return;
@@ -312,7 +314,7 @@ export function EvidenceIngestionPanel({
     setCreatingAtoms(true);
     
     try {
-      // Create evidence atoms
+      // Create evidence records
       const atoms = allSelected.map(({ filename, evidence }) => ({
         psur_case_id: psurCaseId,
         evidence_type: evidence.evidenceType,
@@ -337,8 +339,8 @@ export function EvidenceIngestionPanel({
       if (res.ok) {
         const data = await res.json();
         toast({
-          title: "Evidence Created",
-          description: `Successfully created ${data.created} evidence atoms`,
+          title: "Records Imported",
+          description: `Successfully imported ${data.created} evidence records`,
         });
         
         // Clear state
@@ -349,12 +351,12 @@ export function EvidenceIngestionPanel({
         onEvidenceCreated?.();
       } else {
         const error = await res.json();
-        throw new Error(error.error || "Failed to create atoms");
+        throw new Error(error.error || "Failed to import records");
       }
     } catch (error: any) {
       toast({
         title: "Error",
-        description: error?.message || "Failed to create evidence atoms",
+        description: error?.message || "Failed to import evidence records",
         variant: "destructive",
       });
     } finally {
@@ -373,40 +375,52 @@ export function EvidenceIngestionPanel({
   const totalSelected = Array.from(selectedEvidence.values()).reduce((sum, arr) => sum + arr.length, 0);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-12 animate-slide-up">
       {/* Source Type Selection */}
-      <Card className="bg-slate-900/60 border-slate-700/50">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-lg text-slate-100 flex items-center gap-2">
-            <Database className="w-5 h-5 text-blue-500" />
-            Document Ingestion
-          </CardTitle>
-          <CardDescription className="text-slate-400">
-            Upload documents to automatically extract evidence. The AI will identify evidence types based on content.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+      <div className="glass-card p-10 space-y-8 shadow-2xl">
+        <div className="space-y-2">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shadow-sm">
+              <Database className="w-6 h-6" />
+            </div>
+            <h2 className="text-3xl font-black tracking-tighter text-foreground">Document Ingestion</h2>
+          </div>
+          <p className="text-lg text-muted-foreground font-medium">
+            Deploy neural extraction models across your regulatory dossiers.
+          </p>
+        </div>
+
+        <div className="space-y-8">
           {/* Source Type Selector */}
-          <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {sourceConfigs.map(config => (
               <button
                 key={config.id}
                 onClick={() => setSelectedSourceType(config.sourceType)}
-                className={`p-3 rounded-lg border-2 transition-all text-left ${
+                className={cn(
+                  "p-6 rounded-[2rem] border-2 transition-all duration-500 text-left group hover:scale-105 active:scale-95",
                   selectedSourceType === config.sourceType
-                    ? "border-blue-500 bg-blue-500/10"
-                    : "border-slate-700 hover:border-slate-600 bg-slate-800/50"
-                }`}
+                    ? "border-primary bg-primary/5 shadow-xl shadow-primary/10"
+                    : "border-border/50 bg-white/50 hover:bg-white"
+                )}
               >
-                <div className="flex items-center gap-2 mb-1">
-                  {sourceTypeIcons[config.sourceType] || <File className="w-4 h-4" />}
-                  <span className="font-medium text-sm text-slate-200">{config.name}</span>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className={cn(
+                    "w-10 h-10 rounded-xl flex items-center justify-center shadow-sm transition-all duration-500",
+                    selectedSourceType === config.sourceType ? "bg-primary text-white scale-110" : "bg-secondary text-muted-foreground"
+                  )}>
+                    {sourceTypeIcons[config.sourceType] || <File className="w-5 h-5" />}
+                  </div>
+                  <span className={cn(
+                    "font-black text-sm uppercase tracking-wider transition-colors",
+                    selectedSourceType === config.sourceType ? "text-primary" : "text-muted-foreground"
+                  )}>{config.name}</span>
                 </div>
-                <div className="flex gap-1 flex-wrap">
+                <div className="flex gap-1.5 flex-wrap">
                   {config.acceptedFormats.slice(0, 3).map(fmt => (
-                    <Badge key={fmt} variant="outline" className="text-[10px] px-1 py-0">
+                    <span key={fmt} className="ios-pill text-[9px] font-black uppercase border-none bg-muted/50 text-muted-foreground">
                       {fmt}
-                    </Badge>
+                    </span>
                   ))}
                 </div>
               </button>
@@ -419,68 +433,77 @@ export function EvidenceIngestionPanel({
             onDragLeave={handleDrag}
             onDragOver={handleDrag}
             onDrop={handleDrop}
-            className={`
-              border-2 border-dashed rounded-xl p-8 text-center transition-all
-              ${dragActive 
-                ? "border-blue-500 bg-blue-500/10" 
-                : "border-slate-600 hover:border-slate-500 bg-slate-800/30"
-              }
-            `}
+            className={cn(
+              "relative border-2 border-dashed rounded-[3rem] p-16 text-center transition-all duration-700 group cursor-pointer overflow-hidden",
+              dragActive 
+                ? "border-primary bg-primary/5 shadow-inner scale-[0.99]" 
+                : "border-border hover:border-primary/30 bg-secondary/20 hover:bg-white/50"
+            )}
           >
-            <FolderUp className={`w-12 h-12 mx-auto mb-4 ${dragActive ? "text-blue-400" : "text-slate-500"}`} />
-            <p className="text-slate-300 mb-2">
-              Drag and drop files here, or{" "}
-              <label className="text-blue-400 hover:text-blue-300 cursor-pointer underline">
-                browse
-                <input
-                  type="file"
-                  multiple
-                  accept=".xlsx,.xls,.csv,.docx,.pdf,.json"
-                  onChange={handleFileInput}
-                  className="hidden"
-                />
-              </label>
-            </p>
-            <p className="text-xs text-slate-500">
-              Supported: Excel, CSV, Word, PDF, JSON
-            </p>
+            <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
+            <div className="relative space-y-6">
+              <div className="w-24 h-24 rounded-[2rem] bg-white flex items-center justify-center mx-auto shadow-2xl group-hover:scale-110 group-hover:-rotate-6 transition-all duration-700 border border-border/50">
+                <FolderUp className={cn("w-12 h-12 transition-colors duration-500", dragActive ? "text-primary" : "text-muted-foreground/50")} />
+              </div>
+              <div className="space-y-2">
+                <p className="text-2xl font-black tracking-tighter text-foreground">
+                  Deploy Intelligence Files
+                </p>
+                <p className="text-muted-foreground font-medium">
+                  Drag and drop artifacts here, or{" "}
+                  <label className="text-primary hover:text-primary/80 cursor-pointer underline decoration-2 underline-offset-4 transition-colors">
+                    browse
+                    <input
+                      type="file"
+                      multiple
+                      accept=".xlsx,.xls,.csv,.docx,.pdf,.json"
+                      onChange={handleFileInput}
+                      className="hidden"
+                    />
+                  </label>
+                </p>
+              </div>
+              <p className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground/40">
+                SUPPORTED ARCHITECTURES: EXCEL, CSV, DOCX, PDF, JSON
+              </p>
+            </div>
           </div>
           
           {/* Selected Files */}
           {files.length > 0 && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-slate-300">{files.length} file(s) selected</span>
-                <Button
-                  variant="ghost"
-                  size="sm"
+            <div className="space-y-6 animate-slide-up">
+              <div className="flex items-center justify-between px-2">
+                <span className="text-sm font-black uppercase tracking-widest text-muted-foreground">{files.length} BUNDLES STAGED</span>
+                <button
                   onClick={() => setFiles([])}
-                  className="text-slate-400 hover:text-slate-200"
+                  className="text-xs font-black text-destructive hover:scale-105 transition-all uppercase tracking-widest"
                 >
-                  Clear All
-                </Button>
+                  ABORT ALL
+                </button>
               </div>
-              <div className="grid gap-2 max-h-40 overflow-y-auto">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {files.map((file, i) => (
                   <div
                     key={i}
-                    className="flex items-center justify-between p-2 bg-slate-800/50 rounded-lg border border-slate-700/50"
+                    className="flex items-center justify-between p-5 glass-card border-border/50 hover:border-primary/30 transition-all bg-white/40"
                   >
-                    <div className="flex items-center gap-2">
-                      {formatIcons[file.name.split('.').pop() || ""] || <File className="w-4 h-4" />}
-                      <span className="text-sm text-slate-300 truncate max-w-xs">{file.name}</span>
-                      <span className="text-xs text-slate-500">
-                        {(file.size / 1024).toFixed(1)} KB
-                      </span>
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center text-muted-foreground shadow-sm">
+                        {formatIcons[file.name.split('.').pop() || ""] || <File className="w-5 h-5" />}
+                      </div>
+                      <div className="space-y-0.5">
+                        <div className="font-bold text-sm text-foreground truncate max-w-[200px]">{file.name}</div>
+                        <div className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">
+                          {(file.size / 1024).toFixed(1)} KB
+                        </div>
+                      </div>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
+                    <button
                       onClick={() => removeFile(i)}
-                      className="text-slate-400 hover:text-red-400"
+                      className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all active:scale-90"
                     >
-                      <XCircle className="w-4 h-4" />
-                    </Button>
+                      <XCircle className="w-5 h-5" />
+                    </button>
                   </div>
                 ))}
               </div>
@@ -489,238 +512,277 @@ export function EvidenceIngestionPanel({
           
           {/* Process Button */}
           {files.length > 0 && (
-            <Button
+            <button
               onClick={processFiles}
               disabled={processing}
-              className="w-full bg-blue-600 hover:bg-blue-700"
+              className="w-full glossy-button bg-primary text-primary-foreground py-6 text-xl font-black shadow-2xl hover:scale-[1.02] active:scale-95 disabled:opacity-50 transition-all duration-500"
             >
               {processing ? (
-                <>
-                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                  Processing... {Math.round(progress)}%
-                </>
+                <div className="flex items-center gap-4">
+                  <div className="relative">
+                    <Loader2 className="w-6 h-6 animate-spin" />
+                    <div className="absolute inset-0 w-6 h-6 rounded-full border-2 border-white/20" />
+                  </div>
+                  <span>EXTRACTING INTELLIGENCE... {Math.round(progress)}%</span>
+                </div>
               ) : (
-                <>
-                  <Zap className="w-4 h-4 mr-2" />
-                  Extract Evidence from {files.length} File(s)
-                </>
+                <div className="flex items-center gap-4">
+                  <Zap className="w-6 h-6" />
+                  <span>INITIALIZE NEURAL EXTRACTION</span>
+                </div>
               )}
-            </Button>
+            </button>
           )}
           
-          {processing && <Progress value={progress} className="h-2" />}
-        </CardContent>
-      </Card>
+          {processing && (
+            <div className="relative h-2 w-full bg-secondary/50 rounded-full overflow-hidden">
+              <div 
+                className="absolute top-0 left-0 h-full bg-primary transition-all duration-500 ease-out shadow-[0_0_12px_rgba(var(--primary),0.5)]" 
+                style={{ width: `${progress}%` }} 
+              />
+            </div>
+          )}
+        </div>
+      </div>
       
       {/* Results */}
       {results.length > 0 && (
-        <Card className="bg-slate-900/60 border-slate-700/50">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-lg text-slate-100 flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                Extraction Results
-              </CardTitle>
-              {totalSelected > 0 && (
-                <Badge className="bg-emerald-500/20 text-emerald-400">
-                  {totalSelected} selected
-                </Badge>
-              )}
+        <div className="glass-card p-10 space-y-10 shadow-2xl animate-slide-up">
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <h3 className="text-2xl font-black tracking-tighter text-foreground flex items-center gap-3">
+                <CheckCircle2 className="w-8 h-8 text-emerald-500" />
+                Extraction Payloads
+              </h3>
+              <p className="text-muted-foreground font-medium italic">Verify and confirm extracted data records.</p>
             </div>
-          </CardHeader>
-          <CardContent>
-            <ScrollArea className="max-h-[500px]">
-              <div className="space-y-4">
-                {results.map((result, idx) => (
-                  <div
-                    key={idx}
-                    className={`p-4 rounded-lg border ${
-                      result.success
-                        ? "bg-slate-800/30 border-slate-700/50"
-                        : "bg-red-500/5 border-red-500/20"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        {result.success ? (
-                          <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                        ) : (
-                          <XCircle className="w-5 h-5 text-red-500" />
-                        )}
-                        <span className="font-medium text-slate-200">{result.filename}</span>
-                        {result.documentInfo && (
-                          <Badge variant="outline" className="text-xs">
-                            {result.documentInfo.type} | {result.documentInfo.tables} tables
-                          </Badge>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge className={result.success ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20 text-red-400"}>
-                          {result.evidenceCount} items
-                        </Badge>
-                        {result.success && result.evidence.length > 0 && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              setReviewResult(result);
-                              setReviewOpen(true);
-                            }}
-                          >
-                            <Eye className="w-4 h-4 mr-1" />
-                            Review
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                    
-                    {result.error && (
-                      <p className="text-sm text-red-400">{result.error}</p>
-                    )}
-                    
-                    {result.success && result.evidence.length > 0 && (
-                      <div className="grid gap-2">
-                        {result.evidence.slice(0, 5).map((ev, evIdx) => {
-                          const selected = isEvidenceSelected(result.filename, ev);
-                          const level = getConfidenceLevel(ev.confidence);
-                          return (
-                            <div
-                              key={evIdx}
-                              onClick={() => toggleEvidenceSelection(result.filename, ev)}
-                              className={`
-                                flex items-center justify-between p-2 rounded-lg cursor-pointer transition-all
-                                ${selected
-                                  ? "bg-blue-500/10 border border-blue-500/30"
-                                  : "bg-slate-900/50 border border-transparent hover:border-slate-600"
-                                }
-                              `}
-                            >
-                              <div className="flex items-center gap-2">
-                                <Checkbox checked={selected} />
-                                <Badge variant="outline" className="text-xs">
-                                  {ev.evidenceType}
-                                </Badge>
-                                <span className="text-xs text-slate-400">
-                                  from {ev.source}: {ev.sourceName}
-                                </span>
-                              </div>
-                              <Badge variant="outline" className={`text-xs ${confidenceColors[level]}`}>
-                                {(ev.confidence * 100).toFixed(0)}%
-                              </Badge>
-                            </div>
-                          );
-                        })}
-                        {result.evidence.length > 5 && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              setReviewResult(result);
-                              setReviewOpen(true);
-                            }}
-                            className="w-full text-slate-400"
-                          >
-                            +{result.evidence.length - 5} more items
-                            <ChevronRight className="w-4 h-4 ml-1" />
-                          </Button>
-                        )}
-                      </div>
-                    )}
-                    
-                    {result.suggestions && result.suggestions.length > 0 && (
-                      <div className="mt-2 p-2 bg-amber-500/10 rounded border border-amber-500/20">
-                        <p className="text-xs text-amber-400 font-medium mb-1">Suggestions:</p>
-                        {result.suggestions.map((s, i) => (
-                          <p key={i} className="text-xs text-amber-300/80">- {s}</p>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </ScrollArea>
-            
-            {/* Create Atoms Button */}
             {totalSelected > 0 && (
-              <div className="mt-4 pt-4 border-t border-slate-700/50">
-                <Button
-                  onClick={createAtomsFromEvidence}
-                  disabled={creatingAtoms}
-                  className="w-full bg-emerald-600 hover:bg-emerald-700"
-                >
-                  {creatingAtoms ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                      Creating Atoms...
-                    </>
-                  ) : (
-                    <>
-                      <Check className="w-4 h-4 mr-2" />
-                      Create {totalSelected} Evidence Atoms
-                    </>
-                  )}
-                </Button>
+              <div className="ios-pill bg-emerald-500 text-white font-black border-none py-3 px-6 shadow-lg shadow-emerald-500/20">
+                {totalSelected} RECORDS SELECTED
               </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+
+          <div className="space-y-6">
+            {results.map((result, idx) => (
+              <div
+                key={idx}
+                className={cn(
+                  "p-8 rounded-[2.5rem] border transition-all duration-500",
+                  result.success
+                    ? "bg-white/40 border-border/50 hover:border-primary/30"
+                    : "bg-destructive/5 border-destructive/20"
+                )}
+              >
+                <div className="flex items-center justify-between mb-8">
+                  <div className="flex items-center gap-4">
+                    <div className={cn(
+                      "w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg transition-transform duration-500 hover:rotate-6",
+                      result.success ? "bg-emerald-500/10 text-emerald-600" : "bg-destructive/10 text-destructive"
+                    )}>
+                      {result.success ? <CheckCircle2 className="w-6 h-6" /> : <XCircle className="w-6 h-6" />}
+                    </div>
+                    <div>
+                      <div className="font-black text-lg text-foreground tracking-tight">{result.filename}</div>
+                      {result.documentInfo && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                            {result.documentInfo.type} • {result.documentInfo.tables} TABLES IDENTIFIED
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="ios-pill bg-secondary/50 text-foreground font-black border-none">
+                      {result.evidenceCount} ITEMS EXTRACTED
+                    </div>
+                    {result.success && result.evidence.length > 0 && (
+                      <button
+                        onClick={() => {
+                          setReviewResult(result);
+                          setReviewOpen(true);
+                        }}
+                        className="w-12 h-12 rounded-full flex items-center justify-center bg-white hover:bg-primary hover:text-white transition-all shadow-sm group active:scale-90"
+                      >
+                        <Eye className="w-6 h-6 transition-transform group-hover:scale-110" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+                
+                {result.error && (
+                  <div className="ios-pill bg-destructive/10 text-destructive border-destructive/20 py-4 px-6 font-bold text-center">
+                    EXTRACTION FAILURE: {result.error.toUpperCase()}
+                  </div>
+                )}
+                
+                {result.success && result.evidence.length > 0 && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {result.evidence.slice(0, 4).map((ev, evIdx) => {
+                      const selected = isEvidenceSelected(result.filename, ev);
+                      const level = getConfidenceLevel(ev.confidence);
+                      return (
+                        <div
+                          key={evIdx}
+                          onClick={() => toggleEvidenceSelection(result.filename, ev)}
+                          className={cn(
+                            "flex items-center justify-between p-5 rounded-2xl cursor-pointer transition-all duration-300 group hover:-translate-y-1",
+                            selected
+                              ? "bg-primary/5 border-2 border-primary shadow-lg scale-[1.02]"
+                              : "bg-white/50 border-2 border-transparent hover:border-border shadow-sm hover:shadow-md"
+                          )}
+                        >
+                          <div className="flex items-center gap-4">
+                            <div className={cn(
+                              "w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all duration-300",
+                              selected ? "bg-primary border-primary" : "border-border group-hover:border-primary/50"
+                            )}>
+                              {selected && <Check className="w-4 h-4 text-white" />}
+                            </div>
+                            <div className="space-y-1">
+                              <div className="font-black text-xs uppercase tracking-widest text-foreground">{ev.evidenceType.replace(/_/g, ' ')}</div>
+                              <div className="text-[10px] font-medium text-muted-foreground truncate max-w-[150px]">
+                                FROM {ev.sourceName.toUpperCase()}
+                              </div>
+                            </div>
+                          </div>
+                          <div className={cn(
+                            "ios-pill text-[10px] font-black border-none",
+                            confidenceColors[level]
+                          )}>
+                            {(ev.confidence * 100).toFixed(0)}% TRUST
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {result.evidence.length > 4 && (
+                      <button
+                        onClick={() => {
+                          setReviewResult(result);
+                          setReviewOpen(true);
+                        }}
+                        className="flex items-center justify-center gap-3 p-5 rounded-2xl border-2 border-dashed border-border/50 hover:border-primary/50 hover:text-primary transition-all font-black text-xs uppercase tracking-widest bg-white/20"
+                      >
+                        <span>VIEW ALL {result.evidence.length} ITEMS</span>
+                        <ChevronRight className="w-5 h-5" />
+                      </button>
+                    )}
+                  </div>
+                )}
+                
+                {result.suggestions && result.suggestions.length > 0 && (
+                  <div className="mt-8 p-6 bg-amber-500/[0.03] rounded-3xl border border-amber-500/20 space-y-3">
+                    <div className="flex items-center gap-2 text-amber-600 font-black text-[10px] uppercase tracking-widest">
+                      <Zap className="w-4 h-4" />
+                      Intelligence Suggestions
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      {result.suggestions.map((s, i) => (
+                        <div key={i} className="text-xs text-amber-700/80 font-medium flex items-center gap-2">
+                          <div className="w-1 h-1 rounded-full bg-amber-400" />
+                          {s}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+          
+          {/* Import Records Button */}
+          {totalSelected > 0 && (
+            <div className="pt-10 border-t border-border/50">
+              <button
+                onClick={createAtomsFromEvidence}
+                disabled={creatingAtoms}
+                className="w-full glossy-button bg-emerald-600 text-white py-8 text-2xl font-black shadow-2xl shadow-emerald-500/20 hover:scale-[1.02] active:scale-95 disabled:opacity-50 transition-all duration-500"
+              >
+                {creatingAtoms ? (
+                  <div className="flex items-center gap-4">
+                    <Loader2 className="w-8 h-8 animate-spin" />
+                    <span>IMPORTING RECORDS...</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-4">
+                    <CheckCircle2 className="w-8 h-8" />
+                    <span>IMPORT {totalSelected} RECORDS</span>
+                  </div>
+                )}
+              </button>
+            </div>
+          )}
+        </div>
       )}
       
       {/* Review Dialog */}
       <Dialog open={reviewOpen} onOpenChange={setReviewOpen}>
-        <DialogContent className="bg-slate-900 border-slate-700 max-w-3xl max-h-[80vh] overflow-hidden">
-          <DialogHeader>
-            <DialogTitle className="text-slate-100">
-              Review Extracted Evidence
-            </DialogTitle>
-            <DialogDescription className="text-slate-400">
-              {reviewResult?.filename} - {reviewResult?.evidenceCount} items extracted
-            </DialogDescription>
-          </DialogHeader>
-          
-          {reviewResult && (
-            <ScrollArea className="max-h-[60vh]">
-              <div className="space-y-3 pr-4">
-                {reviewResult.evidence.map((ev, idx) => {
+        <DialogContent className="glass-card max-w-5xl max-h-[90vh] overflow-hidden p-0 border-none shadow-2xl">
+          <div className="flex flex-col h-full bg-white/80 backdrop-blur-3xl">
+            <div className="px-10 py-8 border-b border-border/10 flex items-center justify-between">
+              <div className="space-y-1">
+                <h3 className="text-3xl font-black tracking-tighter text-foreground italic">
+                  Payload Review
+                </h3>
+                <p className="text-muted-foreground font-medium uppercase tracking-widest text-[10px]">
+                  {reviewResult?.filename} — EXTRACTION ARCHIVE
+                </p>
+              </div>
+              <button onClick={() => setReviewOpen(false)} className="w-12 h-12 rounded-full flex items-center justify-center hover:bg-black/5 transition-all active:scale-90">
+                <XCircle className="w-6 h-6 text-muted-foreground" />
+              </button>
+            </div>
+            
+            <ScrollArea className="flex-1 px-10 py-8">
+              <div className="space-y-6 pb-10">
+                {reviewResult?.evidence.map((ev, idx) => {
                   const selected = isEvidenceSelected(reviewResult.filename, ev);
                   const level = getConfidenceLevel(ev.confidence);
                   return (
                     <div
                       key={idx}
-                      className={`p-4 rounded-lg border transition-all ${
+                      className={cn(
+                        "p-8 rounded-[2rem] border-2 transition-all duration-500",
                         selected
-                          ? "bg-blue-500/10 border-blue-500/30"
-                          : "bg-slate-800/30 border-slate-700/50"
-                      }`}
+                          ? "bg-primary/[0.02] border-primary shadow-xl scale-[1.01]"
+                          : "bg-white/50 border-border/50 hover:border-primary/20"
+                      )}
                     >
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <Checkbox
-                            checked={selected}
-                            onCheckedChange={() => toggleEvidenceSelection(reviewResult.filename, ev)}
-                          />
-                          <Badge className="bg-blue-500/20 text-blue-400">
-                            {ev.evidenceType}
-                          </Badge>
-                          <Badge variant="outline" className={`${confidenceColors[level]}`}>
-                            {(ev.confidence * 100).toFixed(0)}% confidence
-                          </Badge>
+                      <div className="flex items-start justify-between mb-8">
+                        <div className="flex items-center gap-6">
+                          <button 
+                            onClick={() => toggleEvidenceSelection(reviewResult.filename, ev)}
+                            className={cn(
+                              "w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all duration-500",
+                              selected ? "bg-primary border-primary shadow-lg" : "border-border hover:border-primary/50"
+                            )}
+                          >
+                            {selected && <Check className="w-5 h-5 text-white" />}
+                          </button>
+                          <div className="space-y-1">
+                            <div className="font-black text-xl tracking-tighter text-foreground">{ev.evidenceType.replace(/_/g, ' ').toUpperCase()}</div>
+                            <div className="text-[10px] font-black text-primary uppercase tracking-widest">
+                              TRUST SCORE: {(ev.confidence * 100).toFixed(0)}%
+                            </div>
+                          </div>
                         </div>
-                        <span className="text-xs text-slate-400">
-                          {ev.source}: {ev.sourceName}
-                        </span>
+                        <div className="ios-pill bg-secondary text-muted-foreground border-none font-black text-[10px] tracking-widest">
+                          {ev.source.toUpperCase()} SOURCE
+                        </div>
                       </div>
                       
-                      <p className="text-xs text-slate-500 mb-2">{ev.extractionMethod}</p>
-                      
-                      <pre className="text-xs text-slate-300 bg-slate-900/50 p-3 rounded overflow-x-auto max-h-32">
-                        {JSON.stringify(ev.data, null, 2)}
-                      </pre>
+                      <div className="glass-card bg-black/5 border-none p-8 rounded-3xl overflow-hidden group relative">
+                        <div className="absolute top-4 right-6 text-[10px] font-black text-muted-foreground/30 uppercase tracking-widest italic group-hover:text-primary/30 transition-colors">Neural_JSON_Snapshot</div>
+                        <pre className="text-xs font-mono text-foreground/80 leading-relaxed max-h-60 overflow-y-auto custom-scrollbar">
+                          {JSON.stringify(ev.data, null, 2)}
+                        </pre>
+                      </div>
                       
                       {ev.warnings && ev.warnings.length > 0 && (
-                        <div className="mt-2 flex items-center gap-1 text-xs text-amber-400">
-                          <AlertCircle className="w-3 h-3" />
-                          {ev.warnings.join(", ")}
+                        <div className="mt-6 flex items-center gap-3 text-[10px] font-black text-amber-600 uppercase tracking-widest">
+                          <AlertCircle className="w-4 h-4" />
+                          <span>AI WARNINGS: {ev.warnings.join(" | ")}</span>
                         </div>
                       )}
                     </div>
@@ -728,25 +790,35 @@ export function EvidenceIngestionPanel({
                 })}
               </div>
             </ScrollArea>
-          )}
-          
-          <div className="flex justify-end gap-2 pt-4 border-t border-slate-700/50">
-            <Button variant="outline" onClick={() => setReviewOpen(false)}>
-              Close
-            </Button>
-            <Button
-              onClick={() => {
-                // Select all high confidence
-                if (reviewResult) {
-                  const highConf = reviewResult.evidence.filter(e => e.confidence >= 0.6);
-                  setSelectedEvidence(prev => new Map(prev.set(reviewResult.filename, highConf)));
-                }
-                setReviewOpen(false);
-              }}
-              className="bg-blue-600"
-            >
-              Select High Confidence
-            </Button>
+            
+            <div className="px-10 py-8 bg-secondary/30 border-t border-border/10 flex items-center justify-between">
+              <div className="flex flex-col">
+                <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Selected Payload</span>
+                <span className="text-2xl font-black text-foreground tracking-tighter">
+                  {(selectedEvidence.get(reviewResult?.filename || '') || []).length} / {reviewResult?.evidenceCount} ITEMS
+                </span>
+              </div>
+              <div className="flex gap-4">
+                <button 
+                  onClick={() => setReviewOpen(false)}
+                  className="ios-pill px-8 py-4 font-black tracking-widest hover:bg-white transition-all active:scale-95"
+                >
+                  CLOSE
+                </button>
+                <button
+                  onClick={() => {
+                    if (reviewResult) {
+                      const highConf = reviewResult.evidence.filter(e => e.confidence >= 0.6);
+                      setSelectedEvidence(prev => new Map(prev.set(reviewResult.filename, highConf)));
+                    }
+                    setReviewOpen(false);
+                  }}
+                  className="glossy-button bg-primary text-white py-4 px-10 shadow-xl hover:scale-105 active:scale-95"
+                >
+                  CERTIFY ALL HIGH-TRUST
+                </button>
+              </div>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

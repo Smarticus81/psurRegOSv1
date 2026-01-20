@@ -1,11 +1,93 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Cpu, Zap, Activity, Brain, Workflow, Search, Terminal, ArrowRight, ShieldCheck, History } from "lucide-react";
+import { Cpu, Zap, Activity, Brain, Workflow, Terminal, ArrowRight, ShieldCheck, History, Loader2, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Link } from "wouter";
+
+interface OrchestratorStatus {
+    initialized: boolean;
+    euObligations: number;
+    ukObligations: number;
+    constraints: number;
+}
+
+interface TraceEntry {
+    type: string;
+    actor: string;
+    decision: string;
+    summary: string;
+    timestamp?: string;
+}
+
+interface PSURCase {
+    id: number;
+    psurReference: string;
+    status: string;
+}
 
 export default function AgentSystem() {
     const [activeAgent, setActiveAgent] = useState<string>("orchestrator");
+    const [orchestratorStatus, setOrchestratorStatus] = useState<OrchestratorStatus | null>(null);
+    const [statusLoading, setStatusLoading] = useState(true);
+    const [recentTraces, setRecentTraces] = useState<TraceEntry[]>([]);
+    const [tracesLoading, setTracesLoading] = useState(true);
+    const [activePsurCase, setActivePsurCase] = useState<PSURCase | null>(null);
+
+    // Fetch orchestrator status
+    useEffect(() => {
+        async function fetchStatus() {
+            try {
+                const res = await fetch("/api/orchestrator/status");
+                if (res.ok) {
+                    const data = await res.json();
+                    setOrchestratorStatus(data);
+                }
+            } catch (e) {
+                console.error("[AgentSystem] Failed to fetch orchestrator status:", e);
+            } finally {
+                setStatusLoading(false);
+            }
+        }
+        fetchStatus();
+    }, []);
+
+    // Fetch recent traces from most recent PSUR case
+    useEffect(() => {
+        async function fetchRecentTraces() {
+            try {
+                // Get most recent PSUR case
+                const casesRes = await fetch("/api/psur-cases");
+                if (!casesRes.ok) throw new Error("Failed to fetch cases");
+                
+                const cases: PSURCase[] = await casesRes.json();
+                const recentCase = cases.find(c => c.status === "compiling" || c.status === "compiled" || c.status === "draft");
+                
+                if (recentCase) {
+                    setActivePsurCase(recentCase);
+                    
+                    // Fetch decision traces for this case
+                    const tracesRes = await fetch(`/api/psur-cases/${recentCase.id}/decision-traces?limit=6`);
+                    if (tracesRes.ok) {
+                        const data = await tracesRes.json();
+                        const traces: TraceEntry[] = (data.traces || data || []).slice(0, 6).map((t: any) => ({
+                            type: t.eventType || t.type || "DECISION",
+                            actor: t.actor || t.agentId || "system",
+                            decision: t.decision || t.status || "RECORDED",
+                            summary: t.summary || t.description || t.details?.summary || "Decision recorded",
+                            timestamp: t.timestamp || t.createdAt
+                        }));
+                        setRecentTraces(traces);
+                    }
+                }
+            } catch (e) {
+                console.error("[AgentSystem] Failed to fetch traces:", e);
+            } finally {
+                setTracesLoading(false);
+            }
+        }
+        fetchRecentTraces();
+    }, []);
 
     const agents = [
         {
@@ -42,14 +124,17 @@ export default function AgentSystem() {
         }
     ];
 
-    const traces = [
-        { type: "LLM_INVOKED", actor: "narrativeWriterAgent", decision: "GENERATE", summary: "Requesting narrative for Section 4.2 (Device Description)" },
-        { type: "DECISION_MADE", actor: "adjudicator", decision: "ACCEPT", summary: "Evidence atom ATOM-123 accepted for slot SLOT-A1" },
-        { type: "OBLIGATION_SATISFIED", actor: "coverageEngine", decision: "PASS", summary: "Obligation EU_MDR.PSUR.OBL.001 marked as SATISFIED" },
-        { type: "VALIDATION_PASSED", actor: "strictGate", decision: "PASS", summary: "Temporal contiguity check passed for period 2024-01-01 to 2024-12-31" }
-    ];
-
     const activeAgentData = agents.find(a => a.id === activeAgent) || agents[0];
+
+    // Computed kernel health from real status
+    const kernelHealth = orchestratorStatus ? [
+        { label: "Kernel Initialized", val: orchestratorStatus.initialized ? "Active" : "Inactive" },
+        { label: "EU Obligations", val: String(orchestratorStatus.euObligations) },
+        { label: "UK Obligations", val: String(orchestratorStatus.ukObligations) },
+        { label: "Constraints", val: String(orchestratorStatus.constraints) }
+    ] : [
+        { label: "Kernel Status", val: "Loading..." }
+    ];
 
     return (
         <div className="h-full overflow-hidden flex flex-col space-y-6 max-w-6xl mx-auto px-4 py-6">
@@ -127,18 +212,24 @@ export default function AgentSystem() {
                         <div className="mt-8 pt-6 border-t border-border/30 flex items-center justify-between">
                             <div className="flex items-center gap-6">
                                 <div className="text-center">
-                                    <div className="text-lg font-black tracking-tighter text-foreground">99.2%</div>
-                                    <div className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">Confidence</div>
+                                    <div className="text-lg font-black tracking-tighter text-foreground">
+                                        {orchestratorStatus?.euObligations ?? "-"}
+                                    </div>
+                                    <div className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">EU Obligations</div>
                                 </div>
                                 <div className="w-px h-8 bg-border/30" />
                                 <div className="text-center">
-                                    <div className="text-lg font-black tracking-tighter text-foreground">42ms</div>
-                                    <div className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">Latency</div>
+                                    <div className="text-lg font-black tracking-tighter text-foreground">
+                                        {orchestratorStatus?.constraints ?? "-"}
+                                    </div>
+                                    <div className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">Constraints</div>
                                 </div>
                             </div>
-                            <button className="flex items-center gap-2 text-xs font-black text-primary hover:gap-3 transition-all">
-                                View Technical Docs <ArrowRight className="w-3 h-3" />
-                            </button>
+                            <Link href="/instructions">
+                                <button className="flex items-center gap-2 text-xs font-black text-primary hover:gap-3 transition-all">
+                                    View Documentation <ExternalLink className="w-3 h-3" />
+                                </button>
+                            </Link>
                         </div>
                     </div>
                 </div>
@@ -164,20 +255,32 @@ export default function AgentSystem() {
                             </p>
 
                             <div className="space-y-3">
-                                {traces.map((t, i) => (
-                                    <div key={i} className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1 hover:bg-white/10 transition-all cursor-default">
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-[8px] font-black text-primary tracking-widest">{t.type}</span>
-                                            <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">{t.decision}</span>
-                                        </div>
-                                        <div className="text-[10px] font-bold text-slate-200 line-clamp-1">{t.summary}</div>
+                                {tracesLoading ? (
+                                    <div className="flex items-center justify-center py-8">
+                                        <Loader2 className="w-5 h-5 animate-spin text-primary" />
                                     </div>
-                                ))}
+                                ) : recentTraces.length > 0 ? (
+                                    recentTraces.map((t, i) => (
+                                        <div key={i} className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1 hover:bg-white/10 transition-all cursor-default">
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-[8px] font-black text-primary tracking-widest">{t.type}</span>
+                                                <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">{t.decision}</span>
+                                            </div>
+                                            <div className="text-[10px] font-bold text-slate-200 line-clamp-1">{t.summary}</div>
+                                        </div>
+                                    ))
+                                ) : (
+                                    <div className="text-center py-6 text-slate-500 text-xs">
+                                        No recent traces. Run a PSUR workflow to generate decision traces.
+                                    </div>
+                                )}
                             </div>
 
-                            <button className="w-full py-3 rounded-xl bg-primary text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-primary/20 hover:-translate-y-0.5 transition-all active:translate-y-0">
-                                Export Full Trace Log
-                            </button>
+                            <Link href="/traces">
+                                <button className="w-full py-3 rounded-xl bg-primary text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-primary/20 hover:-translate-y-0.5 transition-all active:translate-y-0">
+                                    {activePsurCase ? "View Full Trace Log" : "Go to Decision Traces"}
+                                </button>
+                            </Link>
                         </div>
                     </div>
 
@@ -187,16 +290,24 @@ export default function AgentSystem() {
                             <h4 className="text-xs font-black uppercase tracking-widest text-foreground">Kernel Health</h4>
                         </div>
                         <div className="space-y-4">
-                            {[
-                                { label: "Thread Safety", val: "Verified" },
-                                { label: "Memory Isolation", val: "Optimal" },
-                                { label: "State Purity", val: "100%" }
-                            ].map((stat, i) => (
-                                <div key={i} className="flex items-center justify-between text-[10px] font-black">
-                                    <span className="text-muted-foreground uppercase tracking-widest">{stat.label}</span>
-                                    <span className="text-emerald-600">{stat.val}</span>
+                            {statusLoading ? (
+                                <div className="flex items-center justify-center py-4">
+                                    <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
                                 </div>
-                            ))}
+                            ) : (
+                                kernelHealth.map((stat, i) => (
+                                    <div key={i} className="flex items-center justify-between text-[10px] font-black">
+                                        <span className="text-muted-foreground uppercase tracking-widest">{stat.label}</span>
+                                        <span className={cn(
+                                            stat.val === "Active" || stat.val === "Verified" || stat.val === "Optimal" || stat.val === "100%" 
+                                                ? "text-emerald-600" 
+                                                : stat.val === "Inactive" || stat.val === "Loading..." 
+                                                    ? "text-amber-500" 
+                                                    : "text-foreground"
+                                        )}>{stat.val}</span>
+                                    </div>
+                                ))
+                            )}
                         </div>
                     </div>
                 </div>

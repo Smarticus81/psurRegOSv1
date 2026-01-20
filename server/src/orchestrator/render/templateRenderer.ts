@@ -138,6 +138,22 @@ function getAtomsForTypes(atoms: EvidenceAtomData[], types: string[]): EvidenceA
   return atoms.filter(a => types.includes(a.evidenceType));
 }
 
+/**
+ * Find the best device registry atom, prioritizing user-provided data over seed/demo data.
+ * User-provided atoms are marked with isUserProvided: true in normalizedData.
+ */
+function getBestDeviceAtom(atoms: EvidenceAtomData[]): EvidenceAtomData | undefined {
+  const deviceAtoms = atoms.filter(a => a.evidenceType === "device_registry_record");
+  if (deviceAtoms.length === 0) return undefined;
+  
+  // Prioritize user-provided atoms
+  const userProvidedAtom = deviceAtoms.find(a => a.normalizedData?.isUserProvided === true);
+  if (userProvidedAtom) return userProvidedAtom;
+  
+  // Fall back to first device atom
+  return deviceAtoms[0];
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // COVER PAGE RENDERER
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -151,9 +167,9 @@ function renderCoverPage(
   const requiredTypes = slot.evidence_requirements?.required_types || [];
   const relevantAtoms = getAtomsForTypes(atoms, requiredTypes);
   
-  // Extract manufacturer info
+  // Extract manufacturer info - prioritize user-provided device data
   const manufacturerAtom = relevantAtoms.find(a => a.evidenceType === "manufacturer_profile");
-  const deviceAtom = relevantAtoms.find(a => a.evidenceType === "device_registry_record");
+  const deviceAtom = getBestDeviceAtom(atoms); // Use all atoms to find best device data
   const certAtom = relevantAtoms.find(a => a.evidenceType === "regulatory_certificate_record");
   
   lines.push("# PERIODIC SAFETY UPDATE REPORT");
@@ -364,7 +380,7 @@ function renderNarrativeSlot(
     const allIncidentAtoms = atoms.filter(a => ["serious_incident_records_imdrf", "vigilance_report", "serious_incident_summary"].includes(a.evidenceType) && !a.normalizedData?.isNegativeEvidence);
     const allFscaAtoms = atoms.filter(a => ["fsca_record", "recall_record"].includes(a.evidenceType) && !a.normalizedData?.isNegativeEvidence);
     const allCapaAtoms = atoms.filter(a => a.evidenceType === "capa_record" && !a.normalizedData?.isNegativeEvidence);
-    const deviceAtom = atoms.find(a => a.evidenceType === "device_registry_record");
+    const deviceAtom = getBestDeviceAtom(atoms);
     const brAtoms = atoms.filter(a => a.evidenceType === "benefit_risk_assessment");
     
     // Calculate total sales
@@ -497,7 +513,7 @@ function renderNarrativeSlot(
   }
   // Scope/Device Description
   else if (slotId.includes("SCOPE") || slotId.includes("DEVICE_DESCRIPTION")) {
-    const deviceAtom = relevantAtoms.find(a => a.evidenceType === "device_registry_record");
+    const deviceAtom = getBestDeviceAtom(atoms); // Use all atoms to find best device data
     const ifuAtom = relevantAtoms.find(a => a.evidenceType === "ifu_extract");
     
     if (deviceAtom?.normalizedData) {
@@ -529,7 +545,7 @@ function renderNarrativeSlot(
   }
   // Timeline Status
   else if (slotId.includes("TIMELINE")) {
-    const deviceAtom = relevantAtoms.find(a => a.evidenceType === "device_registry_record");
+    const deviceAtom = getBestDeviceAtom(atoms); // Use all atoms to find best device data
     const certAtom = relevantAtoms.find(a => a.evidenceType === "regulatory_certificate_record");
     
     if (certAtom?.normalizedData) {

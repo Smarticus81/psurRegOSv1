@@ -1635,6 +1635,15 @@ export default function PsurWizard() {
     const [createError, setCreateError] = useState("");
     const [conflictCase, setConflictCase] = useState<{ id: number; psurReference: string; status: string } | null>(null);
 
+    // Device Information (for report generation)
+    const [deviceName, setDeviceName] = useState("");
+    const [manufacturerName, setManufacturerName] = useState("");
+    const [udiDi, setUdiDi] = useState("");
+    const [gmdnCode, setGmdnCode] = useState("");
+    const [intendedPurpose, setIntendedPurpose] = useState("");
+    const [deviceRiskClass, setDeviceRiskClass] = useState<"I" | "IIa" | "IIb" | "III">("IIa");
+    const [showDeviceDetails, setShowDeviceDetails] = useState(false);
+
     // Data
     const [devices, setDevices] = useState<Device[]>([]);
     const [existingDrafts, setExistingDrafts] = useState<ExistingCase[]>([]);
@@ -1694,8 +1703,13 @@ export default function PsurWizard() {
         // connect when we are running/polling or in compile step
         if (!pollingActive && !runBusy) return;
 
-        // close any previous stream
-        try { runtimeEsRef.current?.close(); } catch {}
+        // close any previous stream (may already be closed, which is fine)
+        try { 
+            runtimeEsRef.current?.close(); 
+        } catch (e) {
+            // EventSource may already be closed - this is expected during cleanup
+            console.debug("[RuntimeStream] Previous stream cleanup:", e);
+        }
         setRuntimeConnected(false);
 
         const es = new EventSource(`/api/orchestrator/cases/${psurCaseId}/stream`);
@@ -1710,11 +1724,18 @@ export default function PsurWizard() {
                     const next = [data, ...prev];
                     return next.slice(0, 200);
                 });
-            } catch {}
+            } catch (e) {
+                console.error("[RuntimeStream] Failed to parse runtime event:", e, msg?.data?.slice?.(0, 200));
+            }
         });
 
         return () => {
-            try { es.close(); } catch {}
+            try { 
+                es.close(); 
+            } catch (e) {
+                // EventSource cleanup - may already be closed
+                console.debug("[RuntimeStream] Stream cleanup:", e);
+            }
             runtimeEsRef.current = null;
             setRuntimeConnected(false);
         };
@@ -1735,11 +1756,15 @@ export default function PsurWizard() {
     const [isEvidenceGridOpen, setIsEvidenceGridOpen] = useState(true);
 
     // Load data
-    useEffect(() => { api<Device[]>("/api/devices").then(setDevices).catch(() => {}); }, []);
+    useEffect(() => { 
+        api<Device[]>("/api/devices")
+            .then(setDevices)
+            .catch((e) => console.error("[PSURWizard] Failed to load devices:", e)); 
+    }, []);
     useEffect(() => { 
         api<ExistingCase[]>("/api/psur-cases")
             .then(cases => setExistingDrafts(cases.filter(c => c.status === "draft")))
-            .catch(() => {}); 
+            .catch((e) => console.error("[PSURWizard] Failed to load PSUR cases:", e)); 
     }, []);
     useEffect(() => {
         api<{ requiredEvidenceTypes: string[] }>(`/api/templates/${templateId}/requirements`)
@@ -1764,10 +1789,58 @@ export default function PsurWizard() {
                 body: JSON.stringify({
                     psurReference: `PSUR-${Date.now().toString(36).toUpperCase()}`,
                     version: 1, templateId, jurisdictions, startPeriod: periodStart, endPeriod: periodEnd,
-                    deviceIds: [deviceId], leadingDeviceId: deviceId, status: "draft"
+                    deviceIds: [deviceId], leadingDeviceId: deviceId, status: "draft",
+                    // Include device information for the case
+                    deviceInfo: {
+                        deviceCode,
+                        deviceName: deviceName || deviceCode,
+                        manufacturerName,
+                        udiDi,
+                        gmdnCode,
+                        intendedPurpose,
+                        riskClass: deviceRiskClass,
+                    }
                 }),
             });
-            setPsurCaseId(data.id); setPsurRef(data.psurReference); setStep(2);
+            setPsurCaseId(data.id); setPsurRef(data.psurReference);
+            
+            // Create device_registry_record evidence atom if device info was provided
+            if (deviceName || manufacturerName || intendedPurpose) {
+                try {
+                    await api("/api/evidence/atoms/batch", {
+                        method: "POST",
+                        body: JSON.stringify({
+                            psurCaseId: data.id,
+                            evidenceType: "device_registry_record",
+                            atoms: [{
+                                device_code: deviceCode,
+                                device_name: deviceName || deviceCode,
+                                name: deviceName || deviceCode,
+                                manufacturer_name: manufacturerName,
+                                udi_di: udiDi,
+                                gmdn_code: gmdnCode,
+                                gmdn: gmdnCode,
+                                intended_purpose: intendedPurpose,
+                                intended_use: intendedPurpose,
+                                risk_class: deviceRiskClass,
+                                classification: `Class ${deviceRiskClass}`,
+                                model: deviceCode,
+                                isUserProvided: true,
+                                _provenance: {
+                                    sourceFile: "user_input",
+                                    extractedAt: new Date().toISOString(),
+                                    deviceRef: { deviceCode },
+                                }
+                            }],
+                        }),
+                    });
+                    console.log("[PSURWizard] Created device_registry_record from user input");
+                } catch (atomErr) {
+                    console.warn("[PSURWizard] Failed to create device_registry_record atom:", atomErr);
+                }
+            }
+            
+            setStep(2);
             // Remove from existing drafts list since it's now active
             setExistingDrafts(prev => prev.filter(c => c.id !== data.id));
         } catch (e: any) {
@@ -1846,7 +1919,10 @@ export default function PsurWizard() {
             try {
                 const current = await api<RunWorkflowResponse>(`/api/orchestrator/cases/${psurCaseId}`);
                 setRunResult(current);
-            } catch {}
+            } catch (primeErr) {
+                // Non-fatal: initial status fetch failed, polling will catch up
+                console.debug("[PSURWizard] Initial status fetch failed (will retry via polling):", primeErr);
+            }
         } catch (e) {
             setPollingActive(false);
             setRunBusy(false);
@@ -1857,7 +1933,10 @@ export default function PsurWizard() {
         if (!psurCaseId) return;
         try {
             await fetch(`/api/orchestrator/cases/${psurCaseId}/cancel`, { method: "POST" });
-        } catch {}
+        } catch (e) {
+            // Cancellation request may fail if workflow already completed - still update UI state
+            console.warn("[PSURWizard] Cancel request failed (workflow may have completed):", e);
+        }
         setPollingActive(false);
         setRunBusy(false);
         setPollError("Cancelled");
@@ -1880,7 +1959,7 @@ export default function PsurWizard() {
         // Refresh existing drafts list
         api<ExistingCase[]>("/api/psur-cases")
             .then(cases => setExistingDrafts(cases.filter(c => c.status === "draft")))
-            .catch(() => {});
+            .catch((e) => console.error("[PSURWizard] Failed to refresh drafts list:", e));
     }
 
     // Computed
@@ -1993,7 +2072,7 @@ export default function PsurWizard() {
                             {/* Device & Period */}
                             <div className="glass-card p-8 space-y-6">
                                 <div className="space-y-3">
-                                    <label className="text-sm font-medium text-muted-foreground">Device</label>
+                                    <label className="text-sm font-medium text-muted-foreground">Device Code</label>
                                     {devices.length > 0 ? (
                                         <select 
                                             className="w-full bg-secondary/50 border border-border rounded-xl px-4 py-3 font-medium focus:ring-2 focus:ring-foreground/10 focus:border-foreground/20 transition-all outline-none appearance-none cursor-pointer"
@@ -2021,6 +2100,102 @@ export default function PsurWizard() {
                                     </div>
                                 </div>
                             </div>
+                        </div>
+
+                        {/* Device Information Section */}
+                        <div className="glass-card p-8 space-y-6">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h3 className="text-lg font-semibold text-foreground">Device Information</h3>
+                                    <p className="text-sm text-muted-foreground">Enter device details for accurate PSUR generation</p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowDeviceDetails(!showDeviceDetails)}
+                                    className={cn(
+                                        "px-4 py-2 rounded-xl text-sm font-medium transition-all",
+                                        showDeviceDetails
+                                            ? "bg-foreground/10 text-foreground"
+                                            : "bg-secondary/50 text-muted-foreground hover:bg-secondary"
+                                    )}
+                                >
+                                    {showDeviceDetails ? "Hide Details" : "Add Details"}
+                                </button>
+                            </div>
+
+                            {showDeviceDetails && (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-border/50 animate-in fade-in slide-in-from-top-2 duration-300">
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium text-muted-foreground">Device Name</label>
+                                        <input
+                                            className="w-full bg-secondary/50 border border-border rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-foreground/10 focus:border-foreground/20 outline-none"
+                                            value={deviceName}
+                                            onChange={e => setDeviceName(e.target.value)}
+                                            placeholder="e.g., LEEP Electrode System"
+                                        />
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium text-muted-foreground">Manufacturer</label>
+                                        <input
+                                            className="w-full bg-secondary/50 border border-border rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-foreground/10 focus:border-foreground/20 outline-none"
+                                            value={manufacturerName}
+                                            onChange={e => setManufacturerName(e.target.value)}
+                                            placeholder="e.g., CooperSurgical, Inc."
+                                        />
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium text-muted-foreground">UDI-DI</label>
+                                        <input
+                                            className="w-full bg-secondary/50 border border-border rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-foreground/10 focus:border-foreground/20 outline-none"
+                                            value={udiDi}
+                                            onChange={e => setUdiDi(e.target.value)}
+                                            placeholder="e.g., 00850003829XXX"
+                                        />
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium text-muted-foreground">GMDN Code</label>
+                                        <input
+                                            className="w-full bg-secondary/50 border border-border rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-foreground/10 focus:border-foreground/20 outline-none"
+                                            value={gmdnCode}
+                                            onChange={e => setGmdnCode(e.target.value)}
+                                            placeholder="e.g., 35421"
+                                        />
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium text-muted-foreground">Risk Class</label>
+                                        <select
+                                            className="w-full bg-secondary/50 border border-border rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-foreground/10 focus:border-foreground/20 outline-none appearance-none cursor-pointer"
+                                            value={deviceRiskClass}
+                                            onChange={e => setDeviceRiskClass(e.target.value as "I" | "IIa" | "IIb" | "III")}
+                                        >
+                                            <option value="I">Class I</option>
+                                            <option value="IIa">Class IIa</option>
+                                            <option value="IIb">Class IIb</option>
+                                            <option value="III">Class III</option>
+                                        </select>
+                                    </div>
+
+                                    <div className="md:col-span-2 space-y-2">
+                                        <label className="text-sm font-medium text-muted-foreground">Intended Purpose</label>
+                                        <textarea
+                                            className="w-full bg-secondary/50 border border-border rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-foreground/10 focus:border-foreground/20 outline-none min-h-[80px] resize-none"
+                                            value={intendedPurpose}
+                                            onChange={e => setIntendedPurpose(e.target.value)}
+                                            placeholder="e.g., The device is intended for use in electrosurgical procedures for the removal of abnormal cervical tissue..."
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            {!showDeviceDetails && (
+                                <div className="text-sm text-muted-foreground bg-amber-500/5 border border-amber-500/20 rounded-xl p-4">
+                                    <strong className="text-amber-600">Recommended:</strong> Adding device details ensures your PSUR report accurately reflects your device information instead of using default data.
+                                </div>
+                            )}
                         </div>
 
                         <div className="space-y-6">

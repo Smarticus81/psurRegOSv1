@@ -131,6 +131,22 @@ function getValue(data: any, ...keys: string[]): any {
   return null;
 }
 
+/**
+ * Find the best device registry atom, prioritizing user-provided data over seed/demo data.
+ * User-provided atoms are marked with isUserProvided: true in normalizedData.
+ */
+function getBestDeviceAtom(atoms: EvidenceAtomData[]): EvidenceAtomData | undefined {
+  const deviceAtoms = atoms.filter(a => a.evidenceType === "device_registry_record");
+  if (deviceAtoms.length === 0) return undefined;
+  
+  // Prioritize user-provided atoms
+  const userProvidedAtom = deviceAtoms.find(a => a.normalizedData?.isUserProvided === true);
+  if (userProvidedAtom) return userProvidedAtom;
+  
+  // Fall back to first device atom
+  return deviceAtoms[0];
+}
+
 function getAtomsForTypes(atoms: EvidenceAtomData[], types: string[]): EvidenceAtomData[] {
   return atoms.filter(a => types.includes(a.evidenceType));
 }
@@ -227,8 +243,8 @@ export async function generatePsurDocx(
     children.push(new Paragraph({ text: "", spacing: { after: 200 } }));
   }
 
-  // Device info
-  const devAtom = atomData.find(a => a.evidenceType === "device_registry_record");
+  // Device info - prioritize user-provided data
+  const devAtom = getBestDeviceAtom(atomData);
   if (devAtom?.normalizedData) {
     const dev = devAtom.normalizedData;
     children.push(createSectionHeading("Device Information"));

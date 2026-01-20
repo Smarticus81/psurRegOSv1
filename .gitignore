@@ -5,6 +5,15 @@ server/public
 vite.config.ts.*
 *.tar.gz
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.db
+*.sqlite
+*.sqlite3
+
 # Environment variables (contains secrets!)
 .env
 .env.*

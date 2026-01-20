@@ -54,20 +54,36 @@ import { emitRuntimeEvent } from "../../orchestrator/workflowRunner";
 let initLiveContent: (psurCaseId: number, slotIds: string[]) => void;
 let updateLiveContent: (psurCaseId: number, slotId: string, title: string, content: string, status: "pending" | "generating" | "done") => void;
 let finishLiveContent: (psurCaseId: number) => void;
+let liveContentAvailable = false;
 
 // Dynamically load to avoid circular dependencies
 async function loadLiveContentFunctions() {
   if (!initLiveContent) {
     try {
       const routes = await import("../../../routes");
-      initLiveContent = routes.initLiveContent;
-      updateLiveContent = routes.updateLiveContent;
-      finishLiveContent = routes.finishLiveContent;
-    } catch {
-      // Fallback no-ops if routes not available
-      initLiveContent = () => {};
-      updateLiveContent = () => {};
-      finishLiveContent = () => {};
+      if (routes.initLiveContent && routes.updateLiveContent && routes.finishLiveContent) {
+        initLiveContent = routes.initLiveContent;
+        updateLiveContent = routes.updateLiveContent;
+        finishLiveContent = routes.finishLiveContent;
+        liveContentAvailable = true;
+        console.log("[CompileOrchestrator] Live content streaming enabled");
+      } else {
+        throw new Error("Live content functions not exported from routes");
+      }
+    } catch (e) {
+      // Live content streaming unavailable - document will still generate but without real-time preview
+      console.warn("[CompileOrchestrator] Live content streaming unavailable:", e instanceof Error ? e.message : String(e));
+      console.warn("[CompileOrchestrator] Documents will generate but incremental preview will not be available");
+      liveContentAvailable = false;
+      initLiveContent = (psurCaseId: number, slotIds: string[]) => {
+        console.debug(`[CompileOrchestrator] Live content init skipped (unavailable) for case ${psurCaseId} with ${slotIds.length} slots`);
+      };
+      updateLiveContent = (psurCaseId: number, slotId: string, _title: string, _content: string, _status: string) => {
+        console.debug(`[CompileOrchestrator] Live content update skipped (unavailable) for case ${psurCaseId}, slot ${slotId}`);
+      };
+      finishLiveContent = (psurCaseId: number) => {
+        console.debug(`[CompileOrchestrator] Live content finish skipped (unavailable) for case ${psurCaseId}`);
+      };
     }
   }
 }

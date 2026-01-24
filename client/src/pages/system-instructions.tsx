@@ -678,7 +678,7 @@ export default function SystemInstructionsPage() {
                                         value="preview"
                                         className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-0 h-full text-xs font-semibold"
                                     >
-                                        Live Simulation
+                                        Test Preview
                                     </TabsTrigger>
                                     <TabsTrigger
                                         value="history"

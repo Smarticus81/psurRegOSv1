@@ -844,6 +844,61 @@ export async function registerRoutes(
     }
   });
 
+  // LLM-powered preview - generate actual AI output from template + sample data
+  app.post("/api/system-instructions/:key/preview", async (req, res) => {
+    try {
+      const { key } = req.params;
+      const { variables } = req.body; // { variableName: value, ... }
+
+      const { db } = await import("./db");
+      const { systemInstructions } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const { complete, DEFAULT_PROMPT_TEMPLATES } = await import("./src/agents/llmService");
+
+      // Get the template
+      const instructions = await db.select().from(systemInstructions).where(eq(systemInstructions.key, key));
+      let template = instructions.length > 0 ? instructions[0].template : (DEFAULT_PROMPT_TEMPLATES as any)[key];
+
+      if (!template) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+
+      // Substitute variables into template
+      if (variables && typeof variables === "object") {
+        for (const [varName, value] of Object.entries(variables)) {
+          template = template.replace(new RegExp(`\\{${varName}\\}`, 'g'), String(value));
+        }
+      }
+
+      // Call LLM to generate output
+      const llmResponse = await complete({
+        messages: [
+          {
+            role: "system",
+            content: "You are an expert medical device regulatory writer creating PSUR (Periodic Safety Update Report) content. Generate professional, compliant content based on the following instructions."
+          },
+          {
+            role: "user",
+            content: template
+          }
+        ],
+        config: {
+          maxTokens: 1000,
+          temperature: 0.3,
+        }
+      });
+
+      res.json({
+        output: llmResponse.content,
+        templateUsed: template.substring(0, 500) + (template.length > 500 ? "..." : ""),
+        generatedAt: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      console.error("[POST /api/system-instructions/:key/preview] Error:", error);
+      res.status(500).json({ error: error.message || "Failed to generate preview" });
+    }
+  });
+
   // Template endpoints
   app.get("/api/templates", (_req, res) => {
     res.json({ templates: listTemplates() });
@@ -1805,102 +1860,120 @@ export async function registerRoutes(
         return res.status(404).json({ error: "PSUR case not found" });
       }
 
-      // Get decision trace entries for this case - these provide rich audit trail
+      // Get decision trace entries for this case
       const { decisionTraceEntries, evidenceAtoms } = await import("@shared/schema");
       const { db } = await import("./db");
-      const { eq, desc } = await import("drizzle-orm");
+      const { eq } = await import("drizzle-orm");
 
-      // Get trace entries ordered by sequence
+      // Get trace entries
       const traces = await db.select()
         .from(decisionTraceEntries)
         .where(eq(decisionTraceEntries.psurCaseId, id))
         .orderBy(decisionTraceEntries.sequenceNum);
 
-      // Get evidence atom counts for context
+      // Get evidence atom counts
       const atoms = await db.select()
         .from(evidenceAtoms)
         .where(eq(evidenceAtoms.psurCaseId, id));
 
-      // Transform trace entries into user-friendly workflow steps
-      // Group by traceId to collect related events
-      const groupedTraces = traces.reduce((acc, trace) => {
-        const key = trace.traceId || trace.id.toString();
-        if (!acc[key]) acc[key] = [];
-        acc[key].push(trace);
-        return acc;
-      }, {} as Record<string, typeof traces>);
+      // Build simplified steps for the Audit Trail UI
+      const steps: Array<{
+        id: string;
+        title: string;
+        status: "completed" | "running" | "pending" | "failed";
+        timestamp: string;
+        duration?: string;
+        summary: string;
+        details?: string;
+        dataUsed?: string[];
+        findings?: string[];
+      }> = [];
 
-      const steps = Object.values(groupedTraces).map((traceGroup, index) => {
-        const mainTrace = traceGroup[0];
-        const lastTrace = traceGroup[traceGroup.length - 1];
-        const eventType = mainTrace.eventType || "UNKNOWN";
-        const category = categorizeTraceEvent(eventType);
-        const status = mapTraceStatus(eventType, lastTrace.decision);
+      // Step 1: Data Loading
+      if (atoms.length > 0) {
+        // Group atoms by type
+        const typeCounts: Record<string, number> = {};
+        atoms.forEach(a => {
+          const type = a.evidenceType || "Unknown";
+          typeCounts[type] = (typeCounts[type] || 0) + 1;
+        });
+
+        steps.push({
+          id: "data-loaded",
+          title: "Evidence Data Loaded",
+          status: "completed",
+          timestamp: psurCase.createdAt?.toISOString() || new Date().toISOString(),
+          duration: "Complete",
+          summary: `${atoms.length} evidence records imported from your data files.`,
+          details: `The system analyzed and categorized ${atoms.length} records including complaints, incidents, and sales data. Each record has been validated and is ready for report generation.`,
+          dataUsed: Object.entries(typeCounts).map(([type, count]) => `${type} (${count})`),
+          findings: [
+            `${atoms.length} total records processed`,
+            `${Object.keys(typeCounts).length} different data types identified`,
+          ],
+        });
+      } else {
+        steps.push({
+          id: "awaiting-data",
+          title: "Waiting for Data",
+          status: "pending",
+          timestamp: new Date().toISOString(),
+          summary: "No evidence data uploaded yet. Upload your surveillance data to begin.",
+          details: "To generate your PSUR report, you'll need to upload your post-market surveillance data including sales volumes, complaints, incidents, and any field safety actions.",
+          dataUsed: [],
+          findings: ["No data uploaded yet"],
+        });
+      }
+
+      // Step 2+: Process trace entries into readable steps
+      const traceSteps = traces.slice(0, 10).map((trace, index) => {
+        const eventType = trace.eventType || "UNKNOWN";
+        let title = eventType.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, l => l.toUpperCase());
+        let status: "completed" | "running" | "pending" | "failed" = "completed";
+
+        if (trace.decision === "REJECT" || trace.decision === "FAIL") {
+          status = "failed";
+        } else if (eventType.includes("STARTED") || eventType.includes("RUNNING")) {
+          status = "running";
+        }
+
+        // Make titles human-friendly
+        const titleMap: Record<string, string> = {
+          "EVIDENCE_EXTRACTION": "Analyzed Data Sources",
+          "SLOT_GENERATION": "Generated Report Section",
+          "COMPLIANCE_CHECK": "Verified Regulatory Compliance",
+          "SLOT_QUALIFIED": "Section Ready for Review",
+          "OBLIGATION_SATISFIED": "Met Regulatory Requirement",
+          "TREND_ANALYSIS": "Analyzed Trends",
+          "SUMMARY_GENERATED": "Created Summary",
+        };
+        title = titleMap[eventType] || title;
 
         return {
-          id: mainTrace.traceId || mainTrace.id.toString(),
-          stepNumber: index + 1,
-          title: getHumanFriendlyTraceTitle(eventType, mainTrace.entityType),
-          category,
+          id: trace.traceId || `trace-${trace.id}`,
+          title,
           status,
-          timestamp: mainTrace.eventTimestamp?.toISOString() || new Date().toISOString(),
-          duration: calculateTraceDuration(traceGroup),
-          summary: mainTrace.humanSummary || generateTraceSummary(eventType, mainTrace),
-          details: {
-            whatHappened: generateTraceWhatHappened(mainTrace, traceGroup),
-            whyItMatters: generateTraceWhyItMatters(eventType),
-            dataUsed: extractTraceDataSources(mainTrace, atoms),
-            keyFindings: extractTraceFindings(traceGroup),
-            recommendations: extractTraceRecommendations(lastTrace),
-          },
-          confidence: 0.85,
+          timestamp: trace.eventTimestamp?.toISOString() || new Date().toISOString(),
+          summary: trace.humanSummary || `${title} for ${trace.entityType || "report section"}`,
+          details: trace.humanSummary || undefined,
+          dataUsed: trace.entityType ? [trace.entityType] : undefined,
+          findings: trace.decision ? [`Decision: ${trace.decision}`] : undefined,
         };
       });
 
-      // If no traces yet, provide initial status based on evidence atoms
-      if (steps.length === 0) {
-        if (atoms.length > 0) {
-          steps.push({
-            id: "data-ingestion",
-            stepNumber: 1,
-            title: "Evidence Data Loaded",
-            category: "data" as const,
-            status: "completed" as const,
-            timestamp: new Date().toISOString(),
-            duration: "Completed",
-            summary: `${atoms.length} evidence atoms have been imported and are ready for analysis.`,
-            details: {
-              whatHappened: `The system loaded ${atoms.length} evidence records from your uploaded files. These include complaints, incidents, sales data, and other post-market surveillance information.`,
-              whyItMatters: "This data forms the foundation of your PSUR. Each record will be analyzed, categorized, and used to generate compliant narratives.",
-              dataUsed: [{ name: "Evidence Atoms", records: atoms.length }],
-              keyFindings: [`${atoms.length} records loaded and validated`],
-              recommendations: ["Review the evidence coverage to ensure all required data types are present"],
-            },
-            confidence: 1.0,
-          });
-        } else {
-          steps.push({
-            id: "awaiting-data",
-            stepNumber: 1,
-            title: "Awaiting Evidence Data",
-            category: "data" as const,
-            status: "pending" as const,
-            timestamp: new Date().toISOString(),
-            duration: "-",
-            summary: "No evidence data has been uploaded yet. Upload your PMS data to begin.",
-            details: {
-              whatHappened: "The PSUR case has been created but no evidence data has been uploaded yet.",
-              whyItMatters: "Evidence data is required to generate compliant PSUR narratives. You'll need to upload sales data, complaints, incidents, and other post-market surveillance information.",
-              dataUsed: [],
-              keyFindings: ["No data uploaded"],
-              recommendations: ["Upload sales volume data", "Upload complaint records", "Upload incident reports"],
-            },
-            confidence: 0,
-          });
-        }
-      }
+      steps.push(...traceSteps);
 
-      res.json({ steps });
+      // Calculate summary
+      const completedCount = steps.filter(s => s.status === "completed").length;
+      const summary = {
+        totalSteps: steps.length,
+        completedSteps: completedCount,
+        status: completedCount === steps.length ? "completed" :
+          steps.some(s => s.status === "failed") ? "needs attention" :
+            steps.some(s => s.status === "running") ? "in progress" : "pending",
+      };
+
+      res.json({ steps, summary });
     } catch (error) {
       console.error("[GET /api/psur-cases/:id/workflow] Error:", error);
       res.status(500).json({ error: "Failed to fetch workflow data" });

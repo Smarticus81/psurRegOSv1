@@ -706,6 +706,7 @@ export default function SystemInstructionsPage() {
                                 <TabsContent value="preview" className="h-full m-0 p-0 outline-none bg-muted/5 overflow-y-auto">
                                     <div className="max-w-5xl mx-auto p-8">
                                         <TemplatePreview
+                                            instructionKey={selectedKey}
                                             template={editedTemplate}
                                             variables={selectedInstruction.variables}
                                         />

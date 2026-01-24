@@ -3,9 +3,12 @@ import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Eye, Sparkles, RotateCcw, Loader2, FileText } from "lucide-react";
+import { Eye, Sparkles, RotateCcw, Loader2, FileText, AlertCircle, Database } from "lucide-react";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 interface TemplatePreviewProps {
+    instructionKey: string;
     template: string;
     variables: string[];
 }
@@ -85,81 +88,12 @@ const SAMPLE_VALUES: Record<string, string> = {
     status: "APPROVED",
 };
 
-// Sample AI outputs for different prompt types
-const SAMPLE_OUTPUTS: Record<string, string> = {
-    default: `## Executive Summary
-
-During the reporting period (January 1, 2024 – December 31, 2024), the CardioMonitor Pro X3000 demonstrated consistent performance with an overall favorable benefit-risk profile.
-
-### Key Findings
-
-**Incident Summary:**
-- Total complaints received: 156
-- Serious incidents reported: 12
-- Field Safety Corrective Actions: 0
-
-**Trend Analysis:**
-The complaint rate decreased by 15% compared to the previous reporting period, indicating improved device reliability following the firmware update deployed in Q2 2024.
-
-**Benefit-Risk Conclusion:**
-Based on the analysis of 203 evidence records across all post-market data sources, the benefits of the CardioMonitor Pro X3000 continue to outweigh the identified risks. No new safety signals were detected that would alter the established benefit-risk profile.
-
-### Recommendations
-1. Continue routine post-market surveillance activities
-2. Monitor complaint trends in upcoming quarters
-3. Complete ongoing PMCF study by Q4 2025`,
-
-    safety: `## Safety Analysis
-
-### Serious Incidents (n=12)
-
-During the reporting period, 12 serious incidents were reported to competent authorities:
-
-| Category | Count | Trend |
-|----------|-------|-------|
-| Device malfunction | 5 | ↓ Decreasing |
-| Sensor failure | 4 | → Stable |
-| Software error | 3 | ↓ Decreasing |
-
-### Root Cause Analysis
-All incidents were investigated per ISO 13485 requirements. Primary root causes identified:
-- Environmental factors (humidity): 42%
-- User error: 33%
-- Manufacturing variance: 25%
-
-### Corrective Actions
-No Field Safety Corrective Actions (FSCA) were required during this period. All issues were addressed through routine device replacements and user training updates.
-
-### Safety Conclusion
-The safety profile remains acceptable. The incident rate of 0.096% (12/12,450 units) is below the industry benchmark of 0.15%.`,
-
-    trend: `## Trend Analysis Report
-
-### Complaint Trend Summary
-
-**Overall Trend: DECREASING (-15%)**
-
-| Quarter | Complaints | Rate per 1000 |
-|---------|------------|---------------|
-| Q1 2024 | 48 | 3.9 |
-| Q2 2024 | 42 | 3.4 |
-| Q3 2024 | 35 | 2.8 |
-| Q4 2024 | 31 | 2.5 |
-
-### Contributing Factors
-The 15% decrease in complaints correlates with:
-1. Firmware update v2.3.1 (deployed March 2024)
-2. Enhanced user training materials
-3. Improved packaging to reduce transit damage
-
-### Forecast
-Based on current trends, complaint rates are projected to stabilize at approximately 2.2 per 1,000 units by Q2 2025.`,
-};
-
-export function TemplatePreview({ template, variables: providedVariables }: TemplatePreviewProps) {
+export function TemplatePreview({ instructionKey, template, variables: providedVariables }: TemplatePreviewProps) {
     const [values, setValues] = useState<Record<string, string>>({});
-    const [showOutput, setShowOutput] = useState(false);
+    const [previewOutput, setPreviewOutput] = useState<string | null>(null);
     const [isGenerating, setIsGenerating] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const { toast } = useToast();
 
     // Find all {variable} placeholders in the template
     const detectedVars = useMemo(() => {
@@ -181,48 +115,59 @@ export function TemplatePreview({ template, variables: providedVariables }: Temp
             newValues[v] = SAMPLE_VALUES[v] || SAMPLE_VALUES[v.toLowerCase()] || SAMPLE_VALUES[v.replace(/([A-Z])/g, '_$1').toLowerCase()] || "Sample value";
         });
         setValues(newValues);
+        setError(null);
     };
 
     // Clear all
     const clearAll = () => {
         setValues({});
-        setShowOutput(false);
+        setPreviewOutput(null);
+        setError(null);
     };
 
-    // Simulate generation
-    const generatePreview = () => {
+    // Call actual LLM API for generation
+    const generatePreview = async () => {
+        if (!allFilled) {
+            toast({
+                title: "Missing Information",
+                description: "Please fill in all blanks before generating the preview.",
+                variant: "destructive"
+            });
+            return;
+        }
+
         setIsGenerating(true);
-        setShowOutput(false);
+        setError(null);
 
-        // Simulate AI generation delay
-        setTimeout(() => {
+        try {
+            const response = await apiRequest("POST", `/api/system-instructions/${instructionKey}/preview`, {
+                variables: values
+            });
+            const data = await response.json();
+            setPreviewOutput(data.output);
+        } catch (err: any) {
+            console.error("Preview generation failed:", err);
+            setError(err.message || "Failed to generate preview. Check if LLM API keys are configured.");
+            toast({
+                title: "Generation Failed",
+                description: err.message || "Failed to call AI service.",
+                variant: "destructive"
+            });
+        } finally {
             setIsGenerating(false);
-            setShowOutput(true);
-        }, 1500);
-    };
-
-    // Determine which sample output to show based on template content
-    const getSampleOutput = () => {
-        const templateLower = template.toLowerCase();
-        if (templateLower.includes("safety") || templateLower.includes("incident")) {
-            return SAMPLE_OUTPUTS.safety;
         }
-        if (templateLower.includes("trend") || templateLower.includes("analysis")) {
-            return SAMPLE_OUTPUTS.trend;
-        }
-        return SAMPLE_OUTPUTS.default;
     };
 
     return (
         <div className="h-full flex flex-col gap-4">
             {/* Explanation */}
-            <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
+            <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-4 border border-indigo-200 dark:border-indigo-800">
                 <div className="flex items-start gap-3">
-                    <Eye className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" />
+                    <Sparkles className="w-5 h-5 text-indigo-600 mt-0.5 shrink-0" />
                     <div>
-                        <h3 className="font-semibold text-blue-900 dark:text-blue-100">Preview AI Output</h3>
-                        <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
-                            Fill in the data below to see what the AI would generate. This helps you test how different inputs affect the final report.
+                        <h3 className="font-semibold text-indigo-900 dark:text-indigo-100">Live AI Preview</h3>
+                        <p className="text-sm text-indigo-700 dark:text-indigo-300 mt-1">
+                            Input actual values below to see the <strong>real AI response</strong>. This calls the live LLM service using your current template.
                         </p>
                     </div>
                 </div>
@@ -231,7 +176,7 @@ export function TemplatePreview({ template, variables: providedVariables }: Temp
             {/* Actions */}
             <div className="flex items-center gap-3 flex-wrap">
                 <Button onClick={fillWithSamples} variant="outline" size="sm" className="gap-2">
-                    <Sparkles className="w-4 h-4" />
+                    <Database className="w-4 h-4" />
                     Use Sample Data
                 </Button>
                 <Button onClick={clearAll} variant="ghost" size="sm" className="gap-2">
@@ -241,20 +186,20 @@ export function TemplatePreview({ template, variables: providedVariables }: Temp
 
                 <div className="flex-1" />
 
-                <span className="text-sm text-muted-foreground">
-                    {filledCount}/{variables.length} fields filled
+                <span className="text-sm text-muted-foreground mr-2">
+                    {filledCount}/{variables.length} fields ready
                 </span>
 
                 <Button
                     onClick={generatePreview}
                     disabled={!allFilled || isGenerating}
                     size="sm"
-                    className="gap-2"
+                    className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white"
                 >
                     {isGenerating ? (
                         <><Loader2 className="w-4 h-4 animate-spin" /> Generating...</>
                     ) : (
-                        <><FileText className="w-4 h-4" /> Preview Output</>
+                        <><Sparkles className="w-4 h-4" /> Generate Actual Preview</>
                     )}
                 </Button>
             </div>
@@ -262,7 +207,10 @@ export function TemplatePreview({ template, variables: providedVariables }: Temp
             <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {/* Left: Input fields */}
                 <div className="flex flex-col gap-3 overflow-hidden border rounded-lg p-4 bg-card">
-                    <h4 className="font-semibold text-sm border-b pb-2">Input Data</h4>
+                    <h4 className="font-semibold text-sm border-b pb-2 flex items-center justify-between">
+                        Input Data
+                        {allFilled && <Badge variant="secondary" className="bg-green-100 text-green-700 border-green-200">✓ Ready</Badge>}
+                    </h4>
 
                     <div className="flex-1 overflow-y-auto space-y-3 pr-1">
                         {variables.length === 0 ? (
@@ -276,14 +224,14 @@ export function TemplatePreview({ template, variables: providedVariables }: Temp
                                     <Label className="text-xs font-medium flex items-center justify-between">
                                         <span className="capitalize">{v.replace(/_/g, ' ')}</span>
                                         {values[v]?.trim() && (
-                                            <span className="text-[10px] text-green-600 font-normal">✓</span>
+                                            <span className="text-[10px] text-green-600 font-normal">✓ Filled</span>
                                         )}
                                     </Label>
                                     <Input
                                         placeholder={SAMPLE_VALUES[v] || SAMPLE_VALUES[v.toLowerCase()] || `Enter ${v}`}
                                         value={values[v] || ""}
                                         onChange={(e) => setValues(prev => ({ ...prev, [v]: e.target.value }))}
-                                        className="h-9 text-sm"
+                                        className="h-9 text-sm focus-visible:ring-indigo-500"
                                     />
                                 </div>
                             ))
@@ -294,47 +242,90 @@ export function TemplatePreview({ template, variables: providedVariables }: Temp
                 {/* Right: Output preview */}
                 <div className="flex flex-col gap-3 overflow-hidden border rounded-lg p-4 bg-card">
                     <h4 className="font-semibold text-sm border-b pb-2">
-                        {showOutput ? "Generated Output" : "Output Preview"}
+                        AI Generated Output
                     </h4>
 
-                    <div className="flex-1 overflow-auto">
+                    <div className="flex-1 overflow-auto bg-gray-50 dark:bg-gray-900/50 rounded p-4">
                         {isGenerating ? (
                             <div className="h-full flex items-center justify-center text-muted-foreground">
                                 <div className="text-center">
-                                    <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3" />
-                                    <p className="text-sm">Generating preview...</p>
+                                    <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3 text-indigo-500" />
+                                    <p className="text-sm animate-pulse">Assistant is thinking...</p>
+                                    <p className="text-xs text-muted-foreground mt-2">Connecting to LLM and generating content</p>
                                 </div>
                             </div>
-                        ) : showOutput ? (
+                        ) : error ? (
+                            <div className="h-full flex items-center justify-center">
+                                <div className="text-center max-w-xs">
+                                    <AlertCircle className="w-10 h-10 mx-auto mb-3 text-red-500" />
+                                    <p className="text-sm font-semibold text-red-700">Error</p>
+                                    <p className="text-xs text-red-600 mt-1">{error}</p>
+                                    <Button size="sm" variant="outline" className="mt-4" onClick={generatePreview}>
+                                        Try Again
+                                    </Button>
+                                </div>
+                            </div>
+                        ) : previewOutput ? (
                             <div className="prose prose-sm dark:prose-invert max-w-none">
                                 <div
-                                    className="text-sm leading-relaxed whitespace-pre-wrap"
+                                    className="text-sm leading-relaxed whitespace-pre-wrap font-sans text-foreground"
                                     dangerouslySetInnerHTML={{
-                                        __html: getSampleOutput()
-                                            .replace(/^## (.+)$/gm, '<h2 class="text-lg font-bold mt-4 mb-2">$1</h2>')
-                                            .replace(/^### (.+)$/gm, '<h3 class="text-base font-semibold mt-3 mb-1">$1</h3>')
-                                            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                                        __html: previewOutput
+                                            .replace(/^# (.+)$/gm, '<h1 class="text-xl font-bold mt-4 mb-2 text-indigo-900 dark:text-indigo-100 border-b pb-1 font-serif">$1</h1>')
+                                            .replace(/^## (.+)$/gm, '<h2 class="text-lg font-bold mt-4 mb-2 text-indigo-800 dark:text-indigo-200">$1</h2>')
+                                            .replace(/^### (.+)$/gm, '<h3 class="text-base font-semibold mt-3 mb-1 text-slate-800 dark:text-slate-200">$1</h3>')
+                                            .replace(/\*\*(.+?)\*\*/g, '<strong class="font-medium text-slate-900 dark:text-slate-100">$1</strong>')
+                                            .replace(/^- (.+)$/gm, '<li class="ml-4 list-disc">$1</li>')
                                             .replace(/\n/g, '<br>')
                                     }}
                                 />
+                                <div className="mt-8 pt-4 border-t border-dashed text-[10px] text-muted-foreground flex justify-between">
+                                    <span>AI GENERATED CONTENT</span>
+                                    <span>{new Date().toLocaleString()}</span>
+                                </div>
                             </div>
                         ) : (
                             <div className="h-full flex items-center justify-center text-muted-foreground">
-                                <div className="text-center p-6">
-                                    <FileText className="w-10 h-10 mx-auto mb-3 opacity-30" />
-                                    <p className="text-sm font-medium">No preview yet</p>
+                                <div className="text-center p-6 border-2 border-dashed rounded-lg">
+                                    <FileText className="w-10 h-10 mx-auto mb-3 opacity-20" />
+                                    <p className="text-sm font-medium">Ready to Generate</p>
                                     <p className="text-xs mt-1">
                                         {allFilled
-                                            ? 'Click "Preview Output" to see what the AI would generate'
-                                            : 'Fill in all fields first, then click "Preview Output"'
+                                            ? 'Click "Generate Actual Preview" to call the LLM'
+                                            : 'Fill the data fields on the left to activate preview'
                                         }
                                     </p>
                                 </div>
                             </div>
                         )}
                     </div>
+
+                    {previewOutput && (
+                        <div className="pt-2 flex justify-end">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-[10px] h-7"
+                                onClick={() => {
+                                    navigator.clipboard.writeText(previewOutput);
+                                    toast({ title: "Copied to clipboard" });
+                                }}
+                            >
+                                Copy Content
+                            </Button>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
+    );
+}
+
+// Internal helper for Badge if not available
+function Badge({ children, variant, className }: any) {
+    return (
+        <span className={`px-2 py-0.5 rounded text-[10px] font-medium border ${className}`}>
+            {children}
+        </span>
     );
 }

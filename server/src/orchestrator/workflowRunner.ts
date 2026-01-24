@@ -1,6 +1,6 @@
 import { db } from "../../db";
 import { storage } from "../../storage";
-import { loadTemplate, getSlots, getEffectiveMapping, getTemplateDefaults, getEffectiveSlots, type Template } from "../templateStore";
+import { loadTemplate, loadFormTemplate, isTemplateFormBased, getSlots, getEffectiveMapping, getTemplateDefaults, getEffectiveSlots, type Template, type FormTemplate } from "../templateStore";
 import { cacheCompiledDocument, initLiveContent, finishLiveContent } from "../../routes";
 import { lintTemplate, type LintResult } from "../templates/lintTemplates";
 import { listEvidenceAtomsByCase, EvidenceAtomRecord } from "../services/evidenceStore";
@@ -316,6 +316,8 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
   let psurRef = "";
   let version = 1;
   let template: Template | null = null;
+  let formTemplate: FormTemplate | null = null;
+  let isFormBased = false;
   let evidenceAtomsData: EvidenceAtomRecord[] = [];
   let slotProposalsData: SlotProposalOutput[] = [];
   let qualificationBlocked = false;
@@ -400,76 +402,111 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
             lintResult.warnings.map(w => w.message).join(", "));
         }
 
-        // 1b. Load template structure (now guaranteed valid)
-        template = loadTemplate(templateId);
-        const effectiveSlots = getSlots(template);
-        const effectiveMapping = getEffectiveMapping(template);
-
-        // 1c. Qualify against GRKB obligations from DB
-        const qualReport = await qualifyTemplateAgainstGrkb(
-          templateId,
-          jurisdictions,
-          "PSUR",
-          effectiveSlots,
-          effectiveMapping
-        );
-
-        // Persist qualification report
-        await db.insert(qualificationReports).values({
-          psurCaseId: existingCaseId || null,
-          templateId,
-          jurisdictions,
-          status: qualReport.status,
-          slotCount: qualReport.slotCount,
-          mappingCount: qualReport.mappingCount,
-          mandatoryObligationsTotal: qualReport.mandatoryObligationsTotal,
-          mandatoryObligationsFound: qualReport.mandatoryObligationsFound,
-          missingObligations: qualReport.missingObligations,
-          constraints: qualReport.constraints,
-          blockingErrors: qualReport.blockingErrors,
-          validatedAt: new Date(),
-        }).onConflictDoNothing();
-
-        // Check qualification status
-        if (qualReport.status === "BLOCKED") {
-          steps[0].status = "BLOCKED";
-          steps[0].endedAt = new Date().toISOString();
-          steps[0].error = qualReport.blockingErrors.join("; ");
-          steps[0].summary = {
-            slotCount: qualReport.slotCount,
-            obligationsFound: qualReport.mandatoryObligationsFound,
-            status: "BLOCKED",
-          };
-          steps[0].report = qualReport;
-          qualificationBlocked = true;
-
-          // Log template blocked
-          if (traceCtx) {
-            const blockResult = await TraceEvents.templateBlocked(traceCtx, 1, qualReport.blockingErrors);
-            traceCtx = blockResult.ctx;
-          }
-        } else {
+        // Detect if this is a form-based template
+        isFormBased = lintResult.templateType === "form-based";
+        
+        if (isFormBased) {
+          // Form-based templates don't use GRKB slot/mapping structure
+          // Load form template and skip GRKB qualification
+          formTemplate = loadFormTemplate(templateId);
+          
+          console.log(`[WorkflowRunner] Form-based template detected: ${templateId}`);
+          console.log(`[WorkflowRunner] Form sections:`, Object.keys(formTemplate.sections));
+          
           steps[0].status = "COMPLETED";
           steps[0].endedAt = new Date().toISOString();
           if (psurCaseId) emitRuntimeEvent(psurCaseId, { kind: "step.completed", ts: Date.now(), psurCaseId, step: 1, name: steps[0].name });
           steps[0].summary = {
-            slotCount: qualReport.slotCount,
-            mappingCount: qualReport.mappingCount,
             templateId,
-            obligationsCount: qualReport.mandatoryObligationsTotal,
+            templateType: "form-based",
+            formId: formTemplate.form.form_id,
+            formTitle: formTemplate.form.form_title,
+            sectionCount: Object.keys(formTemplate.sections).length,
           };
-          steps[0].report = qualReport;
 
-          // Log template qualified
+          // Log template validated for form-based
           if (traceCtx) {
             const qualResult = await TraceEvents.templateQualified(traceCtx, 1, {
-              slotCount: qualReport.slotCount,
-              mappingCount: qualReport.mappingCount,
-              obligationsTotal: qualReport.mandatoryObligationsTotal,
-              obligationsFound: qualReport.mandatoryObligationsFound,
+              slotCount: 0,
+              mappingCount: 0,
+              obligationsTotal: 0,
+              obligationsFound: 0,
             });
             traceCtx = qualResult.ctx;
             await markStepCompleted(psurCaseId || 0, 1);
+          }
+        } else {
+          // 1b. Load slot-based template structure (now guaranteed valid)
+          template = loadTemplate(templateId);
+          const effectiveSlots = getSlots(template);
+          const effectiveMapping = getEffectiveMapping(template);
+
+          // 1c. Qualify against GRKB obligations from DB
+          const qualReport = await qualifyTemplateAgainstGrkb(
+            templateId,
+            jurisdictions,
+            "PSUR",
+            effectiveSlots,
+            effectiveMapping
+          );
+
+          // Persist qualification report
+          await db.insert(qualificationReports).values({
+            psurCaseId: existingCaseId || null,
+            templateId,
+            jurisdictions,
+            status: qualReport.status,
+            slotCount: qualReport.slotCount,
+            mappingCount: qualReport.mappingCount,
+            mandatoryObligationsTotal: qualReport.mandatoryObligationsTotal,
+            mandatoryObligationsFound: qualReport.mandatoryObligationsFound,
+            missingObligations: qualReport.missingObligations,
+            constraints: qualReport.constraints,
+            blockingErrors: qualReport.blockingErrors,
+            validatedAt: new Date(),
+          }).onConflictDoNothing();
+
+          // Check qualification status
+          if (qualReport.status === "BLOCKED") {
+            steps[0].status = "BLOCKED";
+            steps[0].endedAt = new Date().toISOString();
+            steps[0].error = qualReport.blockingErrors.join("; ");
+            steps[0].summary = {
+              slotCount: qualReport.slotCount,
+              obligationsFound: qualReport.mandatoryObligationsFound,
+              status: "BLOCKED",
+            };
+            steps[0].report = qualReport;
+            qualificationBlocked = true;
+
+            // Log template blocked
+            if (traceCtx) {
+              const blockResult = await TraceEvents.templateBlocked(traceCtx, 1, qualReport.blockingErrors);
+              traceCtx = blockResult.ctx;
+            }
+          } else {
+            steps[0].status = "COMPLETED";
+            steps[0].endedAt = new Date().toISOString();
+            if (psurCaseId) emitRuntimeEvent(psurCaseId, { kind: "step.completed", ts: Date.now(), psurCaseId, step: 1, name: steps[0].name });
+            steps[0].summary = {
+              slotCount: qualReport.slotCount,
+              mappingCount: qualReport.mappingCount,
+              templateId,
+              obligationsCount: qualReport.mandatoryObligationsTotal,
+            };
+            steps[0].report = qualReport;
+
+            // Log template qualified
+            if (traceCtx) {
+              const qualResult = await TraceEvents.templateQualified(traceCtx, 1, {
+                slotCount: qualReport.slotCount,
+                mappingCount: qualReport.mappingCount,
+                obligationsTotal: qualReport.mandatoryObligationsTotal,
+                obligationsFound: qualReport.mandatoryObligationsFound,
+              });
+              traceCtx = qualResult.ctx;
+              await markStepCompleted(psurCaseId || 0, 1);
+            }
           }
         }
       } catch (e: any) {
@@ -486,7 +523,13 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
         throw e;
       }
     } else if (existingCaseId) {
-      template = loadTemplate(templateId);
+      // If skipping step 1, we still need to load the template
+      isFormBased = isTemplateFormBased(templateId);
+      if (isFormBased) {
+        formTemplate = loadFormTemplate(templateId);
+      } else {
+        template = loadTemplate(templateId);
+      }
     }
 
     // ==================== STEP 2: CREATE CASE ====================
@@ -1509,8 +1552,14 @@ export async function getWorkflowResultForCase(psurCaseId: number): Promise<Orch
   const kernelStatus = await getKernelStatus(psurCase.jurisdictions || []);
   let template: Template | null = null;
   try {
-    template = loadTemplate(psurCase.templateId);
-    kernelStatus.templateSlots = getSlots(template).length;
+    // Check if it's a form-based template
+    if (isTemplateFormBased(psurCase.templateId)) {
+      // Form-based templates don't have slots
+      kernelStatus.templateSlots = 0;
+    } else {
+      template = loadTemplate(psurCase.templateId);
+      kernelStatus.templateSlots = getSlots(template).length;
+    }
   } catch {
     kernelStatus.templateSlots = 0;
   }

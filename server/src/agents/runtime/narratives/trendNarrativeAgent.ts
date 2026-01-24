@@ -6,12 +6,9 @@
  */
 
 import { BaseNarrativeAgent, NarrativeInput } from "./baseNarrativeAgent";
-import { PROMPT_TEMPLATES } from "../../llmService";
 
 export class TrendNarrativeAgent extends BaseNarrativeAgent {
   protected readonly sectionType = "TREND";
-
-  protected readonly systemPrompt = PROMPT_TEMPLATES.TREND_NARRATIVE_SYSTEM;
 
   constructor() {
     super(

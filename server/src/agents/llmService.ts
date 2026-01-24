@@ -1426,6 +1426,41 @@ let promptsInitialized = false;
 let lastRefreshed = 0;
 const REFRESH_INTERVAL_MS = 60000; // 1 minute
 
+/**
+ * Get a prompt template by key from DB (with caching)
+ * Returns null if not found in DB (caller should use default)
+ */
+export async function getPromptTemplate(key: string): Promise<string | null> {
+  // Ensure prompts are initialized
+  await initializePrompts();
+  
+  // Check if we have it in the loaded templates
+  const template = (PROMPT_TEMPLATES as any)[key];
+  
+  // If it exists and is different from the default, it's from DB
+  const defaultTemplate = (DEFAULT_PROMPT_TEMPLATES as any)[key];
+  
+  if (template && template !== defaultTemplate) {
+    return template;
+  }
+  
+  // Try direct DB lookup for keys not in defaults
+  try {
+    const { db } = await import("../../db");
+    const { systemInstructions } = await import("@shared/schema");
+    const { eq } = await import("drizzle-orm");
+    
+    const result = await db.select().from(systemInstructions).where(eq(systemInstructions.key, key));
+    if (result.length > 0) {
+      return result[0].template;
+    }
+  } catch (e) {
+    // DB not available, use defaults
+  }
+  
+  return null;
+}
+
 export async function initializePrompts(force = false) {
   // Simple debounce/cache check
   if (promptsInitialized && !force && Date.now() - lastRefreshed < REFRESH_INTERVAL_MS) {

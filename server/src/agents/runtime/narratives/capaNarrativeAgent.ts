@@ -6,12 +6,9 @@
  */
 
 import { BaseNarrativeAgent, NarrativeInput } from "./baseNarrativeAgent";
-import { PROMPT_TEMPLATES } from "../../llmService";
 
 export class CAPANarrativeAgent extends BaseNarrativeAgent {
   protected readonly sectionType = "CAPA";
-
-  protected readonly systemPrompt = PROMPT_TEMPLATES.CAPA_NARRATIVE_SYSTEM;
 
   constructor() {
     super(

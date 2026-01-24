@@ -6,12 +6,9 @@
  */
 
 import { BaseNarrativeAgent, NarrativeInput } from "./baseNarrativeAgent";
-import { PROMPT_TEMPLATES } from "../../llmService";
 
 export class SafetyNarrativeAgent extends BaseNarrativeAgent {
   protected readonly sectionType = "SAFETY";
-
-  protected readonly systemPrompt = PROMPT_TEMPLATES.SAFETY_NARRATIVE_SYSTEM;
 
   constructor() {
     super(

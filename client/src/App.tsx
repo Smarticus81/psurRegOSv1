@@ -13,8 +13,8 @@ import Instructions from "@/pages/instructions";
 import GrkbView from "@/pages/grkb-view";
 import AgentSystem from "@/pages/agent-system";
 import SystemInstructions from "@/pages/system-instructions";
-import DecisionTraces from "@/pages/decision-traces";
-import { LayoutDashboard, Settings, Info, Globe, Cpu, ClipboardList, Brain, ShieldCheck } from "lucide-react";
+import ContentTraces from "@/pages/content-traces";
+import { LayoutDashboard, Settings, Info, Globe, Cpu, Brain, ShieldCheck, BarChart3 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 function Navigation() {
@@ -22,7 +22,7 @@ function Navigation() {
 
   const navItems = [
     { href: "/psur", icon: LayoutDashboard, label: "Wizard" },
-    { href: "/traces", icon: ClipboardList, label: "Traces" },
+    { href: "/content-traces", icon: BarChart3, label: "Content" },
     { href: "/system-instructions", icon: Brain, label: "Prompts" },
     { href: "/grkb", icon: Globe, label: "GRKB" },
     { href: "/instructions", icon: Info, label: "Docs" },
@@ -108,7 +108,7 @@ function Router() {
           }}
         </Route>
         <Route path="/psur" component={PsurWizard} />
-        <Route path="/traces" component={DecisionTraces} />
+        <Route path="/content-traces" component={ContentTraces} />
         <Route path="/grkb" component={GrkbView} />
         <Route path="/agent-system" component={AgentSystem} />
         <Route path="/system-instructions" component={SystemInstructions} />

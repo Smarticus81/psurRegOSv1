@@ -567,7 +567,7 @@ export class DocumentAnalyzerAgent extends BaseAgent<DocumentAnalysisInput, Docu
         ],
         config: {
           provider: "anthropic",
-          model: "claude-3-5-sonnet-20240620",
+          model: "claude-sonnet-4-20250514",
           temperature: 0.1,
           maxTokens: 4096,
         },

@@ -1,19 +1,14 @@
 /**
  * Executive Summary Narrative Agent
  * 
- * SOTA agent for generating the Executive Summary section.
+ * Generates the Executive Summary section using 3-layer prompt architecture.
  * Synthesizes ALL PSUR data into high-level conclusions.
  */
 
 import { BaseNarrativeAgent, NarrativeInput } from "./baseNarrativeAgent";
-import { PROMPT_TEMPLATES } from "../../llmService";
 
 export class ExecSummaryNarrativeAgent extends BaseNarrativeAgent {
   protected readonly sectionType = "EXEC_SUMMARY";
-
-  protected get systemPrompt(): string {
-    return PROMPT_TEMPLATES.EXEC_SUMMARY_SYSTEM;
-  }
 
   constructor() {
     super(

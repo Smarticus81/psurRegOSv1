@@ -16,6 +16,13 @@ import {
   TraceContext, 
   TraceEventInput,
 } from "../services/decisionTraceService";
+import { 
+  traceContentElement,
+  traceContentBatch,
+  ContentTraceInput,
+  ContentType,
+  CalculationType,
+} from "../services/contentTraceService";
 import { DecisionTraceEventType } from "@shared/schema";
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -470,6 +477,91 @@ export abstract class BaseAgent<TInput = unknown, TOutput = unknown> {
   protected addWarning(warning: string): void {
     this.warnings.push(warning);
     console.warn(`[${this.agentId}] Warning: ${warning}`);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // CONTENT TRACING (Granular element-level tracing)
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Trace a single content element (sentence, paragraph, table cell, etc.)
+   */
+  protected async traceContent(input: {
+    slotId: string;
+    slotTitle?: string;
+    contentType: ContentType;
+    contentId: string;
+    contentIndex: number;
+    contentPreview: string;
+    rationale: string;
+    methodology: string;
+    standardReference?: string;
+    evidenceType?: string;
+    atomIds?: string[];
+    sourceDocument?: string;
+    obligationId?: string;
+    obligationTitle?: string;
+    jurisdictions?: string[];
+    calculationType?: CalculationType;
+    calculationFormula?: string;
+    calculationInputs?: Record<string, unknown>;
+  }): Promise<void> {
+    if (!this.context?.psurCaseId) {
+      console.warn(`[${this.agentId}] Cannot trace content - no psurCaseId`);
+      return;
+    }
+
+    try {
+      await traceContentElement({
+        psurCaseId: this.context.psurCaseId,
+        ...input,
+        agentId: this.agentId,
+        agentName: this.config.name,
+      });
+    } catch (error) {
+      console.error(`[${this.agentId}] Failed to trace content:`, error);
+    }
+  }
+
+  /**
+   * Trace multiple content elements in batch (more efficient)
+   */
+  protected async traceContentBatch(items: Array<{
+    slotId: string;
+    slotTitle?: string;
+    contentType: ContentType;
+    contentId: string;
+    contentIndex: number;
+    contentPreview: string;
+    rationale: string;
+    methodology: string;
+    standardReference?: string;
+    evidenceType?: string;
+    atomIds?: string[];
+    sourceDocument?: string;
+    obligationId?: string;
+    obligationTitle?: string;
+    jurisdictions?: string[];
+    calculationType?: CalculationType;
+    calculationFormula?: string;
+    calculationInputs?: Record<string, unknown>;
+  }>): Promise<void> {
+    if (!this.context?.psurCaseId) {
+      console.warn(`[${this.agentId}] Cannot trace content batch - no psurCaseId`);
+      return;
+    }
+
+    try {
+      const inputs = items.map(item => ({
+        psurCaseId: this.context!.psurCaseId,
+        ...item,
+        agentId: this.agentId,
+        agentName: this.config.name,
+      }));
+      await traceContentBatch(inputs);
+    } catch (error) {
+      console.error(`[${this.agentId}] Failed to trace content batch:`, error);
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════════

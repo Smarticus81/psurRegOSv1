@@ -878,6 +878,76 @@ export const decisionTraceSummaries = pgTable("decision_trace_summaries", {
   lastUpdatedAt: timestamp("last_updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// CONTENT TRACING - Ultra-granular tracing of EVERY PSUR content element
+// ═══════════════════════════════════════════════════════════════════════════════
+// Traces individual content elements: sentences, table cells, calculations, entries, conclusions, etc.
+// Each trace captures the complete decision rationale with regulatory/evidence linkage
+
+export const contentTraces = pgTable("content_traces", {
+  id: serial("id").primaryKey(),
+  
+  // Linking
+  psurCaseId: integer("psur_case_id").notNull().references(() => psurCases.id, { onDelete: "cascade" }),
+  slotId: text("slot_id").notNull(), // Which slot this content belongs to
+  slotTitle: text("slot_title"),
+  
+  // Content Identification
+  contentType: text("content_type").notNull(), // "sentence", "paragraph", "table_row", "table_cell", "calculation", "entry", "chart_point", "conclusion", "list_item"
+  contentId: text("content_id").notNull(), // Unique ID for this content element
+  contentIndex: integer("content_index").notNull(), // Position within slot (e.g., 3rd paragraph, row 2 cell 5)
+  contentPreview: text("content_preview").notNull(), // First 500 chars of actual content
+  
+  // Decision Rationale
+  rationale: text("rationale").notNull(), // Plain English explanation of WHY this content was created
+  methodology: text("methodology").notNull(), // HOW the decision was made (e.g., "averaged 3 complaint records", "calculated as (numerator/denominator)*100")
+  standardReference: text("standard_reference"), // Regulatory standard or requirement being met (e.g., "MDR Article 86(1)")
+  
+  // Evidence & Sources
+  evidenceType: text("evidence_type"), // Type of evidence used (e.g., "complaint_records", "sales_data", "clinical_observations")
+  atomIds: text("atom_ids").array().default(sql`ARRAY[]::text[]`), // Array of evidence atom IDs supporting this content
+  sourceDocument: text("source_document"), // Reference to source file/document (e.g., "complaint_data_2024.csv")
+  dataSourceId: integer("data_source_id").references(() => dataSources.id, { onDelete: "set null" }),
+  
+  // Regulatory Linkage
+  obligationId: text("obligation_id"), // GRKB obligation this content satisfies
+  obligationTitle: text("obligation_title"),
+  jurisdictions: text("jurisdictions").array().default(sql`ARRAY[]::text[]`),
+  
+  // Calculation Details (if applicable)
+  calculationType: text("calculation_type"), // "average", "sum", "percentage", "count", "formula", "aggregation", etc.
+  calculationFormula: text("calculation_formula"), // Actual formula used (e.g., "(42+38+45)/3")
+  calculationInputs: jsonb("calculation_inputs"), // {value1: 42, value2: 38, value3: 45, result: 41.67}
+  
+  // Agent Information
+  agentId: text("agent_id").notNull(), // Which agent made the decision (e.g., "narrative_agent_v1", "table_filler_agent")
+  agentName: text("agent_name"), // Human-readable agent name
+  
+  // Timestamp and Chain
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  contentHash: text("content_hash").notNull(), // SHA256 of content for integrity
+  
+  // Queryability Enhancement
+  searchableText: text("searchable_text"), // Concatenated text for NL search: rationale + methodology + evidence types
+}, (table) => ({
+  psurCaseIdIdx: index("content_trace_psur_case_id_idx").on(table.psurCaseId),
+  slotIdIdx: index("content_trace_slot_id_idx").on(table.slotId),
+  contentTypeIdx: index("content_trace_content_type_idx").on(table.contentType),
+  obligationIdIdx: index("content_trace_obligation_id_idx").on(table.obligationId),
+  agentIdIdx: index("content_trace_agent_id_idx").on(table.agentId),
+  searchableIdx: index("content_trace_searchable_idx").on(table.searchableText),
+  createdAtIdx: index("content_trace_created_at_idx").on(table.createdAt),
+}));
+
+// Schemas for content traces
+export const insertContentTraceSchema = createInsertSchema(contentTraces).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type ContentTrace = typeof contentTraces.$inferSelect;
+export type InsertContentTrace = z.infer<typeof insertContentTraceSchema>;
+
 export const insertDecisionTraceSummarySchema = createInsertSchema(decisionTraceSummaries).omit({
   id: true,
   lastUpdatedAt: true,

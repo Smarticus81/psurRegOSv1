@@ -485,7 +485,7 @@ import {
   normalizeSalesVolumeRow,
 } from "./evidence/normalize";
 import { EVIDENCE_DEFINITIONS } from "@shared/schema";
-import { loadTemplate, listTemplates, getTemplateDirsDebugInfo, getAllRequiredEvidenceTypes } from "./src/templateStore";
+import { loadTemplate, loadFormTemplate, isTemplateFormBased, listTemplates, getTemplateDirsDebugInfo, getAllRequiredEvidenceTypes } from "./src/templateStore";
 import { type EvidenceAtomData } from "./src/orchestrator/render/psurTableGenerator";
 import {
   renderPsurFromTemplate,
@@ -844,54 +844,392 @@ export async function registerRoutes(
     }
   });
 
-  // LLM-powered preview - generate actual AI output from template + sample data
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // LLM-POWERED PREVIEW - Smart agent-aware preview generation
+  // ═══════════════════════════════════════════════════════════════════════════════
+  
+  // Comprehensive sample data for all agent types
+  const AGENT_SAMPLE_DATA: Record<string, Record<string, string>> = {
+    // === NARRATIVE AGENT SAMPLE DATA ===
+    EXEC_SUMMARY: {
+      deviceName: "CardioMonitor Pro X3000",
+      deviceCode: "CMN-X3000-EU",
+      period: "January 1, 2024 – December 31, 2024",
+      riskClass: "Class IIb",
+      incidentCount: "47",
+      complaintCount: "156",
+      slotTitle: "Executive Summary",
+      slotRequirements: "Provide high-level overview of safety and performance conclusions",
+      templateGuidance: "Focus on key findings, benefit-risk status, and recommended actions",
+      evidenceSummary: "Analysis covers 203 evidence atoms from 5 sources: complaints database (156 records), MAUDE search (12 records), vigilance reports (23 records), PMCF studies (8 records), and sales data (4 records).",
+      evidenceRecords: "[ATOM-COMP-001] Complaint: Sensor malfunction, patient unharmed. [ATOM-COMP-002] Complaint: Display error during monitoring. [ATOM-INC-001] Serious incident: False alarm led to delayed treatment. [ATOM-PMCF-001] PMCF Study shows 99.2% accuracy rate.",
+    },
+    SAFETY: {
+      deviceName: "CardioMonitor Pro X3000",
+      slotTitle: "Safety Analysis",
+      slotRequirements: "Document all serious incidents and complaints with IMDRF coding",
+      templateGuidance: "Include root cause analysis and patient outcome summary",
+      evidenceSummary: "47 serious incidents reported, 156 total complaints. Top categories: sensor malfunction (34%), display errors (28%), connectivity issues (18%).",
+      evidenceRecords: "[ATOM-INC-001] Serious incident 2024-03-15: False alarm during surgery, IMDRF A0201. [ATOM-INC-002] Serious incident 2024-06-22: Device shutdown during monitoring, IMDRF A0701. [ATOM-COMP-045] Complaint: Intermittent sensor readings affecting diagnosis accuracy.",
+    },
+    TREND: {
+      deviceName: "CardioMonitor Pro X3000",
+      slotTitle: "Trend Analysis",
+      slotRequirements: "Statistical analysis per Article 88 requirements",
+      templateGuidance: "Include baseline rates, current rates, and signal detection conclusions",
+      evidenceSummary: "Complaint rate: 1.25/1000 units (baseline: 1.52/1000). Incident rate: 0.38/1000 units (baseline: 0.42/1000). No statistically significant increases detected.",
+      evidenceRecords: "[ATOM-TREND-001] Q1 2024: 38 complaints, 12 incidents. [ATOM-TREND-002] Q2 2024: 41 complaints, 11 incidents. [ATOM-TREND-003] Q3 2024: 39 complaints, 13 incidents. [ATOM-TREND-004] Q4 2024: 38 complaints, 11 incidents.",
+    },
+    DEVICE_SCOPE: {
+      deviceName: "CardioMonitor Pro X3000",
+      deviceCode: "CMN-X3000-EU",
+      riskClass: "Class IIb",
+      slotTitle: "Device Scope",
+      slotRequirements: "Technical device description and scope of PSUR",
+      templateGuidance: "Include UDI-DI, intended purpose, and any changes from previous PSUR",
+      evidenceSummary: "Device covered: CardioMonitor Pro X3000 cardiac monitoring system with Basic UDI-DI 123456789012. Intended for continuous cardiac monitoring in clinical and home settings.",
+      evidenceRecords: "[ATOM-DEV-001] UDI-DI: 123456789012, Model: X3000, Class IIb per Rule 11. [ATOM-DEV-002] Accessories: Lead set Model LS-100, Power adapter PA-50.",
+    },
+    PMS_ACTIVITY: {
+      deviceName: "CardioMonitor Pro X3000",
+      slotTitle: "PMS Activity Summary",
+      slotRequirements: "Document surveillance methodology and data sources",
+      templateGuidance: "Detail collection methods, frequencies, and QMS integration",
+      evidenceSummary: "PMS data collected from: internal complaints database (weekly), MAUDE search (monthly), literature review (quarterly), PMCF registry (ongoing). Total evidence atoms: 203.",
+      evidenceRecords: "[ATOM-PMS-001] Complaints database: 156 records, 100% completeness. [ATOM-PMS-002] MAUDE search: 12 potentially related events identified. [ATOM-PMS-003] Literature review: 23 publications screened, 8 included.",
+    },
+    FSCA: {
+      deviceName: "CardioMonitor Pro X3000",
+      slotTitle: "FSCA Summary",
+      slotRequirements: "Document all field safety corrective actions",
+      templateGuidance: "Include FSCA reference, scope, and effectiveness status",
+      evidenceSummary: "1 FSCA initiated during reporting period: FSCA-2024-CMN-001 (software update for display calibration). Affected 2,450 units across 12 EU countries. 98% completion rate.",
+      evidenceRecords: "[ATOM-FSCA-001] FSCA-2024-CMN-001: Software update v2.3.1 deployed 2024-05-15. Root cause: display calibration drift. [ATOM-FSCA-002] Effectiveness verification completed 2024-08-30, no recurrence observed.",
+    },
+    CAPA: {
+      deviceName: "CardioMonitor Pro X3000",
+      slotTitle: "CAPA Summary",
+      slotRequirements: "Document corrective and preventive actions",
+      templateGuidance: "Include root cause, actions, and effectiveness verification",
+      evidenceSummary: "3 CAPAs opened during period, 2 closed. CAPA-2024-001: Sensor calibration procedure update (closed, effective). CAPA-2024-002: Supplier quality audit (closed, effective). CAPA-2024-003: Software validation enhancement (ongoing).",
+      evidenceRecords: "[ATOM-CAPA-001] CAPA-2024-001: Root cause - inadequate calibration frequency. Corrective action: Updated WI-CAL-005 to require monthly calibration. [ATOM-CAPA-002] CAPA-2024-002: Supplier audit revealed process gaps, implemented enhanced incoming inspection.",
+    },
+    CLINICAL: {
+      deviceName: "CardioMonitor Pro X3000",
+      slotTitle: "Clinical Evidence Review",
+      slotRequirements: "Literature review and PMCF summary",
+      templateGuidance: "Include search methodology, key findings, and conclusions",
+      evidenceSummary: "Literature search: PubMed, EMBASE, Cochrane (Jan-Dec 2024). 127 articles screened, 23 relevant publications identified. PMCF registry: 1,247 patients enrolled, interim analysis completed.",
+      evidenceRecords: "[ATOM-LIT-001] Smith et al. 2024, J Cardiol: CardioMonitor accuracy 99.1% vs reference standard. [ATOM-LIT-002] Johnson et al. 2024, Med Device: Meta-analysis shows equivalent performance to predicate devices. [ATOM-PMCF-001] PMCF Study CMN-001: 30-day endpoint met, no safety signals.",
+    },
+    BENEFIT_RISK: {
+      deviceName: "CardioMonitor Pro X3000",
+      deviceInfo: "Class IIb cardiac monitoring device for clinical and home use",
+      slotTitle: "Benefit-Risk Assessment",
+      slotRequirements: "Balanced analysis of benefits vs risks",
+      templateGuidance: "Conclude on whether benefit-risk remains favorable",
+      evidenceSummary: "Benefits: 99.2% accuracy in arrhythmia detection, continuous monitoring capability, reduced hospital readmissions. Risks: 47 serious incidents (0.38/1000), 156 complaints (1.25/1000). No deaths or permanent injuries.",
+      evidenceRecords: "[ATOM-BEN-001] Clinical benefit: Early detection reduced adverse cardiac events by 34% vs no monitoring. [ATOM-RISK-001] Risk profile: All incidents were non-serious or resolved without permanent harm. [ATOM-BR-001] Benefit-risk conclusion: Favorable, benefits significantly outweigh known risks.",
+      complaintCount: "156",
+      incidentCount: "47",
+      fscaCount: "1",
+      seriousOutcomes: "0 deaths, 2 serious injuries (resolved)",
+      clinicalSummary: "Clinical studies demonstrate 99.2% diagnostic accuracy with established safety profile",
+      riskSummary: "Risk profile unchanged from previous assessment. Known risks adequately mitigated through labeling and training.",
+    },
+    CONCLUSION: {
+      deviceName: "CardioMonitor Pro X3000",
+      slotTitle: "PSUR Conclusions",
+      slotRequirements: "Summary conclusions and action items",
+      templateGuidance: "State overall conclusions and path forward",
+      evidenceSummary: "Overall: Device maintains favorable benefit-risk profile. No new safety signals detected. 1 FSCA completed successfully. PMCF ongoing with positive interim results. Next PSUR due: January 2026.",
+      evidenceRecords: "[ATOM-CON-001] Safety conclusion: No significant changes to known risk profile. [ATOM-CON-002] Performance conclusion: Clinical effectiveness maintained per PMCF data. [ATOM-CON-003] Action: Continue PMS per plan, complete CAPA-2024-003 by Q2 2025.",
+    },
+
+    // === TABLE AGENT SAMPLE DATA ===
+    TABLE: {
+      tableType: "Serious Incidents Summary",
+      columns: "Incident ID | Date | Description | IMDRF Code | Patient Outcome | Root Cause | Status",
+      evidenceData: "[ATOM-INC-001] INC-2024-001, 2024-03-15, False alarm during surgery, A0201, No harm, Software issue, Closed\n[ATOM-INC-002] INC-2024-002, 2024-06-22, Device shutdown, A0701, Monitoring interrupted, Power supply fault, Closed\n[ATOM-INC-003] INC-2024-003, 2024-09-10, Sensor detachment, A0601, Minor skin irritation, Adhesive failure, Closed",
+    },
+    COMPLAINTS_TABLE: {
+      tableType: "Complaints Summary",
+      columns: "Complaint ID | Date Received | Category | Severity | Description | Investigation Status | Resolution",
+      evidenceData: "Multiple complaint records from CardioMonitor Pro X3000 users across EU markets during 2024 reporting period.",
+    },
+    SALES_TABLE: {
+      tableType: "Sales and Distribution Summary",
+      columns: "Region | Units Sold | Patient Exposure | Complaint Rate | Incident Rate",
+      evidenceData: "EU Total: 124,800 units. Germany: 34,200. France: 28,500. UK: 22,100. Italy: 18,400. Spain: 12,600. Other EU: 9,000.",
+    },
+    CAPA_TABLE: {
+      tableType: "CAPA Summary Table",
+      columns: "CAPA ID | Type | Trigger | Root Cause | Actions | Status | Effectiveness",
+      evidenceData: "CAPA-2024-001: Corrective, Complaint trend, Calibration drift, Updated procedure, Closed, Verified effective\nCAPA-2024-002: Preventive, Supplier audit, Process gaps, Enhanced inspection, Closed, Verified effective\nCAPA-2024-003: Corrective, Software defect, Validation gap, Enhanced testing, Open, Pending",
+    },
+
+    // === CHART AGENT SAMPLE DATA ===
+    CHART: {
+      chartTitle: "Complaint Distribution by Category (2024)",
+      deviceCode: "CMN-X3000-EU",
+      periodStart: "2024-01-01",
+      periodEnd: "2024-12-31",
+      dataPointCount: "156",
+      categoryCount: "6",
+      regionCount: "12",
+      timePointCount: "12",
+      baselineValue: "1.52 per 1000 units",
+      evidenceData: "Sensor malfunction: 53 (34%), Display errors: 44 (28%), Connectivity issues: 28 (18%), Battery problems: 16 (10%), Accessory issues: 10 (6%), Other: 5 (3%)",
+    },
+
+    // === INGESTION AGENT SAMPLE DATA ===
+    DOCUMENT_ANALYSIS: {
+      filename: "complaints_report_2024.xlsx",
+      documentType: "Excel Spreadsheet",
+      tableCount: "3",
+      sectionCount: "5",
+      documentSummary: "Document contains customer complaint data with columns for complaint ID, date, category, severity, description, and resolution status.",
+      ruleBasedResults: "Detected: complaint_id column (ID pattern), date_received (date format), severity (categorical: Low/Medium/High/Critical)",
+      availableEvidenceTypes: "complaints, incidents, sales, capa, literature, pmcf",
+    },
+    EVIDENCE_EXTRACTION: {
+      documentType: "Complaint Log",
+      sectionTitle: "Q4 2024 Complaints",
+      content: "Table with complaint records including IDs (CCR-2024-xxx), dates, descriptions, severity classifications, and investigation outcomes.",
+      evidenceType: "complaints",
+      requiredFields: "complaintId, dateReceived, description, severity, investigationStatus, resolution",
+    },
+    FIELD_MAPPING: {
+      sourceColumn: "Complaint Number",
+      sampleValues: '["CCR-2024-001", "CCR-2024-002", "CCR-2024-003"]',
+      targetFields: "complaintId, incidentId, capaId, referenceNumber, deviceSerialNumber",
+      evidenceType: "complaints",
+      targetField: "complaintId",
+      confidence: "0.95",
+      reasoning: "Column name suggests complaint identifier, values match CCR-YYYY-NNN pattern typical for complaint IDs",
+    },
+    SEVERITY_CLASSIFICATION: {
+      description: "Patient reported the device displayed incorrect heart rate reading of 180 BPM when actual rate was 72 BPM. Patient was concerned but no treatment was provided.",
+      deviceType: "Cardiac Monitor",
+      outcome: "No injury, patient concern only",
+    },
+    COMPLIANCE_CHECK: {
+      requirementText: "The PSUR shall include a summary of all serious incidents reported during the reporting period",
+      sourceArticle: "EU MDR Article 86.1(a)",
+      content: "During the reporting period, 47 serious incidents were reported. All incidents were investigated per the vigilance procedure. No deaths occurred. Two incidents resulted in hospitalization; both patients fully recovered.",
+    },
+
+    // === PERSONA DEFAULTS ===
+    PERSONA: {
+      deviceName: "CardioMonitor Pro X3000",
+      period: "2024",
+      context: "This is a preview of how the agent persona affects the AI's writing style and approach when generating PSUR content.",
+    },
+  };
+
+  // Detect agent category from instruction key
+  function detectAgentCategory(key: string): string {
+    const keyUpper = key.toUpperCase();
+    
+    // Narrative agents
+    if (keyUpper.includes("EXEC_SUMMARY") || keyUpper.includes("EXECSUMMARY")) return "EXEC_SUMMARY";
+    if (keyUpper.includes("SAFETY") && !keyUpper.includes("FSCA")) return "SAFETY";
+    if (keyUpper.includes("TREND")) return "TREND";
+    if (keyUpper.includes("DEVICE_SCOPE") || keyUpper.includes("DEVICESCOPE")) return "DEVICE_SCOPE";
+    if (keyUpper.includes("PMS_ACTIVITY") || keyUpper.includes("PMSACTIVITY")) return "PMS_ACTIVITY";
+    if (keyUpper.includes("FSCA") || keyUpper.includes("RECALL")) return "FSCA";
+    if (keyUpper.includes("CAPA") && !keyUpper.includes("TABLE")) return "CAPA";
+    if (keyUpper.includes("CLINICAL") || keyUpper.includes("LITERATURE") || keyUpper.includes("PMCF")) return "CLINICAL";
+    if (keyUpper.includes("BENEFIT_RISK") || keyUpper.includes("BENEFITRISK")) return "BENEFIT_RISK";
+    if (keyUpper.includes("CONCLUSION")) return "CONCLUSION";
+    
+    // Table agents
+    if (keyUpper.includes("TABLE")) {
+      if (keyUpper.includes("COMPLAINT")) return "COMPLAINTS_TABLE";
+      if (keyUpper.includes("SALES")) return "SALES_TABLE";
+      if (keyUpper.includes("CAPA")) return "CAPA_TABLE";
+      return "TABLE";
+    }
+    
+    // Chart agents
+    if (keyUpper.includes("CHART") || keyUpper.includes("HEATMAP")) return "CHART";
+    
+    // Ingestion agents
+    if (keyUpper.includes("DOCUMENT_ANALYSIS") || keyUpper.includes("DOCUMENTANALYZER")) return "DOCUMENT_ANALYSIS";
+    if (keyUpper.includes("EVIDENCE_EXTRACTION") || keyUpper.includes("EVIDENCEEXTRACTION")) return "EVIDENCE_EXTRACTION";
+    if (keyUpper.includes("FIELD_MAPPING") || keyUpper.includes("FIELDMAPPING")) return "FIELD_MAPPING";
+    if (keyUpper.includes("SEVERITY")) return "SEVERITY_CLASSIFICATION";
+    if (keyUpper.includes("COMPLIANCE")) return "COMPLIANCE_CHECK";
+    
+    // Persona agents (ends with Agent)
+    if (keyUpper.endsWith("AGENT")) return "PERSONA";
+    
+    // Narrative generation fallback
+    if (keyUpper.includes("NARRATIVE")) return "EXEC_SUMMARY";
+    
+    return "EXEC_SUMMARY"; // Default
+  }
+
+  // Get appropriate system prompt based on agent type
+  function getSystemPromptForAgent(key: string): string {
+    const keyUpper = key.toUpperCase();
+    
+    // Persona agents get a special system prompt
+    if (keyUpper.endsWith("AGENT") && !keyUpper.includes("SYSTEM") && !keyUpper.includes("TASK")) {
+      return `You are being previewed as an AI agent persona. Demonstrate your unique personality, expertise, and approach by responding to a sample PSUR-related task. Show how your specialized knowledge and tone would affect the output.
+
+Your response should demonstrate:
+1. Your specific area of expertise
+2. Your writing style and tone
+3. How you approach regulatory content
+4. Your attention to compliance details
+
+Provide a sample output that showcases your capabilities.`;
+    }
+    
+    // System prompts
+    if (keyUpper.includes("SYSTEM")) {
+      return "You are previewing a SYSTEM PROMPT. Generate a sample output that would result from using this system prompt with typical PSUR evidence data. Show the regulatory writing style and structure this prompt produces.";
+    }
+    
+    // Task prompts
+    if (keyUpper.includes("TASK")) {
+      return "You are previewing a TASK TEMPLATE. Generate the expected output that would result from this task template with the provided sample data. Demonstrate the format and content quality.";
+    }
+    
+    // Default
+    return "You are an expert medical device regulatory writer previewing a prompt configuration. Generate professional, compliant PSUR content based on the following template and sample data.";
+  }
+
   app.post("/api/system-instructions/:key/preview", async (req, res) => {
     try {
       const { key } = req.params;
-      const { variables } = req.body; // { variableName: value, ... }
+      const { variables: userVariables, template: passedTemplate } = req.body;
 
       const { db } = await import("./db");
       const { systemInstructions } = await import("@shared/schema");
       const { eq } = await import("drizzle-orm");
       const { complete, DEFAULT_PROMPT_TEMPLATES } = await import("./src/agents/llmService");
 
-      // Get the template
-      const instructions = await db.select().from(systemInstructions).where(eq(systemInstructions.key, key));
-      let template = instructions.length > 0 ? instructions[0].template : (DEFAULT_PROMPT_TEMPLATES as any)[key];
+      // Use the passed template (edited version) OR fall back to DB/defaults
+      let template = passedTemplate;
+      if (!template) {
+        const instructions = await db.select().from(systemInstructions).where(eq(systemInstructions.key, key));
+        template = instructions.length > 0 ? instructions[0].template : (DEFAULT_PROMPT_TEMPLATES as any)[key];
+      }
 
       if (!template) {
-        return res.status(404).json({ error: "Template not found" });
+        return res.status(404).json({ error: `Template not found for key: ${key}` });
       }
 
-      // Substitute variables into template
-      if (variables && typeof variables === "object") {
-        for (const [varName, value] of Object.entries(variables)) {
-          template = template.replace(new RegExp(`\\{${varName}\\}`, 'g'), String(value));
-        }
+      // Detect agent category and get appropriate sample data
+      const category = detectAgentCategory(key);
+      const defaultSamples = AGENT_SAMPLE_DATA[category] || AGENT_SAMPLE_DATA.EXEC_SUMMARY;
+
+      // Merge user-provided variables with defaults (user overrides defaults)
+      const variables = { ...defaultSamples, ...(userVariables || {}) };
+
+      // Substitute ALL variables into template
+      let processedTemplate = template;
+      for (const [varName, value] of Object.entries(variables)) {
+        processedTemplate = processedTemplate.replace(new RegExp(`\\{${varName}\\}`, 'g'), String(value));
       }
 
-      // Call LLM to generate output
-      const llmResponse = await complete({
-        messages: [
+      // Determine prompt structure based on type
+      const keyUpper = key.toUpperCase();
+      const isSystemPrompt = keyUpper.includes("SYSTEM");
+      const isPersona = keyUpper.endsWith("AGENT") && !keyUpper.includes("SYSTEM") && !keyUpper.includes("TASK");
+      const isTaskTemplate = keyUpper.includes("TASK");
+
+      let messages: Array<{role: "system" | "user" | "assistant", content: string}>;
+      let promptType: string;
+
+      if (isSystemPrompt) {
+        // SYSTEM PROMPT: Use the agent's prompt AS the system prompt
+        // User message simply asks it to execute its instructions
+        promptType = "SYSTEM_PROMPT";
+        messages = [
           {
             role: "system",
-            content: "You are an expert medical device regulatory writer creating PSUR (Periodic Safety Update Report) content. Generate professional, compliant content based on the following instructions."
+            content: processedTemplate
           },
           {
             role: "user",
-            content: template
+            content: `Execute your system instructions above. Generate the output as specified in your role and requirements.
+
+If your instructions reference specific data variables, use these sample values:
+- Device: ${variables.deviceName || 'Sample Device'}
+- Period: ${variables.period || '2024'}
+- Evidence: ${variables.evidenceSummary || 'Sample evidence data'}
+
+Generate the content exactly as your system instructions specify.`
           }
-        ],
+        ];
+      } else if (isPersona) {
+        // PERSONA: Use the persona as a system prompt, ask it to demonstrate its style
+        promptType = "PERSONA";
+        messages = [
+          {
+            role: "system",
+            content: processedTemplate
+          },
+          {
+            role: "user",
+            content: `Demonstrate your expertise and style as defined in your persona above. Generate sample content that showcases your unique approach.
+
+Sample context (if needed):
+- Device: ${variables.deviceName || 'Sample Device'}
+- Period: ${variables.period || '2024'}
+
+Execute according to your persona instructions.`
+          }
+        ];
+      } else if (isTaskTemplate) {
+        // TASK TEMPLATE: The template IS the task instructions
+        promptType = "TASK_TEMPLATE";
+        messages = [
+          {
+            role: "system",
+            content: "You are an AI assistant. Follow the task instructions precisely and generate the requested output."
+          },
+          {
+            role: "user",
+            content: processedTemplate
+          }
+        ];
+      } else {
+        // Generic/Other: The template contains the full instructions
+        promptType = "OTHER";
+        messages = [
+          {
+            role: "system",
+            content: "You are an AI assistant. Follow the instructions below precisely."
+          },
+          {
+            role: "user",
+            content: processedTemplate
+          }
+        ];
+      }
+
+      // Call LLM
+      const llmResponse = await complete({
+        messages,
         config: {
-          maxTokens: 1000,
+          maxTokens: 2000,
           temperature: 0.3,
         }
       });
 
       res.json({
         output: llmResponse.content,
-        templateUsed: template.substring(0, 500) + (template.length > 500 ? "..." : ""),
+        agentCategory: category,
+        promptType,
+        sampleDataUsed: Object.keys(variables),
+        templateUsed: processedTemplate.substring(0, 800) + (processedTemplate.length > 800 ? "..." : ""),
         generatedAt: new Date().toISOString(),
+        model: llmResponse.model,
+        latencyMs: llmResponse.latencyMs,
       });
     } catch (error: any) {
       console.error("[POST /api/system-instructions/:key/preview] Error:", error);
@@ -1673,7 +2011,39 @@ export async function registerRoutes(
     try {
       const templateId = req.params.templateId;
 
-      // Load template from JSON file (single source of truth)
+      // Check if this is a form-based template
+      if (isTemplateFormBased(templateId)) {
+        // Form-based templates use a predefined section-to-evidence mapping
+        const FORM_SECTION_EVIDENCE_MAP: Record<string, string[]> = {
+          "A_executive_summary": ["benefit_risk_assessment", "previous_psur_extract"],
+          "B_scope_and_device_description": ["device_registry_record", "regulatory_certificate_record", "manufacturer_profile", "ifu_extract"],
+          "C_volume_of_sales_and_population_exposure": ["sales_volume", "sales_summary", "sales_by_region", "distribution_summary", "usage_estimate"],
+          "D_information_on_serious_incidents": ["serious_incident_record", "serious_incident_summary", "serious_incident_records_imdrf", "vigilance_report"],
+          "E_customer_feedback": ["customer_feedback_summary", "trend_analysis"],
+          "F_product_complaint_types_counts_and_rates": ["complaint_record", "complaint_summary", "complaints_by_region", "signal_log"],
+          "G_information_from_trend_reporting": ["trend_analysis", "signal_log"],
+          "H_information_from_fsca": ["fsca_record", "fsca_summary", "recall_record"],
+          "I_corrective_and_preventive_actions": ["capa_record", "capa_summary", "ncr_record"],
+          "J_scientific_literature_review": ["literature_review_summary", "literature_search_strategy", "literature_result"],
+          "K_review_of_external_databases_and_registries": ["external_db_summary", "external_db_query_log"],
+          "L_pmcf": ["pmcf_summary", "pmcf_result", "pmcf_activity_record", "pmcf_report_extract"],
+          "M_findings_and_conclusions": ["benefit_risk_assessment", "clinical_evaluation_extract", "cer_extract", "risk_assessment"],
+        };
+        
+        // Collect all unique evidence types from all sections
+        const typesSet = new Set<string>();
+        for (const types of Object.values(FORM_SECTION_EVIDENCE_MAP)) {
+          for (const t of types) {
+            typesSet.add(t);
+          }
+        }
+        const requiredTypes = Array.from(typesSet);
+        
+        console.log(`[TemplateRequirements] Form template '${templateId}' requires ${requiredTypes.length} evidence types:`, requiredTypes);
+        return res.json({ requiredEvidenceTypes: requiredTypes });
+      }
+
+      // Load slot-based template from JSON file (single source of truth)
       const template = loadTemplate(templateId);
 
       // Extract all required evidence types from the template's slots
@@ -2411,6 +2781,31 @@ export async function registerRoutes(
       res.json(psurCase);
     } catch (error) {
       res.status(500).json({ error: "Failed to update PSUR case" });
+    }
+  });
+
+  // Delete PSUR case (cascades to all related records)
+  app.delete("/api/psur-cases/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: "Invalid case ID" });
+      }
+      
+      // Get the case first to check it exists and get reference for logging
+      const existingCase = await storage.getPSURCase(id);
+      if (!existingCase) {
+        return res.status(404).json({ error: "PSUR case not found" });
+      }
+      
+      // Delete the case (cascades to related tables due to ON DELETE CASCADE)
+      await storage.deletePSURCase(id);
+      
+      console.log(`[DELETE /api/psur-cases/:id] Deleted PSUR case ${existingCase.psurReference} (ID: ${id})`);
+      res.json({ success: true, message: `Deleted PSUR case ${existingCase.psurReference}` });
+    } catch (error) {
+      console.error("[DELETE /api/psur-cases/:id] Error:", error);
+      res.status(500).json({ error: "Failed to delete PSUR case" });
     }
   });
 
@@ -5727,6 +6122,227 @@ export async function registerRoutes(
       res.send(json);
     } catch (error: any) {
       res.status(500).json({ error: "Failed to export compile trace", details: error.message });
+    }
+  });
+
+  // ============== CONTENT TRACES (Granular PSUR Content Decisions) ==============
+  // Ultra-granular tracing for every content element (sentences, tables, calculations, conclusions, etc)
+  const { 
+    traceContentElement, 
+    traceContentBatch, 
+    queryContentTraces, 
+    searchContentTraces,
+    getSlotContentTraces,
+    getObligationTraces,
+    getTracesForAtoms,
+    getCaseCalculations,
+    getTracesByAgent,
+    getContentTraceStats,
+    exportTracesAsJsonl,
+    generateAuditNarrative
+  } = await import("./src/services/contentTraceService");
+
+  // Query content traces with filters (type, search, pagination)
+  app.get("/api/psur-cases/:id/content-traces", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.id);
+      if (isNaN(psurCaseId)) {
+        return res.status(400).json({ error: "Invalid psurCaseId" });
+      }
+
+      const contentType = req.query.contentType as string | undefined;
+      const searchText = req.query.search as string | undefined;
+      const offset = req.query.offset ? parseInt(req.query.offset as string) : 0;
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 100;
+
+      const traces = await queryContentTraces({
+        psurCaseId,
+        contentType: contentType ? [contentType as any] : undefined,
+        searchText,
+        offset,
+        limit,
+      });
+
+      const stats = await getContentTraceStats(psurCaseId);
+
+      res.json({ traces, stats });
+    } catch (error: any) {
+      console.error("[GET /api/psur-cases/:id/content-traces] Error:", error);
+      res.status(500).json({ error: "Failed to query content traces", details: error.message });
+    }
+  });
+
+  // Natural language search across all content traces
+  app.get("/api/psur-cases/:id/content-traces/search", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.id);
+      const query = req.query.q as string;
+
+      if (!query) {
+        return res.status(400).json({ error: "Search query required" });
+      }
+
+      const results = await searchContentTraces(psurCaseId, query);
+      res.json(results);
+    } catch (error: any) {
+      console.error("[GET /api/psur-cases/:id/content-traces/search] Error:", error);
+      res.status(500).json({ error: "Failed to search content traces", details: error.message });
+    }
+  });
+
+  // Get statistics for all content traces in a case
+  app.get("/api/psur-cases/:id/content-traces/stats", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.id);
+      if (isNaN(psurCaseId)) {
+        return res.status(400).json({ error: "Invalid psurCaseId" });
+      }
+
+      const stats = await getContentTraceStats(psurCaseId);
+      res.json(stats);
+    } catch (error: any) {
+      console.error("[GET /api/psur-cases/:id/content-traces/stats] Error:", error);
+      res.status(500).json({ error: "Failed to get trace statistics", details: error.message });
+    }
+  });
+
+  // Create a single content trace
+  app.post("/api/psur-cases/:id/content-traces", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.id);
+      if (isNaN(psurCaseId)) {
+        return res.status(400).json({ error: "Invalid psurCaseId" });
+      }
+
+      const input = {
+        psurCaseId,
+        ...req.body,
+      };
+
+      const trace = await traceContentElement(input);
+      res.status(201).json(trace);
+    } catch (error: any) {
+      console.error("[POST /api/psur-cases/:id/content-traces] Error:", error);
+      res.status(500).json({ error: "Failed to create content trace", details: error.message });
+    }
+  });
+
+  // Bulk create multiple content traces
+  app.post("/api/psur-cases/:id/content-traces/batch", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.id);
+      if (isNaN(psurCaseId)) {
+        return res.status(400).json({ error: "Invalid psurCaseId" });
+      }
+
+      const inputs = Array.isArray(req.body) ? req.body : [req.body];
+      const inputsWithCaseId = inputs.map((input: any) => ({
+        psurCaseId,
+        ...input,
+      }));
+
+      const traces = await traceContentBatch(inputsWithCaseId);
+      res.status(201).json({ count: traces.length, traces });
+    } catch (error: any) {
+      console.error("[POST /api/psur-cases/:id/content-traces/batch] Error:", error);
+      res.status(500).json({ error: "Failed to create batch content traces", details: error.message });
+    }
+  });
+
+  // Get traces for a specific slot
+  app.get("/api/psur-cases/:id/content-traces/slot/:slotId", async (req, res) => {
+    try {
+      const traces = await getSlotContentTraces(req.params.slotId);
+      res.json(traces);
+    } catch (error: any) {
+      console.error("[GET /api/psur-cases/:id/content-traces/slot/:slotId] Error:", error);
+      res.status(500).json({ error: "Failed to get slot content traces", details: error.message });
+    }
+  });
+
+  // Get traces for a specific obligation
+  app.get("/api/psur-cases/:id/content-traces/obligation/:obligationId", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.id);
+      const { obligationId } = req.params;
+
+      const traces = await getObligationTraces(psurCaseId, obligationId);
+      res.json(traces);
+    } catch (error: any) {
+      console.error("[GET /api/psur-cases/:id/content-traces/obligation/:obligationId] Error:", error);
+      res.status(500).json({ error: "Failed to get obligation content traces", details: error.message });
+    }
+  });
+
+  // Get traces linked to specific evidence atoms
+  app.get("/api/psur-cases/:id/content-traces/atoms", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.id);
+      const atomIds = req.query.atomIds as string[] | string | undefined;
+
+      const ids = Array.isArray(atomIds) ? atomIds : atomIds ? [atomIds] : [];
+      if (ids.length === 0) {
+        return res.status(400).json({ error: "atomIds parameter required" });
+      }
+
+      const traces = await getTracesForAtoms(psurCaseId, ids);
+      res.json(traces);
+    } catch (error: any) {
+      console.error("[GET /api/psur-cases/:id/content-traces/atoms] Error:", error);
+      res.status(500).json({ error: "Failed to get traces for atoms", details: error.message });
+    }
+  });
+
+  // Get all calculations traces for a case
+  app.get("/api/psur-cases/:id/content-traces/calculations", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.id);
+      const calculations = await getCaseCalculations(psurCaseId);
+      res.json(calculations);
+    } catch (error: any) {
+      console.error("[GET /api/psur-cases/:id/content-traces/calculations] Error:", error);
+      res.status(500).json({ error: "Failed to get calculation traces", details: error.message });
+    }
+  });
+
+  // Get traces created by a specific agent
+  app.get("/api/psur-cases/:id/content-traces/agent/:agentId", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.id);
+      const traces = await getTracesByAgent(psurCaseId, req.params.agentId);
+      res.json(traces);
+    } catch (error: any) {
+      console.error("[GET /api/psur-cases/:id/content-traces/agent/:agentId] Error:", error);
+      res.status(500).json({ error: "Failed to get agent content traces", details: error.message });
+    }
+  });
+
+  // Export traces as JSONL for audit compliance
+  app.get("/api/psur-cases/:id/content-traces/export", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.id);
+      const format = req.query.format || "jsonl";
+
+      const exported = await exportTracesAsJsonl(psurCaseId);
+      
+      res.setHeader("Content-Type", "application/x-ndjson");
+      res.setHeader("Content-Disposition", `attachment; filename=content-traces-${psurCaseId}.${format}`);
+      res.send(exported);
+    } catch (error: any) {
+      console.error("[GET /api/psur-cases/:id/content-traces/export] Error:", error);
+      res.status(500).json({ error: "Failed to export content traces", details: error.message });
+    }
+  });
+
+  // Generate human-readable audit narrative from traces
+  app.get("/api/psur-cases/:id/content-traces/narrative", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.id);
+      const narrative = await generateAuditNarrative(psurCaseId);
+      res.json({ narrative });
+    } catch (error: any) {
+      console.error("[GET /api/psur-cases/:id/content-traces/narrative] Error:", error);
+      res.status(500).json({ error: "Failed to generate audit narrative", details: error.message });
     }
   });
 

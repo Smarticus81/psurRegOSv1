@@ -6,12 +6,9 @@
  */
 
 import { BaseNarrativeAgent, NarrativeInput } from "./baseNarrativeAgent";
-import { PROMPT_TEMPLATES } from "../../llmService";
 
 export class FSCANarrativeAgent extends BaseNarrativeAgent {
   protected readonly sectionType = "FSCA";
-
-  protected readonly systemPrompt = PROMPT_TEMPLATES.FSCA_NARRATIVE_SYSTEM;
 
   constructor() {
     super(

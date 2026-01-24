@@ -4,7 +4,6 @@ import {
   Activity,
   FileText,
   BookOpen,
-  ClipboardList,
   Cpu
 } from "lucide-react";
 import {
@@ -30,11 +29,6 @@ const workflowNavItems = [
 ];
 
 const toolsNavItems = [
-  {
-    title: "Decision Explorer",
-    url: "/decision-traces",
-    icon: ClipboardList,
-  },
   {
     title: "How It Works",
     url: "/agent-system",

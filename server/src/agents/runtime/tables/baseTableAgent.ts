@@ -152,6 +152,11 @@ export abstract class BaseTableAgent extends BaseAgent<TableInput, TableOutput> 
       columns: result.columns,
     });
 
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // CONTENT TRACING - Trace every table row
+    // ═══════════════════════════════════════════════════════════════════════════════
+    await this.traceTableRows(input, result, relevantAtoms);
+
     return result;
   }
 
@@ -256,5 +261,100 @@ export abstract class BaseTableAgent extends BaseAgent<TableInput, TableOutput> 
     if (output.rowCount === 0) return 0.5;
     if (output.rowCount < 5) return 0.7;
     return 0.9;
+  }
+
+  /**
+   * Trace every row in the generated table
+   */
+  protected async traceTableRows(
+    input: TableInput,
+    result: TableOutput,
+    atoms: TableEvidenceAtom[]
+  ): Promise<void> {
+    if (!result.docxTable || result.rowCount === 0) return;
+
+    const traceItems: Array<Parameters<typeof this.traceContent>[0]> = [];
+
+    // Map atoms by ID for quick lookup
+    const atomMap = new Map(atoms.map(a => [a.atomId, a]));
+
+    for (let rowIndex = 0; rowIndex < result.docxTable.rows.length; rowIndex++) {
+      const row = result.docxTable.rows[rowIndex];
+      const rowPreview = row.join(" | ");
+
+      // Try to match this row to an evidence atom
+      const matchedAtom = atoms[rowIndex] || atoms.find(a => {
+        const atomData = Object.values(a.normalizedData).join(" ").toLowerCase();
+        return row.some(cell => atomData.includes(String(cell).toLowerCase().substring(0, 20)));
+      });
+
+      // Trace each row
+      traceItems.push({
+        slotId: input.slot.slot_id,
+        slotTitle: input.slot.title,
+        contentType: "table_row",
+        contentId: `${input.slot.slot_id}-row${rowIndex + 1}`,
+        contentIndex: rowIndex + 1,
+        contentPreview: rowPreview.substring(0, 500),
+        rationale: `Row ${rowIndex + 1} of ${this.tableType} table: ${result.docxTable.headers[0]} = "${row[0]}"`,
+        methodology: `Extracted from ${matchedAtom?.evidenceType || this.tableType} evidence record and formatted per regulatory table schema (${result.columns.length} columns).`,
+        standardReference: input.slot.output_requirements?.table_schema 
+          ? `Table schema: ${result.columns.join(", ")}` 
+          : undefined,
+        evidenceType: matchedAtom?.evidenceType || this.tableType,
+        atomIds: matchedAtom ? [matchedAtom.atomId] : undefined,
+      });
+
+      // Also trace individual cells for calculations if present
+      for (let colIndex = 0; colIndex < row.length; colIndex++) {
+        const cellValue = row[colIndex];
+        const header = result.docxTable.headers[colIndex];
+        
+        // Check if this looks like a calculation
+        const isNumeric = !isNaN(Number(String(cellValue).replace(/,/g, "")));
+        const isCalculation = isNumeric && (
+          header.toLowerCase().includes("total") ||
+          header.toLowerCase().includes("rate") ||
+          header.toLowerCase().includes("count") ||
+          header.toLowerCase().includes("sum") ||
+          header.toLowerCase().includes("average") ||
+          header.toLowerCase().includes("%") ||
+          header.toLowerCase().includes("percentage")
+        );
+
+        if (isCalculation) {
+          traceItems.push({
+            slotId: input.slot.slot_id,
+            slotTitle: input.slot.title,
+            contentType: "calculation",
+            contentId: `${input.slot.slot_id}-row${rowIndex + 1}-col${colIndex + 1}`,
+            contentIndex: rowIndex * 100 + colIndex + 1,
+            contentPreview: `${header}: ${cellValue}`,
+            rationale: `Calculated value for ${header} in row ${rowIndex + 1}.`,
+            methodology: `Derived from evidence data using ${this.getCalculationType(header)} calculation.`,
+            evidenceType: matchedAtom?.evidenceType || this.tableType,
+            atomIds: matchedAtom ? [matchedAtom.atomId] : undefined,
+            calculationType: this.getCalculationType(header),
+            calculationFormula: `${header} = aggregated value`,
+            calculationInputs: { column: header, row: rowIndex + 1, value: cellValue },
+          });
+        }
+      }
+    }
+
+    // Batch trace all rows
+    if (traceItems.length > 0) {
+      await this.traceContentBatch(traceItems);
+    }
+  }
+
+  private getCalculationType(header: string): "average" | "sum" | "percentage" | "count" | "ratio" | "other" {
+    const h = header.toLowerCase();
+    if (h.includes("average") || h.includes("mean")) return "average";
+    if (h.includes("total") || h.includes("sum")) return "sum";
+    if (h.includes("%") || h.includes("percent") || h.includes("rate")) return "percentage";
+    if (h.includes("count") || h.includes("number")) return "count";
+    if (h.includes("ratio")) return "ratio";
+    return "other";
   }
 }

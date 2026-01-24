@@ -4,11 +4,14 @@ import { slotDefinitions, slotObligationLinks, SlotDefinition as DBSlotDefinitio
 import { EvidenceAtomRecord } from "../../services/evidenceStore";
 import { 
   loadTemplate, 
+  loadFormTemplate,
+  isTemplateFormBased,
   getTemplateDefaults,
   getEffectiveSlots,
   getEffectiveMapping,
   type Template,
-  type TemplateSlot
+  type TemplateSlot,
+  type FormTemplate
 } from "../../templateStore";
 import { NarrativeWriterAgent, NarrativeInput } from "../../agents/runtime/narrativeWriterAgent";
 import { TraceContext, startTrace, resumeTrace } from "../../services/decisionTraceService";
@@ -68,6 +71,14 @@ export async function proposeSlotsStep(ctx: ProposeContext): Promise<SlotProposa
   const { templateId, evidenceAtoms } = ctx;
   
   ctx.log?.(`[Step 4/8] Propose Slots: Starting for template ${templateId}`);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // STRATEGY 0: Check if this is a form-based template (CooperSurgical style)
+  // ═══════════════════════════════════════════════════════════════════════════
+  if (isTemplateFormBased(templateId)) {
+    ctx.log?.(`[Step 4/8] Form-based template detected, using form section proposals`);
+    return proposeSlotsFromFormTemplate(ctx);
+  }
 
   // ═══════════════════════════════════════════════════════════════════════════
   // STRATEGY 1: Try database slot definitions first
@@ -148,6 +159,98 @@ async function proposeSlotsFromDatabase(
   const noEvidenceCount = proposals.filter(p => p.status === "NO_EVIDENCE_REQUIRED").length;
   
   ctx.log?.(`[Step 4/8] Generated ${proposals.length} proposals: ${readyCount} READY, ${gapCount} TRACE_GAP, ${noEvidenceCount} NO_EVIDENCE_REQUIRED`);
+
+  return proposals;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FORM-BASED TEMPLATE SECTION PROPOSAL (CooperSurgical style)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Form-based templates (like FormQAR-054) use sections instead of GRKB slots.
+ * Each section maps to specific evidence types based on the section purpose.
+ */
+const FORM_SECTION_EVIDENCE_MAP: Record<string, string[]> = {
+  "A_executive_summary": ["benefit_risk_assessment", "previous_psur_extract"],
+  "B_scope_and_device_description": ["device_registry_record", "regulatory_certificate_record", "manufacturer_profile", "ifu_extract"],
+  "C_volume_of_sales_and_population_exposure": ["sales_volume", "sales_summary", "sales_by_region", "distribution_summary", "usage_estimate"],
+  "D_information_on_serious_incidents": ["serious_incident_record", "serious_incident_summary", "serious_incident_records_imdrf", "vigilance_report"],
+  "E_customer_feedback": ["customer_feedback_summary", "trend_analysis"],
+  "F_product_complaint_types_counts_and_rates": ["complaint_record", "complaint_summary", "complaints_by_region", "signal_log"],
+  "G_information_from_trend_reporting": ["trend_analysis", "signal_log"],
+  "H_information_from_fsca": ["fsca_record", "fsca_summary", "recall_record"],
+  "I_corrective_and_preventive_actions": ["capa_record", "capa_summary", "ncr_record"],
+  "J_scientific_literature_review": ["literature_review_summary", "literature_search_strategy", "literature_result"],
+  "K_review_of_external_databases_and_registries": ["external_db_summary", "external_db_query_log"],
+  "L_pmcf": ["pmcf_summary", "pmcf_result", "pmcf_activity_record", "pmcf_report_extract"],
+  "M_findings_and_conclusions": ["benefit_risk_assessment", "clinical_evaluation_extract", "cer_extract", "risk_assessment"],
+};
+
+const FORM_SECTION_TITLES: Record<string, string> = {
+  "A_executive_summary": "A - Executive Summary",
+  "B_scope_and_device_description": "B - Scope and Device Description",
+  "C_volume_of_sales_and_population_exposure": "C - Volume of Sales and Population Exposure",
+  "D_information_on_serious_incidents": "D - Information on Serious Incidents",
+  "E_customer_feedback": "E - Customer Feedback",
+  "F_product_complaint_types_counts_and_rates": "F - Product Complaint Types, Counts and Rates",
+  "G_information_from_trend_reporting": "G - Information from Trend Reporting",
+  "H_information_from_fsca": "H - Information from FSCA",
+  "I_corrective_and_preventive_actions": "I - Corrective and Preventive Actions",
+  "J_scientific_literature_review": "J - Scientific Literature Review",
+  "K_review_of_external_databases_and_registries": "K - Review of External Databases and Registries",
+  "L_pmcf": "L - Post-Market Clinical Follow-up (PMCF)",
+  "M_findings_and_conclusions": "M - Findings and Conclusions",
+};
+
+async function proposeSlotsFromFormTemplate(ctx: ProposeContext): Promise<SlotProposalOutput[]> {
+  const { templateId, evidenceAtoms } = ctx;
+  
+  // Load form template
+  let formTemplate: FormTemplate;
+  try {
+    formTemplate = loadFormTemplate(templateId);
+  } catch (e: any) {
+    throw new Error(`Failed to load form template ${templateId}: ${e.message}`);
+  }
+
+  const sections = formTemplate.sections;
+  const sectionKeys = Object.keys(sections);
+  
+  ctx.log?.(`[Step 4/8] Form template ${templateId} has ${sectionKeys.length} sections`);
+
+  const proposals: SlotProposalOutput[] = [];
+
+  for (const sectionKey of sectionKeys) {
+    // Get required evidence types for this section
+    const requiredTypes = FORM_SECTION_EVIDENCE_MAP[sectionKey] || [];
+    const title = FORM_SECTION_TITLES[sectionKey] || sectionKey;
+
+    // Find eligible evidence atoms
+    const eligibleAtoms = evidenceAtoms.filter(a =>
+      requiredTypes.includes(a.evidenceType)
+    );
+
+    // Generate proposal
+    const proposal = generateProposal(
+      sectionKey,      // Use section key as slot ID
+      title,
+      requiredTypes,
+      eligibleAtoms,
+      [],              // Form-based templates don't use GRKB obligations
+      1                // Min atoms = 1
+    );
+
+    proposals.push(proposal);
+  }
+
+  ctx.slotProposals = proposals;
+  
+  const readyCount = proposals.filter(p => p.status === "READY").length;
+  const gapCount = proposals.filter(p => p.status === "TRACE_GAP").length;
+  const noEvidenceCount = proposals.filter(p => p.status === "NO_EVIDENCE_REQUIRED").length;
+  
+  ctx.log?.(`[Step 4/8] Generated ${proposals.length} form section proposals: ${readyCount} READY, ${gapCount} TRACE_GAP, ${noEvidenceCount} NO_EVIDENCE_REQUIRED`);
 
   return proposals;
 }

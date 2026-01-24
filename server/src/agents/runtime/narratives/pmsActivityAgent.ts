@@ -6,12 +6,9 @@
  */
 
 import { BaseNarrativeAgent, NarrativeInput } from "./baseNarrativeAgent";
-import { PROMPT_TEMPLATES } from "../../llmService";
 
 export class PMSActivityNarrativeAgent extends BaseNarrativeAgent {
   protected readonly sectionType = "PMS_ACTIVITY";
-
-  protected readonly systemPrompt = PROMPT_TEMPLATES.PMS_ACTIVITY_SYSTEM;
 
   constructor() {
     super(

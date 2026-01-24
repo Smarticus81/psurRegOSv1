@@ -119,6 +119,11 @@ export class NarrativeWriterAgent extends BaseAgent<NarrativeInput, NarrativeOut
       invalidCitations: validationResult.invalidCitations.length,
     });
 
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // CONTENT TRACING - Trace every paragraph/sentence
+    // ═══════════════════════════════════════════════════════════════════════════════
+    await this.traceNarrativeContent(input, parsed, validationResult);
+
     return {
       content: parsed.content,
       citedAtoms: validationResult.validCitations,
@@ -304,6 +309,112 @@ ${evidenceRecords}`;
     const invalidCitations = citedAtoms.filter(id => !availableIds.has(id));
 
     return { validCitations, invalidCitations };
+  }
+
+  /**
+   * Trace every paragraph/sentence in the generated narrative
+   */
+  private async traceNarrativeContent(
+    input: NarrativeInput,
+    parsed: {
+      content: string;
+      citedAtoms: string[];
+      uncitedAtoms: string[];
+      dataGaps: string[];
+      wordCount: number;
+      confidence: number;
+      reasoning: string;
+    },
+    validationResult: { validCitations: string[]; invalidCitations: string[] }
+  ): Promise<void> {
+    // Split content into paragraphs
+    const paragraphs = parsed.content
+      .split(/\n\n+/)
+      .map(p => p.trim())
+      .filter(p => p.length > 0);
+
+    const traceItems: Array<Parameters<typeof this.traceContent>[0]> = [];
+
+    for (let i = 0; i < paragraphs.length; i++) {
+      const paragraph = paragraphs[i];
+      
+      // Extract citations from this paragraph
+      const citationPattern = /\[ATOM-[A-Z0-9-]+\]/g;
+      const paragraphCitations: string[] = [];
+      let match;
+      while ((match = citationPattern.exec(paragraph)) !== null) {
+        paragraphCitations.push(match[0].slice(1, -1));
+      }
+
+      // Determine evidence types used
+      const usedAtoms = input.evidenceAtoms.filter(a => 
+        paragraphCitations.includes(a.atomId)
+      );
+      const evidenceTypes = Array.from(new Set(usedAtoms.map(a => a.evidenceType)));
+
+      // Determine if this is a conclusion paragraph
+      const isConclusion = paragraph.toLowerCase().includes("conclusion") ||
+        paragraph.toLowerCase().includes("in summary") ||
+        paragraph.toLowerCase().includes("overall") ||
+        i === paragraphs.length - 1;
+
+      traceItems.push({
+        slotId: input.slot.slotId,
+        slotTitle: input.slot.title,
+        contentType: isConclusion ? "conclusion" : "paragraph",
+        contentId: `${input.slot.slotId}-p${i + 1}`,
+        contentIndex: i + 1,
+        contentPreview: paragraph.substring(0, 500),
+        rationale: this.generateParagraphRationale(paragraph, i, paragraphs.length, paragraphCitations.length),
+        methodology: this.generateParagraphMethodology(evidenceTypes, paragraphCitations.length, input),
+        standardReference: input.slot.requirements,
+        evidenceType: evidenceTypes.length > 0 ? evidenceTypes.join(", ") : undefined,
+        atomIds: paragraphCitations.length > 0 ? paragraphCitations : undefined,
+        obligationId: undefined, // Could be linked to template obligation mapping
+        obligationTitle: input.slot.title,
+      });
+    }
+
+    // Batch trace all paragraphs
+    if (traceItems.length > 0) {
+      await this.traceContentBatch(traceItems);
+    }
+  }
+
+  private generateParagraphRationale(
+    paragraph: string,
+    index: number,
+    total: number,
+    citationCount: number
+  ): string {
+    if (index === 0) {
+      return `Opening paragraph establishing context and scope. Contains ${citationCount} evidence citations to ground the narrative in factual data.`;
+    }
+    if (index === total - 1) {
+      return `Concluding paragraph summarizing findings and implications. Synthesizes ${citationCount} evidence citations into actionable conclusions.`;
+    }
+    return `Supporting paragraph ${index + 1} of ${total} presenting detailed analysis. Incorporates ${citationCount} evidence citations to support regulatory claims.`;
+  }
+
+  private generateParagraphMethodology(
+    evidenceTypes: string[],
+    citationCount: number,
+    input: NarrativeInput
+  ): string {
+    const parts: string[] = [];
+    
+    if (evidenceTypes.length > 0) {
+      parts.push(`Analyzed ${evidenceTypes.join(", ")} evidence records`);
+    }
+    
+    if (citationCount > 0) {
+      parts.push(`cited ${citationCount} supporting atoms`);
+    }
+    
+    parts.push(`synthesized per ${input.context.templateId} template requirements`);
+    parts.push(`using LLM-assisted regulatory narrative generation`);
+    
+    return parts.join("; ") + ".";
   }
 
   protected calculateConfidence(output: NarrativeOutput): number {

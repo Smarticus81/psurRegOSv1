@@ -4,7 +4,7 @@ import { CompilationRuntimeViewer } from "@/components/compilation-runtime-viewe
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
-import { FileText, Settings, Info, LayoutDashboard, Search, CheckCircle2, AlertCircle, Trash2, ArrowRight, Loader2, ChevronDown, ChevronUp } from "lucide-react";
+import { FileText, Settings, Info, LayoutDashboard, Search, CheckCircle2, AlertCircle, Trash2, ArrowRight, Loader2, ChevronDown, ChevronUp, Sparkles } from "lucide-react";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -1698,6 +1698,34 @@ export default function PsurWizard() {
     const [runtimeEvents, setRuntimeEvents] = useState<any[]>([]);
     const [runtimeConnected, setRuntimeConnected] = useState(false);
     const runtimeEsRef = useRef<EventSource | null>(null);
+    
+    // Live sections for generation progress display
+    const [liveSections, setLiveSections] = useState<LiveSection[]>([]);
+
+    // Fetch live sections during generation
+    useEffect(() => {
+        if (!psurCaseId || !pollingActive) {
+            return;
+        }
+        
+        const fetchLiveSections = async () => {
+            try {
+                const res = await fetch(`/api/psur-cases/${psurCaseId}/live-content`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.sections && Array.isArray(data.sections)) {
+                        setLiveSections(data.sections);
+                    }
+                }
+            } catch (e) {
+                // Silently fail - this is non-critical UI feedback
+            }
+        };
+        
+        fetchLiveSections();
+        const interval = setInterval(fetchLiveSections, 2000);
+        return () => clearInterval(interval);
+    }, [psurCaseId, pollingActive]);
 
     // Polling for workflow progress - faster polling for real-time updates
     useEffect(() => {
@@ -2127,6 +2155,30 @@ export default function PsurWizard() {
             .catch((e) => console.error("[PSURWizard] Failed to refresh drafts list:", e));
     }
 
+    // Delete draft
+    const [deletingDraftId, setDeletingDraftId] = useState<number | null>(null);
+    async function deleteDraft(draft: ExistingCase, e: React.MouseEvent) {
+        e.stopPropagation(); // Prevent triggering resumeDraft
+        if (!confirm(`Delete "${draft.psurReference}"? This will permanently delete all associated data including evidence, proposals, and traces.`)) {
+            return;
+        }
+        setDeletingDraftId(draft.id);
+        try {
+            const res = await fetch(`/api/psur-cases/${draft.id}`, { method: "DELETE" });
+            if (!res.ok) {
+                const data = await res.json();
+                throw new Error(data.error || "Failed to delete");
+            }
+            toast({ title: "Draft Deleted", description: `Deleted ${draft.psurReference}` });
+            // Remove from local state
+            setExistingDrafts(prev => prev.filter(c => c.id !== draft.id));
+        } catch (err: any) {
+            toast({ title: "Delete Failed", description: err.message || "Could not delete draft", variant: "destructive" });
+        } finally {
+            setDeletingDraftId(null);
+        }
+    }
+
     // Computed
     const totalAtoms = counts?.totals.all || 0;
 
@@ -2472,10 +2524,25 @@ export default function PsurWizard() {
                                         {existingDrafts.map(draft => (
                                             <div
                                                 key={draft.id}
-                                                onClick={() => !loadingDraft && resumeDraft(draft)}
-                                                className="bg-white dark:bg-card border border-border rounded-lg p-5 shadow-sm hover:border-primary/50 hover:shadow-md cursor-pointer transition-all group h-full flex flex-col justify-between"
+                                                onClick={() => !loadingDraft && !deletingDraftId && resumeDraft(draft)}
+                                                className={cn(
+                                                    "bg-white dark:bg-card border border-border rounded-lg p-5 shadow-sm hover:border-primary/50 hover:shadow-md cursor-pointer transition-all group h-full flex flex-col justify-between relative",
+                                                    deletingDraftId === draft.id && "opacity-50 pointer-events-none"
+                                                )}
                                             >
-                                                <div className="flex justify-between items-start mb-2">
+                                                <button
+                                                    onClick={(e) => deleteDraft(draft, e)}
+                                                    disabled={deletingDraftId === draft.id}
+                                                    className="absolute top-2 right-2 p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover:opacity-100"
+                                                    title="Delete draft"
+                                                >
+                                                    {deletingDraftId === draft.id ? (
+                                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                    ) : (
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    )}
+                                                </button>
+                                                <div className="flex justify-between items-start mb-2 pr-6">
                                                     <span className="font-bold text-sm text-foreground group-hover:text-primary transition-colors">{draft.psurReference}</span>
                                                     <Badge variant="outline" className="text-[10px] h-5 bg-secondary/50">{draft.status}</Badge>
                                                 </div>
@@ -2690,280 +2757,357 @@ export default function PsurWizard() {
                     )
                 }
 
-                {/* STEP 5: COMPILE - Minimalist iOS Design */}
+                {/* STEP 5: COMPILE - Full Width Modern Design */}
                 {
                     step === 5 && psurCaseId && (
-                        <div className="h-full flex flex-col -mx-4 -my-2">
+                        <div className="h-full flex flex-col">
                             {/* Pre-compile configuration */}
                             {!runResult ? (
                                 <div className="flex-1 flex flex-col">
                                     {/* Header */}
-                                    <div className="text-center mb-8">
+                                    <div className="text-center mb-6">
                                         <h2 className="text-2xl font-semibold tracking-tight text-foreground mb-2">Generate Document</h2>
                                         <p className="text-muted-foreground">Configure your PSUR output settings</p>
                                     </div>
 
-                                    {/* Configuration Grid */}
-                                    <div className="grid grid-cols-2 gap-8 max-w-3xl mx-auto w-full mb-8">
-                                        {/* Left Column - Summary */}
-                                        <div className="bg-white dark:bg-card border border-border shadow-sm rounded-lg p-6 space-y-5">
-                                            <h3 className="text-sm font-semibold text-foreground mb-4">Report Summary</h3>
-                                            {[
-                                                { label: "Template", value: templateId.split("_")[0] },
-                                                { label: "Jurisdictions", value: jurisdictions.join(", ").replace(/_/g, " ") },
-                                                { label: "Device", value: deviceName || deviceCode },
-                                                { label: "Period", value: `${periodStart} to ${periodEnd}` },
-                                                { label: "Data Records", value: String(totalAtoms) },
-                                            ].map((item, i) => (
-                                                <div key={i} className="flex justify-between items-center py-2 border-b border-border/30 last:border-0">
-                                                    <span className="text-sm text-muted-foreground">{item.label}</span>
-                                                    <span className="text-sm font-medium text-foreground">{item.value}</span>
-                                                </div>
-                                            ))}
-                                        </div>
-
-                                        {/* Right Column - Options */}
-                                        <div className="bg-white dark:bg-card border border-border shadow-sm rounded-lg p-6 space-y-6">
-                                            <h3 className="text-sm font-semibold text-foreground mb-4">Output Options</h3>
-
-                                            {/* Smart Narrative Toggle */}
-                                            <label className="flex items-center justify-between cursor-pointer group">
-                                                <div>
-                                                    <div className="text-sm font-medium text-foreground">Smart Narrative</div>
-                                                    <div className="text-xs text-muted-foreground">Auto-generate contextual summaries</div>
-                                                </div>
-                                                <div className={`relative w-11 h-6 rounded-full transition-all ${enableAIGeneration ? "bg-primary" : "bg-border"}`}>
-                                                    <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${enableAIGeneration ? "left-5" : "left-0.5"}`}></div>
-                                                </div>
-                                            </label>
-
-                                            {/* Charts Toggle */}
-                                            <label className="flex items-center justify-between cursor-pointer group">
-                                                <div>
-                                                    <div className="text-sm font-medium text-foreground">Visual Charts</div>
-                                                    <div className="text-xs text-muted-foreground">Include trend visualizations</div>
-                                                </div>
-                                                <div className={`relative w-11 h-6 rounded-full transition-all ${enableCharts ? "bg-primary" : "bg-border"}`}>
-                                                    <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${enableCharts ? "left-5" : "left-0.5"}`}></div>
-                                                </div>
-                                            </label>
-
-                                            {/* Document Style */}
-                                            <div>
-                                                <div className="text-sm font-medium text-foreground mb-3">Document Style</div>
-                                                <div className="grid grid-cols-3 gap-2">
-                                                    {([
-                                                        { value: "corporate" as const, label: "Corporate" },
-                                                        { value: "regulatory" as const, label: "Regulatory" },
-                                                        { value: "premium" as const, label: "Premium" },
-                                                    ]).map(style => (
-                                                        <button
-                                                            key={style.value}
-                                                            onClick={() => setDocumentStyle(style.value)}
-                                                            className={`py-2.5 px-3 rounded-xl text-xs font-medium transition-all ${documentStyle === style.value
-                                                                ? "bg-primary text-primary-foreground shadow-sm"
-                                                                : "bg-secondary/50 text-muted-foreground hover:bg-secondary"
-                                                                }`}
-                                                        >
-                                                            {style.label}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Generate Button */}
-                                    <div className="flex justify-center">
-                                        <button
-                                            onClick={runWorkflow}
-                                            disabled={runBusy}
-                                            className="px-8 py-4 rounded-2xl bg-foreground text-background font-medium shadow-lg hover:shadow-xl transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 flex items-center gap-3"
-                                        >
-                                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                            </svg>
-                                            Generate PSUR
-                                        </button>
-                                    </div>
-                                </div>
-                            ) : (
-                                /* Compilation in progress / Complete */
-                                <div className="flex-1 flex gap-6">
-                                    {/* Left Panel - Progress */}
-                                    <div className="w-80 flex flex-col">
-                                        <div className="bg-white dark:bg-card border border-border shadow-sm rounded-lg p-6 flex-1">
-                                            <h3 className="text-sm font-semibold text-foreground mb-6">Generation Progress</h3>
-                                            {pollError && (
-                                                <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700">
-                                                    Connection issue: {pollError}
-                                                </div>
-                                            )}
-
-                                            {/* Steps */}
-                                            <div className="space-y-1">
-                                                {runResult.steps.map((s, i) => (
-                                                    <div key={s.step} className="flex items-start gap-3 py-3">
-                                                        {/* Status Icon */}
-                                                        <div className="mt-0.5">
-                                                            {s.status === "COMPLETED" ? (
-                                                                <div className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center">
-                                                                    <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-                                                                </div>
-                                                            ) : s.status === "FAILED" ? (
-                                                                <div className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center">
-                                                                    <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
-                                                                </div>
-                                                            ) : s.status === "RUNNING" ? (
-                                                                <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center">
-                                                                    <svg className="w-3 h-3 text-white animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
-                                                                </div>
-                                                            ) : (
-                                                                <div className="w-5 h-5 rounded-full bg-border flex items-center justify-center">
-                                                                    <span className="text-[10px] text-muted-foreground font-medium">{s.step}</span>
-                                                                </div>
-                                                            )}
-                                                        </div>
-
-                                                        {/* Step Info */}
+                                    {/* Configuration - Full Width Horizontal Layout */}
+                                    <div className="flex-1 flex gap-6 min-h-0">
+                                        {/* Left: Report Summary Card */}
+                                        <div className="flex-1 bg-white dark:bg-card border border-border shadow-sm rounded-xl p-6 flex flex-col">
+                                            <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
+                                                <svg className="w-4 h-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                                Report Summary
+                                            </h3>
+                                            <div className="grid grid-cols-2 gap-x-8 gap-y-4 flex-1">
+                                                {[
+                                                    { label: "Template", value: templateId.split("_")[0], icon: "📋" },
+                                                    { label: "Jurisdictions", value: jurisdictions.join(", ").replace(/_/g, " "), icon: "🌍" },
+                                                    { label: "Device", value: deviceName || deviceCode, icon: "🏥" },
+                                                    { label: "Period", value: `${periodStart} → ${periodEnd}`, icon: "📅" },
+                                                    { label: "Data Records", value: String(totalAtoms), icon: "📊" },
+                                                    { label: "Case ID", value: `#${psurCaseId}`, icon: "🔖" },
+                                                ].map((item, i) => (
+                                                    <div key={i} className="flex items-center gap-3 py-2 border-b border-border/30">
+                                                        <span className="text-lg">{item.icon}</span>
                                                         <div className="flex-1 min-w-0">
-                                                            <div className={`text-sm font-medium ${s.status === "COMPLETED" ? "text-foreground" :
-                                                                s.status === "RUNNING" ? "text-primary" :
-                                                                    s.status === "FAILED" ? "text-red-500" : "text-muted-foreground"
-                                                                }`}>{s.name}</div>
-                                                            {s.status === "RUNNING" && (
-                                                                <div className="mt-1.5 h-1 bg-border rounded-full overflow-hidden">
-                                                                    <div className="h-full bg-primary rounded-full animate-pulse" style={{ width: '60%' }}></div>
-                                                                </div>
-                                                            )}
-                                                            {s.error && <div className="text-xs text-red-500 mt-1">{s.error}</div>}
+                                                            <span className="text-xs text-muted-foreground block">{item.label}</span>
+                                                            <span className="text-sm font-medium text-foreground truncate block">{item.value}</span>
                                                         </div>
                                                     </div>
                                                 ))}
                                             </div>
+                                        </div>
 
-                                            {/* Stats */}
-                                            {traceSummary && (
-                                                <div className="mt-6 pt-6 border-t border-border/30 grid grid-cols-2 gap-3">
-                                                    <div className="text-center p-3 rounded-xl bg-secondary/30">
-                                                        <div className="text-lg font-semibold text-foreground">{traceSummary.totalEvents}</div>
-                                                        <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Events</div>
+                                        {/* Middle: Output Options Card */}
+                                        <div className="w-[320px] bg-white dark:bg-card border border-border shadow-sm rounded-xl p-6 flex flex-col">
+                                            <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
+                                                <svg className="w-4 h-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                                Output Options
+                                            </h3>
+
+                                            <div className="space-y-5 flex-1">
+                                                {/* Smart Narrative Toggle */}
+                                                <label className="flex items-center justify-between cursor-pointer group p-3 rounded-lg border border-border/50 hover:border-primary/30 hover:bg-primary/5 transition-all">
+                                                    <div>
+                                                        <div className="text-sm font-medium text-foreground">Smart Narrative</div>
+                                                        <div className="text-xs text-muted-foreground">Auto-generate contextual summaries</div>
                                                     </div>
-                                                    <div className="text-center p-3 rounded-xl bg-emerald-500/10">
-                                                        <div className="text-lg font-semibold text-emerald-600">{traceSummary.acceptedSlots}</div>
-                                                        <div className="text-[10px] text-emerald-600 uppercase tracking-wider">Processed</div>
+                                                    <div 
+                                                        onClick={() => setEnableAIGeneration(!enableAIGeneration)}
+                                                        className={`relative w-11 h-6 rounded-full transition-all cursor-pointer ${enableAIGeneration ? "bg-primary" : "bg-border"}`}
+                                                    >
+                                                        <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${enableAIGeneration ? "left-5" : "left-0.5"}`}></div>
+                                                    </div>
+                                                </label>
+
+                                                {/* Charts Toggle */}
+                                                <label className="flex items-center justify-between cursor-pointer group p-3 rounded-lg border border-border/50 hover:border-primary/30 hover:bg-primary/5 transition-all">
+                                                    <div>
+                                                        <div className="text-sm font-medium text-foreground">Visual Charts</div>
+                                                        <div className="text-xs text-muted-foreground">Include trend visualizations</div>
+                                                    </div>
+                                                    <div 
+                                                        onClick={() => setEnableCharts(!enableCharts)}
+                                                        className={`relative w-11 h-6 rounded-full transition-all cursor-pointer ${enableCharts ? "bg-primary" : "bg-border"}`}
+                                                    >
+                                                        <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${enableCharts ? "left-5" : "left-0.5"}`}></div>
+                                                    </div>
+                                                </label>
+
+                                                {/* Document Style */}
+                                                <div className="p-3 rounded-lg border border-border/50">
+                                                    <div className="text-sm font-medium text-foreground mb-3">Document Style</div>
+                                                    <div className="grid grid-cols-3 gap-2">
+                                                        {([
+                                                            { value: "corporate" as const, label: "Corporate", icon: "🏢" },
+                                                            { value: "regulatory" as const, label: "Regulatory", icon: "📜" },
+                                                            { value: "premium" as const, label: "Premium", icon: "✨" },
+                                                        ]).map(style => (
+                                                            <button
+                                                                key={style.value}
+                                                                onClick={() => setDocumentStyle(style.value)}
+                                                                className={`py-3 px-2 rounded-lg text-xs font-medium transition-all flex flex-col items-center gap-1 ${documentStyle === style.value
+                                                                    ? "bg-primary text-primary-foreground shadow-sm ring-2 ring-primary/20"
+                                                                    : "bg-secondary/50 text-muted-foreground hover:bg-secondary"
+                                                                    }`}
+                                                            >
+                                                                <span className="text-base">{style.icon}</span>
+                                                                {style.label}
+                                                            </button>
+                                                        ))}
                                                     </div>
                                                 </div>
-                                            )}
+                                            </div>
+                                        </div>
+
+                                        {/* Right: Generate Action Card */}
+                                        <div className="w-[280px] bg-gradient-to-br from-primary/5 to-primary/10 dark:from-primary/10 dark:to-primary/20 border border-primary/20 shadow-sm rounded-xl p-6 flex flex-col items-center justify-center">
+                                            <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
+                                                <svg className="w-8 h-8 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                </svg>
+                                            </div>
+                                            <h3 className="text-lg font-semibold text-foreground mb-2">Ready to Generate</h3>
+                                            <p className="text-sm text-muted-foreground text-center mb-6">
+                                                Your PSUR will be compiled with {totalAtoms} data records
+                                            </p>
+                                            <button
+                                                onClick={runWorkflow}
+                                                disabled={runBusy}
+                                                className="w-full px-6 py-4 rounded-xl bg-foreground text-background font-medium shadow-lg hover:shadow-xl transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-3"
+                                            >
+                                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                </svg>
+                                                Generate PSUR
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                /* Compilation in progress / Complete - VISUAL WORKFLOW DESIGN */
+                                <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                                    {/* Top: Workflow Pipeline Nodes */}
+                                    <div className="flex-shrink-0 px-6 py-4 border-b border-border/30 bg-gradient-to-r from-slate-50 to-white dark:from-slate-900/50 dark:to-slate-900">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                                                <span className="text-sm font-semibold text-foreground">Pipeline Execution</span>
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                                <span className={cn(
+                                                    "text-[10px] font-mono px-2 py-1 rounded border",
+                                                    runtimeConnected ? "border-emerald-500/30 text-emerald-600 bg-emerald-50 dark:bg-emerald-950/30" : "border-border text-muted-foreground"
+                                                )}>
+                                                    {runtimeConnected ? "● LIVE" : "○ OFFLINE"}
+                                                </span>
+                                                <button
+                                                    onClick={cancelDrafting}
+                                                    className="px-2.5 py-1 rounded text-[10px] font-medium bg-red-100 text-red-700 hover:bg-red-200 transition-colors dark:bg-red-950/30 dark:text-red-400"
+                                                >
+                                                    Cancel
+                                                </button>
+                                            </div>
+                                        </div>
+                                        
+                                        {/* Visual Pipeline Nodes */}
+                                        <div className="flex items-center gap-1">
+                                            {runResult.steps.map((s, idx) => {
+                                                const isComplete = s.status === "COMPLETED";
+                                                const isRunning = s.status === "RUNNING";
+                                                const isFailed = s.status === "FAILED";
+                                                
+                                                return (
+                                                    <div key={s.step} className="flex items-center flex-1">
+                                                        {/* Node */}
+                                                        <div className={cn(
+                                                            "flex-1 p-2.5 rounded-lg border transition-all cursor-default",
+                                                            isComplete && "bg-emerald-50 border-emerald-300 dark:bg-emerald-950/30 dark:border-emerald-800",
+                                                            isRunning && "bg-primary/10 border-primary shadow-lg shadow-primary/20 ring-1 ring-primary/50",
+                                                            isFailed && "bg-red-50 border-red-300 dark:bg-red-950/30 dark:border-red-800",
+                                                            !isComplete && !isRunning && !isFailed && "bg-slate-50 border-slate-200 dark:bg-slate-900 dark:border-slate-700"
+                                                        )}>
+                                                            <div className="flex items-center gap-2">
+                                                                {/* Status Icon */}
+                                                                {isComplete && <div className="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center"><svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>}
+                                                                {isRunning && <div className="w-4 h-4"><Loader2 className="w-4 h-4 text-primary animate-spin" /></div>}
+                                                                {isFailed && <div className="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center"><svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg></div>}
+                                                                {!isComplete && !isRunning && !isFailed && <div className="w-4 h-4 rounded-full bg-slate-300 dark:bg-slate-600 flex items-center justify-center"><span className="text-[8px] font-bold text-slate-600 dark:text-slate-300">{s.step}</span></div>}
+                                                                
+                                                                {/* Label */}
+                                                                <span className={cn(
+                                                                    "text-[10px] font-medium truncate",
+                                                                    isComplete && "text-emerald-700 dark:text-emerald-400",
+                                                                    isRunning && "text-primary",
+                                                                    isFailed && "text-red-600",
+                                                                    !isComplete && !isRunning && !isFailed && "text-muted-foreground"
+                                                                )}>
+                                                                    {s.name}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                        
+                                                        {/* Connector */}
+                                                        {idx < runResult.steps.length - 1 && (
+                                                            <div className={cn(
+                                                                "w-4 h-0.5 flex-shrink-0",
+                                                                isComplete ? "bg-emerald-400" : "bg-slate-200 dark:bg-slate-700"
+                                                            )} />
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
                                     </div>
 
-                                    {/* Right Panel - Document Preview / Success */}
-                                    <div className="flex-1 flex flex-col">
-                                        <div className="bg-white dark:bg-card border border-border shadow-sm rounded-lg flex-1 flex flex-col overflow-hidden">
-                                            {allComplete ? (
-                                                /* Success State */
-                                                <div className="flex-1 flex flex-col">
-                                                    {/* Preview Header */}
-                                                    <div className="px-6 py-4 border-b border-border/30 flex items-center justify-between bg-white/40">
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
-                                                                <svg className="w-4 h-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                                                            </div>
-                                                            <div>
-                                                                <div className="text-sm font-semibold text-foreground">Document Ready</div>
-                                                                <div className="text-xs text-muted-foreground">PSUR_{psurCaseId}.{documentStyle}</div>
-                                                            </div>
+                                    {/* Main Content Area */}
+                                    <div className="flex-1 min-h-0 flex">
+                                        {allComplete ? (
+                                            /* SUCCESS: Full Document Preview */
+                                            <div className="flex-1 flex flex-col">
+                                                {/* Header Bar */}
+                                                <div className="flex-shrink-0 px-4 py-2.5 border-b border-border/30 bg-emerald-50/50 dark:bg-emerald-950/20 flex items-center justify-between">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center">
+                                                            <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                                                         </div>
+                                                        <span className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">Document Ready</span>
+                                                        <span className="text-xs text-muted-foreground font-mono">PSUR-{psurCaseId}</span>
                                                     </div>
-
-                                                    {/* Document Preview */}
-                                                    <div className="flex-1 p-6 overflow-auto bg-secondary/20">
-                                                        <iframe
-                                                            src={`/api/psur-cases/${psurCaseId}/psur.html?style=${documentStyle}`}
-                                                            className="w-full h-full rounded-lg border border-border/30 bg-white shadow-sm"
-                                                            title="PSUR Preview"
-                                                        />
-                                                    </div>
-
-                                                    {/* Download Actions */}
-                                                    <div className="px-6 py-4 border-t border-border/30 bg-white/40">
-                                                        <div className="flex items-center justify-between">
-                                                            <div className="flex gap-2">
-                                                                <a href={`/api/psur-cases/${psurCaseId}/psur.docx?style=${documentStyle}`} download
-                                                                    className="px-4 py-2 rounded-xl bg-blue-500 text-white text-sm font-medium hover:bg-blue-600 transition-all flex items-center gap-2 shadow-sm">
-                                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                                                                    DOCX
-                                                                </a>
-                                                                <a href={`/api/psur-cases/${psurCaseId}/psur.pdf?style=${documentStyle}`} download
-                                                                    className="px-4 py-2 rounded-xl bg-red-500 text-white text-sm font-medium hover:bg-red-600 transition-all flex items-center gap-2 shadow-sm">
-                                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                                                                    PDF
-                                                                </a>
-                                                                <a href={`/api/audit-bundles/${psurCaseId}/download`}
-                                                                    className="px-4 py-2 rounded-xl bg-secondary text-foreground text-sm font-medium hover:bg-secondary/80 transition-all flex items-center gap-2">
-                                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
-                                                                    Audit Bundle
-                                                                </a>
-                                                            </div>
-                                                            <button onClick={resetWizard}
-                                                                className="px-4 py-2 rounded-xl border border-border text-muted-foreground text-sm font-medium hover:bg-secondary/50 transition-all flex items-center gap-2">
-                                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                                                                </svg>
-                                                                New Report
-                                                            </button>
-                                                        </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <a href={`/api/psur-cases/${psurCaseId}/psur.docx?style=${documentStyle}`} download className="px-2.5 py-1 rounded bg-blue-500 text-white text-[10px] font-medium hover:bg-blue-600 transition-colors flex items-center gap-1">
+                                                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                                            DOCX
+                                                        </a>
+                                                        <a href={`/api/psur-cases/${psurCaseId}/psur.pdf?style=${documentStyle}`} download className="px-2.5 py-1 rounded bg-red-500 text-white text-[10px] font-medium hover:bg-red-600 transition-colors flex items-center gap-1">
+                                                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                                            PDF
+                                                        </a>
+                                                        <a href={`/api/audit-bundles/${psurCaseId}/download`} className="px-2.5 py-1 rounded bg-slate-600 text-white text-[10px] font-medium hover:bg-slate-700 transition-colors flex items-center gap-1">
+                                                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
+                                                            Audit
+                                                        </a>
+                                                        <button onClick={resetWizard} className="px-2.5 py-1 rounded border border-border text-[10px] font-medium text-muted-foreground hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center gap-1">
+                                                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                                                            New
+                                                        </button>
                                                     </div>
                                                 </div>
-                                            ) : (
-                                                /* Building State */
-                                                <div className="flex-1 flex flex-col items-center justify-center p-8">
-                                                    <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-6">
-                                                        <svg className="w-8 h-8 text-primary animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                                        </svg>
-                                                    </div>
-                                                    <h3 className="text-lg font-semibold text-foreground mb-2">Building Your Document</h3>
-                                                    <p className="text-sm text-muted-foreground text-center max-w-xs mb-6">
-                                                        Processing inputs and generating your regulatory report...
-                                                    </p>
-
-                                                    {/* Streaming text effect */}
-                                                    <div className="w-full max-w-md bg-white dark:bg-card border border-border shadow-sm rounded-lg p-4 rounded-xl">
-                                                        <div className="font-mono text-xs text-muted-foreground space-y-1">
-                                                            {runResult.steps.filter(s => s.status === "COMPLETED" || s.status === "RUNNING").map((s, i) => (
-                                                                <div key={i} className={`flex items-center gap-2 ${s.status === "RUNNING" ? "text-primary" : ""}`}>
-                                                                    <span className="text-emerald-500">{s.status === "COMPLETED" ? "Done" : "..."}</span>
-                                                                    <span>{s.name}</span>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="mt-6 flex items-center gap-3">
-                                                        <button
-                                                            onClick={cancelDrafting}
-                                                            className="px-4 py-2 rounded-xl bg-destructive text-white text-sm font-medium hover:bg-destructive/90 transition-all shadow-sm"
-                                                        >
-                                                            Cancel Drafting
-                                                        </button>
-                                                        <div className={cn(
-                                                            "text-xs font-mono px-3 py-2 rounded-lg border",
-                                                            runtimeConnected ? "border-emerald-500/30 text-emerald-700 bg-emerald-500/10" : "border-border text-muted-foreground bg-secondary/30"
-                                                        )}>
-                                                            {runtimeConnected ? "runtime:connected" : "runtime:disconnected"}
-                                                        </div>
-                                                    </div>
-
-                                                    {/* SOTA Real-Time Compilation Viewer */}
-                                                    <CompilationRuntimeViewer
-                                                        psurCaseId={psurCaseId!}
-                                                        isGenerating={!allComplete}
+                                                
+                                                {/* Document Preview */}
+                                                <div className="flex-1 p-3 bg-slate-100 dark:bg-slate-900">
+                                                    <iframe
+                                                        src={`/api/psur-cases/${psurCaseId}/psur.html?style=${documentStyle}`}
+                                                        className="w-full h-full rounded-lg border border-border/30 bg-white shadow-lg"
+                                                        title="PSUR Preview"
                                                     />
                                                 </div>
-                                            )}
-                                        </div>
+                                            </div>
+                                        ) : (
+                                            /* GENERATING: Live Generation View */
+                                            <div className="flex-1 flex gap-4 p-4 overflow-hidden">
+                                                {/* Left: Live Sections Being Generated */}
+                                                <div className="flex-1 min-w-0 flex flex-col border rounded-xl bg-card overflow-hidden">
+                                                    <div className="flex-shrink-0 px-4 py-2 border-b bg-slate-50 dark:bg-slate-900/50 flex items-center justify-between">
+                                                        <div className="flex items-center gap-2">
+                                                            <Sparkles className="w-4 h-4 text-primary animate-pulse" />
+                                                            <span className="text-xs font-semibold text-foreground">Live Content Generation</span>
+                                                        </div>
+                                                        <span className="text-[10px] text-muted-foreground">
+                                                            {liveSections.filter(s => s.status === "done").length} / {liveSections.length} sections
+                                                        </span>
+                                                    </div>
+                                                    
+                                                    {/* Scrollable Live Sections */}
+                                                    <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                                                        {liveSections.filter(s => s.status === "done" || s.status === "generating").slice(0, 10).map(section => (
+                                                            <div 
+                                                                key={section.slotId} 
+                                                                className={cn(
+                                                                    "p-3 rounded-lg border transition-all",
+                                                                    section.status === "generating" && "bg-primary/5 border-primary/30 shadow-md animate-pulse",
+                                                                    section.status === "done" && "bg-emerald-50/50 border-emerald-200/50 dark:bg-emerald-950/20 dark:border-emerald-800/30"
+                                                                )}
+                                                            >
+                                                                <div className="flex items-start gap-2">
+                                                                    {section.status === "generating" ? (
+                                                                        <Loader2 className="w-3.5 h-3.5 text-primary animate-spin flex-shrink-0 mt-0.5" />
+                                                                    ) : (
+                                                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0 mt-0.5" />
+                                                                    )}
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <div className="text-xs font-medium text-foreground truncate">{section.title}</div>
+                                                                        {section.content && (
+                                                                            <div className="text-[10px] text-muted-foreground mt-1 line-clamp-2">
+                                                                                {section.content.substring(0, 150)}...
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                        
+                                                        {/* Pending sections */}
+                                                        {liveSections.filter(s => s.status === "pending").slice(0, 5).map(section => (
+                                                            <div key={section.slotId} className="p-2.5 rounded-lg border border-dashed border-border/50 bg-slate-50/50 dark:bg-slate-900/30">
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className="w-3 h-3 rounded-full bg-slate-200 dark:bg-slate-700" />
+                                                                    <span className="text-[10px] text-muted-foreground">{section.title}</span>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                                
+                                                {/* Right: Stats & Trace Summary */}
+                                                <div className="w-64 flex-shrink-0 flex flex-col gap-3">
+                                                    {/* Stats Card */}
+                                                    <div className="border rounded-xl bg-card p-4">
+                                                        <div className="text-xs font-semibold text-muted-foreground mb-3">Generation Stats</div>
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-900 text-center">
+                                                                <div className="text-lg font-bold text-foreground">{liveSections.filter(s => s.status === "done").length}</div>
+                                                                <div className="text-[9px] text-muted-foreground uppercase">Complete</div>
+                                                            </div>
+                                                            <div className="p-2 rounded-lg bg-primary/10 text-center">
+                                                                <div className="text-lg font-bold text-primary">{liveSections.filter(s => s.status === "generating").length}</div>
+                                                                <div className="text-[9px] text-primary uppercase">Active</div>
+                                                            </div>
+                                                        </div>
+                                                        {traceSummary && (
+                                                            <div className="mt-3 pt-3 border-t border-border/30 grid grid-cols-2 gap-2">
+                                                                <div className="text-center">
+                                                                    <div className="text-sm font-semibold text-foreground">{traceSummary.totalEvents}</div>
+                                                                    <div className="text-[9px] text-muted-foreground">Events</div>
+                                                                </div>
+                                                                <div className="text-center">
+                                                                    <div className="text-sm font-semibold text-emerald-600">{traceSummary.acceptedSlots}</div>
+                                                                    <div className="text-[9px] text-emerald-600">Accepted</div>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    
+                                                    {/* Current Step Detail */}
+                                                    <div className="border rounded-xl bg-card p-4 flex-1">
+                                                        <div className="text-xs font-semibold text-muted-foreground mb-2">Current Step</div>
+                                                        {runResult.steps.filter(s => s.status === "RUNNING")[0] && (
+                                                            <div className="space-y-2">
+                                                                <div className="flex items-center gap-2">
+                                                                    <Loader2 className="w-4 h-4 text-primary animate-spin" />
+                                                                    <span className="text-sm font-medium text-primary">
+                                                                        {runResult.steps.filter(s => s.status === "RUNNING")[0].name}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                                                                    <div className="h-full bg-primary rounded-full animate-pulse" style={{ width: '60%' }} />
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             )}

@@ -1,6 +1,12 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { TemplateZ, validateTemplate, formatTemplateErrors, type Template } from "./templateSchema";
+import { 
+  validateFormTemplate, 
+  isFormBasedTemplate, 
+  formatFormTemplateErrors,
+  type FormTemplate 
+} from "./formTemplateSchema";
 
 export interface LintError {
   level: "error" | "warning";
@@ -11,25 +17,31 @@ export interface LintError {
 
 export interface LintResult {
   templateId: string;
+  templateType: "slot-based" | "form-based";
   valid: boolean;
   errors: LintError[];
   warnings: LintError[];
 }
 
 /**
- * Lint a single template JSON against the schema and business rules
+ * Lint a single template JSON against the schema and business rules.
+ * Supports both slot-based (GRKB) templates and form-based (CooperSurgical) templates.
  */
 export async function lintTemplate(templatePath: string): Promise<LintResult> {
   const errors: LintError[] = [];
   const warnings: LintError[] = [];
   let templateId = "unknown";
+  let templateType: "slot-based" | "form-based" = "slot-based";
 
   // 1. Read and parse JSON
   let rawData: unknown;
   try {
     const content = fs.readFileSync(templatePath, "utf-8");
     rawData = JSON.parse(content);
-    templateId = (rawData as any)?.template_id || path.basename(templatePath, ".json");
+    // Get ID from either format
+    templateId = (rawData as any)?.template_id 
+      || (rawData as any)?.form?.form_id 
+      || path.basename(templatePath, ".json");
   } catch (e: any) {
     errors.push({
       level: "error",
@@ -37,10 +49,16 @@ export async function lintTemplate(templatePath: string): Promise<LintResult> {
       message: `Failed to parse JSON: ${e.message}`,
       path: templatePath,
     });
-    return { templateId, valid: false, errors, warnings };
+    return { templateId, templateType, valid: false, errors, warnings };
   }
 
-  // 2. Validate against Zod schema
+  // 2. Detect template type and validate against appropriate schema
+  if (isFormBasedTemplate(rawData)) {
+    templateType = "form-based";
+    return lintFormBasedTemplate(rawData, templateId, templatePath);
+  }
+
+  // Slot-based template validation
   const validation = validateTemplate(rawData);
   if (!validation.success) {
     const schemaErrors = formatTemplateErrors(validation.errors);
@@ -52,7 +70,7 @@ export async function lintTemplate(templatePath: string): Promise<LintResult> {
         path: templatePath,
       });
     }
-    return { templateId, valid: false, errors, warnings };
+    return { templateId, templateType, valid: false, errors, warnings };
   }
 
   const template = validation.data;
@@ -140,6 +158,106 @@ export async function lintTemplate(templatePath: string): Promise<LintResult> {
 
   return {
     templateId,
+    templateType,
+    valid: errors.length === 0,
+    errors,
+    warnings,
+  };
+}
+
+/**
+ * Lint a form-based template (CooperSurgical-style)
+ */
+function lintFormBasedTemplate(
+  rawData: unknown,
+  templateId: string,
+  templatePath: string
+): LintResult {
+  const errors: LintError[] = [];
+  const warnings: LintError[] = [];
+  const templateType: "form-based" = "form-based";
+
+  // Validate against form template schema
+  const validation = validateFormTemplate(rawData);
+  if (!validation.success) {
+    const schemaErrors = formatFormTemplateErrors(validation.errors);
+    for (const err of schemaErrors) {
+      errors.push({
+        level: "error",
+        code: "SCHEMA_ERROR",
+        message: err,
+        path: templatePath,
+      });
+    }
+    return { templateId, templateType, valid: false, errors, warnings };
+  }
+
+  const template = validation.data;
+  templateId = template.form.form_id;
+
+  // Form-specific lint rules
+
+  // 1. Check form metadata completeness
+  if (!template.form.revision) {
+    warnings.push({
+      level: "warning",
+      code: "MISSING_REVISION",
+      message: "Form template has no revision number specified",
+      path: "form.revision",
+    });
+  }
+
+  // 2. Check table of contents if present
+  if (template.table_of_contents && template.table_of_contents.length > 0) {
+    const tocSections = template.table_of_contents.map(e => e.section);
+    const expectedSections = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M"];
+    
+    for (const section of expectedSections) {
+      if (!tocSections.includes(section)) {
+        warnings.push({
+          level: "warning",
+          code: "MISSING_TOC_SECTION",
+          message: `Table of contents missing standard section ${section}`,
+          path: "table_of_contents",
+        });
+      }
+    }
+  }
+
+  // 3. Check that key sections have content structure
+  const sections = template.sections;
+  const sectionKeys = Object.keys(sections);
+  
+  if (sectionKeys.length === 0) {
+    errors.push({
+      level: "error",
+      code: "EMPTY_SECTIONS",
+      message: "Form template has no sections defined",
+      path: "sections",
+    });
+  }
+
+  // 4. Check critical sections exist
+  const criticalSections = [
+    "A_executive_summary",
+    "B_scope_and_device_description",
+    "M_findings_and_conclusions"
+  ];
+
+  for (const critical of criticalSections) {
+    if (!sections[critical as keyof typeof sections]) {
+      warnings.push({
+        level: "warning",
+        code: "MISSING_CRITICAL_SECTION",
+        message: `Form template missing recommended section: ${critical}`,
+        path: `sections.${critical}`,
+      });
+    }
+  }
+
+  return {
+    templateId,
+    templateType,
     valid: errors.length === 0,
     errors,
     warnings,
@@ -209,9 +327,10 @@ export function formatLintResults(results: LintResult[]): string {
 }
 
 /**
- * Load and validate a template, throwing on errors
+ * Load and validate a template, throwing on errors.
+ * Returns either a slot-based Template or a form-based FormTemplate.
  */
-export async function loadValidatedTemplate(templatePath: string): Promise<Template> {
+export async function loadValidatedTemplate(templatePath: string): Promise<Template | FormTemplate> {
   const result = await lintTemplate(templatePath);
 
   if (!result.valid) {
@@ -222,8 +341,16 @@ export async function loadValidatedTemplate(templatePath: string): Promise<Templ
   // Re-read and parse since we know it's valid
   const content = fs.readFileSync(templatePath, "utf-8");
   const data = JSON.parse(content);
-  const validation = validateTemplate(data);
+  
+  if (result.templateType === "form-based") {
+    const validation = validateFormTemplate(data);
+    if (!validation.success) {
+      throw new Error("Form template validation unexpectedly failed after lint");
+    }
+    return validation.data;
+  }
 
+  const validation = validateTemplate(data);
   if (!validation.success) {
     throw new Error("Template validation unexpectedly failed after lint");
   }

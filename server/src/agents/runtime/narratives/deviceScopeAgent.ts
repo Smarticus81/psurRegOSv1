@@ -6,12 +6,9 @@
  */
 
 import { BaseNarrativeAgent, NarrativeInput } from "./baseNarrativeAgent";
-import { PROMPT_TEMPLATES } from "../../llmService";
 
 export class DeviceScopeNarrativeAgent extends BaseNarrativeAgent {
   protected readonly sectionType = "DEVICE_SCOPE";
-
-  protected readonly systemPrompt = PROMPT_TEMPLATES.DEVICE_SCOPE_SYSTEM;
 
   constructor() {
     super(

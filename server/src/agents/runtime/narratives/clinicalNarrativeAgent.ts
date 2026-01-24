@@ -6,12 +6,9 @@
  */
 
 import { BaseNarrativeAgent, NarrativeInput } from "./baseNarrativeAgent";
-import { PROMPT_TEMPLATES } from "../../llmService";
 
 export class ClinicalNarrativeAgent extends BaseNarrativeAgent {
   protected readonly sectionType = "CLINICAL";
-
-  protected readonly systemPrompt = PROMPT_TEMPLATES.CLINICAL_NARRATIVE_SYSTEM;
 
   constructor() {
     super(

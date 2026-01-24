@@ -21,6 +21,12 @@ import {
   type SlotDefinition,
   type TemplateDefaults,
 } from "./templates/templateSchema";
+import {
+  validateFormTemplate,
+  isFormBasedTemplate,
+  formatFormTemplateErrors,
+  type FormTemplate,
+} from "./templates/formTemplateSchema";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -34,12 +40,13 @@ function httpError(status: number, message: string): HttpError {
 }
 
 // Re-export types for backward compatibility
-export type { Template, SlotDefinition as TemplateSlot, TemplateDefaults };
+export type { Template, SlotDefinition as TemplateSlot, TemplateDefaults, FormTemplate };
 
 export interface TemplateValidationResult {
   valid: boolean;
   errors: string[];
   warnings: string[];
+  templateType?: 'slot-based' | 'form-based';
 }
 
 // -----------------------------------------------------------------------------
@@ -97,8 +104,8 @@ export function listTemplates(): string[] {
     .map((f) => f.replace(".json", ""));
 }
 
-export function listTemplatesWithMetadata(): { templateId: string; name: string; version: string; jurisdictions: string[] }[] {
-  const templates: { templateId: string; name: string; version: string; jurisdictions: string[] }[] = [];
+export function listTemplatesWithMetadata(): { templateId: string; name: string; version: string; jurisdictions: string[]; templateType: 'slot-based' | 'form-based' }[] {
+  const templates: { templateId: string; name: string; version: string; jurisdictions: string[]; templateType: 'slot-based' | 'form-based' }[] = [];
   const dir = getTemplatesDir();
   
   if (!fs.existsSync(dir)) return templates;
@@ -111,12 +118,24 @@ export function listTemplatesWithMetadata(): { templateId: string; name: string;
       const raw = fs.readFileSync(filePath, "utf8");
       const parsed = JSON.parse(raw);
       
-      templates.push({
-        templateId: parsed.template_id,
-        name: parsed.name,
-        version: parsed.version,
-        jurisdictions: parsed.jurisdiction_scope || [],
-      });
+      // Detect form-based vs slot-based templates
+      if (isFormBasedTemplate(parsed)) {
+        templates.push({
+          templateId: parsed.form?.form_id || file.replace(".json", ""),
+          name: parsed.form?.form_title || "Custom Form Template",
+          version: parsed.form?.revision || "1.0",
+          jurisdictions: ["EU_MDR"],
+          templateType: 'form-based',
+        });
+      } else {
+        templates.push({
+          templateId: parsed.template_id,
+          name: parsed.name,
+          version: parsed.version,
+          jurisdictions: parsed.jurisdiction_scope || [],
+          templateType: 'slot-based',
+        });
+      }
     } catch (e) {
       console.warn(`[TemplateStore] Failed to parse ${file}:`, e);
     }
@@ -126,10 +145,35 @@ export function listTemplatesWithMetadata(): { templateId: string; name: string;
 }
 
 // -----------------------------------------------------------------------------
-// VALIDATE TEMPLATE (using Zod)
+// VALIDATE TEMPLATE (using Zod - supports both slot-based and form-based)
 // -----------------------------------------------------------------------------
 
 export function validateTemplate(template: unknown): TemplateValidationResult {
+  // First, detect if this is a form-based template
+  if (isFormBasedTemplate(template)) {
+    const result = validateFormTemplate(template);
+    
+    if (result.success) {
+      const warnings: string[] = [];
+      const t = result.data;
+      
+      // Validate form has required sections
+      if (!t.sections) {
+        warnings.push("No sections defined in form template");
+      }
+      
+      return { valid: true, errors: [], warnings, templateType: 'form-based' };
+    }
+    
+    return {
+      valid: false,
+      errors: formatFormTemplateErrors(result.errors),
+      warnings: [],
+      templateType: 'form-based',
+    };
+  }
+  
+  // Otherwise, validate as slot-based template
   const result = zodValidateTemplate(template);
   
   if (result.success) {
@@ -143,13 +187,14 @@ export function validateTemplate(template: unknown): TemplateValidationResult {
       }
     }
     
-    return { valid: true, errors: [], warnings };
+    return { valid: true, errors: [], warnings, templateType: 'slot-based' };
   }
   
   return {
     valid: false,
     errors: formatTemplateErrors(result.errors),
     warnings: [],
+    templateType: 'slot-based',
   };
 }
 
@@ -197,6 +242,72 @@ export function loadTemplate(templateIdRaw: string): Template {
   console.log(`[TemplateStore] Template loaded successfully: ${template.template_id} with ${template.slots.length} slots`);
 
   return template;
+}
+
+/**
+ * Load a form-based template (CooperSurgical style).
+ * These templates don't have slots/mapping - they use direct section definitions.
+ */
+export function loadFormTemplate(templateIdRaw: string): FormTemplate {
+  const templateId = (templateIdRaw || "").trim();
+  if (!templateId) throw httpError(400, "templateId is required");
+
+  const canonicalId = TEMPLATE_ALIASES[templateId] || templateId;
+  const dir = getTemplatesDir();
+  const filePath = path.join(dir, `${canonicalId}.json`);
+
+  console.log(`[TemplateStore] Loading form template: ${templateId} -> ${canonicalId}`);
+
+  if (!fs.existsSync(filePath)) {
+    throw httpError(
+      400,
+      `Template '${templateId}' not found. Expected file: ${filePath}. Available: ${listTemplates().join(", ")}`
+    );
+  }
+
+  const raw = fs.readFileSync(filePath, "utf8");
+  let parsed: unknown;
+  
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e: any) {
+    throw httpError(500, `Template '${canonicalId}' JSON parse error: ${e?.message || e}`);
+  }
+
+  const validation = validateFormTemplate(parsed);
+  
+  if (!validation.success) {
+    const errors = formatFormTemplateErrors(validation.errors);
+    console.error(`[TemplateStore] Form template validation errors:`, errors);
+    throw httpError(500, `Form template '${canonicalId}' validation failed:\n${errors.join("\n")}`);
+  }
+
+  const template = validation.data;
+  console.log(`[TemplateStore] Form template loaded successfully: ${template.form.form_id}`);
+
+  return template;
+}
+
+/**
+ * Detect if a template ID refers to a form-based template.
+ */
+export function isTemplateFormBased(templateIdRaw: string): boolean {
+  const templateId = (templateIdRaw || "").trim();
+  if (!templateId) return false;
+
+  const canonicalId = TEMPLATE_ALIASES[templateId] || templateId;
+  const dir = getTemplatesDir();
+  const filePath = path.join(dir, `${canonicalId}.json`);
+
+  if (!fs.existsSync(filePath)) return false;
+
+  try {
+    const raw = fs.readFileSync(filePath, "utf8");
+    const parsed = JSON.parse(raw);
+    return isFormBasedTemplate(parsed);
+  } catch {
+    return false;
+  }
 }
 
 // -----------------------------------------------------------------------------

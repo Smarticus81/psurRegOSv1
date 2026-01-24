@@ -92,6 +92,7 @@ export interface IStorage {
   getActivePSURCaseForDevice(deviceId: number): Promise<PSURCase | undefined>;
   createPSURCase(psurCase: InsertPSURCase): Promise<PSURCase>;
   updatePSURCase(id: number, psurCase: Partial<InsertPSURCase>): Promise<PSURCase | undefined>;
+  deletePSURCase(id: number): Promise<void>;
 
   getEvidenceUploads(psurCaseId?: number): Promise<EvidenceUpload[]>;
   getEvidenceUpload(id: number): Promise<EvidenceUpload | undefined>;
@@ -359,6 +360,10 @@ export class DatabaseStorage implements IStorage {
   async updatePSURCase(id: number, psurCase: Partial<InsertPSURCase>): Promise<PSURCase | undefined> {
     const [updated] = await db.update(psurCases).set(psurCase).where(eq(psurCases.id, id)).returning();
     return updated;
+  }
+
+  async deletePSURCase(id: number): Promise<void> {
+    await db.delete(psurCases).where(eq(psurCases.id, id));
   }
 
   async getEvidenceUploads(psurCaseId?: number): Promise<EvidenceUpload[]> {

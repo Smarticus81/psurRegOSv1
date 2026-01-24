@@ -15,7 +15,14 @@ import {
   getTraceSummary,
   CompileTraceSummary,
 } from "../../services/compileTraceRepository";
-import { loadTemplate, getEffectiveSlots, type Template } from "../../templateStore";
+import { 
+  loadTemplate, 
+  loadFormTemplate,
+  isTemplateFormBased,
+  getEffectiveSlots, 
+  type Template,
+  type FormTemplate 
+} from "../../templateStore";
 
 // Import narrative agents
 import { ExecSummaryNarrativeAgent } from "./narratives/execSummaryAgent";
@@ -181,6 +188,92 @@ const TABLE_AGENT_MAPPING: Record<string, new () => any> = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// FORM-BASED SECTION AGENT MAPPING (CooperSurgical-style templates)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** Maps form section IDs to narrative agents and required evidence types */
+const FORM_SECTION_AGENT_MAPPING: Record<string, {
+  narrativeAgent: new () => any;
+  tableAgent?: new () => any;
+  requiredTypes: string[];
+  title: string;
+}> = {
+  "A_executive_summary": {
+    narrativeAgent: ExecSummaryNarrativeAgent,
+    requiredTypes: ["benefit_risk_assessment", "previous_psur_extract"],
+    title: "Executive Summary",
+  },
+  "B_scope_and_device_description": {
+    narrativeAgent: DeviceScopeNarrativeAgent,
+    requiredTypes: ["device_registry_record", "regulatory_certificate_record", "manufacturer_profile", "ifu_extract"],
+    title: "Scope and Device Description",
+  },
+  "C_volume_of_sales_and_population_exposure": {
+    narrativeAgent: PMSActivityNarrativeAgent,
+    tableAgent: SalesExposureTableAgent,
+    requiredTypes: ["sales_volume", "sales_summary", "sales_by_region", "distribution_summary", "usage_estimate"],
+    title: "Volume of Sales and Population Exposure",
+  },
+  "D_information_on_serious_incidents": {
+    narrativeAgent: SafetyNarrativeAgent,
+    tableAgent: SeriousIncidentsTableAgent,
+    requiredTypes: ["serious_incident_record", "serious_incident_summary", "serious_incident_records_imdrf", "vigilance_report"],
+    title: "Information on Serious Incidents",
+  },
+  "E_customer_feedback": {
+    narrativeAgent: SafetyNarrativeAgent,
+    requiredTypes: ["customer_feedback_summary", "trend_analysis"],
+    title: "Customer Feedback",
+  },
+  "F_product_complaint_types_counts_and_rates": {
+    narrativeAgent: SafetyNarrativeAgent,
+    tableAgent: ComplaintsTableAgent,
+    requiredTypes: ["complaint_record", "complaint_summary", "complaints_by_region"],
+    title: "Product Complaint Types, Counts, and Rates",
+  },
+  "G_information_from_trend_reporting": {
+    narrativeAgent: TrendNarrativeAgent,
+    tableAgent: TrendAnalysisTableAgent,
+    requiredTypes: ["trend_analysis", "signal_log"],
+    title: "Information from Trend Reporting",
+  },
+  "H_information_from_fsca": {
+    narrativeAgent: FSCANarrativeAgent,
+    tableAgent: FSCATableAgent,
+    requiredTypes: ["fsca_record", "fsca_summary", "recall_record"],
+    title: "Information from Field Safety Corrective Actions",
+  },
+  "I_corrective_and_preventive_actions": {
+    narrativeAgent: CAPANarrativeAgent,
+    tableAgent: CAPATableAgent,
+    requiredTypes: ["capa_record", "capa_summary", "ncr_record"],
+    title: "Corrective and Preventive Actions",
+  },
+  "J_scientific_literature_review": {
+    narrativeAgent: ClinicalNarrativeAgent,
+    tableAgent: LiteratureTableAgent,
+    requiredTypes: ["literature_review_summary", "literature_search_strategy", "literature_result"],
+    title: "Scientific Literature Review",
+  },
+  "K_review_of_external_databases_and_registries": {
+    narrativeAgent: ClinicalNarrativeAgent,
+    requiredTypes: ["external_db_summary", "external_db_query_log"],
+    title: "Review of External Databases and Registries",
+  },
+  "L_pmcf": {
+    narrativeAgent: ClinicalNarrativeAgent,
+    tableAgent: PMCFTableAgent,
+    requiredTypes: ["pmcf_summary", "pmcf_result", "pmcf_activity_record", "pmcf_report_extract"],
+    title: "Post-Market Clinical Follow-up (PMCF)",
+  },
+  "M_findings_and_conclusions": {
+    narrativeAgent: ConclusionNarrativeAgent,
+    requiredTypes: ["benefit_risk_assessment", "clinical_evaluation_extract", "cer_extract", "risk_assessment"],
+    title: "Findings and Conclusions",
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // COMPILE ORCHESTRATOR
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -246,6 +339,19 @@ export class CompileOrchestrator {
       // Load live content functions for incremental preview
       await loadLiveContentFunctions();
 
+      // ═══════════════════════════════════════════════════════════════════════
+      // DETECT TEMPLATE TYPE AND LOAD APPROPRIATELY
+      // ═══════════════════════════════════════════════════════════════════════
+      const isFormBased = isTemplateFormBased(input.templateId);
+      
+      if (isFormBased) {
+        console.log(`[${this.orchestratorId}] Detected FORM-BASED template: ${input.templateId}`);
+        return await this.compileFormBasedTemplate(input, orchTrace, startTime);
+      }
+
+      // Standard slot-based template compilation
+      console.log(`[${this.orchestratorId}] Processing SLOT-BASED template: ${input.templateId}`);
+      
       // Load template
       const template = loadTemplate(input.templateId);
       const templateSlots = getEffectiveSlots(template);
@@ -702,6 +808,403 @@ IMPORTANT: Do NOT include [ATOM-xxx] citations in the text. Write clean prose.`;
         confidence: slotAtoms.length > 0 ? 0.6 : 0.4,
       };
     }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // FORM-BASED TEMPLATE COMPILATION (CooperSurgical-style)
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Compile a form-based template (like FormQAR-054) into sections.
+   * Form templates have predefined sections A-M instead of GRKB slots.
+   */
+  private async compileFormBasedTemplate(
+    input: CompileOrchestratorInput,
+    orchTrace: ReturnType<typeof createTraceBuilder>,
+    startTime: number
+  ): Promise<CompileOrchestratorResult> {
+    const errors: string[] = [];
+    const warnings: string[] = [];
+    const sections: CompiledSection[] = [];
+    const charts: CompiledChart[] = [];
+
+    const throwIfAborted = () => {
+      if (!input.signal?.aborted) return;
+      const reason =
+        typeof (input.signal as any).reason === "string"
+          ? (input.signal as any).reason
+          : "Cancelled";
+      throw new Error(`Cancelled: ${reason}`);
+    };
+
+    try {
+      // Load form template
+      const formTemplate = loadFormTemplate(input.templateId);
+      const sectionIds = Object.keys(FORM_SECTION_AGENT_MAPPING);
+
+      console.log(`[${this.orchestratorId}] Form template loaded: ${formTemplate.form.form_id}`);
+      console.log(`[${this.orchestratorId}] Processing ${sectionIds.length} form sections`);
+
+      // Initialize live content
+      initLiveContent(input.psurCaseId, sectionIds);
+
+      // Load all evidence atoms for this case
+      const allAtoms = await db.query.evidenceAtoms.findMany({
+        where: eq(evidenceAtoms.psurCaseId, input.psurCaseId),
+      });
+
+      console.log(`[${this.orchestratorId}] Loaded ${allAtoms.length} evidence atoms for form compilation`);
+
+      // ═══════════════════════════════════════════════════════════════════════
+      // PHASE 1: GENERATE FORM SECTIONS SEQUENTIALLY
+      // ═══════════════════════════════════════════════════════════════════════
+
+      for (const sectionId of sectionIds) {
+        throwIfAborted();
+        const sectionConfig = FORM_SECTION_AGENT_MAPPING[sectionId];
+        if (!sectionConfig) continue;
+
+        // Mark section as generating
+        updateLiveContent(input.psurCaseId, sectionId, sectionConfig.title, "", "generating");
+
+        // Filter atoms for this section
+        const sectionAtoms = this.filterAtomsForSlot(allAtoms, sectionConfig.requiredTypes);
+
+        console.log(`[${this.orchestratorId}] Processing section ${sectionId}: ${sectionAtoms.length} atoms`);
+
+        // Generate narrative
+        try {
+          const runId = `${this.orchestratorId}:${sectionId}:${Date.now().toString(36)}`;
+          const agentName = sectionConfig.narrativeAgent?.name || "FormNarrativeAgent";
+          emitRuntimeEvent(input.psurCaseId, { kind: "agent.created", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "narrative", slotId: sectionId, agent: agentName, runId });
+          const agentStart = Date.now();
+
+          const agent = new sectionConfig.narrativeAgent();
+          emitRuntimeEvent(input.psurCaseId, { kind: "agent.started", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "narrative", slotId: sectionId, agent: agentName, runId });
+
+          const result = await agent.run({
+            slot: {
+              slotId: sectionId,
+              title: sectionConfig.title,
+              sectionPath: sectionConfig.title,
+              requirements: sectionConfig.requiredTypes.join(", "),
+              guidance: "Generate a comprehensive section for the PSUR form",
+            },
+            evidenceAtoms: sectionAtoms.map((a: any) => ({
+              atomId: a.atomId,
+              evidenceType: a.evidenceType,
+              normalizedData: a.normalizedData as Record<string, unknown>,
+            })),
+            context: {
+              deviceCode: input.deviceCode,
+              deviceName: input.deviceName,
+              periodStart: input.periodStart,
+              periodEnd: input.periodEnd,
+              templateId: input.templateId,
+            },
+          }, this.createAgentContext(input.psurCaseId, sectionId, {
+            deviceCode: input.deviceCode,
+            periodStart: input.periodStart,
+            periodEnd: input.periodEnd,
+          }));
+
+          if (result.success && result.data) {
+            const section: CompiledSection = {
+              slotId: sectionId,
+              title: sectionConfig.title,
+              sectionPath: sectionConfig.title,
+              slotKind: "NARRATIVE",
+              content: result.data.content,
+              evidenceAtomIds: result.data.citedAtoms || sectionAtoms.map((a: any) => a.atomId),
+              obligationsClaimed: [],
+              confidence: result.data.confidence || 0.8,
+            };
+            sections.push(section);
+            updateLiveContent(input.psurCaseId, sectionId, sectionConfig.title, result.data.content, "done");
+            emitRuntimeEvent(input.psurCaseId, { kind: "agent.completed", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "narrative", slotId: sectionId, agent: agentName, runId, durationMs: Date.now() - agentStart });
+          } else {
+            // Fallback to generic generation
+            const fallback = await this.generateFormSectionFallback(sectionId, sectionConfig, sectionAtoms, input);
+            sections.push(fallback);
+            updateLiveContent(input.psurCaseId, sectionId, sectionConfig.title, fallback.content, "done");
+            warnings.push(`Used fallback for section ${sectionId}`);
+            emitRuntimeEvent(input.psurCaseId, { kind: "agent.failed", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "narrative", slotId: sectionId, agent: agentName, runId, error: result.error || "Unknown error" });
+          }
+          emitRuntimeEvent(input.psurCaseId, { kind: "agent.destroyed", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "narrative", slotId: sectionId, agent: agentName, runId });
+
+        } catch (err: any) {
+          console.error(`[${this.orchestratorId}] Section ${sectionId} error:`, err.message);
+          const fallback = await this.generateFormSectionFallback(sectionId, sectionConfig, sectionAtoms, input);
+          sections.push(fallback);
+          updateLiveContent(input.psurCaseId, sectionId, sectionConfig.title, fallback.content, "done");
+          errors.push(`Error generating ${sectionId}: ${err.message}`);
+        }
+
+        // Generate table if applicable
+        if (sectionConfig.tableAgent && sectionAtoms.length > 0) {
+          try {
+            const tableAgent = new sectionConfig.tableAgent();
+            const tableResult = await tableAgent.run({
+              slot: {
+                slot_id: `${sectionId}_table`,
+                title: `${sectionConfig.title} - Data Table`,
+                section_path: sectionConfig.title,
+                evidence_requirements: { required_types: sectionConfig.requiredTypes },
+              },
+              atoms: sectionAtoms,
+              context: {
+                deviceCode: input.deviceCode,
+                periodStart: input.periodStart,
+                periodEnd: input.periodEnd,
+              },
+            }, this.createAgentContext(input.psurCaseId, `${sectionId}_table`));
+
+            if (tableResult.success && tableResult.data) {
+              const tableSection: CompiledSection = {
+                slotId: `${sectionId}_table`,
+                title: `${sectionConfig.title} - Data Table`,
+                sectionPath: sectionConfig.title,
+                slotKind: "TABLE",
+                content: tableResult.data.markdown || tableResult.data.content || "",
+                evidenceAtomIds: tableResult.data.evidenceAtomIds || sectionAtoms.map((a: any) => a.atomId),
+                obligationsClaimed: [],
+                confidence: tableResult.confidence || 0.8,
+              };
+              sections.push(tableSection);
+            }
+          } catch (tableErr: any) {
+            warnings.push(`Table generation failed for ${sectionId}: ${tableErr.message}`);
+          }
+        }
+      }
+
+      // Finish live content
+      finishLiveContent(input.psurCaseId);
+
+      // ═══════════════════════════════════════════════════════════════════════
+      // PHASE 2: CHARTS (if enabled)
+      // ═══════════════════════════════════════════════════════════════════════
+
+      if (input.enableCharts) {
+        console.log(`[${this.orchestratorId}] Generating charts for form template...`);
+        // Reuse the same chart generation logic from slot-based templates
+        // Charts are data-driven, not template-driven
+        const chartResults = await this.generateFormCharts(allAtoms, input);
+        charts.push(...chartResults);
+      }
+
+      // ═══════════════════════════════════════════════════════════════════════
+      // PHASE 3: DOCUMENT FORMATTING
+      // ═══════════════════════════════════════════════════════════════════════
+
+      console.log(`[${this.orchestratorId}] Formatting form-based document...`);
+
+      const formatterAgent = new DocumentFormatterAgent();
+      const formattedResult = await formatterAgent.run({
+        sections,
+        charts,
+        style: input.documentStyle,
+        outputFormat: input.outputFormat || "docx",
+        metadata: {
+          psurCaseId: input.psurCaseId,
+          deviceCode: input.deviceCode,
+          deviceName: input.deviceName || input.deviceCode,
+          periodStart: input.periodStart,
+          periodEnd: input.periodEnd,
+          templateId: input.templateId,
+          generatedAt: new Date().toISOString(),
+          companyName: input.companyName,
+          companyLogo: input.companyLogo,
+          author: input.author,
+          reviewers: input.reviewers,
+          approvers: input.approvers,
+          confidentiality: input.confidentiality,
+        },
+        prepareForSignature: input.prepareForSignature,
+        enableAccessibility: input.enableAccessibility,
+      }, this.createAgentContext(input.psurCaseId, undefined, { phase: "formatting" }));
+      
+      // Check if formatter succeeded
+      if (!formattedResult.success) {
+        console.error(`[${this.orchestratorId}] DocumentFormatterAgent failed:`, formattedResult.error);
+        errors.push(`Document formatting failed: ${formattedResult.error || "Unknown error"}`);
+      }
+
+      // Log completion
+      const duration = Date.now() - startTime;
+      const hasDocument = formattedResult.success && formattedResult.data;
+      
+      orchTrace.setOutput({
+        templateType: "form-based",
+        sectionsGenerated: sections.length,
+        chartsGenerated: charts.length,
+        documentGenerated: hasDocument,
+        errors: errors.length,
+        warnings: warnings.length,
+      });
+      
+      const confidence = hasDocument ? (errors.length === 0 ? 0.95 : 0.70) : 0.30;
+      await orchTrace.commit(
+        hasDocument ? (errors.length === 0 ? "PASS" : "PARTIAL") : "FAIL",
+        confidence,
+        hasDocument 
+          ? `Form-based template compilation: ${sections.length} sections, ${charts.length} charts generated`
+          : `Form-based template compilation failed: ${errors.join("; ")}`
+      );
+
+      console.log(`[${this.orchestratorId}] Form compilation complete: ${sections.length} sections, ${charts.length} charts in ${duration}ms`);
+
+      return {
+        success: hasDocument,
+        document: hasDocument ? formattedResult.data : undefined,
+        sections,
+        charts,
+        traceSummary: getTraceSummary(input.psurCaseId),
+        errors,
+        warnings,
+      };
+
+    } catch (err: any) {
+      console.error(`[${this.orchestratorId}] Form compilation failed:`, err);
+      await orchTrace.commit(
+        "FAIL",
+        0,
+        `Form compilation failed: ${err.message}`
+      );
+
+      return {
+        success: false,
+        sections,
+        charts,
+        traceSummary: getTraceSummary(input.psurCaseId),
+        errors: [`Form compilation failed: ${err.message}`],
+        warnings,
+      };
+    }
+  }
+
+  /**
+   * Generate fallback content for a form section when agent fails
+   */
+  private async generateFormSectionFallback(
+    sectionId: string,
+    sectionConfig: typeof FORM_SECTION_AGENT_MAPPING[string],
+    sectionAtoms: any[],
+    input: CompileOrchestratorInput
+  ): Promise<CompiledSection> {
+    const atomSummary = sectionAtoms.length > 0
+      ? sectionAtoms.slice(0, 5).map((a: any) => {
+          const data = a.normalizedData || {};
+          return Object.entries(data)
+            .filter(([k]) => !["raw_data", "isNegativeEvidence"].includes(k))
+            .slice(0, 3)
+            .map(([k, v]) => `${k}: ${String(v).substring(0, 50)}`)
+            .join("; ");
+        }).join("\n- ")
+      : "No evidence data available for this section.";
+
+    const content = `## ${sectionConfig.title}
+
+**Reporting Period:** ${input.periodStart} to ${input.periodEnd}
+
+${sectionAtoms.length > 0
+  ? `This section summarizes information from ${sectionAtoms.length} evidence records of types: ${[...new Set(sectionAtoms.map((a: any) => a.evidenceType))].join(", ")}.
+
+### Key Data Points:
+- ${atomSummary}
+
+*Note: This section requires detailed review and completion by the manufacturer's regulatory team.*`
+  : `**Data Gap Identified:** No evidence records of the required types (${sectionConfig.requiredTypes.join(", ")}) were found for this reporting period.
+
+This represents a trace gap that must be addressed before PSUR submission. Please ensure the following evidence types are uploaded:
+${sectionConfig.requiredTypes.map(t => `- ${t}`).join("\n")}
+
+*This section will be populated once the required evidence is available.*`}
+`;
+
+    return {
+      slotId: sectionId,
+      title: sectionConfig.title,
+      sectionPath: sectionConfig.title,
+      slotKind: "NARRATIVE",
+      content,
+      evidenceAtomIds: sectionAtoms.map((a: any) => a.atomId),
+      obligationsClaimed: [],
+      confidence: sectionAtoms.length > 0 ? 0.5 : 0.3,
+    };
+  }
+
+  /**
+   * Generate charts for form-based templates using available evidence
+   */
+  private async generateFormCharts(allAtoms: any[], input: CompileOrchestratorInput): Promise<CompiledChart[]> {
+    const charts: CompiledChart[] = [];
+
+    try {
+      const trendAtoms = allAtoms
+        .filter((a: any) => ["trend_analysis", "complaint_record", "sales_volume"].includes(a.evidenceType))
+        .map((a: any) => ({ atomId: a.atomId, evidenceType: a.evidenceType, normalizedData: (a.normalizedData || {}) as Record<string, unknown> }));
+
+      const complaintAtoms = allAtoms
+        .filter((a: any) => ["complaint_record", "complaint_summary"].includes(a.evidenceType))
+        .map((a: any) => ({ atomId: a.atomId, evidenceType: a.evidenceType, normalizedData: (a.normalizedData || {}) as Record<string, unknown> }));
+
+      if (trendAtoms.length > 0) {
+        try {
+          const agent = new TrendLineChartAgent();
+          const result = await agent.run({
+            atoms: trendAtoms,
+            chartTitle: "Trend Analysis",
+            style: input.documentStyle,
+          }, this.createAgentContext(input.psurCaseId));
+
+          if (result.success && result.data) {
+            charts.push({
+              chartId: `trend-${input.psurCaseId}`,
+              chartType: "trend_line",
+              title: "Trend Analysis",
+              imageBuffer: result.data.imageBuffer,
+              svg: result.data.svg,
+              width: result.data.width,
+              height: result.data.height,
+              mimeType: result.data.mimeType,
+            });
+          }
+        } catch (err) {
+          console.warn(`[${this.orchestratorId}] Trend chart generation failed:`, err);
+        }
+      }
+
+      if (complaintAtoms.length > 0) {
+        try {
+          const agent = new ComplaintBarChartAgent();
+          const result = await agent.run({
+            atoms: complaintAtoms,
+            chartTitle: "Complaint Distribution",
+            style: input.documentStyle,
+          }, this.createAgentContext(input.psurCaseId));
+
+          if (result.success && result.data) {
+            charts.push({
+              chartId: `complaints-${input.psurCaseId}`,
+              chartType: "bar_chart",
+              title: "Complaint Distribution",
+              imageBuffer: result.data.imageBuffer,
+              svg: result.data.svg,
+              width: result.data.width,
+              height: result.data.height,
+              mimeType: result.data.mimeType,
+            });
+          }
+        } catch (err) {
+          console.warn(`[${this.orchestratorId}] Complaint chart generation failed:`, err);
+        }
+      }
+    } catch (err) {
+      console.warn(`[${this.orchestratorId}] Chart generation phase failed:`, err);
+    }
+
+    return charts;
   }
 
   /**

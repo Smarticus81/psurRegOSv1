@@ -3,10 +3,17 @@
  * 
  * Foundation for all section-specific narrative agents.
  * Provides common functionality for PSUR narrative generation.
+ * 
+ * Uses 3-layer prompt architecture:
+ * - Layer 1: Agent Persona (WHO)
+ * - Layer 2: System Prompt (WHAT) - loaded from DB or defaults
+ * - Layer 3: Template Field Instructions (HOW)
  */
 
 import { BaseAgent, AgentConfig, AgentContext, createAgentConfig } from "../../baseAgent";
 import { createTraceBuilder } from "../../../services/compileTraceRepository";
+import { composeSystemMessage, getDefaultSystemPrompt } from "../../promptLayers";
+import { getPromptTemplate } from "../../llmService";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -62,7 +69,11 @@ export interface NarrativeAgentContext extends AgentContext {
 
 export abstract class BaseNarrativeAgent extends BaseAgent<NarrativeInput, NarrativeOutput> {
   protected abstract readonly sectionType: string;
-  protected abstract readonly systemPrompt: string;
+  
+  // Subclasses can override to provide a prompt key for DB lookup
+  protected get promptKey(): string {
+    return `${this.sectionType}_SYSTEM`;
+  }
 
   constructor(
     agentType: string,
@@ -83,6 +94,18 @@ export abstract class BaseNarrativeAgent extends BaseAgent<NarrativeInput, Narra
       },
       ...config,
     }));
+  }
+
+  /**
+   * Get the composed system message using 3-layer architecture
+   */
+  protected async getComposedSystemMessage(): Promise<string> {
+    // Try to get from DB first (user-editable), fall back to defaults
+    const dbPrompt = await getPromptTemplate(this.promptKey);
+    const systemPrompt = dbPrompt || getDefaultSystemPrompt(this.sectionType);
+    
+    // Compose with persona and field instructions
+    return composeSystemMessage(this.config.agentType, systemPrompt, this.sectionType);
   }
 
   protected async execute(input: NarrativeInput): Promise<NarrativeOutput> {
@@ -121,9 +144,12 @@ export abstract class BaseNarrativeAgent extends BaseAgent<NarrativeInput, Narra
     // Build the prompt
     const userPrompt = this.buildUserPrompt(input, evidenceSummary, evidenceRecords);
 
+    // Get composed system message (3-layer architecture)
+    const systemMessage = await this.getComposedSystemMessage();
+
     // Generate narrative using LLM
     const { content: rawResponse, response } = await this.invokeLLM(
-      this.systemPrompt,
+      systemMessage,
       userPrompt,
       {
         operation: `NARRATIVE_${this.sectionType}`,

@@ -109,7 +109,7 @@ export abstract class BaseChartAgent extends BaseAgent<ChartInput, ChartOutput> 
 
   protected async execute(input: ChartInput): Promise<ChartOutput> {
     const ctx = this.context as ChartAgentContext;
-    
+
     // Create trace builder
     const trace = createTraceBuilder(
       ctx.psurCaseId,
@@ -132,7 +132,7 @@ export abstract class BaseChartAgent extends BaseAgent<ChartInput, ChartOutput> 
 
     // Generate chart configuration using abstract method
     const chartConfig = await this.generateChartConfig(input, theme);
-    
+
     // Use SOTA SVG generator
     const generator = new SVGChartGenerator({
       ...chartConfig,
@@ -140,9 +140,9 @@ export abstract class BaseChartAgent extends BaseAgent<ChartInput, ChartOutput> 
       height,
       style: input.style as SVGDocStyle,
     });
-    
+
     const result = generator.generate();
-    
+
     // Convert SVG to PNG using Puppeteer for DOCX embedding
     let pngBuffer: Buffer;
     try {
@@ -190,10 +190,10 @@ export abstract class BaseChartAgent extends BaseAgent<ChartInput, ChartOutput> 
         headless: true,
         args: ["--no-sandbox", "--disable-setuid-sandbox"],
       });
-      
+
       const page = await browser.newPage();
       await page.setViewport({ width, height, deviceScaleFactor: 2 }); // 2x for retina quality
-      
+
       // Create an HTML page with the SVG
       const html = `<!DOCTYPE html>
 <html>
@@ -206,16 +206,16 @@ export abstract class BaseChartAgent extends BaseAgent<ChartInput, ChartOutput> 
 </head>
 <body>${svg}</body>
 </html>`;
-      
+
       await page.setContent(html, { waitUntil: "networkidle0" });
-      
+
       // Take screenshot as PNG
       const screenshot = await page.screenshot({
         type: "png",
         clip: { x: 0, y: 0, width, height },
         omitBackground: false,
       });
-      
+
       return Buffer.from(screenshot);
     } finally {
       if (browser) {
@@ -266,6 +266,20 @@ export abstract class BaseChartAgent extends BaseAgent<ChartInput, ChartOutput> 
 
   protected extractPeriod(dateStr: string): string | null {
     if (!dateStr) return null;
+
+    // Normalize
+    const norm = String(dateStr).trim().replace(/_/g, " ").replace(/-/g, " ");
+
+    // Check for Quarter formats: "2023 Q1", "Q1 2023"
+    const qMatch = norm.match(/(\d{4}).*?Q([1-4])/i) || norm.match(/Q([1-4]).*?(\d{4})/i);
+    if (qMatch) {
+      const year = qMatch[1].length === 4 ? qMatch[1] : qMatch[2];
+      const quarter = qMatch[1].length === 4 ? qMatch[2] : qMatch[1];
+      // Map Q1->01, Q2->04, Q3->07, Q4->10
+      const startMonth = (parseInt(quarter) - 1) * 3 + 1;
+      return `${year}-${String(startMonth).padStart(2, "0")}`;
+    }
+
     try {
       const date = new Date(dateStr);
       if (isNaN(date.getTime())) return null;

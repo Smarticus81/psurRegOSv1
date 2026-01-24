@@ -7,6 +7,7 @@ import { Router, Request, Response } from "express";
 import multer from "multer";
 import { parseDocument, detectDocumentType } from "./documentParser";
 import { extractEvidence, EVIDENCE_TYPES, getEvidenceTypeInfo, getAllCategories } from "./evidenceExtractor";
+import { analyzeDocument, DocumentAnalyzerAgent } from "../agents/ingestion/documentAnalyzerAgent";
 import { 
   getSourceConfigs, 
   getSourceConfig, 
@@ -27,6 +28,10 @@ const upload = multer({
   storage,
   limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
 });
+
+// Startup verification
+console.log("[Ingest Routes] Module loaded successfully");
+console.log("[Ingest Routes] analyzeDocument function available:", typeof analyzeDocument === "function");
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DOCUMENT PARSING ENDPOINTS
@@ -247,6 +252,225 @@ router.post("/extract", upload.single("file"), async (req: Request, res: Respons
   } catch (error: any) {
     console.error("[Ingest] Extract error:", error);
     res.status(500).json({ error: error?.message || "Failed to extract evidence" });
+  }
+});
+
+/**
+ * POST /api/ingest/analyze
+ * Automatically analyze a document and detect ALL evidence types present.
+ * Uses SOTA Claude-powered semantic analysis combined with rule-based detection.
+ * 
+ * Returns:
+ * - Document classification (CER, Sales Report, etc.)
+ * - All detected evidence types with confidence scores
+ * - Extraction recommendations
+ * - Full analysis trace
+ */
+router.post("/analyze", upload.single("file"), async (req: Request, res: Response) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    const { buffer, originalname } = req.file;
+    const psurCaseId = req.body.psurCaseId ? parseInt(req.body.psurCaseId) : undefined;
+    const deviceCode = req.body.deviceCode;
+    const periodStart = req.body.periodStart;
+    const periodEnd = req.body.periodEnd;
+
+    console.log(`[Ingest] Analyzing document for automatic evidence detection: ${originalname}, size: ${buffer.length} bytes`);
+
+    // Parse document
+    const parsed = await parseDocument(buffer, originalname);
+
+    console.log(`[Ingest] Document parsed: ${parsed.tables.length} tables, ${parsed.sections.length} sections, ${parsed.rawText.length} chars`);
+
+    if (parsed.errors.length > 0 && parsed.rawText.length === 0 && parsed.tables.length === 0) {
+      console.error(`[Ingest] Document parse failed:`, parsed.errors);
+      return res.status(400).json({ 
+        error: "Failed to parse document", 
+        details: parsed.errors 
+      });
+    }
+
+    // Perform automatic analysis
+    console.log(`[Ingest] Starting document analysis...`);
+    let analysis;
+    try {
+      analysis = await analyzeDocument(parsed, {
+        psurCaseId,
+        deviceCode,
+        periodStart,
+        periodEnd,
+      });
+    } catch (analysisError: any) {
+      console.error(`[Ingest] Document analysis failed:`, analysisError?.message || analysisError);
+      return res.status(500).json({
+        error: "Document analysis failed",
+        details: analysisError?.message || "Unknown error during analysis"
+      });
+    }
+
+    console.log(`[Ingest] Document analysis complete: ${analysis.detectedEvidenceTypes.length} evidence types detected in ${analysis.processingTimeMs}ms`);
+
+    res.json({
+      success: true,
+      documentId: analysis.documentId,
+      filename: analysis.filename,
+      processingTimeMs: analysis.processingTimeMs,
+      
+      // Document classification
+      documentClassification: analysis.documentClassification,
+      
+      // Detected evidence types with details
+      detectedEvidenceTypes: analysis.detectedEvidenceTypes.map(det => ({
+        evidenceType: det.evidenceType,
+        confidence: det.confidence,
+        category: det.category,
+        reasoning: det.reasoning,
+        sourceLocations: det.sourceLocations,
+        estimatedRecordCount: det.estimatedRecordCount,
+        extractionRecommendation: det.extractionRecommendation,
+        fieldAvailability: det.fieldAvailability,
+      })),
+      
+      // Summary stats
+      multiEvidenceDocument: analysis.multiEvidenceDocument,
+      totalTypesDetected: analysis.detectedEvidenceTypes.length,
+      highConfidenceTypes: analysis.detectedEvidenceTypes.filter(d => d.confidence >= 0.7).length,
+      
+      // Structure analysis
+      structureAnalysis: analysis.structureAnalysis,
+      
+      // Recommendations
+      recommendations: analysis.recommendations,
+      
+      // Analysis trace (for debugging/audit)
+      analysisTrace: analysis.analysisTrace.map(t => ({
+        traceId: t.traceId,
+        timestamp: t.timestamp,
+        stage: t.stage,
+        decision: t.decision,
+        confidence: t.confidence,
+        reasoning: t.reasoning,
+        durationMs: t.durationMs,
+      })),
+    });
+  } catch (error: any) {
+    console.error("[Ingest] Document analysis error:", error);
+    res.status(500).json({ error: error?.message || "Failed to analyze document" });
+  }
+});
+
+/**
+ * POST /api/ingest/analyze-and-extract
+ * Combined endpoint: analyze document, then extract all high-confidence evidence types.
+ * Ideal for automated processing where user doesn't need to select evidence types.
+ * 
+ * OPTIMIZED: Runs extraction ONCE for all types, avoiding redundant CER processing.
+ */
+router.post("/analyze-and-extract", upload.single("file"), async (req: Request, res: Response) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    const { buffer, originalname } = req.file;
+    const psurCaseId = req.body.psurCaseId ? parseInt(req.body.psurCaseId) : undefined;
+    const deviceCode = req.body.deviceCode;
+    const periodStart = req.body.periodStart;
+    const periodEnd = req.body.periodEnd;
+    const minConfidence = req.body.minConfidence ? parseFloat(req.body.minConfidence) : 0.5;
+
+    console.log(`[Ingest] Auto-analyzing and extracting from: ${originalname}, minConfidence: ${minConfidence}`);
+
+    // Parse document
+    const parsed = await parseDocument(buffer, originalname);
+
+    if (parsed.errors.length > 0 && parsed.rawText.length === 0 && parsed.tables.length === 0) {
+      return res.status(400).json({ 
+        error: "Failed to parse document", 
+        details: parsed.errors 
+      });
+    }
+
+    // Perform automatic analysis
+    const analysis = await analyzeDocument(parsed, {
+      psurCaseId,
+      deviceCode,
+      periodStart,
+      periodEnd,
+    });
+
+    // Get high-confidence evidence types to extract
+    const typesToExtract = analysis.detectedEvidenceTypes
+      .filter(d => d.confidence >= minConfidence)
+      .map(d => d.evidenceType);
+
+    console.log(`[Ingest] Auto-detected ${typesToExtract.length} evidence types above ${minConfidence} threshold`);
+
+    // OPTIMIZED: Run extraction ONCE - CER extraction handles all types in one pass
+    // For CER documents, a single extraction call extracts all evidence types
+    const extraction = await extractEvidence(parsed, analysis.documentClassification?.type || "auto");
+    
+    // Filter evidence to only include requested types
+    const allEvidence = extraction.extractedEvidence.filter(e => 
+      typesToExtract.includes(e.evidenceType)
+    );
+    
+    // Build extraction results summary
+    const extractionResults = typesToExtract.map(evidenceType => {
+      const typeEvidence = allEvidence.filter(e => e.evidenceType === evidenceType);
+      return {
+        evidenceType,
+        success: true,
+        count: typeEvidence.length,
+        confidence: analysis.detectedEvidenceTypes.find(d => d.evidenceType === evidenceType)?.confidence || 0,
+      };
+    });
+
+    console.log(`[Ingest] Auto-extraction complete: ${allEvidence.length} total evidence items from ${typesToExtract.length} types`);
+
+    res.json({
+      success: true,
+      documentId: analysis.documentId,
+      filename: analysis.filename,
+      processingTimeMs: analysis.processingTimeMs,
+      
+      // Analysis results
+      documentClassification: analysis.documentClassification,
+      detectedEvidenceTypes: analysis.detectedEvidenceTypes,
+      
+      // Extraction results
+      extractionSummary: {
+        typesAnalyzed: typesToExtract.length,
+        totalEvidence: allEvidence.length,
+        extractionResults,
+      },
+      
+      // All extracted evidence
+      evidence: allEvidence.map(e => ({
+        evidenceType: e.evidenceType,
+        confidence: e.confidence,
+        source: e.source,
+        sourceName: e.sourceName,
+        data: e.data,
+        extractionMethod: e.extractionMethod,
+        warnings: e.warnings,
+      })),
+      
+      // Recommendations for evidence that wasn't auto-extracted
+      manualReviewRecommended: analysis.detectedEvidenceTypes
+        .filter(d => d.confidence < minConfidence && d.confidence >= 0.3)
+        .map(d => ({
+          evidenceType: d.evidenceType,
+          confidence: d.confidence,
+          reason: "Below auto-extraction threshold but potentially relevant",
+        })),
+    });
+  } catch (error: any) {
+    console.error("[Ingest] Analyze-and-extract error:", error);
+    res.status(500).json({ error: error?.message || "Failed to analyze and extract" });
   }
 });
 

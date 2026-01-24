@@ -87,7 +87,7 @@ export abstract class BaseNarrativeAgent extends BaseAgent<NarrativeInput, Narra
 
   protected async execute(input: NarrativeInput): Promise<NarrativeOutput> {
     const ctx = this.context as NarrativeAgentContext;
-    
+
     // Create trace builder
     const trace = createTraceBuilder(
       ctx.psurCaseId,
@@ -202,7 +202,7 @@ export abstract class BaseNarrativeAgent extends BaseAgent<NarrativeInput, Narra
   ): string {
     // Build list of actual atom IDs for reference
     const atomIdList = input.evidenceAtoms.slice(0, 20).map(a => a.atomId).join(", ");
-    
+
     return `## Section: ${input.slot.title}
 ## Section Requirements: ${input.slot.requirements || "Generate appropriate content based on evidence"}
 ## Template Guidance: ${input.slot.guidance || "Follow regulatory best practices"}
@@ -232,7 +232,7 @@ ${evidenceRecords}
 
   protected generateEvidenceSummary(atoms: NarrativeEvidenceAtom[]): string {
     const byType: Record<string, number> = {};
-    
+
     for (const atom of atoms) {
       byType[atom.evidenceType] = (byType[atom.evidenceType] || 0) + 1;
     }
@@ -253,17 +253,17 @@ ${evidenceRecords}
   protected formatEvidenceRecords(atoms: NarrativeEvidenceAtom[]): string {
     const lines: string[] = [];
     const limitedAtoms = atoms.slice(0, 50);
-    
+
     for (const atom of limitedAtoms) {
       // Make atom ID prominent - this is the ID to cite
       lines.push(`EVIDENCE RECORD - Citable ID: ${atom.atomId}`);
       lines.push(`Type: ${atom.evidenceType}`);
-      
+
       const keyFields = Object.entries(atom.normalizedData)
         .filter(([k, v]) => v && !["raw_data"].includes(k))
         .slice(0, 8)
         .map(([k, v]) => `  ${k}: ${String(v).substring(0, 100)}`);
-      
+
       lines.push(...keyFields);
       lines.push("---");
     }
@@ -289,7 +289,7 @@ ${evidenceRecords}
   } {
     // Extract JSON block from response
     const jsonMatch = response.match(/```json\s*([\s\S]*?)```/);
-    
+
     let metadata = {
       citedAtoms: [] as string[],
       uncitedAtoms: [] as string[],
@@ -319,11 +319,11 @@ ${evidenceRecords}
     while ((match = citationPattern.exec(content)) !== null) {
       citedInContent.push(match[0].slice(1, -1).replace("ATOM-", ""));
     }
-    
+
     // Merge with metadata citations
     const allCitedSet = new Set([...citedInContent, ...(metadata.citedAtoms || [])]);
     let allCited = Array.from(allCitedSet);
-    
+
     // Filter out placeholder citations (like ATOM-001, ATOM-002, ATOM-xxx, etc.)
     // Valid atom IDs are typically UUIDs or longer alphanumeric strings
     allCited = allCited.filter(id => {
@@ -335,7 +335,7 @@ ${evidenceRecords}
       if (cleanId.length < 8) return false; // Too short to be real
       return true;
     });
-    
+
     // Find uncited atoms
     const uncited = availableAtoms
       .filter(a => !allCited.includes(a.atomId))
@@ -360,7 +360,7 @@ ${evidenceRecords}
     invalidCitations: string[];
   } {
     const availableIds = new Set(availableAtoms.map(a => a.atomId));
-    
+
     const validCitations = citedAtoms.filter(id => availableIds.has(id));
     const invalidCitations = citedAtoms.filter(id => !availableIds.has(id));
 

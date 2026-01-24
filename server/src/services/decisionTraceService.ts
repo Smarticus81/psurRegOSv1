@@ -1138,6 +1138,30 @@ export const TraceEvents = {
       },
     }),
 
+  evidenceAtomsIngestedSummary: (
+    ctx: TraceContext,
+    totalAtoms: number,
+    byType: Record<string, number>,
+    periodStart?: string,
+    periodEnd?: string
+  ) =>
+    logTraceEvent(ctx, {
+      eventType: "EVIDENCE_INGEST_SUMMARY",
+      actor: "ingestEvidence",
+      workflowStep: 3,
+      entityType: "evidence_batch",
+      entityId: `batch_${Date.now()}`,
+      outputData: { totalAtoms, byType },
+      humanSummary: `Ingested ${totalAtoms} records across ${Object.keys(byType).length} data categories for period ${periodStart || "N/A"} to ${periodEnd || "N/A"}.`,
+      evidenceJustification: {
+        requiredEvidenceTypes: Object.keys(byType),
+        providedEvidenceTypes: Object.keys(byType),
+        atomCount: totalAtoms,
+        periodCoverage: periodStart && periodEnd ? "full" : "not_applicable",
+        justificationNarrative: `Batch ingest captured ${totalAtoms} records across ${Object.keys(byType).length} categories.`,
+      },
+    }),
+
   negativeEvidenceCreated: (ctx: TraceContext, atomId: string, evidenceType: string) =>
     logTraceEvent(ctx, {
       eventType: "NEGATIVE_EVIDENCE_CREATED",

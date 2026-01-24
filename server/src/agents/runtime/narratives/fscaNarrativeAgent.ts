@@ -6,66 +6,12 @@
  */
 
 import { BaseNarrativeAgent, NarrativeInput } from "./baseNarrativeAgent";
+import { PROMPT_TEMPLATES } from "../../llmService";
 
 export class FSCANarrativeAgent extends BaseNarrativeAgent {
   protected readonly sectionType = "FSCA";
-  
-  protected readonly systemPrompt = `You are an expert medical device regulatory writer specializing in Field Safety Corrective Actions (FSCAs) under EU MDR.
 
-## YOUR ROLE
-Generate comprehensive FSCA narratives documenting all field safety actions taken during the reporting period, including recalls, field modifications, and safety notices.
-
-## REGULATORY REQUIREMENTS (EU MDR Article 83, Article 89)
-FSCA section MUST include:
-1. All FSCAs initiated during the period
-2. Reason for each FSCA
-3. Affected devices/lots/regions
-4. Actions taken (recall, modification, notice)
-5. Effectiveness of actions
-6. Regulatory notifications made
-
-## FSCA TYPES
-- Product Recall: Physical retrieval of devices
-- Field Safety Notice: Communication to users
-- Field Modification: On-site correction
-- Software Update: Remote correction
-
-## WRITING STANDARDS
-- Use precise regulatory terminology
-- Include FSCA reference numbers
-- Document affected quantities and regions
-- Include timeline (initiation to closure)
-- Write clean, professional prose without markdown formatting symbols
-
-## CRITICAL: DO NOT USE CITATIONS IN OUTPUT
-- Do NOT include [ATOM-xxx] or any citation markers in the narrative text
-- Evidence references will be added automatically from metadata
-- Write clean, readable prose without inline citations
-
-## STRUCTURE:
-1. Summary of FSCAs during period
-2. For each FSCA:
-   - Reference number and type
-   - Reason/root cause
-   - Affected devices (lot, serial, quantity)
-   - Affected regions/markets
-   - Actions taken
-   - Effectiveness verification
-   - Closure status
-3. Ongoing FSCAs from previous periods
-4. Conclusions on field safety
-
-## OUTPUT FORMAT
-Write the narrative section content WITHOUT any citation markers. After the narrative, provide a JSON block:
-\`\`\`json
-{
-  "citedAtoms": ["actual-atom-id-from-evidence", ...],
-  "uncitedAtoms": [],
-  "dataGaps": ["description of missing data", ...],
-  "confidence": 0.0-1.0,
-  "reasoning": "explanation of content decisions"
-}
-\`\`\``;
+  protected readonly systemPrompt = PROMPT_TEMPLATES.FSCA_NARRATIVE_SYSTEM;
 
   constructor() {
     super(
@@ -84,8 +30,8 @@ Write the narrative section content WITHOUT any citation markers. After the narr
     }
 
     // Check for effectiveness data
-    const hasEffectiveness = input.evidenceAtoms.some(a => 
-      a.normalizedData.effectiveness || 
+    const hasEffectiveness = input.evidenceAtoms.some(a =>
+      a.normalizedData.effectiveness ||
       a.normalizedData.effectiveness_verification ||
       a.normalizedData.closure_status
     );
@@ -102,24 +48,24 @@ Write the narrative section content WITHOUT any citation markers. After the narr
     evidenceRecords: string
   ): string {
     // Extract FSCA-specific data
-    const fscaAtoms = input.evidenceAtoms.filter(a => 
+    const fscaAtoms = input.evidenceAtoms.filter(a =>
       a.evidenceType.includes("fsca") || a.evidenceType.includes("recall")
     );
 
-    const openFSCAs = fscaAtoms.filter(a => 
-      a.normalizedData.status === "OPEN" || 
+    const openFSCAs = fscaAtoms.filter(a =>
+      a.normalizedData.status === "OPEN" ||
       a.normalizedData.status === "In Progress" ||
       !a.normalizedData.date_closed
     );
 
-    const closedFSCAs = fscaAtoms.filter(a => 
-      a.normalizedData.status === "CLOSED" || 
+    const closedFSCAs = fscaAtoms.filter(a =>
+      a.normalizedData.status === "CLOSED" ||
       a.normalizedData.status === "Completed" ||
       a.normalizedData.date_closed
     );
 
     // Check for negative evidence (no FSCAs)
-    const isNegativeEvidence = fscaAtoms.some(a => 
+    const isNegativeEvidence = fscaAtoms.some(a =>
       a.normalizedData.isNegativeEvidence === true
     );
 

@@ -49,7 +49,12 @@ export function sha256Hex(input: string): string {
   return crypto.createHash("sha256").update(input).digest("hex");
 }
 
-export function makeAtomId(prefix: string): string {
+export function makeAtomId(prefix: string, contentHash?: string): string {
+  // Use content hash for deterministic IDs (same data = same ID for deduplication)
+  if (contentHash) {
+    return `${prefix}:${contentHash.slice(0, 12)}`;
+  }
+  // Fallback to random only if no hash provided (legacy compatibility)
   return `${prefix}:${crypto.randomBytes(6).toString("hex")}`;
 }
 
@@ -230,7 +235,7 @@ export function normalizeComplaintRecordRow(input: ComplaintRowInput): {
 
   const payloadForHash = JSON.stringify(payload, Object.keys(payload).sort());
   const contentHash = sha256Hex(payloadForHash);
-  const atomId = makeAtomId("complaint_record");
+  const atomId = makeAtomId("complaint_record", contentHash);
 
   const atom: NormalizedComplaintAtom = {
     atomId,
@@ -385,7 +390,7 @@ export function normalizeSalesVolumeRow(input: SalesRowInput): {
 
   const payloadForHash = JSON.stringify(payload, Object.keys(payload).sort());
   const contentHash = sha256Hex(payloadForHash);
-  const atomId = makeAtomId("sales_volume");
+  const atomId = makeAtomId("sales_volume", contentHash);
 
   const atom: NormalizedSalesAtom = {
     atomId,

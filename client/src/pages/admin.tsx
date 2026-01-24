@@ -28,8 +28,27 @@ import {
   Edit3,
   Layers,
   Shield,
-  ArrowRight
+  ArrowRight,
+  Package,
+  Building2,
+  Hash,
+  Globe
 } from "lucide-react";
+
+// Device types
+interface Device {
+  id: number;
+  companyId: number;
+  deviceName: string;
+  deviceCode: string;
+  riskClass: string;
+  jurisdictions: string[];
+  basicUdf?: string;
+  gmdnCode?: string;
+  imdrfClassification?: string;
+  deviceGroup?: string;
+  createdAt: string;
+}
 
 // Types
 interface FieldMapping {
@@ -92,19 +111,128 @@ export default function AdminPage() {
   const [evidenceTypes, setEvidenceTypes] = useState<EvidenceType[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
   // Modal states
   const [selectedSource, setSelectedSource] = useState<SourceConfig | null>(null);
   const [selectedType, setSelectedType] = useState<EvidenceType | null>(null);
   const [editingMapping, setEditingMapping] = useState<{ source: SourceConfig; mapping: EvidenceTypeMapping } | null>(null);
-  
+
   // Test extraction
   const [testFile, setTestFile] = useState<File | null>(null);
   const [testSourceType, setTestSourceType] = useState("sales");
   const [extracting, setExtracting] = useState(false);
   const [extractResult, setExtractResult] = useState<any>(null);
 
-  useEffect(() => { fetchData(); }, []);
+  // Device management
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [deviceModalOpen, setDeviceModalOpen] = useState(false);
+  const [editingDevice, setEditingDevice] = useState<Device | null>(null);
+  const [deviceForm, setDeviceForm] = useState({
+    deviceName: "",
+    deviceCode: "",
+    riskClass: "IIa",
+    jurisdictions: ["EU_MDR"] as string[],
+    basicUdf: "",
+    gmdnCode: "",
+    imdrfClassification: "",
+    deviceGroup: "",
+  });
+  const [savingDevice, setSavingDevice] = useState(false);
+
+  useEffect(() => { fetchData(); fetchDevices(); }, []);
+
+  const fetchDevices = async () => {
+    try {
+      const res = await fetch("/api/devices");
+      if (res.ok) {
+        const data = await res.json();
+        setDevices(data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch devices:", error);
+    }
+  };
+
+  const openDeviceModal = (device?: Device) => {
+    if (device) {
+      setEditingDevice(device);
+      setDeviceForm({
+        deviceName: device.deviceName,
+        deviceCode: device.deviceCode,
+        riskClass: device.riskClass,
+        jurisdictions: device.jurisdictions || ["EU_MDR"],
+        basicUdf: device.basicUdf || "",
+        gmdnCode: device.gmdnCode || "",
+        imdrfClassification: device.imdrfClassification || "",
+        deviceGroup: device.deviceGroup || "",
+      });
+    } else {
+      setEditingDevice(null);
+      setDeviceForm({
+        deviceName: "",
+        deviceCode: "",
+        riskClass: "IIa",
+        jurisdictions: ["EU_MDR"],
+        basicUdf: "",
+        gmdnCode: "",
+        imdrfClassification: "",
+        deviceGroup: "",
+      });
+    }
+    setDeviceModalOpen(true);
+  };
+
+  const saveDevice = async () => {
+    if (!deviceForm.deviceName.trim() || !deviceForm.deviceCode.trim()) {
+      toast({ title: "Error", description: "Device name and code are required", variant: "destructive" });
+      return;
+    }
+    setSavingDevice(true);
+    try {
+      const payload = { ...deviceForm, companyId: 1 }; // Default company
+      const url = editingDevice ? `/api/devices/${editingDevice.id}` : "/api/devices";
+      const method = editingDevice ? "PUT" : "POST";
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        toast({ title: "Success", description: editingDevice ? "Device updated" : "Device created" });
+        setDeviceModalOpen(false);
+        fetchDevices();
+      } else {
+        const err = await res.json();
+        toast({ title: "Error", description: err.error || "Failed to save device", variant: "destructive" });
+      }
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to save device", variant: "destructive" });
+    } finally {
+      setSavingDevice(false);
+    }
+  };
+
+  const deleteDevice = async (id: number) => {
+    if (!confirm("Delete this device? This cannot be undone.")) return;
+    try {
+      const res = await fetch(`/api/devices/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        toast({ title: "Deleted", description: "Device removed" });
+        fetchDevices();
+      }
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to delete device", variant: "destructive" });
+    }
+  };
+
+  const toggleJurisdiction = (j: string) => {
+    setDeviceForm(prev => ({
+      ...prev,
+      jurisdictions: prev.jurisdictions.includes(j)
+        ? prev.jurisdictions.filter(x => x !== j)
+        : [...prev.jurisdictions, j],
+    }));
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -208,207 +336,302 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="h-full overflow-auto animate-slide-up" data-testid="admin-page">
-      <div className="max-w-5xl mx-auto space-y-12 py-8">
-        <div className="text-center space-y-3">
-          <h1 className="text-3xl font-semibold tracking-tight text-foreground">
-            Configuration
-          </h1>
-          <p className="text-muted-foreground max-w-lg mx-auto">
-            Manage evidence source mappings, data schemas, and test extraction workflows.
-          </p>
-        </div>
-
-        <Tabs defaultValue="sources" className="space-y-8">
-          <div className="flex justify-center">
-            <TabsList className="bg-secondary/50 p-1 rounded-xl border border-border">
-              <TabsTrigger value="sources" className="rounded-lg px-6 py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm font-medium text-sm transition-all">Sources</TabsTrigger>
-              <TabsTrigger value="types" className="rounded-lg px-6 py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm font-medium text-sm transition-all">Evidence Types</TabsTrigger>
-              <TabsTrigger value="test" className="rounded-lg px-6 py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm font-medium text-sm transition-all">Test Extraction</TabsTrigger>
-            </TabsList>
+    <div className="h-full flex flex-col overflow-hidden bg-background/30" data-testid="admin-page">
+      <div className="flex-1 overflow-y-auto px-6 py-8 scroll-smooth">
+        <div className="max-w-[1400px] mx-auto space-y-8">
+          <div className="text-center space-y-2">
+            <h1 className="text-3xl font-bold tracking-tight text-foreground">
+              Configuration
+            </h1>
+            <p className="text-muted-foreground max-w-lg mx-auto text-sm">
+              Manage your device registry, data source mappings, and import settings.
+            </p>
           </div>
 
-          <TabsContent value="sources" className="mt-0 focus-visible:outline-none">
-            <div className="glass-card p-10 space-y-10 shadow-2xl">
-              <div className="flex items-center justify-between">
-                <div className="space-y-1">
-                  <h3 className="text-2xl font-black tracking-tighter text-foreground">Ingestion Repositories</h3>
-                  <p className="text-muted-foreground font-medium italic">Active source configurations and mapping protocols.</p>
+          <Tabs defaultValue="devices" className="space-y-6">
+            <div className="flex justify-center sticky top-0 z-10 py-2 bg-background/50 backdrop-blur-md rounded-xl">
+              <TabsList className="bg-muted p-1 rounded-xl border border-border shadow-sm">
+                <TabsTrigger value="devices" className="rounded-lg px-8 py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm font-semibold text-xs uppercase tracking-wider transition-all">Device Registry</TabsTrigger>
+                <TabsTrigger value="sources" className="rounded-lg px-8 py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm font-semibold text-xs uppercase tracking-wider transition-all">Sources</TabsTrigger>
+                <TabsTrigger value="types" className="rounded-lg px-8 py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm font-semibold text-xs uppercase tracking-wider transition-all">Data Types</TabsTrigger>
+                <TabsTrigger value="test" className="rounded-lg px-8 py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm font-semibold text-xs uppercase tracking-wider transition-all">Test Extraction</TabsTrigger>
+              </TabsList>
+            </div>
+
+            {/* DEVICES TAB */}
+            <TabsContent value="devices" className="mt-0 focus-visible:outline-none">
+              <div className="glass-card p-10 space-y-10">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <h3 className="text-2xl font-black tracking-tighter text-foreground">Device Registry</h3>
+                    <p className="text-muted-foreground font-medium">Manage your medical device portfolio for PSUR reporting.</p>
+                  </div>
+                  <div className="flex gap-3">
+                    <button onClick={fetchDevices} className="w-12 h-12 rounded-full flex items-center justify-center bg-secondary hover:bg-white hover:text-primary transition-all active:rotate-180">
+                      <RefreshCw className="w-5 h-5" />
+                    </button>
+                    <button onClick={() => openDeviceModal()} className="glossy-button bg-primary text-white px-6 py-3 font-bold flex items-center gap-2">
+                      <Plus className="w-4 h-4" /> Add Device
+                    </button>
+                  </div>
                 </div>
-                <button onClick={fetchData} className="w-12 h-12 rounded-full flex items-center justify-center bg-secondary hover:bg-white hover:text-primary transition-all active:rotate-180">
-                  <RefreshCw className="w-5 h-5" />
-                </button>
-              </div>
-              
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                {sourceConfigs.map(config => {
-                  const visual = sourceTypeConfig[config.sourceType] || sourceTypeConfig.admin;
-                  const Icon = visual.icon;
-                  const enabledCount = config.evidenceTypeMappings.filter(m => m.enabled).length;
-                  return (
-                    <button
-                      key={config.id}
-                      onClick={() => setSelectedSource(config)}
-                      className={cn(
-                        "p-8 rounded-[2.5rem] border-2 transition-all duration-500 text-center flex flex-col items-center justify-center gap-6 group hover:scale-105 active:scale-95",
-                        visual.bg, visual.border, "shadow-sm hover:shadow-xl"
-                      )}
-                    >
-                      <div className={cn("w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg transition-transform duration-500 group-hover:rotate-12 bg-white", visual.color)}>
-                        <Icon className="w-8 h-8" />
-                      </div>
-                      <div className="space-y-2">
-                        <span className="text-lg font-black tracking-tight text-foreground">{config.name}</span>
-                        <div className="flex gap-1.5 justify-center">
-                          {config.acceptedFormats.slice(0, 2).map(fmt => (
-                            <span key={fmt} className={cn("ios-pill text-[8px] font-black uppercase border-none px-2 py-0.5", formatColors[fmt] || "bg-muted text-muted-foreground")}>
-                              {fmt}
+
+                {devices.length === 0 ? (
+                  <div className="text-center py-20 space-y-4">
+                    <Package className="w-16 h-16 mx-auto text-muted-foreground/30" />
+                    <div className="space-y-2">
+                      <p className="text-lg font-bold text-foreground">No devices registered</p>
+                      <p className="text-muted-foreground">Add your first medical device to get started with PSUR reporting.</p>
+                    </div>
+                    <button onClick={() => openDeviceModal()} className="glossy-button bg-primary text-white px-6 py-3 font-bold">
+                      <Plus className="w-4 h-4 mr-2" /> Register Device
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {devices.map(device => (
+                      <div key={device.id} className="glass-card p-6 space-y-4 hover:shadow-lg transition-all group">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
+                              <Package className="w-6 h-6" />
+                            </div>
+                            <div>
+                              <h4 className="font-bold text-foreground">{device.deviceName}</h4>
+                              <p className="text-xs text-muted-foreground font-mono">{device.deviceCode}</p>
+                            </div>
+                          </div>
+                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onClick={() => openDeviceModal(device)} className="p-2 rounded-lg hover:bg-secondary">
+                              <Edit3 className="w-4 h-4 text-muted-foreground" />
+                            </button>
+                            <button onClick={() => deleteDevice(device.id)} className="p-2 rounded-lg hover:bg-destructive/10">
+                              <Trash2 className="w-4 h-4 text-destructive" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          <span className={cn(
+                            "ios-pill text-[10px] font-black border-none",
+                            device.riskClass === "III" ? "bg-red-500/20 text-red-600" :
+                              device.riskClass === "IIb" ? "bg-orange-500/20 text-orange-600" :
+                                device.riskClass === "IIa" ? "bg-amber-500/20 text-amber-600" :
+                                  "bg-emerald-500/20 text-emerald-600"
+                          )}>
+                            {device.riskClass}
+                          </span>
+                          {device.jurisdictions?.map(j => (
+                            <span key={j} className="ios-pill text-[10px] font-bold bg-secondary text-muted-foreground border-none">
+                              {j.replace("_", " ")}
                             </span>
                           ))}
                         </div>
-                      </div>
-                      <div className="ios-pill bg-white text-[10px] font-black tracking-widest border-none px-4 py-1 shadow-sm">
-                        {enabledCount} / {config.evidenceTypeMappings.length} MAPPED
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </TabsContent>
 
-          <TabsContent value="types" className="mt-0 focus-visible:outline-none">
-            <div className="glass-card p-10 space-y-10 shadow-2xl">
-              <div className="space-y-2 text-center">
-                <h3 className="text-3xl font-black tracking-tighter text-foreground italic">Compliance Matrix Dictionary</h3>
-                <p className="text-lg text-muted-foreground font-medium">Canonical data structures for all regulatory atoms.</p>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
-                {categories.map(category => (
-                  <div key={category} className="space-y-6">
-                    <div className="flex items-center gap-3 px-2">
-                      <div className="w-1.5 h-1.5 rounded-full bg-primary" />
-                      <h4 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">{category}</h4>
-                    </div>
-                    <div className="grid gap-3">
-                      {evidenceTypes.filter(t => t.category === category).map(type => (
-                        <button
-                          key={type.type}
-                          onClick={() => setSelectedType(type)}
-                          className="flex items-center justify-between p-5 rounded-2xl bg-white border border-border/50 hover:border-primary/30 hover:shadow-lg transition-all group"
-                        >
-                          <span className="font-bold text-sm text-foreground group-hover:text-primary transition-colors">
-                            {type.type.replace(/_/g, " ").toUpperCase()}
-                          </span>
-                          <span className="ios-pill bg-secondary text-muted-foreground text-[10px] font-black border-none px-2 py-0.5">
-                            {type.requiredFields.length} ATOMS
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="test" className="mt-0 focus-visible:outline-none">
-            <div className="glass-card p-10 space-y-10 shadow-2xl animate-slide-up">
-              <div className="space-y-2 text-center">
-                <h3 className="text-3xl font-black tracking-tighter text-foreground italic">Extraction Laboratory</h3>
-                <p className="text-lg text-muted-foreground font-medium">Test drive neural extraction models on isolated artifacts.</p>
-              </div>
-              
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-                <div className="lg:col-span-1 space-y-8">
-                  <div className="glass-card p-8 bg-white/50 border border-border/50 space-y-8">
-                    <div className="space-y-4">
-                      <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Source Architecture</Label>
-                      <Select value={testSourceType} onValueChange={setTestSourceType}>
-                        <SelectTrigger className="h-14 rounded-2xl bg-white border-border/50 font-bold text-lg shadow-sm">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="rounded-2xl border-none shadow-2xl">
-                          {Object.keys(sourceTypeConfig).map(type => (
-                            <SelectItem key={type} value={type} className="font-bold">{type.toUpperCase()}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    
-                    <div className="space-y-4">
-                      <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Intelligence Artifact</Label>
-                      <div className="relative group">
-                        <input
-                          type="file"
-                          accept=".xlsx,.xls,.csv,.docx,.pdf,.json"
-                          onChange={(e) => setTestFile(e.target.files?.[0] || null)}
-                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                        />
-                        <div className="p-8 rounded-2xl border-2 border-dashed border-border/50 group-hover:border-primary/50 transition-all flex flex-col items-center justify-center text-center gap-3">
-                          <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary"><Upload className="w-6 h-6" /></div>
-                          <div className="font-bold text-xs truncate max-w-full px-2">{testFile ? testFile.name : "Select File"}</div>
-                        </div>
+                        {(device.gmdnCode || device.basicUdf) && (
+                          <div className="pt-3 border-t border-border/50 space-y-1">
+                            {device.gmdnCode && (
+                              <div className="flex items-center gap-2 text-xs">
+                                <span className="text-muted-foreground">GMDN:</span>
+                                <span className="font-mono text-foreground">{device.gmdnCode}</span>
+                              </div>
+                            )}
+                            {device.basicUdf && (
+                              <div className="flex items-center gap-2 text-xs">
+                                <span className="text-muted-foreground">UDI:</span>
+                                <span className="font-mono text-foreground truncate">{device.basicUdf}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
-                    </div>
-                    
-                    <button
-                      onClick={handleExtract}
-                      disabled={!testFile || extracting}
-                      className="w-full glossy-button bg-primary text-white py-5 text-lg font-black shadow-xl disabled:opacity-50"
-                    >
-                      {extracting ? <RefreshCw className="w-5 h-5 mr-2 animate-spin" /> : <Zap className="w-5 h-5 mr-2" />}
-                      {extracting ? "ANALYZING..." : "RUN EXTRACTION"}
-                    </button>
+                    ))}
                   </div>
+                )}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="sources" className="mt-0 focus-visible:outline-none">
+              <div className="glass-card p-10 space-y-10">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <h3 className="text-2xl font-bold text-foreground">Data Sources</h3>
+                    <p className="text-muted-foreground">Configure how different types of data files are processed.</p>
+                  </div>
+                  <button onClick={fetchData} className="w-12 h-12 rounded-full flex items-center justify-center bg-secondary hover:bg-white hover:text-primary transition-all active:rotate-180">
+                    <RefreshCw className="w-5 h-5" />
+                  </button>
                 </div>
 
-                <div className="lg:col-span-2 glass-card p-8 bg-black/[0.02] border-none shadow-inner flex flex-col min-h-[500px]">
-                  <div className="flex items-center justify-between mb-8">
-                    <span className="text-sm font-black uppercase tracking-widest text-foreground flex items-center gap-3">
-                      <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-                      Extraction Diagnostics
-                    </span>
-                    {extractResult && <div className="ios-pill bg-emerald-500 text-white font-black border-none px-4 py-1">{extractResult.evidenceCount} ITEMS IDENTIFIED</div>}
-                  </div>
-                  
-                  {extractResult ? (
-                    <ScrollArea className="flex-1">
-                      <div className="space-y-4 pr-4">
-                        {extractResult.evidence?.map((e: any, i: number) => (
-                          <div key={i} className="glass-card p-6 bg-white border border-border/50 hover:border-primary/30 transition-all space-y-4 shadow-sm">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-3">
-                                <span className="ios-pill bg-primary/10 text-primary font-black text-[9px] border-none">{e.evidenceType.toUpperCase()}</span>
-                                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{e.sourceName}</span>
-                              </div>
-                              <div className={cn(
-                                "text-lg font-black tracking-tighter",
-                                e.confidence >= 0.8 ? "text-emerald-600" : e.confidence >= 0.5 ? "text-amber-600" : "text-destructive"
-                              )}>
-                                {(e.confidence * 100).toFixed(0)}% TRUST
-                              </div>
-                            </div>
-                            <div className="p-4 rounded-xl bg-secondary/30 font-mono text-[10px] text-foreground/70 leading-relaxed overflow-x-auto">
-                              {JSON.stringify(e.data, null, 2)}
-                            </div>
-                            <div className="text-[9px] font-black text-muted-foreground uppercase tracking-widest italic">{e.extractionMethod}</div>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                  {sourceConfigs.map(config => {
+                    const visual = sourceTypeConfig[config.sourceType] || sourceTypeConfig.admin;
+                    const Icon = visual.icon;
+                    const enabledCount = config.evidenceTypeMappings.filter(m => m.enabled).length;
+                    return (
+                      <button
+                        key={config.id}
+                        onClick={() => setSelectedSource(config)}
+                        className={cn(
+                          "p-8 rounded-[2.5rem] border-2 transition-all duration-500 text-center flex flex-col items-center justify-center gap-6 group hover:scale-105 active:scale-95",
+                          visual.bg, visual.border, "shadow-sm hover:shadow-xl"
+                        )}
+                      >
+                        <div className={cn("w-16 h-16 rounded-2xl flex items-center justify-center shadow-sm transition-transform duration-500 group-hover:rotate-12 bg-white", visual.color)}>
+                          <Icon className="w-8 h-8" />
+                        </div>
+                        <div className="space-y-2">
+                          <span className="text-lg font-black tracking-tight text-foreground">{config.name}</span>
+                          <div className="flex gap-1.5 justify-center">
+                            {config.acceptedFormats.slice(0, 2).map(fmt => (
+                              <span key={fmt} className={cn("ios-pill text-[8px] font-black uppercase border-none px-2 py-0.5", formatColors[fmt] || "bg-muted text-muted-foreground")}>
+                                {fmt}
+                              </span>
+                            ))}
                           </div>
+                        </div>
+                        <div className="ios-pill bg-white text-[10px] font-black tracking-widest border-none px-4 py-1 shadow-sm">
+                          {enabledCount} / {config.evidenceTypeMappings.length} MAPPED
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="types" className="mt-0 focus-visible:outline-none">
+              <div className="glass-card p-10 space-y-10">
+                <div className="space-y-2 text-center">
+                  <h3 className="text-2xl font-bold text-foreground">Data Categories</h3>
+                  <p className="text-muted-foreground">All supported surveillance data types and their required fields.</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+                  {categories.map(category => (
+                    <div key={category} className="space-y-6">
+                      <div className="flex items-center gap-3 px-2">
+                        <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+                        <h4 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">{category}</h4>
+                      </div>
+                      <div className="grid gap-3">
+                        {evidenceTypes.filter(t => t.category === category).map(type => (
+                          <button
+                            key={type.type}
+                            onClick={() => setSelectedType(type)}
+                            className="flex items-center justify-between p-5 rounded-2xl bg-white border border-border/50 hover:border-primary/30 hover:shadow-lg transition-all group"
+                          >
+                            <span className="font-bold text-sm text-foreground group-hover:text-primary transition-colors">
+                              {type.type.replace(/_/g, " ").toUpperCase()}
+                            </span>
+                            <span className="ios-pill bg-secondary text-muted-foreground text-[10px] font-bold border-none px-2 py-0.5">
+                              {type.requiredFields.length} fields
+                            </span>
+                          </button>
                         ))}
                       </div>
-                    </ScrollArea>
-                  ) : (
-                    <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground/30 gap-4">
-                      <Database className="w-20 h-20 opacity-10" />
-                      <span className="font-black text-xs uppercase tracking-widest italic">Awaiting Payload Analysis</span>
                     </div>
-                  )}
+                  ))}
                 </div>
               </div>
-            </div>
-          </TabsContent>
-        </Tabs>
+            </TabsContent>
+
+            <TabsContent value="test" className="mt-0 focus-visible:outline-none">
+              <div className="glass-card p-10 space-y-10 shadow-2xl animate-slide-up">
+                <div className="space-y-2 text-center">
+                  <h3 className="text-2xl font-bold text-foreground">Test Import</h3>
+                  <p className="text-muted-foreground">Test how your data files will be processed before adding them to a report.</p>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+                  <div className="lg:col-span-1 space-y-8">
+                    <div className="glass-card p-8 bg-white/50 border border-border/50 space-y-8">
+                      <div className="space-y-4">
+                        <Label className="text-xs font-semibold text-muted-foreground">Data Type</Label>
+                        <Select value={testSourceType} onValueChange={setTestSourceType}>
+                          <SelectTrigger className="h-14 rounded-2xl bg-white border-border/50 font-bold text-lg shadow-sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent className="rounded-2xl border-none shadow-lg">
+                            {Object.keys(sourceTypeConfig).map(type => (
+                              <SelectItem key={type} value={type} className="font-bold">{type.toUpperCase()}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-4">
+                        <Label className="text-xs font-semibold text-muted-foreground">Test File</Label>
+                        <div className="relative group">
+                          <input
+                            type="file"
+                            accept=".xlsx,.xls,.csv,.docx,.pdf,.json"
+                            onChange={(e) => setTestFile(e.target.files?.[0] || null)}
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                          />
+                          <div className="p-8 rounded-2xl border-2 border-dashed border-border/50 group-hover:border-primary/50 transition-all flex flex-col items-center justify-center text-center gap-3">
+                            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary"><Upload className="w-6 h-6" /></div>
+                            <div className="font-bold text-xs truncate max-w-full px-2">{testFile ? testFile.name : "Select File"}</div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={handleExtract}
+                        disabled={!testFile || extracting}
+                        className="w-full glossy-button bg-primary text-white py-5 text-lg font-bold shadow-md disabled:opacity-50"
+                      >
+                        {extracting ? <RefreshCw className="w-5 h-5 mr-2 animate-spin" /> : <Zap className="w-5 h-5 mr-2" />}
+                        {extracting ? "Processing..." : "Test Import"}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="lg:col-span-2 glass-card p-8 bg-black/[0.02] border-none shadow-inner flex flex-col min-h-[500px]">
+                    <div className="flex items-center justify-between mb-8">
+                      <span className="text-sm font-semibold text-foreground flex items-center gap-3">
+                        <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                        Results
+                      </span>
+                      {extractResult && <div className="ios-pill bg-emerald-500 text-white font-bold border-none px-4 py-1">{extractResult.evidenceCount} records found</div>}
+                    </div>
+
+                    {extractResult ? (
+                      <ScrollArea className="flex-1">
+                        <div className="space-y-4 pr-4">
+                          {extractResult.evidence?.map((e: any, i: number) => (
+                            <div key={i} className="glass-card p-6 bg-white border border-border/50 hover:border-primary/30 transition-all space-y-4">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                  <span className="ios-pill bg-primary/10 text-primary font-bold text-[9px] border-none">{e.evidenceType.replace(/_/g, " ").toUpperCase()}</span>
+                                  <span className="text-[10px] font-semibold text-muted-foreground">{e.sourceName}</span>
+                                </div>
+                                <div className={cn(
+                                  "text-sm font-bold",
+                                  e.confidence >= 0.8 ? "text-emerald-600" : e.confidence >= 0.5 ? "text-amber-600" : "text-destructive"
+                                )}>
+                                  {(e.confidence * 100).toFixed(0)}% confidence
+                                </div>
+                              </div>
+                              <div className="p-4 rounded-xl bg-secondary/30 font-mono text-[10px] text-foreground/70 leading-relaxed overflow-x-auto">
+                                {JSON.stringify(e.data, null, 2)}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </ScrollArea>
+                    ) : (
+                      <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground/30 gap-4">
+                        <Database className="w-20 h-20 opacity-10" />
+                        <span className="text-sm">Upload a file to test import</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </TabsContent>
+          </Tabs>
+        </div>
       </div>
 
       {/* Source Config Modal */}
@@ -433,7 +656,7 @@ export default function AdminPage() {
                   </div>
                 </div>
               </DialogHeader>
-              
+
               <div className="space-y-4 mt-4">
                 {/* Config Options */}
                 <div className="flex items-center gap-6 p-3 rounded-lg bg-secondary/30 border border-border/30">
@@ -461,11 +684,10 @@ export default function AdminPage() {
                     {selectedSource.evidenceTypeMappings.map(mapping => (
                       <div
                         key={mapping.evidenceType}
-                        className={`p-3 rounded-lg border transition-all ${
-                          mapping.enabled 
-                            ? "bg-secondary/50 border-border/50" 
-                            : "bg-muted/50 border-border/30 opacity-60"
-                        }`}
+                        className={`p-3 rounded-lg border transition-all ${mapping.enabled
+                          ? "bg-secondary/50 border-border/50"
+                          : "bg-muted/50 border-border/30 opacity-60"
+                          }`}
                       >
                         <div className="flex items-center justify-between mb-2">
                           <Switch
@@ -483,10 +705,9 @@ export default function AdminPage() {
                         </div>
                         <div className="text-xs font-medium text-foreground mb-1">{mapping.evidenceType}</div>
                         <div className="flex items-center justify-between text-[10px]">
-                          <span className={`${
-                            mapping.confidence >= 0.8 ? "text-emerald-400" : 
+                          <span className={`${mapping.confidence >= 0.8 ? "text-emerald-400" :
                             mapping.confidence >= 0.6 ? "text-amber-400" : "text-red-400"
-                          }`}>
+                            }`}>
                             {(mapping.confidence * 100).toFixed(0)}% confidence
                           </span>
                           <span className="text-muted-foreground">{mapping.fieldMappings.length} fields</span>
@@ -513,7 +734,7 @@ export default function AdminPage() {
                 </DialogTitle>
                 <p className="text-xs text-muted-foreground">{selectedType.description}</p>
               </DialogHeader>
-              
+
               <div className="space-y-4 mt-4">
                 <div>
                   <div className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1">
@@ -528,7 +749,7 @@ export default function AdminPage() {
                     ))}
                   </div>
                 </div>
-                
+
                 <div>
                   <div className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1">
                     <span className="w-2 h-2 rounded-full bg-muted-foreground"></span>
@@ -562,7 +783,7 @@ export default function AdminPage() {
                 <DialogTitle className="text-foreground">Edit Field Mappings</DialogTitle>
                 <p className="text-xs text-muted-foreground">{editingMapping.mapping.evidenceType}</p>
               </DialogHeader>
-              
+
               <div className="space-y-4 mt-4">
                 <div className="flex items-center gap-4">
                   <div className="flex-1">
@@ -690,6 +911,144 @@ export default function AdminPage() {
           )}
         </DialogContent>
       </Dialog>
-    </div>
+
+      {/* Device Modal */}
+      <Dialog open={deviceModalOpen} onOpenChange={setDeviceModalOpen}>
+        <DialogContent className="max-w-lg bg-card border-border">
+          <DialogHeader>
+            <DialogTitle className="text-foreground flex items-center gap-2">
+              <Package className="w-5 h-5 text-primary" />
+              {editingDevice ? "Edit Device" : "Register New Device"}
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              {editingDevice ? "Update device information" : "Add a medical device to your registry for PSUR reporting"}
+            </p>
+          </DialogHeader>
+
+          <div className="space-y-6 mt-4">
+            {/* Device Name & Code */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Device Name *</Label>
+                <Input
+                  value={deviceForm.deviceName}
+                  onChange={(e) => {
+                    setDeviceForm(prev => ({
+                      ...prev,
+                      deviceName: e.target.value,
+                      // Auto-generate code if not manually set
+                      deviceCode: prev.deviceCode || e.target.value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 12)
+                    }));
+                  }}
+                  placeholder="e.g., CardioSync Pacemaker"
+                  className="h-11 bg-secondary/50 border-border"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Product Code *</Label>
+                <Input
+                  value={deviceForm.deviceCode}
+                  onChange={(e) => setDeviceForm(prev => ({ ...prev, deviceCode: e.target.value.toUpperCase() }))}
+                  placeholder="e.g., CS-PM-100"
+                  className="h-11 bg-secondary/50 border-border font-mono"
+                />
+              </div>
+            </div>
+
+            {/* Risk Class & Jurisdictions */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Risk Class *</Label>
+                <Select value={deviceForm.riskClass} onValueChange={(v) => setDeviceForm(prev => ({ ...prev, riskClass: v }))}>
+                  <SelectTrigger className="h-11 bg-secondary/50 border-border">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="I">Class I</SelectItem>
+                    <SelectItem value="IIa">Class IIa</SelectItem>
+                    <SelectItem value="IIb">Class IIb</SelectItem>
+                    <SelectItem value="III">Class III</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Jurisdictions</Label>
+                <div className="flex gap-2">
+                  {["EU_MDR", "UK_MDR"].map(j => (
+                    <button
+                      key={j}
+                      type="button"
+                      onClick={() => toggleJurisdiction(j)}
+                      className={cn(
+                        "flex-1 py-2.5 rounded-lg text-xs font-bold transition-all",
+                        deviceForm.jurisdictions.includes(j)
+                          ? "bg-primary text-white"
+                          : "bg-secondary text-muted-foreground hover:bg-secondary/80"
+                      )}
+                    >
+                      {j.replace("_", " ")}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Regulatory Identifiers */}
+            <div className="space-y-3 pt-2 border-t border-border/50">
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Regulatory Identifiers (Optional)</Label>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <span className="text-[10px] text-muted-foreground">UDI-DI</span>
+                  <Input
+                    value={deviceForm.basicUdf}
+                    onChange={(e) => setDeviceForm(prev => ({ ...prev, basicUdf: e.target.value }))}
+                    placeholder="00850003..."
+                    className="h-9 bg-secondary/50 border-border text-xs font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[10px] text-muted-foreground">GMDN Code</span>
+                  <Input
+                    value={deviceForm.gmdnCode}
+                    onChange={(e) => setDeviceForm(prev => ({ ...prev, gmdnCode: e.target.value }))}
+                    placeholder="35421"
+                    className="h-9 bg-secondary/50 border-border text-xs font-mono"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <span className="text-[10px] text-muted-foreground">IMDRF Classification</span>
+                  <Input
+                    value={deviceForm.imdrfClassification}
+                    onChange={(e) => setDeviceForm(prev => ({ ...prev, imdrfClassification: e.target.value }))}
+                    placeholder="e.g., cardiovascular-implant"
+                    className="h-9 bg-secondary/50 border-border text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[10px] text-muted-foreground">Device Group</span>
+                  <Input
+                    value={deviceForm.deviceGroup}
+                    onChange={(e) => setDeviceForm(prev => ({ ...prev, deviceGroup: e.target.value }))}
+                    placeholder="e.g., Cardiac Rhythm Management"
+                    className="h-9 bg-secondary/50 border-border text-xs"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex justify-end gap-3 pt-4">
+              <Button variant="outline" onClick={() => setDeviceModalOpen(false)}>Cancel</Button>
+              <Button onClick={saveDevice} disabled={savingDevice} className="bg-primary hover:bg-primary/90 px-6">
+                {savingDevice ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+                {editingDevice ? "Update Device" : "Register Device"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div >
   );
 }

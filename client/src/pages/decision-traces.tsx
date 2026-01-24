@@ -1,626 +1,642 @@
 /**
- * Decision Traces Page - Natural Language Audit Trail Viewer
+ * Provenance Explorer - Granular Decision Traceability
  * 
- * Provides comprehensive view of all PSUR workflow decisions with:
- * - Natural language summaries
- * - Timeline view grouped by workflow steps
- * - Search functionality
- * - Entity-level drill down
- * - Compliance tracking
+ * SOTA implementation for tracing every sentence, calculation, and claim
+ * back to its source evidence, regulatory obligations, and GRKB.
+ * 
+ * Features:
+ * - Hierarchical slot navigation
+ * - Sentence-level provenance with inline markers
+ * - Calculation breakdown for computed values
+ * - GRKB obligation links
+ * - Pre-generation validation status
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
+import { useQuery } from "@tanstack/react-query";
+import {
+    ChevronDown,
+    ChevronRight,
+    CheckCircle2,
+    AlertCircle,
+    AlertTriangle,
+    XCircle,
+    Database,
+    FileText,
+    Calculator,
+    BookOpen,
+    Link2,
+    Eye,
+    ArrowLeft,
+    Search,
+    Filter,
+    RefreshCw,
+    ShieldCheck,
+    ShieldAlert,
+    Layers,
+    Hash,
+    GitBranch,
+    ExternalLink,
+    Info,
+    Zap,
+} from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
-interface TraceEntry {
+// Types
+interface PSURCase {
     id: number;
-    traceId: string;
-    sequenceNum: number;
-    eventType: string;
-    timestamp: string;
-    actor: string;
-    entityType: string | null;
-    entityId: string | null;
-    decision: string | null;
-    humanSummary: string | null;
-    regulatoryContext: any;
-    complianceAssertion: any;
-    reasons: string[] | null;
-    workflowStep: number | null;
+    psurReference: string;
+    deviceInfo?: { deviceName?: string; deviceCode?: string };
+    status: string;
+    startPeriod: string;
+    endPeriod: string;
+    templateId: string;
 }
 
-interface TraceSummary {
-    traceId: string;
-    workflowStatus: string;
-    totalEvents: number;
-    acceptedSlots: number;
-    rejectedSlots: number;
-    traceGaps: number;
-    evidenceAtoms: number;
-    negativeEvidence: number;
-    obligationsSatisfied: number;
-    obligationsUnsatisfied: number;
-    completedSteps: number[];
-    chainValid: boolean;
-    startedAt: string | null;
-    completedAt: string | null;
-    failedStep: number | null;
-    failureReason: string | null;
+interface GrkbValidation {
+    validationStatus: "PASS" | "FAIL" | "WARNING";
+    canProceed: boolean;
+    mandatoryObligationsTotal: number;
+    mandatoryObligationsSatisfied: number;
+    requiredEvidenceTypesTotal: number;
+    requiredEvidenceTypesPresent: number;
+    blockingIssues: Array<{
+        obligationId: string;
+        obligationText: string;
+        sourceCitation: string;
+        missingEvidenceTypes: string[];
+        severity: string;
+    }>;
+    warnings: Array<{
+        obligationId: string;
+        obligationText: string;
+        missingEvidenceTypes: string[];
+    }>;
+    slotDetails: Array<{
+        slotId: string;
+        slotTitle: string;
+        status: "ready" | "blocked" | "partial";
+        obligationsCovered: string[];
+        obligationsMissing: string[];
+        evidenceCount: number;
+    }>;
 }
 
-interface TimelineStep {
-    step: number;
-    name: string;
-    eventCount: number;
-    events: TraceEntry[];
-    hasMore: boolean;
+interface SentenceAttribution {
+    id: number;
+    slotId: string;
+    sentenceText: string;
+    sentenceIndex: number;
+    paragraphIndex: number;
+    evidenceAtomIds: number[];
+    obligationIds: string[];
+    hasCalculation: boolean;
+    calculationTrace?: {
+        resultValue: string;
+        resultType: string;
+        formula: string;
+        inputs: Array<{ atomId: number; field: string; value: any; sourceDocument?: string }>;
+    };
+    llmReasoning: string;
+    confidenceScore: string;
+    verificationStatus: string;
 }
 
-const STEP_COLORS: Record<number, string> = {
-    0: "text-slate-500",
-    1: "text-blue-500",
-    2: "text-purple-500",
-    3: "text-green-500",
-    4: "text-amber-500",
-    5: "text-orange-500",
-    6: "text-teal-500",
-    7: "text-indigo-500",
-    8: "text-pink-500",
+interface SlotHierarchy {
+    slotId: string;
+    title: string;
+    sectionPath: string;
+    status: "ready" | "blocked" | "partial" | "generated" | "empty";
+    obligationCount: number;
+    evidenceCount: number;
+    sentenceCount: number;
+    children?: SlotHierarchy[];
+}
+
+// Status styles
+const STATUS_STYLES = {
+    PASS: { icon: CheckCircle2, color: "text-emerald-500", bg: "bg-emerald-50", label: "Ready" },
+    FAIL: { icon: XCircle, color: "text-red-500", bg: "bg-red-50", label: "Blocked" },
+    WARNING: { icon: AlertTriangle, color: "text-amber-500", bg: "bg-amber-50", label: "Warnings" },
 };
 
-const EVENT_TYPE_COLORS: Record<string, string> = {
-    WORKFLOW_STARTED: "bg-blue-500/10 text-blue-600 border-blue-500/20",
-    TEMPLATE_QUALIFIED: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
-    TEMPLATE_BLOCKED: "bg-red-500/10 text-red-600 border-red-500/20",
-    CASE_CREATED: "bg-purple-500/10 text-purple-600 border-purple-500/20",
-    EVIDENCE_UPLOADED: "bg-cyan-500/10 text-cyan-600 border-cyan-500/20",
-    EVIDENCE_ATOM_CREATED: "bg-green-500/10 text-green-600 border-green-500/20",
-    NEGATIVE_EVIDENCE_CREATED: "bg-amber-500/10 text-amber-600 border-amber-500/20",
-    SLOT_PROPOSED: "bg-indigo-500/10 text-indigo-600 border-indigo-500/20",
-    TRACE_GAP_DETECTED: "bg-red-500/10 text-red-600 border-red-500/20",
-    SLOT_ACCEPTED: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
-    SLOT_REJECTED: "bg-red-500/10 text-red-600 border-red-500/20",
-    OBLIGATION_SATISFIED: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
-    OBLIGATION_UNSATISFIED: "bg-red-500/10 text-red-600 border-red-500/20",
-    COVERAGE_COMPUTED: "bg-teal-500/10 text-teal-600 border-teal-500/20",
-    DOCUMENT_RENDERED: "bg-indigo-500/10 text-indigo-600 border-indigo-500/20",
-    BUNDLE_EXPORTED: "bg-pink-500/10 text-pink-600 border-pink-500/20",
-    WORKFLOW_COMPLETED: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
-    WORKFLOW_FAILED: "bg-red-500/10 text-red-600 border-red-500/20",
+const SLOT_STATUS_STYLES = {
+    ready: { color: "bg-emerald-500", label: "Ready" },
+    blocked: { color: "bg-red-500", label: "Blocked" },
+    partial: { color: "bg-amber-500", label: "Partial" },
+    generated: { color: "bg-blue-500", label: "Generated" },
+    empty: { color: "bg-slate-300", label: "Empty" },
 };
 
-export default function DecisionTracesPage() {
-    const [psurCaseId, setPsurCaseId] = useState<number | null>(null);
-    const [availableCases, setAvailableCases] = useState<any[]>([]);
-    const [summary, setSummary] = useState<TraceSummary | null>(null);
-    const [timeline, setTimeline] = useState<TimelineStep[]>([]);
+export default function ProvenanceExplorer() {
+    const [selectedCaseId, setSelectedCaseId] = useState<number | null>(null);
+    const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
+    const [selectedSentence, setSelectedSentence] = useState<SentenceAttribution | null>(null);
+    const [expandedSlots, setExpandedSlots] = useState<Set<string>>(new Set());
     const [searchQuery, setSearchQuery] = useState("");
-    const [searchResults, setSearchResults] = useState<TraceEntry[]>([]);
-    const [isSearching, setIsSearching] = useState(false);
-    const [loading, setLoading] = useState(false);
-    const [activeView, setActiveView] = useState<"timeline" | "search" | "narrative">("timeline");
-    const [narrative, setNarrative] = useState<string>("");
-    const [expandedSteps, setExpandedSteps] = useState<Set<number>>(new Set());
-    const [selectedEntry, setSelectedEntry] = useState<TraceEntry | null>(null);
+    const [showBlockedOnly, setShowBlockedOnly] = useState(false);
 
-    // Load available PSUR cases
+    // Fetch PSUR cases
+    const { data: cases = [] } = useQuery<PSURCase[]>({
+        queryKey: ["/api/psur-cases"],
+    });
+
+    // Fetch GRKB validation for selected case
+    const { data: validation, refetch: refetchValidation } = useQuery<GrkbValidation>({
+        queryKey: ["/api/psur-cases", selectedCaseId, "grkb-validation"],
+        enabled: !!selectedCaseId,
+    });
+
+    // Fetch sentence attributions for selected slot
+    const { data: sentences = [] } = useQuery<SentenceAttribution[]>({
+        queryKey: ["/api/psur-cases", selectedCaseId, "sentences", selectedSlotId],
+        enabled: !!selectedCaseId && !!selectedSlotId,
+    });
+
+    // Auto-select first case
     useEffect(() => {
-        fetch("/api/psur-cases")
-            .then(r => r.json())
-            .then(data => {
-                if (Array.isArray(data)) {
-                    setAvailableCases(data);
-                    if (data.length > 0 && !psurCaseId) {
-                        setPsurCaseId(data[0].id);
-                    }
-                }
-            })
-            .catch(console.error);
-    }, []);
-
-    // Load trace data when case changes
-    useEffect(() => {
-        if (!psurCaseId) return;
-        setLoading(true);
-        
-        Promise.all([
-            fetch(`/api/psur-cases/${psurCaseId}/decision-traces/summary`).then(r => r.json()),
-            fetch(`/api/psur-cases/${psurCaseId}/decision-traces/timeline`).then(r => r.json()),
-        ])
-            .then(([summaryData, timelineData]) => {
-                if (summaryData.summary) setSummary(summaryData.summary);
-                if (timelineData.timeline) setTimeline(timelineData.timeline);
-            })
-            .catch(console.error)
-            .finally(() => setLoading(false));
-    }, [psurCaseId]);
-
-    // Search function
-    const handleSearch = useCallback(async () => {
-        if (!psurCaseId || !searchQuery.trim()) return;
-        setIsSearching(true);
-        try {
-            const res = await fetch(`/api/psur-cases/${psurCaseId}/decision-traces/search?q=${encodeURIComponent(searchQuery)}`);
-            const data = await res.json();
-            setSearchResults(data.entries || []);
-            setActiveView("search");
-        } catch (e) {
-            console.error(e);
-        } finally {
-            setIsSearching(false);
+        if (cases.length > 0 && !selectedCaseId) {
+            setSelectedCaseId(cases[0].id);
         }
-    }, [psurCaseId, searchQuery]);
+    }, [cases, selectedCaseId]);
 
-    // Load narrative
-    const loadNarrative = useCallback(async () => {
-        if (!psurCaseId) return;
-        setLoading(true);
-        try {
-            const res = await fetch(`/api/psur-cases/${psurCaseId}/decision-traces/narrative`);
-            const text = await res.text();
-            setNarrative(text);
-            setActiveView("narrative");
-        } catch (e) {
-            console.error(e);
-        } finally {
-            setLoading(false);
-        }
-    }, [psurCaseId]);
+    const selectedCase = cases.find(c => c.id === selectedCaseId);
 
-    const toggleStep = (step: number) => {
-        setExpandedSteps(prev => {
+    // Build slot hierarchy from validation data
+    const slotHierarchy = useMemo(() => {
+        if (!validation?.slotDetails) return [];
+
+        const slots = validation.slotDetails;
+        const filtered = showBlockedOnly
+            ? slots.filter(s => s.status === "blocked" || s.status === "partial")
+            : slots;
+
+        return filtered.filter(s =>
+            !searchQuery ||
+            s.slotTitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            s.slotId.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+    }, [validation?.slotDetails, searchQuery, showBlockedOnly]);
+
+    const toggleSlot = (slotId: string) => {
+        setExpandedSlots(prev => {
             const next = new Set(prev);
-            if (next.has(step)) {
-                next.delete(step);
-            } else {
-                next.add(step);
-            }
+            if (next.has(slotId)) next.delete(slotId);
+            else next.add(slotId);
             return next;
         });
     };
 
-    const formatEventType = (type: string) => {
-        return type.replace(/_/g, " ").toLowerCase().replace(/^\w/, c => c.toUpperCase());
-    };
-
-    const formatTimestamp = (ts: string) => {
-        const d = new Date(ts);
-        return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    };
-
     return (
-        <div className="min-h-screen bg-background">
+        <div className="h-full flex flex-col overflow-hidden bg-slate-50 dark:bg-background">
             {/* Header */}
-            <header className="border-b border-border bg-background/95 backdrop-blur sticky top-0 z-50">
-                <div className="max-w-7xl mx-auto px-6 py-4">
+            <header className="shrink-0 border-b border-border bg-white dark:bg-card shadow-sm z-50">
+                <div className="max-w-[1920px] mx-auto px-4 py-3">
                     <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                            <a href="/" className="text-muted-foreground hover:text-foreground transition-colors">
-                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                                </svg>
-                            </a>
-                            <h1 className="text-xl font-semibold text-foreground">Decision Trace Viewer</h1>
-                        </div>
-                        
-                        {/* Case Selector */}
                         <div className="flex items-center gap-3">
-                            <label className="text-sm text-muted-foreground">PSUR Case:</label>
+                            <a href="/psur" className="p-2 rounded-lg hover:bg-secondary transition-colors">
+                                <ArrowLeft className="w-4 h-4 text-muted-foreground" />
+                            </a>
+                            <div>
+                                <h1 className="text-lg font-bold text-foreground flex items-center gap-2">
+                                    <GitBranch className="w-5 h-5 text-primary" />
+                                    Provenance Explorer
+                                </h1>
+                                <p className="text-xs text-muted-foreground">
+                                    Trace every sentence to its source evidence and obligations
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-3">
                             <select
-                                value={psurCaseId || ""}
-                                onChange={(e) => setPsurCaseId(parseInt(e.target.value) || null)}
-                                className="px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm"
+                                value={selectedCaseId || ""}
+                                onChange={(e) => setSelectedCaseId(parseInt(e.target.value) || null)}
+                                className="px-3 py-1.5 rounded-lg border border-border bg-background text-sm font-medium min-w-[260px]"
                             >
-                                <option value="">Select case...</option>
-                                {availableCases.map(c => (
-                                    <option key={c.id} value={c.id}>{c.psurReference || `Case #${c.id}`}</option>
+                                <option value="">Select a report...</option>
+                                {cases.map(c => (
+                                    <option key={c.id} value={c.id}>
+                                        {c.deviceInfo?.deviceName || c.psurReference} ({c.status})
+                                    </option>
                                 ))}
                             </select>
+                            <Button variant="outline" size="sm" onClick={() => refetchValidation()}>
+                                <RefreshCw className="w-4 h-4" />
+                            </Button>
                         </div>
                     </div>
                 </div>
             </header>
 
-            <main className="max-w-7xl mx-auto px-6 py-6">
-                {!psurCaseId ? (
-                    <div className="text-center py-20 text-muted-foreground">
-                        <svg className="w-16 h-16 mx-auto mb-4 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                        </svg>
-                        <p>Select a PSUR case to view its decision trace</p>
+            {!selectedCaseId ? (
+                <div className="flex-1 flex items-center justify-center">
+                    <div className="text-center">
+                        <GitBranch className="w-16 h-16 mx-auto mb-4 text-muted-foreground/30" />
+                        <h3 className="text-xl font-bold text-foreground mb-2">Select a Report</h3>
+                        <p className="text-sm text-muted-foreground max-w-md">
+                            Choose a PSUR report to explore its complete provenance chain
+                        </p>
                     </div>
-                ) : loading && !summary ? (
-                    <div className="text-center py-20">
-                        <div className="inline-block w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                        <p className="mt-4 text-muted-foreground">Loading trace data...</p>
-                    </div>
-                ) : (
-                    <div className="space-y-6">
-                        {/* Summary Cards */}
-                        {summary && (
-                            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                                <div className="p-4 rounded-xl border border-border bg-card">
-                                    <div className="text-2xl font-bold text-foreground">{summary.totalEvents}</div>
-                                    <div className="text-xs text-muted-foreground">Total Decisions</div>
-                                </div>
-                                <div className="p-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
-                                    <div className="text-2xl font-bold text-emerald-600">{summary.acceptedSlots}</div>
-                                    <div className="text-xs text-muted-foreground">Slots Accepted</div>
-                                </div>
-                                <div className="p-4 rounded-xl border border-red-500/20 bg-red-500/5">
-                                    <div className="text-2xl font-bold text-red-600">{summary.rejectedSlots}</div>
-                                    <div className="text-xs text-muted-foreground">Slots Rejected</div>
-                                </div>
-                                <div className="p-4 rounded-xl border border-amber-500/20 bg-amber-500/5">
-                                    <div className="text-2xl font-bold text-amber-600">{summary.traceGaps}</div>
-                                    <div className="text-xs text-muted-foreground">Trace Gaps</div>
-                                </div>
-                                <div className="p-4 rounded-xl border border-green-500/20 bg-green-500/5">
-                                    <div className="text-2xl font-bold text-green-600">{summary.obligationsSatisfied}</div>
-                                    <div className="text-xs text-muted-foreground">Obligations Met</div>
-                                </div>
-                                <div className={cn(
-                                    "p-4 rounded-xl border",
-                                    summary.workflowStatus === "COMPLETED" 
-                                        ? "border-emerald-500/20 bg-emerald-500/5" 
-                                        : summary.workflowStatus === "FAILED"
-                                            ? "border-red-500/20 bg-red-500/5"
-                                            : "border-blue-500/20 bg-blue-500/5"
-                                )}>
-                                    <div className={cn(
-                                        "text-lg font-bold",
-                                        summary.workflowStatus === "COMPLETED" ? "text-emerald-600" :
-                                        summary.workflowStatus === "FAILED" ? "text-red-600" : "text-blue-600"
-                                    )}>
-                                        {summary.workflowStatus}
+                </div>
+            ) : (
+                <div className="flex-1 min-h-0 flex">
+                    {/* Left Panel: GRKB Validation + Slot Navigator */}
+                    <div className="w-[340px] h-full border-r border-border flex flex-col bg-white dark:bg-card">
+                        {/* GRKB Validation Summary */}
+                        {validation && (
+                            <div className={cn(
+                                "p-4 border-b",
+                                validation.validationStatus === "PASS" ? "bg-emerald-50 dark:bg-emerald-900/20" :
+                                    validation.validationStatus === "FAIL" ? "bg-red-50 dark:bg-red-900/20" :
+                                        "bg-amber-50 dark:bg-amber-900/20"
+                            )}>
+                                <div className="flex items-center justify-between mb-3">
+                                    <div className="flex items-center gap-2">
+                                        {validation.validationStatus === "PASS" ? (
+                                            <ShieldCheck className="w-5 h-5 text-emerald-600" />
+                                        ) : validation.validationStatus === "FAIL" ? (
+                                            <ShieldAlert className="w-5 h-5 text-red-600" />
+                                        ) : (
+                                            <AlertTriangle className="w-5 h-5 text-amber-600" />
+                                        )}
+                                        <span className="font-bold text-sm">
+                                            {validation.validationStatus === "PASS" ? "Ready to Generate" :
+                                                validation.validationStatus === "FAIL" ? "Generation Blocked" :
+                                                    "Warnings Present"}
+                                        </span>
                                     </div>
-                                    <div className="text-xs text-muted-foreground">Status</div>
+                                    <Badge variant={validation.canProceed ? "default" : "destructive"} className="text-xs">
+                                        {validation.canProceed ? "Can Proceed" : "Blocked"}
+                                    </Badge>
                                 </div>
+
+                                <div className="grid grid-cols-2 gap-2 text-xs">
+                                    <div className="p-2 rounded bg-white/60 dark:bg-background/40">
+                                        <div className="text-muted-foreground">Obligations</div>
+                                        <div className="font-bold text-lg">
+                                            {validation.mandatoryObligationsSatisfied}/{validation.mandatoryObligationsTotal}
+                                        </div>
+                                    </div>
+                                    <div className="p-2 rounded bg-white/60 dark:bg-background/40">
+                                        <div className="text-muted-foreground">Evidence Types</div>
+                                        <div className="font-bold text-lg">
+                                            {validation.requiredEvidenceTypesPresent}/{validation.requiredEvidenceTypesTotal}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {validation.blockingIssues && validation.blockingIssues.length > 0 && (
+                                    <div className="mt-3 p-2 rounded bg-red-100 dark:bg-red-900/30 border border-red-200 dark:border-red-800">
+                                        <div className="text-xs font-semibold text-red-700 dark:text-red-300 mb-1">
+                                            {validation.blockingIssues.length} Blocking Issue(s)
+                                        </div>
+                                        <div className="text-xs text-red-600 dark:text-red-400 max-h-20 overflow-y-auto space-y-1">
+                                            {validation.blockingIssues.slice(0, 3).map((issue, i) => (
+                                                <div key={i} className="truncate">
+                                                    • {issue.sourceCitation}: Missing {issue.missingEvidenceTypes.join(", ")}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
 
-                        {/* Search Bar */}
-                        <div className="flex items-center gap-3">
-                            <div className="flex-1 relative">
-                                <input
-                                    type="text"
+                        {/* Slot Search & Filter */}
+                        <div className="p-3 border-b border-border space-y-2">
+                            <div className="relative">
+                                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                                <Input
+                                    placeholder="Search slots..."
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
-                                    onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                                    placeholder="Search decisions in natural language... (e.g., 'evidence rejected', 'obligation satisfied')"
-                                    className="w-full px-4 py-3 pl-10 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground"
+                                    className="pl-8 h-8 text-sm"
                                 />
-                                <svg className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                                </svg>
                             </div>
                             <button
-                                onClick={handleSearch}
-                                disabled={isSearching || !searchQuery.trim()}
-                                className="px-5 py-3 rounded-xl bg-primary text-primary-foreground font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                                onClick={() => setShowBlockedOnly(!showBlockedOnly)}
+                                className={cn(
+                                    "w-full px-3 py-1.5 rounded text-xs font-medium transition-colors flex items-center gap-2",
+                                    showBlockedOnly
+                                        ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+                                        : "bg-secondary text-muted-foreground hover:bg-secondary/80"
+                                )}
                             >
-                                {isSearching ? "Searching..." : "Search"}
-                            </button>
-                            <button
-                                onClick={loadNarrative}
-                                className="px-5 py-3 rounded-xl border border-border text-foreground font-medium hover:bg-muted transition-colors"
-                            >
-                                Export Narrative
+                                <Filter className="w-3 h-3" />
+                                {showBlockedOnly ? "Showing Blocked Only" : "Show All Slots"}
                             </button>
                         </div>
 
-                        {/* View Tabs */}
-                        <div className="flex gap-2 border-b border-border">
-                            <button
-                                onClick={() => setActiveView("timeline")}
-                                className={cn(
-                                    "px-4 py-2 text-sm font-medium border-b-2 transition-colors",
-                                    activeView === "timeline" 
-                                        ? "border-primary text-primary" 
-                                        : "border-transparent text-muted-foreground hover:text-foreground"
-                                )}
-                            >
-                                Timeline View
-                            </button>
-                            <button
-                                onClick={() => setActiveView("search")}
-                                className={cn(
-                                    "px-4 py-2 text-sm font-medium border-b-2 transition-colors",
-                                    activeView === "search" 
-                                        ? "border-primary text-primary" 
-                                        : "border-transparent text-muted-foreground hover:text-foreground"
-                                )}
-                            >
-                                Search Results {searchResults.length > 0 && `(${searchResults.length})`}
-                            </button>
-                            <button
-                                onClick={() => setActiveView("narrative")}
-                                className={cn(
-                                    "px-4 py-2 text-sm font-medium border-b-2 transition-colors",
-                                    activeView === "narrative" 
-                                        ? "border-primary text-primary" 
-                                        : "border-transparent text-muted-foreground hover:text-foreground"
-                                )}
-                            >
-                                Audit Narrative
-                            </button>
-                        </div>
-
-                        {/* Timeline View */}
-                        {activeView === "timeline" && (
-                            <div className="space-y-4">
-                                {timeline.map((step) => (
-                                    <div key={step.step} className="border border-border rounded-xl overflow-hidden">
-                                        <button
-                                            onClick={() => toggleStep(step.step)}
-                                            className="w-full px-4 py-3 flex items-center justify-between bg-card hover:bg-muted/50 transition-colors"
-                                        >
-                                            <div className="flex items-center gap-3">
-                                                <div className={cn("w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold", STEP_COLORS[step.step], "bg-current/10")}>
-                                                    {step.step}
-                                                </div>
-                                                <span className="font-medium text-foreground">{step.name}</span>
-                                                <span className="px-2 py-0.5 rounded-full bg-muted text-muted-foreground text-xs">
-                                                    {step.eventCount} events
-                                                </span>
-                                            </div>
-                                            <svg className={cn("w-5 h-5 text-muted-foreground transition-transform", expandedSteps.has(step.step) && "rotate-180")} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                            </svg>
-                                        </button>
-                                        
-                                        {expandedSteps.has(step.step) && (
-                                            <div className="border-t border-border bg-background">
-                                                {step.events.map((event) => (
-                                                    <div 
-                                                        key={event.id}
-                                                        onClick={() => setSelectedEntry(event)}
-                                                        className="px-4 py-3 border-b border-border/50 last:border-0 hover:bg-muted/30 cursor-pointer transition-colors"
-                                                    >
-                                                        <div className="flex items-start gap-3">
-                                                            <span className="text-xs text-muted-foreground whitespace-nowrap pt-0.5">
-                                                                {formatTimestamp(event.timestamp)}
-                                                            </span>
-                                                            <div className="flex-1 min-w-0">
-                                                                <div className="flex items-center gap-2 mb-1">
-                                                                    <span className={cn(
-                                                                        "px-2 py-0.5 rounded text-xs font-medium border",
-                                                                        EVENT_TYPE_COLORS[event.eventType] || "bg-muted text-muted-foreground"
-                                                                    )}>
-                                                                        {formatEventType(event.eventType)}
-                                                                    </span>
-                                                                    {event.decision && (
-                                                                        <span className={cn(
-                                                                            "px-2 py-0.5 rounded text-xs font-medium",
-                                                                            event.decision === "ACCEPTED" || event.decision === "SATISFIED" || event.decision === "QUALIFIED"
-                                                                                ? "bg-emerald-500/10 text-emerald-600"
-                                                                                : event.decision === "REJECTED" || event.decision === "FAILED" || event.decision === "BLOCKED"
-                                                                                    ? "bg-red-500/10 text-red-600"
-                                                                                    : "bg-muted text-muted-foreground"
-                                                                        )}>
-                                                                            {event.decision}
-                                                                        </span>
-                                                                    )}
-                                                                    {event.entityId && (
-                                                                        <span className="text-xs text-muted-foreground truncate">
-                                                                            {event.entityId}
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                                {event.humanSummary && (
-                                                                    <p className="text-sm text-foreground/80 line-clamp-2">
-                                                                        {event.humanSummary}
-                                                                    </p>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                                {step.hasMore && (
-                                                    <div className="px-4 py-2 text-center text-xs text-muted-foreground bg-muted/30">
-                                                        + more events not shown
-                                                    </div>
-                                                )}
-                                            </div>
+                        {/* Slot Tree */}
+                        <div className="flex-1 overflow-y-auto">
+                            {slotHierarchy.map((slot) => (
+                                <div key={slot.slotId} className="border-b border-border/50 last:border-b-0">
+                                    <button
+                                        onClick={() => {
+                                            setSelectedSlotId(slot.slotId);
+                                            toggleSlot(slot.slotId);
+                                        }}
+                                        className={cn(
+                                            "w-full px-3 py-2.5 text-left hover:bg-secondary/50 transition-colors",
+                                            selectedSlotId === slot.slotId && "bg-primary/5 border-l-2 border-l-primary"
                                         )}
-                                    </div>
-                                ))}
-                                
-                                {timeline.length === 0 && (
-                                    <div className="text-center py-12 text-muted-foreground">
-                                        <svg className="w-12 h-12 mx-auto mb-3 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                        </svg>
-                                        <p>No decision trace data available for this case</p>
-                                    </div>
-                                )}
-                            </div>
-                        )}
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <div className={cn(
+                                                "w-2 h-2 rounded-full",
+                                                SLOT_STATUS_STYLES[slot.status].color
+                                            )} />
+                                            <span className="flex-1 text-sm font-medium truncate">
+                                                {slot.slotTitle}
+                                            </span>
+                                            {expandedSlots.has(slot.slotId) ? (
+                                                <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                                            ) : (
+                                                <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                                            <span className="flex items-center gap-1">
+                                                <BookOpen className="w-3 h-3" />
+                                                {slot.obligationsCovered?.length || 0} oblig.
+                                            </span>
+                                            <span className="flex items-center gap-1">
+                                                <Database className="w-3 h-3" />
+                                                {slot.evidenceCount} atoms
+                                            </span>
+                                        </div>
+                                    </button>
 
-                        {/* Search Results View */}
-                        {activeView === "search" && (
-                            <div className="space-y-3">
-                                {searchResults.length === 0 ? (
-                                    <div className="text-center py-12 text-muted-foreground">
-                                        <svg className="w-12 h-12 mx-auto mb-3 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                                        </svg>
-                                        <p>{searchQuery ? "No results found" : "Enter a search query to find decisions"}</p>
-                                    </div>
-                                ) : (
-                                    searchResults.map((entry) => (
-                                        <div 
-                                            key={entry.id}
-                                            onClick={() => setSelectedEntry(entry)}
-                                            className="p-4 rounded-xl border border-border bg-card hover:bg-muted/30 cursor-pointer transition-colors"
-                                        >
-                                            <div className="flex items-start gap-3">
-                                                <span className="text-xs text-muted-foreground whitespace-nowrap pt-0.5">
-                                                    #{entry.sequenceNum}
-                                                </span>
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex items-center gap-2 mb-2">
-                                                        <span className={cn(
-                                                            "px-2 py-0.5 rounded text-xs font-medium border",
-                                                            EVENT_TYPE_COLORS[entry.eventType] || "bg-muted text-muted-foreground"
-                                                        )}>
-                                                            {formatEventType(entry.eventType)}
-                                                        </span>
-                                                        {entry.decision && (
-                                                            <span className={cn(
-                                                                "px-2 py-0.5 rounded text-xs font-medium",
-                                                                entry.decision === "ACCEPTED" || entry.decision === "SATISFIED"
-                                                                    ? "bg-emerald-500/10 text-emerald-600"
-                                                                    : entry.decision === "REJECTED" || entry.decision === "FAILED"
-                                                                        ? "bg-red-500/10 text-red-600"
-                                                                        : "bg-muted text-muted-foreground"
-                                                            )}>
-                                                                {entry.decision}
-                                                            </span>
-                                                        )}
-                                                        <span className="text-xs text-muted-foreground">
-                                                            Step {entry.workflowStep}
-                                                        </span>
-                                                    </div>
-                                                    {entry.humanSummary && (
-                                                        <p className="text-sm text-foreground">
-                                                            {entry.humanSummary}
-                                                        </p>
+                                    {/* Expanded slot details */}
+                                    {expandedSlots.has(slot.slotId) && (
+                                        <div className="px-3 py-2 bg-secondary/30 text-xs space-y-1.5">
+                                            {slot.obligationsCovered && slot.obligationsCovered.length > 0 && (
+                                                <div>
+                                                    <div className="font-semibold text-emerald-600 mb-1">✓ Covered Obligations</div>
+                                                    {slot.obligationsCovered.slice(0, 3).map((obId, i) => (
+                                                        <div key={i} className="text-muted-foreground truncate pl-2">
+                                                            {obId}
+                                                        </div>
+                                                    ))}
+                                                    {slot.obligationsCovered.length > 3 && (
+                                                        <div className="text-muted-foreground pl-2">
+                                                            +{slot.obligationsCovered.length - 3} more
+                                                        </div>
                                                     )}
                                                 </div>
+                                            )}
+                                            {slot.obligationsMissing && slot.obligationsMissing.length > 0 && (
+                                                <div>
+                                                    <div className="font-semibold text-red-600 mb-1">✗ Missing Obligations</div>
+                                                    {slot.obligationsMissing.slice(0, 3).map((obId, i) => (
+                                                        <div key={i} className="text-red-500 truncate pl-2">
+                                                            {obId}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+
+                            {slotHierarchy.length === 0 && (
+                                <div className="p-8 text-center text-sm text-muted-foreground">
+                                    {validation ? "No slots match your filter" : "Loading slot data..."}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Center Panel: Generated Content with Attribution Markers */}
+                    <div className="flex-1 h-full overflow-hidden flex flex-col bg-white dark:bg-card">
+                        {selectedSlotId ? (
+                            <>
+                                <div className="p-4 border-b border-border">
+                                    <h2 className="font-bold text-foreground">
+                                        {slotHierarchy.find(s => s.slotId === selectedSlotId)?.slotTitle || selectedSlotId}
+                                    </h2>
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                        {sentences.length} attributed sentences • Click any sentence to view provenance
+                                    </p>
+                                </div>
+
+                                <div className="flex-1 overflow-y-auto p-4">
+                                    {sentences.length > 0 ? (
+                                        <div className="space-y-2">
+                                            {sentences.map((sentence) => (
+                                                <div
+                                                    key={sentence.id}
+                                                    onClick={() => setSelectedSentence(sentence)}
+                                                    className={cn(
+                                                        "p-3 rounded-lg border cursor-pointer transition-all hover:border-primary/50",
+                                                        selectedSentence?.id === sentence.id
+                                                            ? "border-primary bg-primary/5"
+                                                            : "border-border",
+                                                        sentence.verificationStatus === "verified" && "border-l-4 border-l-emerald-500",
+                                                        sentence.verificationStatus === "rejected" && "border-l-4 border-l-red-500"
+                                                    )}
+                                                >
+                                                    <div className="flex items-start gap-3">
+                                                        <div className="flex-1">
+                                                            <p className="text-sm leading-relaxed">{sentence.sentenceText}</p>
+                                                            <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
+                                                                <span className="flex items-center gap-1">
+                                                                    <Database className="w-3 h-3" />
+                                                                    {sentence.evidenceAtomIds?.length || 0} sources
+                                                                </span>
+                                                                <span className="flex items-center gap-1">
+                                                                    <BookOpen className="w-3 h-3" />
+                                                                    {sentence.obligationIds?.length || 0} obligations
+                                                                </span>
+                                                                {sentence.hasCalculation && (
+                                                                    <span className="flex items-center gap-1 text-amber-600">
+                                                                        <Calculator className="w-3 h-3" />
+                                                                        Calculated
+                                                                    </span>
+                                                                )}
+                                                                <span className={cn(
+                                                                    "px-1.5 py-0.5 rounded text-[10px] font-medium",
+                                                                    sentence.verificationStatus === "verified"
+                                                                        ? "bg-emerald-100 text-emerald-700"
+                                                                        : sentence.verificationStatus === "rejected"
+                                                                            ? "bg-red-100 text-red-700"
+                                                                            : "bg-slate-100 text-slate-600"
+                                                                )}>
+                                                                    {sentence.verificationStatus || "unverified"}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                        <Eye className="w-4 h-4 text-muted-foreground shrink-0 mt-1" />
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="h-full flex items-center justify-center text-center">
+                                            <div>
+                                                <FileText className="w-12 h-12 mx-auto mb-3 text-muted-foreground/30" />
+                                                <p className="text-sm text-muted-foreground">
+                                                    No attributed sentences yet.<br />
+                                                    Generate content to see provenance data.
+                                                </p>
                                             </div>
                                         </div>
-                                    ))
-                                )}
-                            </div>
-                        )}
-
-                        {/* Narrative View */}
-                        {activeView === "narrative" && (
-                            <div className="rounded-xl border border-border bg-card overflow-hidden">
-                                {narrative ? (
-                                    <pre className="p-6 text-sm text-foreground font-mono whitespace-pre-wrap overflow-x-auto max-h-[70vh] overflow-y-auto">
-                                        {narrative}
-                                    </pre>
-                                ) : (
-                                    <div className="p-12 text-center text-muted-foreground">
-                                        <p>Click "Export Narrative" to generate the audit narrative</p>
-                                    </div>
-                                )}
+                                    )}
+                                </div>
+                            </>
+                        ) : (
+                            <div className="h-full flex items-center justify-center text-center">
+                                <div>
+                                    <Layers className="w-12 h-12 mx-auto mb-3 text-muted-foreground/30" />
+                                    <h3 className="font-bold text-foreground mb-1">Select a Slot</h3>
+                                    <p className="text-sm text-muted-foreground max-w-xs">
+                                        Click on a slot from the left panel to view its generated content and provenance chain
+                                    </p>
+                                </div>
                             </div>
                         )}
                     </div>
-                )}
-            </main>
 
-            {/* Entry Detail Modal */}
-            {selectedEntry && (
-                <div 
-                    className="fixed inset-0 z-[100] overflow-y-auto"
-                    onClick={() => setSelectedEntry(null)}
-                >
-                    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" />
-                    <div className="flex min-h-full items-center justify-center p-4">
-                        <div 
-                            className="relative w-full max-w-2xl bg-background border border-border rounded-2xl shadow-lg max-h-[85vh] flex flex-col"
-                            onClick={e => e.stopPropagation()}
-                        >
-                            <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
-                                <h3 className="text-lg font-semibold">Decision Details</h3>
-                                <button 
-                                    onClick={() => setSelectedEntry(null)}
-                                    className="p-2 rounded-lg hover:bg-muted transition-colors"
-                                >
-                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                </button>
-                            </div>
-                            <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                    <span className={cn(
-                                        "px-3 py-1 rounded-lg text-sm font-medium border",
-                                        EVENT_TYPE_COLORS[selectedEntry.eventType] || "bg-muted text-muted-foreground"
-                                    )}>
-                                        {formatEventType(selectedEntry.eventType)}
-                                    </span>
-                                    {selectedEntry.decision && (
-                                        <span className={cn(
-                                            "px-3 py-1 rounded-lg text-sm font-medium",
-                                            selectedEntry.decision === "ACCEPTED" || selectedEntry.decision === "SATISFIED"
-                                                ? "bg-emerald-500/10 text-emerald-600"
-                                                : selectedEntry.decision === "REJECTED" || selectedEntry.decision === "FAILED"
-                                                    ? "bg-red-500/10 text-red-600"
-                                                    : "bg-muted text-muted-foreground"
-                                        )}>
-                                            {selectedEntry.decision}
-                                        </span>
-                                    )}
+                    {/* Right Panel: Provenance Details */}
+                    <div className="w-[380px] h-full border-l border-border bg-slate-50 dark:bg-background overflow-hidden flex flex-col">
+                        {selectedSentence ? (
+                            <>
+                                <div className="p-4 border-b border-border bg-white dark:bg-card">
+                                    <h3 className="font-bold text-foreground flex items-center gap-2">
+                                        <GitBranch className="w-4 h-4 text-primary" />
+                                        Provenance Chain
+                                    </h3>
+                                    <p className="text-xs text-muted-foreground mt-0.5">
+                                        Complete traceability for this sentence
+                                    </p>
                                 </div>
-                                
-                                {selectedEntry.humanSummary && (
-                                    <div>
-                                        <h4 className="text-sm font-medium text-muted-foreground mb-1">Summary</h4>
-                                        <p className="text-foreground">{selectedEntry.humanSummary}</p>
-                                    </div>
-                                )}
-                                
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <h4 className="text-sm font-medium text-muted-foreground mb-1">Sequence</h4>
-                                        <p className="text-foreground">#{selectedEntry.sequenceNum}</p>
-                                    </div>
-                                    <div>
-                                        <h4 className="text-sm font-medium text-muted-foreground mb-1">Workflow Step</h4>
-                                        <p className="text-foreground">{selectedEntry.workflowStep}</p>
-                                    </div>
-                                    <div>
-                                        <h4 className="text-sm font-medium text-muted-foreground mb-1">Actor</h4>
-                                        <p className="text-foreground">{selectedEntry.actor}</p>
-                                    </div>
-                                    <div>
-                                        <h4 className="text-sm font-medium text-muted-foreground mb-1">Timestamp</h4>
-                                        <p className="text-foreground">{new Date(selectedEntry.timestamp).toLocaleString()}</p>
-                                    </div>
-                                </div>
-                                
-                                {selectedEntry.entityId && (
-                                    <div>
-                                        <h4 className="text-sm font-medium text-muted-foreground mb-1">Entity</h4>
-                                        <p className="text-foreground font-mono text-sm">
-                                            {selectedEntry.entityType}: {selectedEntry.entityId}
+
+                                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                                    {/* The Sentence */}
+                                    <div className="p-3 rounded-lg bg-white dark:bg-card border border-border">
+                                        <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                                            Generated Content
+                                        </div>
+                                        <p className="text-sm leading-relaxed italic text-foreground">
+                                            "{selectedSentence.sentenceText}"
                                         </p>
                                     </div>
-                                )}
-                                
-                                {selectedEntry.regulatoryContext && (
-                                    <div>
-                                        <h4 className="text-sm font-medium text-muted-foreground mb-1">Regulatory Context</h4>
-                                        <pre className="p-3 rounded-lg bg-muted text-sm font-mono overflow-x-auto">
-                                            {JSON.stringify(selectedEntry.regulatoryContext, null, 2)}
-                                        </pre>
+
+                                    {/* Evidence Sources */}
+                                    <div className="p-3 rounded-lg bg-white dark:bg-card border border-border">
+                                        <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-2">
+                                            <Database className="w-3.5 h-3.5 text-blue-500" />
+                                            Evidence Sources ({selectedSentence.evidenceAtomIds?.length || 0})
+                                        </div>
+                                        {selectedSentence.evidenceAtomIds && selectedSentence.evidenceAtomIds.length > 0 ? (
+                                            <div className="space-y-2">
+                                                {selectedSentence.evidenceAtomIds.map((atomId, i) => (
+                                                    <div key={i} className="flex items-center gap-2 p-2 rounded bg-blue-50 dark:bg-blue-900/20">
+                                                        <Hash className="w-3 h-3 text-blue-500" />
+                                                        <span className="text-xs font-mono">Atom #{atomId}</span>
+                                                        <ExternalLink className="w-3 h-3 ml-auto text-muted-foreground" />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <p className="text-xs text-muted-foreground">No evidence atoms linked</p>
+                                        )}
                                     </div>
-                                )}
-                                
-                                {selectedEntry.complianceAssertion && (
-                                    <div>
-                                        <h4 className="text-sm font-medium text-muted-foreground mb-1">Compliance Assertion</h4>
-                                        <pre className="p-3 rounded-lg bg-muted text-sm font-mono overflow-x-auto">
-                                            {JSON.stringify(selectedEntry.complianceAssertion, null, 2)}
-                                        </pre>
+
+                                    {/* GRKB Obligations */}
+                                    <div className="p-3 rounded-lg bg-white dark:bg-card border border-border">
+                                        <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-2">
+                                            <BookOpen className="w-3.5 h-3.5 text-purple-500" />
+                                            GRKB Obligations ({selectedSentence.obligationIds?.length || 0})
+                                        </div>
+                                        {selectedSentence.obligationIds && selectedSentence.obligationIds.length > 0 ? (
+                                            <div className="space-y-2">
+                                                {selectedSentence.obligationIds.map((obId, i) => (
+                                                    <div key={i} className="flex items-center gap-2 p-2 rounded bg-purple-50 dark:bg-purple-900/20">
+                                                        <Link2 className="w-3 h-3 text-purple-500" />
+                                                        <span className="text-xs font-mono flex-1 truncate">{obId}</span>
+                                                        <ExternalLink className="w-3 h-3 text-muted-foreground" />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <p className="text-xs text-muted-foreground">No obligations linked</p>
+                                        )}
                                     </div>
-                                )}
-                                
-                                {selectedEntry.reasons && selectedEntry.reasons.length > 0 && (
-                                    <div>
-                                        <h4 className="text-sm font-medium text-muted-foreground mb-1">Reasons</h4>
-                                        <ul className="list-disc list-inside text-sm text-foreground">
-                                            {selectedEntry.reasons.map((r, i) => <li key={i}>{r}</li>)}
-                                        </ul>
+
+                                    {/* Calculation Breakdown */}
+                                    {selectedSentence.hasCalculation && selectedSentence.calculationTrace && (
+                                        <div className="p-3 rounded-lg bg-white dark:bg-card border border-amber-200 dark:border-amber-800">
+                                            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-2">
+                                                <Calculator className="w-3.5 h-3.5 text-amber-500" />
+                                                Calculation Trace
+                                            </div>
+                                            <div className="space-y-2">
+                                                <div className="p-2 rounded bg-amber-50 dark:bg-amber-900/20">
+                                                    <div className="text-xs text-muted-foreground">Result</div>
+                                                    <div className="font-bold text-amber-700 dark:text-amber-300">
+                                                        {selectedSentence.calculationTrace.resultValue}
+                                                    </div>
+                                                </div>
+                                                <div className="p-2 rounded bg-amber-50 dark:bg-amber-900/20">
+                                                    <div className="text-xs text-muted-foreground">Formula</div>
+                                                    <div className="font-mono text-xs">
+                                                        {selectedSentence.calculationTrace.formula}
+                                                    </div>
+                                                </div>
+                                                <div className="text-xs font-semibold mt-2">Inputs:</div>
+                                                {selectedSentence.calculationTrace.inputs.map((input, i) => (
+                                                    <div key={i} className="flex items-center gap-2 text-xs p-2 rounded bg-slate-50 dark:bg-slate-800">
+                                                        <span className="font-mono text-muted-foreground">Atom #{input.atomId}</span>
+                                                        <span className="text-muted-foreground">→</span>
+                                                        <span className="font-medium">{input.field}: {String(input.value)}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* LLM Reasoning */}
+                                    {selectedSentence.llmReasoning && (
+                                        <div className="p-3 rounded-lg bg-white dark:bg-card border border-border">
+                                            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-2">
+                                                <Zap className="w-3.5 h-3.5 text-emerald-500" />
+                                                Generation Rationale
+                                            </div>
+                                            <p className="text-xs text-muted-foreground leading-relaxed">
+                                                {selectedSentence.llmReasoning}
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {/* Confidence */}
+                                    <div className="p-3 rounded-lg bg-white dark:bg-card border border-border">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-xs font-semibold text-muted-foreground">Confidence Score</span>
+                                            <span className="text-sm font-bold text-foreground">
+                                                {selectedSentence.confidenceScore || "N/A"}
+                                            </span>
+                                        </div>
                                     </div>
-                                )}
+                                </div>
+                            </>
+                        ) : (
+                            <div className="h-full flex items-center justify-center text-center p-8">
+                                <div>
+                                    <Info className="w-12 h-12 mx-auto mb-3 text-muted-foreground/30" />
+                                    <h3 className="font-bold text-foreground mb-1">Select a Sentence</h3>
+                                    <p className="text-sm text-muted-foreground">
+                                        Click on any sentence in the center panel to view its complete provenance chain
+                                    </p>
+                                </div>
                             </div>
-                        </div>
+                        )}
                     </div>
                 </div>
             )}

@@ -203,7 +203,7 @@ export class CompileOrchestrator {
         currentSequence: 0,
         previousHash: null,
       },
-      slotId: slotId || null,
+      slotId: slotId || undefined,
       ...extra,
     };
   }
@@ -245,7 +245,7 @@ export class CompileOrchestrator {
       throwIfAborted();
       // Load live content functions for incremental preview
       await loadLiveContentFunctions();
-      
+
       // Load template
       const template = loadTemplate(input.templateId);
       const templateSlots = getEffectiveSlots(template);
@@ -263,291 +263,228 @@ export class CompileOrchestrator {
       console.log(`[${this.orchestratorId}] Processing ${templateSlots.length} template slots`);
 
       // ═══════════════════════════════════════════════════════════════════════
-      // PHASE 1: NARRATIVE GENERATION
+      // PHASE 1: SEQUENTIAL GENERATION (Narratives & Tables)
       // ═══════════════════════════════════════════════════════════════════════
-      console.log(`[${this.orchestratorId}] Phase 1: Generating narratives...`);
+      console.log(`[${this.orchestratorId}] Phase 1: Generating document sections sequentially...`);
 
       for (const slot of templateSlots) {
-        if (slot.slot_kind !== "NARRATIVE") continue;
-        throwIfAborted();
-
-        // Mark slot as generating in live preview
-        updateLiveContent(input.psurCaseId, slot.slot_id, slot.title, "", "generating");
-        
-        const AgentClass = NARRATIVE_AGENT_MAPPING[slot.slot_id];
-        if (!AgentClass) {
-          // Use generic narrative agent as fallback
-          const section = await this.generateGenericNarrative(
-            slot,
-            allAtoms,
-            input
-          );
-          sections.push(section);
-          // Update live content with generated section
-          updateLiveContent(input.psurCaseId, slot.slot_id, slot.title, section.content, "done");
-          continue;
-        }
-
-        try {
-          const runId = `${this.orchestratorId}:${slot.slot_id}:${Date.now().toString(36)}`;
-          const agentName = AgentClass?.name || "UnknownAgent";
-          emitRuntimeEvent(input.psurCaseId, { kind: "agent.created", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "narrative", slotId: slot.slot_id, agent: agentName, runId });
-          const agentStart = Date.now();
-          const agent = new AgentClass();
-          const slotAtoms = this.filterAtomsForSlot(allAtoms, slot.evidence_requirements?.required_types || []);
-          emitRuntimeEvent(input.psurCaseId, { kind: "agent.started", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "narrative", slotId: slot.slot_id, agent: agentName, runId });
-          
-          const result = await agent.run({
-            slot: {
-              slotId: slot.slot_id,
-              title: slot.title,
-              sectionPath: slot.section_path,
-              requirements: slot.evidence_requirements?.required_types?.join(", "),
-              guidance: slot.output_requirements?.render_as,
-            },
-            evidenceAtoms: slotAtoms.map(a => ({
-              atomId: a.atomId,
-              evidenceType: a.evidenceType,
-              normalizedData: a.normalizedData as Record<string, unknown>,
-            })),
-            context: {
-              deviceCode: input.deviceCode,
-              periodStart: input.periodStart,
-              periodEnd: input.periodEnd,
-              templateId: input.templateId,
-            },
-          }, this.createAgentContext(input.psurCaseId, slot.slot_id, {
-            deviceCode: input.deviceCode,
-            periodStart: input.periodStart,
-            periodEnd: input.periodEnd,
-          }));
-
-          if (result.success && result.data) {
-            const sectionData = {
-              slotId: slot.slot_id,
-              title: slot.title,
-              sectionPath: slot.section_path,
-              slotKind: "NARRATIVE" as const,
-              content: result.data.content,
-              evidenceAtomIds: result.data.citedAtoms,
-              obligationsClaimed: [], // Will be populated from template mapping
-              confidence: result.data.confidence,
-            };
-            sections.push(sectionData);
-            // Update live content with generated section
-            updateLiveContent(input.psurCaseId, slot.slot_id, slot.title, result.data.content, "done");
-            emitRuntimeEvent(input.psurCaseId, { kind: "agent.completed", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "narrative", slotId: slot.slot_id, agent: agentName, runId, durationMs: Date.now() - agentStart });
-          } else {
-            errors.push(`Narrative generation failed for ${slot.slot_id}: ${result.error}`);
-            emitRuntimeEvent(input.psurCaseId, { kind: "agent.failed", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "narrative", slotId: slot.slot_id, agent: agentName, runId, error: result.error || "Unknown error" });
-          }
-          emitRuntimeEvent(input.psurCaseId, { kind: "agent.destroyed", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "narrative", slotId: slot.slot_id, agent: agentName, runId });
-        } catch (err: any) {
-          errors.push(`Agent error for ${slot.slot_id}: ${err.message}`);
-          warnings.push(`Using fallback for ${slot.slot_id}`);
-          
-          // Generate fallback content
-          const section = await this.generateGenericNarrative(slot, allAtoms, input);
-          sections.push(section);
-          // Update live content with generated section
-          updateLiveContent(input.psurCaseId, slot.slot_id, slot.title, section.content, "done");
-        }
-      }
-
-      // ═══════════════════════════════════════════════════════════════════════
-      // PHASE 2: TABLE GENERATION
-      // ═══════════════════════════════════════════════════════════════════════
-      console.log(`[${this.orchestratorId}] Phase 2: Generating tables...`);
-
-      for (const slot of templateSlots) {
-        if (slot.slot_kind !== "TABLE") continue;
+        if (slot.slot_kind !== "NARRATIVE" && slot.slot_kind !== "TABLE") continue;
         throwIfAborted();
 
         // Mark slot as generating in live preview
         updateLiveContent(input.psurCaseId, slot.slot_id, slot.title, "", "generating");
 
-        const AgentClass = TABLE_AGENT_MAPPING[slot.slot_id];
-        if (!AgentClass) {
-          // Use generic table generation
-          const section = await this.generateGenericTable(slot, allAtoms, input);
-          sections.push(section);
-          updateLiveContent(input.psurCaseId, slot.slot_id, slot.title, section.content, "done");
-          continue;
-        }
+        // ─── NARRATIVE GENERATION ─────────────────────────────────────────────
+        if (slot.slot_kind === "NARRATIVE") {
+          const AgentClass = NARRATIVE_AGENT_MAPPING[slot.slot_id];
+          if (!AgentClass) {
+            // Use generic narrative agent as fallback
+            const section = await this.generateGenericNarrative(
+              slot,
+              allAtoms,
+              input
+            );
+            sections.push(section);
+            updateLiveContent(input.psurCaseId, slot.slot_id, slot.title, section.content, "done");
+            continue;
+          }
 
-        try {
-          const runId = `${this.orchestratorId}:${slot.slot_id}:${Date.now().toString(36)}`;
-          const agentName = AgentClass?.name || "UnknownAgent";
-          emitRuntimeEvent(input.psurCaseId, { kind: "agent.created", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "table", slotId: slot.slot_id, agent: agentName, runId });
-          const agentStart = Date.now();
-          const agent = new AgentClass();
-          const slotAtoms = this.filterAtomsForSlot(allAtoms, slot.evidence_requirements?.required_types || []);
-          emitRuntimeEvent(input.psurCaseId, { kind: "agent.started", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "table", slotId: slot.slot_id, agent: agentName, runId });
-          
-          const result = await agent.run({
-            slot,
-            atoms: slotAtoms,
-            context: {
+          try {
+            const runId = `${this.orchestratorId}:${slot.slot_id}:${Date.now().toString(36)}`;
+            const agentName = AgentClass?.name || "UnknownAgent";
+            emitRuntimeEvent(input.psurCaseId, { kind: "agent.created", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "narrative", slotId: slot.slot_id, agent: agentName, runId });
+            const agentStart = Date.now();
+            const agent = new AgentClass();
+            const slotAtoms = this.filterAtomsForSlot(allAtoms, slot.evidence_requirements?.required_types || []);
+            emitRuntimeEvent(input.psurCaseId, { kind: "agent.started", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "narrative", slotId: slot.slot_id, agent: agentName, runId });
+
+            const result = await agent.run({
+              slot: {
+                slotId: slot.slot_id,
+                title: slot.title,
+                sectionPath: slot.section_path,
+                requirements: slot.evidence_requirements?.required_types?.join(", "),
+                guidance: slot.output_requirements?.render_as,
+              },
+              evidenceAtoms: slotAtoms.map(a => ({
+                atomId: a.atomId,
+                evidenceType: a.evidenceType,
+                normalizedData: a.normalizedData as Record<string, unknown>,
+              })),
+              context: {
+                deviceCode: input.deviceCode,
+                periodStart: input.periodStart,
+                periodEnd: input.periodEnd,
+                templateId: input.templateId,
+              },
+            }, this.createAgentContext(input.psurCaseId, slot.slot_id, {
               deviceCode: input.deviceCode,
               periodStart: input.periodStart,
               periodEnd: input.periodEnd,
-            },
-          }, this.createAgentContext(input.psurCaseId, slot.slot_id));
+            }));
 
-          if (result.success && result.data) {
-            sections.push({
-              slotId: slot.slot_id,
-              title: slot.title,
-              sectionPath: slot.section_path,
-              slotKind: "TABLE",
-              content: result.data.markdown,
-              evidenceAtomIds: result.data.evidenceAtomIds,
-              obligationsClaimed: [],
-              confidence: result.confidence,
-            });
-            updateLiveContent(input.psurCaseId, slot.slot_id, slot.title, result.data.markdown, "done");
-            emitRuntimeEvent(input.psurCaseId, { kind: "agent.completed", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "table", slotId: slot.slot_id, agent: agentName, runId, durationMs: Date.now() - agentStart });
+            if (result.success && result.data) {
+              const sectionData = {
+                slotId: slot.slot_id,
+                title: slot.title,
+                sectionPath: slot.section_path,
+                slotKind: "NARRATIVE" as const,
+                content: result.data.content,
+                evidenceAtomIds: result.data.citedAtoms,
+                obligationsClaimed: [],
+                confidence: result.data.confidence,
+              };
+              sections.push(sectionData);
+              updateLiveContent(input.psurCaseId, slot.slot_id, slot.title, result.data.content, "done");
+              emitRuntimeEvent(input.psurCaseId, { kind: "agent.completed", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "narrative", slotId: slot.slot_id, agent: agentName, runId, durationMs: Date.now() - agentStart });
+            } else {
+              errors.push(`Narrative generation failed for ${slot.slot_id}: ${result.error}`);
+              emitRuntimeEvent(input.psurCaseId, { kind: "agent.failed", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "narrative", slotId: slot.slot_id, agent: agentName, runId, error: result.error || "Unknown error" });
+            }
+            emitRuntimeEvent(input.psurCaseId, { kind: "agent.destroyed", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "narrative", slotId: slot.slot_id, agent: agentName, runId });
+          } catch (err: any) {
+            errors.push(`Agent error for ${slot.slot_id}: ${err.message}`);
+            warnings.push(`Using fallback for ${slot.slot_id}`);
+
+            // Generate fallback content
+            const section = await this.generateGenericNarrative(slot, allAtoms, input);
+            sections.push(section);
+            updateLiveContent(input.psurCaseId, slot.slot_id, slot.title, section.content, "done");
           }
-          emitRuntimeEvent(input.psurCaseId, { kind: "agent.destroyed", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "table", slotId: slot.slot_id, agent: agentName, runId });
-        } catch (err: any) {
-          errors.push(`Table generation failed for ${slot.slot_id}: ${err.message}`);
-          const agentName = AgentClass?.name || "UnknownAgent";
-          const runId = `${this.orchestratorId}:${slot.slot_id}:${Date.now().toString(36)}`;
-          emitRuntimeEvent(input.psurCaseId, { kind: "agent.failed", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "table", slotId: slot.slot_id, agent: agentName, runId, error: err?.message || String(err) });
-          const section = await this.generateGenericTable(slot, allAtoms, input);
-          sections.push(section);
-          updateLiveContent(input.psurCaseId, slot.slot_id, slot.title, section.content, "done");
+        }
+
+        // ─── TABLE GENERATION ────────────────────────────────────────────────
+        else if (slot.slot_kind === "TABLE") {
+          const AgentClass = TABLE_AGENT_MAPPING[slot.slot_id];
+          if (!AgentClass) {
+            const section = await this.generateGenericTable(slot, allAtoms, input);
+            sections.push(section);
+            updateLiveContent(input.psurCaseId, slot.slot_id, slot.title, section.content, "done");
+            continue;
+          }
+
+          try {
+            const runId = `${this.orchestratorId}:${slot.slot_id}:${Date.now().toString(36)}`;
+            const agentName = AgentClass?.name || "UnknownAgent";
+            emitRuntimeEvent(input.psurCaseId, { kind: "agent.created", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "table", slotId: slot.slot_id, agent: agentName, runId });
+            const agentStart = Date.now();
+            const agent = new AgentClass();
+            const slotAtoms = this.filterAtomsForSlot(allAtoms, slot.evidence_requirements?.required_types || []);
+            emitRuntimeEvent(input.psurCaseId, { kind: "agent.started", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "table", slotId: slot.slot_id, agent: agentName, runId });
+
+            const result = await agent.run({
+              slot,
+              atoms: slotAtoms,
+              context: {
+                deviceCode: input.deviceCode,
+                periodStart: input.periodStart,
+                periodEnd: input.periodEnd,
+              },
+            }, this.createAgentContext(input.psurCaseId, slot.slot_id));
+
+            if (result.success && result.data) {
+              const section = {
+                slotId: slot.slot_id,
+                title: slot.title,
+                sectionPath: slot.section_path,
+                slotKind: "TABLE" as const,
+                content: result.data.markdown,
+                evidenceAtomIds: result.data.evidenceAtomIds,
+                obligationsClaimed: [],
+                confidence: result.confidence,
+              };
+              sections.push(section);
+              updateLiveContent(input.psurCaseId, slot.slot_id, slot.title, section.content, "done");
+              emitRuntimeEvent(input.psurCaseId, { kind: "agent.completed", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "table", slotId: slot.slot_id, agent: agentName, runId, durationMs: Date.now() - agentStart });
+            } else {
+              errors.push(`Table generation failed for ${slot.slot_id}: ${result.error}`);
+              emitRuntimeEvent(input.psurCaseId, { kind: "agent.failed", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "table", slotId: slot.slot_id, agent: agentName, runId, error: result.error || "Unknown error" });
+              // Fallback on error logic if needed, but for now just error
+            }
+            emitRuntimeEvent(input.psurCaseId, { kind: "agent.destroyed", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "table", slotId: slot.slot_id, agent: agentName, runId });
+          } catch (err: any) {
+            errors.push(`Table generation failed for ${slot.slot_id}: ${err.message}`);
+            const section = await this.generateGenericTable(slot, allAtoms, input);
+            sections.push(section);
+            updateLiveContent(input.psurCaseId, slot.slot_id, slot.title, section.content, "done");
+          }
         }
       }
 
       // ═══════════════════════════════════════════════════════════════════════
-      // PHASE 3: CHART GENERATION
+      // PHASE 3: CHART GENERATION (PARALLEL for speed)
       // ═══════════════════════════════════════════════════════════════════════
       if (input.enableCharts) {
-        console.log(`[${this.orchestratorId}] Phase 3: Generating charts...`);
+        console.log(`[${this.orchestratorId}] Phase 3: Generating charts in parallel...`);
+        const chartStartTime = Date.now();
 
         try {
-          // Trend line chart
-          const trendAgent = new TrendLineChartAgent();
+          const chartPromises: Promise<CompiledChart | null>[] = [];
+
           const trendAtoms = allAtoms
             .filter(a => ["trend_analysis", "complaint_record", "sales_volume"].includes(a.evidenceType))
-            .map(a => ({
-              atomId: a.atomId,
-              evidenceType: a.evidenceType,
-              normalizedData: (a.normalizedData || {}) as Record<string, unknown>,
-            }));
-          
-          if (trendAtoms.length > 0) {
-            const trendResult = await trendAgent.run({
-              atoms: trendAtoms,
-              chartTitle: "Complaint Rate Trend Analysis",
-              style: input.documentStyle,
-            }, this.createAgentContext(input.psurCaseId));
+            .map(a => ({ atomId: a.atomId, evidenceType: a.evidenceType, normalizedData: (a.normalizedData || {}) as Record<string, unknown> }));
 
-            if (trendResult.success && trendResult.data) {
-              charts.push({
-                chartId: `trend-${input.psurCaseId}`,
-                chartType: "trend_line",
-                title: "Complaint Rate Trend Analysis",
-                imageBuffer: trendResult.data.imageBuffer,
-                svg: trendResult.data.svg,
-                width: trendResult.data.width,
-                height: trendResult.data.height,
-                mimeType: trendResult.data.mimeType,
-              });
-              console.log(`[${this.orchestratorId}] SOTA trend chart generated: ${trendResult.data.dataPointCount} data points`);
-            }
-          }
-
-          // Complaint bar chart
-          const barAgent = new ComplaintBarChartAgent();
           const complaintAtoms = allAtoms
             .filter(a => ["complaint_record", "complaint_summary", "customer_complaint"].includes(a.evidenceType))
-            .map(a => ({
-              atomId: a.atomId,
-              evidenceType: a.evidenceType,
-              normalizedData: (a.normalizedData || {}) as Record<string, unknown>,
-            }));
-          
+            .map(a => ({ atomId: a.atomId, evidenceType: a.evidenceType, normalizedData: (a.normalizedData || {}) as Record<string, unknown> }));
+
+          const allAtomsForCharts = allAtoms.map(a => ({ atomId: a.atomId, evidenceType: a.evidenceType, normalizedData: (a.normalizedData || {}) as Record<string, unknown> }));
+
+          // Launch all chart generations in parallel
+          if (trendAtoms.length > 0) {
+            chartPromises.push((async () => {
+              const agent = new TrendLineChartAgent();
+              const result = await agent.run({ atoms: trendAtoms, chartTitle: "Complaint Rate Trend Analysis", style: input.documentStyle }, this.createAgentContext(input.psurCaseId));
+              if (result.success && result.data) {
+                return { chartId: `trend-${input.psurCaseId}`, chartType: "trend_line", title: "Complaint Rate Trend Analysis", imageBuffer: result.data.imageBuffer, svg: result.data.svg, width: result.data.width, height: result.data.height, mimeType: result.data.mimeType };
+              }
+              return null;
+            })());
+          }
+
           if (complaintAtoms.length > 0) {
-            const barResult = await barAgent.run({
-              atoms: complaintAtoms,
-              chartTitle: "Complaint Distribution by Category",
-              style: input.documentStyle,
-            }, this.createAgentContext(input.psurCaseId));
+            chartPromises.push((async () => {
+              const agent = new ComplaintBarChartAgent();
+              const result = await agent.run({ atoms: complaintAtoms, chartTitle: "Complaint Distribution by Category", style: input.documentStyle }, this.createAgentContext(input.psurCaseId));
+              if (result.success && result.data) {
+                return { chartId: `complaints-bar-${input.psurCaseId}`, chartType: "bar_chart", title: "Complaint Distribution by Category", imageBuffer: result.data.imageBuffer, svg: result.data.svg, width: result.data.width, height: result.data.height, mimeType: result.data.mimeType };
+              }
+              return null;
+            })());
+          }
 
-            if (barResult.success && barResult.data) {
-              charts.push({
-                chartId: `complaints-bar-${input.psurCaseId}`,
-                chartType: "bar_chart",
-                title: "Complaint Distribution by Category",
-                imageBuffer: barResult.data.imageBuffer,
-                svg: barResult.data.svg,
-                width: barResult.data.width,
-                height: barResult.data.height,
-                mimeType: barResult.data.mimeType,
-              });
-              console.log(`[${this.orchestratorId}] SOTA bar chart generated: ${barResult.data.dataPointCount} data points`);
+          if (allAtomsForCharts.length > 0) {
+            chartPromises.push((async () => {
+              const agent = new DistributionPieChartAgent();
+              const result = await agent.run({ atoms: allAtomsForCharts, chartTitle: "Event Severity Distribution", style: input.documentStyle }, this.createAgentContext(input.psurCaseId));
+              if (result.success && result.data) {
+                return { chartId: `distribution-pie-${input.psurCaseId}`, chartType: "pie_chart", title: "Event Severity Distribution", imageBuffer: result.data.imageBuffer, svg: result.data.svg, width: result.data.width, height: result.data.height, mimeType: result.data.mimeType };
+              }
+              return null;
+            })());
+          }
+
+          if (allAtomsForCharts.length > 5) {
+            chartPromises.push((async () => {
+              const agent = new TimeSeriesChartAgent();
+              const result = await agent.run({ atoms: allAtomsForCharts, chartTitle: "Event Timeline", style: input.documentStyle }, this.createAgentContext(input.psurCaseId));
+              if (result.success && result.data) {
+                return { chartId: `timeline-${input.psurCaseId}`, chartType: "area_chart", title: "Event Timeline", imageBuffer: result.data.imageBuffer, svg: result.data.svg, width: result.data.width, height: result.data.height, mimeType: result.data.mimeType };
+              }
+              return null;
+            })());
+          }
+
+          // Wait for all charts to complete in parallel
+          const chartResults = await Promise.allSettled(chartPromises);
+          for (const result of chartResults) {
+            if (result.status === "fulfilled" && result.value) {
+              charts.push(result.value);
             }
           }
 
-          // Distribution pie chart
-          const pieAgent = new DistributionPieChartAgent();
-          if (allAtoms.length > 0) {
-            const pieResult = await pieAgent.run({
-              atoms: allAtoms.map(a => ({
-                atomId: a.atomId,
-                evidenceType: a.evidenceType,
-                normalizedData: (a.normalizedData || {}) as Record<string, unknown>,
-              })),
-              chartTitle: "Event Severity Distribution",
-              style: input.documentStyle,
-            }, this.createAgentContext(input.psurCaseId));
-
-            if (pieResult.success && pieResult.data) {
-              charts.push({
-                chartId: `distribution-pie-${input.psurCaseId}`,
-                chartType: "pie_chart",
-                title: "Event Severity Distribution",
-                imageBuffer: pieResult.data.imageBuffer,
-                svg: pieResult.data.svg,
-                width: pieResult.data.width,
-                height: pieResult.data.height,
-                mimeType: pieResult.data.mimeType,
-              });
-              console.log(`[${this.orchestratorId}] SOTA pie chart generated: ${pieResult.data.dataPointCount} data points`);
-            }
-          }
-
-          // Time series area chart
-          const timeAgent = new TimeSeriesChartAgent();
-          if (allAtoms.length > 5) {
-            const timeResult = await timeAgent.run({
-              atoms: allAtoms.map(a => ({
-                atomId: a.atomId,
-                evidenceType: a.evidenceType,
-                normalizedData: (a.normalizedData || {}) as Record<string, unknown>,
-              })),
-              chartTitle: "Event Timeline",
-              style: input.documentStyle,
-            }, this.createAgentContext(input.psurCaseId));
-
-            if (timeResult.success && timeResult.data) {
-              charts.push({
-                chartId: `timeline-${input.psurCaseId}`,
-                chartType: "area_chart",
-                title: "Event Timeline",
-                imageBuffer: timeResult.data.imageBuffer,
-                svg: timeResult.data.svg,
-                width: timeResult.data.width,
-                height: timeResult.data.height,
-                mimeType: timeResult.data.mimeType,
-              });
-              console.log(`[${this.orchestratorId}] SOTA area chart generated: ${timeResult.data.dataPointCount} data points`);
-            }
-          }
-
-          console.log(`[${this.orchestratorId}] SOTA chart generation complete: ${charts.length} charts`);
+          console.log(`[${this.orchestratorId}] Chart generation complete: ${charts.length} charts in ${Date.now() - chartStartTime}ms`);
 
         } catch (err: any) {
           console.error(`[${this.orchestratorId}] Chart generation error:`, err);
@@ -620,7 +557,7 @@ export class CompileOrchestrator {
 
     } catch (err: any) {
       errors.push(`Orchestration failed: ${err.message}`);
-      
+
       orchTrace.setOutput({ error: err.message });
       await orchTrace.commit("FAIL", 0, err.message);
 
@@ -731,8 +668,8 @@ IMPORTANT: Do NOT include [ATOM-xxx] citations in the text. Write clean prose.`;
         system: systemPrompt,
       });
 
-      const content = response.content[0].type === "text" 
-        ? response.content[0].text 
+      const content = response.content[0].type === "text"
+        ? response.content[0].text
         : "Content generation failed.";
 
       return {
@@ -747,7 +684,7 @@ IMPORTANT: Do NOT include [ATOM-xxx] citations in the text. Write clean prose.`;
       };
     } catch (err: any) {
       console.error(`[${this.orchestratorId}] LLM narrative generation failed: ${err.message}`);
-      
+
       // Minimal fallback - regulatory compliant without inline citations
       const evidenceTypes = Array.from(new Set(slotAtoms.map((a: any) => a.evidenceType))).join(", ");
       const content = slotAtoms.length > 0
@@ -839,13 +776,13 @@ Requirements:
         system: systemPrompt,
       });
 
-      const content = response.content[0].type === "text" 
-        ? response.content[0].text 
+      const content = response.content[0].type === "text"
+        ? response.content[0].text
         : "Table generation failed.";
 
       // Clean any ATOM citations from the LLM response
       const cleanedContent = content.replace(/\[ATOM-[A-Za-z0-9_-]+\]/g, "").replace(/\s{2,}/g, " ");
-      
+
       return {
         slotId: slot.slot_id,
         title: slot.title,
@@ -858,7 +795,7 @@ Requirements:
       };
     } catch (err: any) {
       console.error(`[${this.orchestratorId}] LLM table generation failed: ${err.message}`);
-      
+
       // Build a structured table from the data as fallback
       const allKeys = new Set<string>();
       slotAtoms.slice(0, 20).forEach((a: any) => {
@@ -868,12 +805,12 @@ Requirements:
       const columns = Array.from(allKeys)
         .filter(k => !["raw_data", "isNegativeEvidence", "atomId", "psurCaseId"].includes(k))
         .slice(0, 6);
-      
+
       let content = "";
       if (columns.length > 0) {
         content += `| ${columns.join(" | ")} |\n`;
         content += `| ${columns.map(() => "---").join(" | ")} |\n`;
-        
+
         for (const atom of slotAtoms.slice(0, 30)) {
           const data = atom.normalizedData || {};
           const values = columns.map(k => {
@@ -883,7 +820,7 @@ Requirements:
           });
           content += `| ${values.join(" | ")} |\n`;
         }
-        
+
         if (slotAtoms.length > 30) {
           content += `\nTable shows 30 of ${slotAtoms.length} total records.`;
         }

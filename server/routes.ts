@@ -144,18 +144,18 @@ function generateFastPreviewHTML(params: {
   liveContent?: LiveContent | null;
 }): string {
   const { psurCase, template, slots, atomsByType, totalAtoms, documentStyle, liveContent } = params;
-  
-  const periodStart = psurCase.startPeriod instanceof Date 
-    ? psurCase.startPeriod.toISOString().split("T")[0] 
+
+  const periodStart = psurCase.startPeriod instanceof Date
+    ? psurCase.startPeriod.toISOString().split("T")[0]
     : String(psurCase.startPeriod).split("T")[0];
-  const periodEnd = psurCase.endPeriod instanceof Date 
-    ? psurCase.endPeriod.toISOString().split("T")[0] 
+  const periodEnd = psurCase.endPeriod instanceof Date
+    ? psurCase.endPeriod.toISOString().split("T")[0]
     : String(psurCase.endPeriod).split("T")[0];
 
   // Group slots by section
   const sections: { path: string; title: string; slots: any[] }[] = [];
   const sectionMap = new Map<string, any[]>();
-  
+
   for (const slot of slots) {
     const parts = (slot.section_path || "").split(" > ");
     const sectionKey = parts.slice(0, 2).join(" > ");
@@ -164,7 +164,7 @@ function generateFastPreviewHTML(params: {
     }
     sectionMap.get(sectionKey)!.push(slot);
   }
-  
+
   sectionMap.forEach((slotList, path) => {
     sections.push({
       path,
@@ -378,13 +378,13 @@ function generateFastPreviewHTML(params: {
     </div>
 
     ${sections.map((section, sIndex) => {
-      // Check if we have live content for any slots in this section
-      const hasLiveContent = liveContent && section.slots.some(slot => {
-        const live = liveContent.sections.get(slot.slot_id);
-        return live && live.status === "done" && live.content;
-      });
-      
-      return `
+    // Check if we have live content for any slots in this section
+    const hasLiveContent = liveContent && section.slots.some(slot => {
+      const live = liveContent.sections.get(slot.slot_id);
+      return live && live.status === "done" && live.content;
+    });
+
+    return `
     <div class="section">
       <div class="section-header">
         <div class="section-number">${sIndex + 1}</div>
@@ -392,15 +392,15 @@ function generateFastPreviewHTML(params: {
       </div>
       <div class="section-content">
         ${section.slots.map(slot => {
-          const live = liveContent?.sections.get(slot.slot_id);
-          const statusClass = live?.status === "done" ? "done" : live?.status === "generating" ? "generating" : "pending";
-          const statusIcon = live?.status === "done" 
-            ? '<svg class="status-icon done" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>'
-            : live?.status === "generating"
-            ? '<svg class="status-icon generating" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>'
-            : '<svg class="status-icon pending" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>';
-          
-          return `
+      const live = liveContent?.sections.get(slot.slot_id);
+      const statusClass = live?.status === "done" ? "done" : live?.status === "generating" ? "generating" : "pending";
+      const statusIcon = live?.status === "done"
+        ? '<svg class="status-icon done" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>'
+        : live?.status === "generating"
+          ? '<svg class="status-icon generating" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>'
+          : '<svg class="status-icon pending" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>';
+
+      return `
           <div class="slot-item ${statusClass}">
             <div class="slot-header">
               ${statusIcon}
@@ -409,20 +409,20 @@ function generateFastPreviewHTML(params: {
             </div>
             ${live?.content ? `<div class="slot-content">${live.content.substring(0, 500)}${live.content.length > 500 ? '...' : ''}</div>` : ''}
           </div>`;
-        }).join("")}
+    }).join("")}
       </div>
     </div>`;
-    }).join("")}
+  }).join("")}
 
     <div class="preview-notice">
-      ${liveContent?.isGenerating 
-        ? `<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="spinning">
+      ${liveContent?.isGenerating
+      ? `<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="spinning">
             <circle cx="12" cy="12" r="10"/>
             <path d="M12 6v6l4 2"/>
           </svg>
           <p>Document generation in progress...</p>
           <p>Sections will appear as they are completed.</p>`
-        : liveContent && !liveContent.isGenerating
+      : liveContent && !liveContent.isGenerating
         ? `<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
             <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
             <polyline points="22 4 12 14.01 9 11.01"/>
@@ -435,7 +435,7 @@ function generateFastPreviewHTML(params: {
           </svg>
           <p>This is a preview of the PSUR structure.</p>
           <p>Full document content will be generated when the report is finalized.</p>`
-      }
+    }
     </div>
   </div>
 </body>
@@ -510,6 +510,7 @@ import {
   getConstraints as getGrkbConstraints
 } from "./src/services/grkbService";
 import ingestionRoutes from "./src/parsers/ingestionRoutes";
+import templateRoutes from "./src/templateRoutes";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
@@ -539,7 +540,7 @@ function generatePsurMarkdown(
     // Fallback to minimal output
     return `# PSUR ${psurCase.psurReference}\n\nError: Could not load template ${psurCase.templateId}`;
   }
-  
+
   // Convert DB evidence atoms to the format expected by renderer
   const atomData: EvidenceAtomData[] = evidenceAtoms.map(a => ({
     atomId: a.atomId,
@@ -547,7 +548,7 @@ function generatePsurMarkdown(
     normalizedData: a.normalizedData || a.data,
     provenance: a.provenance,
   }));
-  
+
   // Convert proposals to renderer format
   const rendererProposals: RendererSlotProposal[] = proposals.map(p => ({
     slotId: p.slotId,
@@ -559,7 +560,7 @@ function generatePsurMarkdown(
     renderedText: p.renderedText,
     gapJustification: p.gapJustification,
   }));
-  
+
   // Convert case to renderer format
   const rendererCase: RendererPsurCase = {
     id: psurCase.id,
@@ -572,7 +573,7 @@ function generatePsurMarkdown(
     version: psurCase.version,
     deviceCode: psurCase.deviceCode,
   };
-  
+
   // Convert qualification report
   const rendererQualReport: QualificationReport | null = qualificationReport ? {
     status: qualificationReport.status,
@@ -586,7 +587,7 @@ function generatePsurMarkdown(
     missingObligations: qualificationReport.missingObligations,
     blockingErrors: qualificationReport.blockingErrors,
   } : null;
-  
+
   return renderPsurFromTemplate(template, rendererCase, atomData, rendererProposals, rendererQualReport);
 }
 
@@ -597,6 +598,9 @@ export async function registerRoutes(
 
   // Mount evidence ingestion routes
   app.use("/api/ingest", ingestionRoutes);
+
+  // Mount template routes (validation, upload)
+  app.use("/api/templates", templateRoutes);
 
   // Client error reporting (from frontend)
   app.post("/api/client-errors", (req, res) => {
@@ -612,7 +616,7 @@ export async function registerRoutes(
     const { isPoolHealthy, pool } = await import("./db");
     const dbHealthy = await isPoolHealthy();
     const status = dbHealthy ? "healthy" : "degraded";
-    
+
     res.status(dbHealthy ? 200 : 503).json({
       status,
       timestamp: new Date().toISOString(),
@@ -624,6 +628,220 @@ export async function registerRoutes(
       },
       uptime: process.uptime(),
     });
+  });
+
+
+  // System Instructions Routes
+  app.get("/api/system-instructions", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { systemInstructions } = await import("@shared/schema");
+
+      const instructions = await db.select().from(systemInstructions);
+      const { DEFAULT_PROMPT_TEMPLATES } = await import("./src/agents/llmService");
+
+      // Check for missing instructions
+      const existingKeys = new Set(instructions.map(i => i.key));
+      const missingKeys = Object.keys(DEFAULT_PROMPT_TEMPLATES).filter(key => !existingKeys.has(key));
+
+      if (missingKeys.length > 0) {
+        const getCategory = (key: string) => {
+          if (["SEVERITY_CLASSIFICATION", "FIELD_MAPPING_RESOLUTION", "EVIDENCE_EXTRACTION", "DOCUMENT_ANALYSIS", "FIELD_MAPPING_REFINEMENT", "BATCH_FIELD_MAPPING"].includes(key)) return "Ingestion";
+          if (["COMPLIANCE_CHECK"].includes(key)) return "Compliance";
+          if (key.includes("Agent")) return "Agents";
+          return "Narrative Generation";
+        };
+
+        const extractVariables = (tmpl: string) => {
+          const matches = tmpl.match(/\{([a-zA-Z0-9_]+)\}/g);
+          return matches ? Array.from(new Set(matches.map(m => m.slice(1, -1)))) : [];
+        };
+
+        const seedData = missingKeys.map(key => {
+          const template = (DEFAULT_PROMPT_TEMPLATES as any)[key];
+          return {
+            key,
+            category: getCategory(key),
+            description: "System default template",
+            template,
+            defaultTemplate: template,
+            version: 1,
+            variables: extractVariables(template),
+            updatedBy: "system"
+          };
+        });
+
+        await db.insert(systemInstructions).values(seedData);
+        // Refresh after seeding missing ones
+        const updatedInstructions = await db.select().from(systemInstructions);
+        return res.json(updatedInstructions);
+      }
+
+      res.json(instructions);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/system-instructions/:key", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { systemInstructions, instructionVersions } = await import("@shared/schema");
+      const { eq, desc } = await import("drizzle-orm");
+
+      const instructions = await db.select().from(systemInstructions).where(eq(systemInstructions.key, req.params.key));
+      if (!instructions.length) return res.status(404).json({ error: "Instruction not found" });
+
+      const versions = await db.select()
+        .from(instructionVersions)
+        .where(eq(instructionVersions.instructionKey, req.params.key))
+        .orderBy(desc(instructionVersions.version));
+
+      res.json({ ...instructions[0], versions });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.put("/api/system-instructions/:key", async (req, res) => {
+    try {
+      const { key } = req.params;
+      const { template, changeReason, updatedBy } = req.body;
+      const { db } = await import("./db");
+      const { systemInstructions, instructionVersions } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+
+      await db.transaction(async (tx) => {
+        const current = await tx.select().from(systemInstructions).where(eq(systemInstructions.key, key));
+        if (!current.length) {
+          // If it doesn't exist, we can create it if we want, but typically we want to seed defaults first.
+          // For now let's assume existence or create if missing (first edit from default in code)
+          // NOTE: Since defaults are in code, if it's separate from DB, we might need a sync step.
+          // But for now, let's assume the DB is seeded.
+          throw new Error("Instruction not found in DB");
+        }
+
+        const newVersion = current[0].version + 1;
+
+        // Archive current
+        await tx.insert(instructionVersions).values({
+          instructionKey: key,
+          template: current[0].template,
+          version: current[0].version,
+          changeReason: changeReason || "Update",
+          createdBy: updatedBy || "user",
+        });
+
+        // Update main
+        await tx.update(systemInstructions)
+          .set({
+            template,
+            version: newVersion,
+            lastUpdated: new Date(),
+            updatedBy
+          })
+          .where(eq(systemInstructions.key, key));
+      });
+
+      const { initializePrompts } = await import("./src/agents/llmService");
+
+      await initializePrompts(true);
+
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/system-instructions/:key/reset", async (req, res) => {
+    try {
+      const { key } = req.params;
+      const { db } = await import("./db");
+      const { systemInstructions, instructionVersions } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+
+      await db.transaction(async (tx) => {
+        const current = await tx.select().from(systemInstructions).where(eq(systemInstructions.key, key));
+        if (!current.length) return res.status(404).json({ error: "Instruction not found" });
+
+        const newVersion = current[0].version + 1;
+
+        // Archive current
+        await tx.insert(instructionVersions).values({
+          instructionKey: key,
+          template: current[0].template,
+          version: current[0].version,
+          changeReason: "Reset to default",
+          createdBy: "system",
+        });
+
+        await tx.update(systemInstructions)
+          .set({
+            template: current[0].defaultTemplate,
+            version: newVersion,
+            lastUpdated: new Date(),
+            updatedBy: "system"
+          })
+          .where(eq(systemInstructions.key, key));
+      });
+
+      const { initializePrompts } = await import("./src/agents/llmService");
+
+      await initializePrompts(true);
+
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/system-instructions/:key/rollback/:version", async (req, res) => {
+    try {
+      const { key, version } = req.params;
+      const { db } = await import("./db");
+      const { systemInstructions, instructionVersions } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const { initializePrompts } = await import("./src/agents/llmService");
+
+      await db.transaction(async (tx) => {
+        const targetVersion = await tx.select()
+          .from(instructionVersions)
+          .where(and(
+            eq(instructionVersions.instructionKey, key),
+            eq(instructionVersions.version, parseInt(version))
+          ));
+
+        if (!targetVersion.length) throw new Error("Target version not found");
+
+        const current = await tx.select().from(systemInstructions).where(eq(systemInstructions.key, key));
+        if (!current.length) throw new Error("Instruction not found");
+
+        // Archive current
+        await tx.insert(instructionVersions).values({
+          instructionKey: key,
+          template: current[0].template,
+          version: current[0].version,
+          changeReason: `Rollback to version ${version}`,
+          createdBy: "user",
+        });
+
+        // Restore
+        await tx.update(systemInstructions)
+          .set({
+            template: targetVersion[0].template,
+            version: current[0].version + 1,
+            lastUpdated: new Date(),
+            updatedBy: "user"
+          })
+          .where(eq(systemInstructions.key, key));
+      });
+
+      await initializePrompts(true);
+
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
   });
 
   // Template endpoints
@@ -1150,14 +1368,14 @@ export async function registerRoutes(
   // Obligations
   app.get("/api/psur-grkb/obligations", async (req, res) => {
     try {
-      const jurisdictions = req.query.jurisdictions 
+      const jurisdictions = req.query.jurisdictions
         ? (req.query.jurisdictions as string).split(",")
         : [];
       const mandatoryOnly = req.query.mandatory === "true";
 
       const obligations = mandatoryOnly
         ? await psurGrkbService.getMandatoryObligations(jurisdictions)
-        : jurisdictions.length > 0 
+        : jurisdictions.length > 0
           ? await psurGrkbService.getObligationsForJurisdictions(jurisdictions)
           : await psurGrkbService.getObligationsForJurisdictions(["EU_MDR", "UK_MDR"]);
 
@@ -1174,7 +1392,7 @@ export async function registerRoutes(
       if (!query) {
         return res.status(400).json({ error: "Search query required" });
       }
-      const jurisdictions = req.query.jurisdictions 
+      const jurisdictions = req.query.jurisdictions
         ? (req.query.jurisdictions as string).split(",")
         : undefined;
 
@@ -1213,7 +1431,7 @@ export async function registerRoutes(
     try {
       const maxDepth = req.query.maxDepth ? parseInt(req.query.maxDepth as string) : 5;
       const graph = await psurGrkbService.getObligationDependencyGraph(req.params.obligationId, maxDepth);
-      
+
       // Convert Map to array for JSON serialization
       const entries = Array.from(graph.entries()).map(([id, data]) => ({
         obligationId: id,
@@ -1240,7 +1458,7 @@ export async function registerRoutes(
   app.get("/api/psur-grkb/mappings/:templateId/slot/:slotId", async (req, res) => {
     try {
       const obligations = await psurGrkbService.getObligationsForSlot(
-        req.params.templateId, 
+        req.params.templateId,
         req.params.slotId
       );
       res.json(obligations);
@@ -1252,12 +1470,12 @@ export async function registerRoutes(
 
   app.get("/api/psur-grkb/coverage/:templateId", async (req, res) => {
     try {
-      const jurisdictions = req.query.jurisdictions 
+      const jurisdictions = req.query.jurisdictions
         ? (req.query.jurisdictions as string).split(",")
         : ["EU_MDR"];
 
       const coverage = await psurGrkbService.checkTemplateCoverage(
-        req.params.templateId, 
+        req.params.templateId,
         jurisdictions
       );
       res.json(coverage);
@@ -1272,7 +1490,7 @@ export async function registerRoutes(
     try {
       const psurCaseId = parseInt(req.params.psurCaseId);
       const { jurisdictions } = req.body;
-      
+
       if (!jurisdictions || !Array.isArray(jurisdictions)) {
         return res.status(400).json({ error: "jurisdictions array required" });
       }
@@ -1311,7 +1529,7 @@ export async function registerRoutes(
     try {
       const psurCaseId = parseInt(req.params.psurCaseId);
       const obligationId = req.params.obligationId;
-      
+
       const updated = await psurGrkbService.updateChecklistItem(psurCaseId, obligationId, req.body);
       if (!updated) {
         return res.status(404).json({ error: "Checklist item not found" });
@@ -1399,21 +1617,21 @@ export async function registerRoutes(
   app.get("/api/templates/:templateId/requirements", async (req, res) => {
     try {
       const templateId = req.params.templateId;
-      
+
       // Load template from JSON file (single source of truth)
       const template = loadTemplate(templateId);
-      
+
       // Extract all required evidence types from the template's slots
       const requiredTypes = getAllRequiredEvidenceTypes(template);
-      
+
       console.log(`[TemplateRequirements] Template '${templateId}' requires ${requiredTypes.length} evidence types:`, requiredTypes);
-      
+
       res.json({ requiredEvidenceTypes: requiredTypes });
     } catch (error: any) {
       console.error(`[TemplateRequirements] Error loading template '${req.params.templateId}':`, error.message);
-      res.status(error.status || 500).json({ 
-        error: "Failed to get template requirements", 
-        details: error.message 
+      res.status(error.status || 500).json({
+        error: "Failed to get template requirements",
+        details: error.message
       });
     }
   });
@@ -1525,6 +1743,13 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Invalid psurCaseId" });
       }
 
+      // PRIORITY 1: Check cached result from active workflow (real-time status)
+      const cached = getCachedWorkflowResult(psurCaseId);
+      if (cached) {
+        return res.json(cached);
+      }
+
+      // PRIORITY 2: Reconstruct from database (historical/persisted status)
       const result = await getWorkflowResultForCase(psurCaseId);
       if (!result) {
         return res.status(404).json({ error: "PSUR case not found" });
@@ -1568,6 +1793,467 @@ export async function registerRoutes(
       res.json(psurCase);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch PSUR case" });
+    }
+  });
+
+  // Workflow Insights API - Human-friendly decision explanations
+  app.get("/api/psur-cases/:id/workflow", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const psurCase = await storage.getPSURCase(id);
+      if (!psurCase) {
+        return res.status(404).json({ error: "PSUR case not found" });
+      }
+
+      // Get decision trace entries for this case - these provide rich audit trail
+      const { decisionTraceEntries, evidenceAtoms } = await import("@shared/schema");
+      const { db } = await import("./db");
+      const { eq, desc } = await import("drizzle-orm");
+
+      // Get trace entries ordered by sequence
+      const traces = await db.select()
+        .from(decisionTraceEntries)
+        .where(eq(decisionTraceEntries.psurCaseId, id))
+        .orderBy(decisionTraceEntries.sequenceNum);
+
+      // Get evidence atom counts for context
+      const atoms = await db.select()
+        .from(evidenceAtoms)
+        .where(eq(evidenceAtoms.psurCaseId, id));
+
+      // Transform trace entries into user-friendly workflow steps
+      // Group by traceId to collect related events
+      const groupedTraces = traces.reduce((acc, trace) => {
+        const key = trace.traceId || trace.id.toString();
+        if (!acc[key]) acc[key] = [];
+        acc[key].push(trace);
+        return acc;
+      }, {} as Record<string, typeof traces>);
+
+      const steps = Object.values(groupedTraces).map((traceGroup, index) => {
+        const mainTrace = traceGroup[0];
+        const lastTrace = traceGroup[traceGroup.length - 1];
+        const eventType = mainTrace.eventType || "UNKNOWN";
+        const category = categorizeTraceEvent(eventType);
+        const status = mapTraceStatus(eventType, lastTrace.decision);
+
+        return {
+          id: mainTrace.traceId || mainTrace.id.toString(),
+          stepNumber: index + 1,
+          title: getHumanFriendlyTraceTitle(eventType, mainTrace.entityType),
+          category,
+          status,
+          timestamp: mainTrace.eventTimestamp?.toISOString() || new Date().toISOString(),
+          duration: calculateTraceDuration(traceGroup),
+          summary: mainTrace.humanSummary || generateTraceSummary(eventType, mainTrace),
+          details: {
+            whatHappened: generateTraceWhatHappened(mainTrace, traceGroup),
+            whyItMatters: generateTraceWhyItMatters(eventType),
+            dataUsed: extractTraceDataSources(mainTrace, atoms),
+            keyFindings: extractTraceFindings(traceGroup),
+            recommendations: extractTraceRecommendations(lastTrace),
+          },
+          confidence: 0.85,
+        };
+      });
+
+      // If no traces yet, provide initial status based on evidence atoms
+      if (steps.length === 0) {
+        if (atoms.length > 0) {
+          steps.push({
+            id: "data-ingestion",
+            stepNumber: 1,
+            title: "Evidence Data Loaded",
+            category: "data" as const,
+            status: "completed" as const,
+            timestamp: new Date().toISOString(),
+            duration: "Completed",
+            summary: `${atoms.length} evidence atoms have been imported and are ready for analysis.`,
+            details: {
+              whatHappened: `The system loaded ${atoms.length} evidence records from your uploaded files. These include complaints, incidents, sales data, and other post-market surveillance information.`,
+              whyItMatters: "This data forms the foundation of your PSUR. Each record will be analyzed, categorized, and used to generate compliant narratives.",
+              dataUsed: [{ name: "Evidence Atoms", records: atoms.length }],
+              keyFindings: [`${atoms.length} records loaded and validated`],
+              recommendations: ["Review the evidence coverage to ensure all required data types are present"],
+            },
+            confidence: 1.0,
+          });
+        } else {
+          steps.push({
+            id: "awaiting-data",
+            stepNumber: 1,
+            title: "Awaiting Evidence Data",
+            category: "data" as const,
+            status: "pending" as const,
+            timestamp: new Date().toISOString(),
+            duration: "-",
+            summary: "No evidence data has been uploaded yet. Upload your PMS data to begin.",
+            details: {
+              whatHappened: "The PSUR case has been created but no evidence data has been uploaded yet.",
+              whyItMatters: "Evidence data is required to generate compliant PSUR narratives. You'll need to upload sales data, complaints, incidents, and other post-market surveillance information.",
+              dataUsed: [],
+              keyFindings: ["No data uploaded"],
+              recommendations: ["Upload sales volume data", "Upload complaint records", "Upload incident reports"],
+            },
+            confidence: 0,
+          });
+        }
+      }
+
+      res.json({ steps });
+    } catch (error) {
+      console.error("[GET /api/psur-cases/:id/workflow] Error:", error);
+      res.status(500).json({ error: "Failed to fetch workflow data" });
+    }
+  });
+
+  // Helper functions for workflow insights (trace-based)
+  function categorizeTraceEvent(eventType: string): "data" | "analysis" | "generation" | "validation" {
+    if (eventType.includes("EVIDENCE") || eventType.includes("EXTRACTION") || eventType.includes("INGESTED")) {
+      return "data";
+    }
+    if (eventType.includes("TREND") || eventType.includes("ANALYSIS") || eventType.includes("COVERAGE")) {
+      return "analysis";
+    }
+    if (eventType.includes("VALIDATION") || eventType.includes("COMPLIANCE") || eventType.includes("QUALIFIED")) {
+      return "validation";
+    }
+    return "generation";
+  }
+
+  function mapTraceStatus(eventType: string, decision?: string | null): "completed" | "in_progress" | "pending" | "attention_needed" {
+    if (eventType.includes("COMPLETED") || eventType.includes("SATISFIED") || decision === "ACCEPT" || decision === "PASS") {
+      return "completed";
+    }
+    if (eventType.includes("FAILED") || eventType.includes("UNSATISFIED") || eventType.includes("BLOCKED") || decision === "REJECT" || decision === "FAIL") {
+      return "attention_needed";
+    }
+    if (eventType.includes("STARTED") || eventType.includes("SPAWNED")) {
+      return "in_progress";
+    }
+    return "completed";
+  }
+
+  function getHumanFriendlyTraceTitle(eventType: string, entityType?: string | null): string {
+    const titleMap: Record<string, string> = {
+      "WORKFLOW_STARTED": "Report Generation Started",
+      "WORKFLOW_COMPLETED": "Report Generation Complete",
+      "WORKFLOW_FAILED": "Report Generation Failed",
+      "TEMPLATE_QUALIFIED": "Template Validation Passed",
+      "TEMPLATE_BLOCKED": "Template Validation Failed",
+      "CASE_CREATED": "PSUR Case Created",
+      "EVIDENCE_UPLOADED": "Evidence File Uploaded",
+      "EVIDENCE_ATOM_CREATED": "Evidence Record Processed",
+      "EVIDENCE_INGESTED": "Evidence Data Imported",
+      "SLOT_PROPOSED": "Section Draft Created",
+      "SLOT_ACCEPTED": "Section Approved",
+      "SLOT_REJECTED": "Section Needs Revision",
+      "COVERAGE_COMPUTED": "Compliance Coverage Calculated",
+      "DOCUMENT_RENDERED": "Document Generated",
+      "BUNDLE_EXPORTED": "Audit Bundle Exported",
+      "OBLIGATION_SATISFIED": "Requirement Met",
+      "OBLIGATION_UNSATISFIED": "Requirement Not Met",
+      "AGENT_SPAWNED": "AI Agent Started",
+      "AGENT_COMPLETED": "AI Agent Completed",
+      "NARRATIVE_GENERATED": "Narrative Written",
+      "LLM_INVOKED": "AI Analysis Performed",
+    };
+    return titleMap[eventType] || `${eventType.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, l => l.toUpperCase())}`;
+  }
+
+  function formatDuration(ms: number): string {
+    if (ms < 1000) return `${ms}ms`;
+    if (ms < 60000) return `${Math.round(ms / 1000)}s`;
+    return `${Math.round(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`;
+  }
+
+  function calculateTraceDuration(traceGroup: any[]): string {
+    if (traceGroup.length < 2) return "Instant";
+    const first = traceGroup[0].eventTimestamp;
+    const last = traceGroup[traceGroup.length - 1].eventTimestamp;
+    if (!first || !last) return "Unknown";
+    const ms = new Date(last).getTime() - new Date(first).getTime();
+    return formatDuration(ms);
+  }
+
+  function generateTraceSummary(eventType: string, trace: any): string {
+    if (trace.decision) {
+      return `Decision: ${trace.decision}. ${trace.entityType ? `Affected: ${trace.entityType}` : ""}`;
+    }
+    return `Workflow event: ${eventType.replace(/_/g, " ").toLowerCase()}`;
+  }
+
+  function generateTraceWhatHappened(mainTrace: any, traceGroup: any[]): string {
+    if (mainTrace.humanSummary) return mainTrace.humanSummary;
+
+    const eventType = mainTrace.eventType;
+    if (eventType?.includes("EVIDENCE")) {
+      return "Evidence data was processed and validated. Each record was checked for completeness, categorized by type, and prepared for use in narrative generation.";
+    }
+    if (eventType?.includes("NARRATIVE")) {
+      return "The AI agent analyzed the relevant evidence and generated compliant narrative content following regulatory requirements and your selected template structure.";
+    }
+    if (eventType?.includes("COVERAGE")) {
+      return "The system calculated how well the available evidence satisfies the regulatory requirements. This coverage analysis identifies any gaps that need to be addressed.";
+    }
+    return "A workflow step was executed as part of the PSUR generation process.";
+  }
+
+  function generateTraceWhyItMatters(eventType: string): string {
+    if (eventType.includes("EVIDENCE")) {
+      return "Complete and accurate evidence is the foundation of a compliant PSUR. Each data point contributes to demonstrating your ongoing post-market surveillance activities.";
+    }
+    if (eventType.includes("OBLIGATION")) {
+      return "Regulatory obligations must be satisfied to maintain market authorization. This step tracks whether your report meets the specific requirements.";
+    }
+    if (eventType.includes("COVERAGE")) {
+      return "Coverage analysis ensures you haven't missed any required content. Regulators expect comprehensive documentation of all surveillance activities.";
+    }
+    return "This step contributes to the overall quality and compliance of your PSUR submission.";
+  }
+
+  function extractTraceDataSources(trace: any, atoms: any[]): { name: string; records: number }[] {
+    const result: { name: string; records: number }[] = [];
+    if (atoms.length > 0) {
+      const types = new Set(atoms.map(a => a.evidenceType));
+      types.forEach(type => {
+        const count = atoms.filter(a => a.evidenceType === type).length;
+        result.push({ name: type?.replace(/_/g, " ") || "Evidence", records: count });
+      });
+    }
+    return result.slice(0, 4);
+  }
+
+  function extractTraceFindings(traceGroup: any[]): string[] {
+    const findings: string[] = [];
+    traceGroup.forEach(trace => {
+      if (trace.decision === "ACCEPT" || trace.decision === "PASS") {
+        findings.push(`✓ ${trace.entityType || "Item"} validated successfully`);
+      }
+      if (trace.reasons && Array.isArray(trace.reasons)) {
+        findings.push(...trace.reasons.slice(0, 2).map((r: any) => typeof r === "string" ? r : r.message || JSON.stringify(r)));
+      }
+    });
+    return findings.length > 0 ? findings.slice(0, 4) : ["Processing completed"];
+  }
+
+  function extractTraceRecommendations(trace: any): string[] | undefined {
+    if (trace.decision === "REJECT" || trace.decision === "FAIL") {
+      return ["Review the identified issues", "Address missing data or content gaps", "Re-run the affected step after corrections"];
+    }
+    return undefined;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // GRKB VALIDATION ENDPOINT - Pre-generation compliance check
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  app.get("/api/psur-cases/:id/grkb-validation", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const psurCase = await storage.getPSURCase(id);
+      if (!psurCase) {
+        return res.status(404).json({ error: "PSUR case not found" });
+      }
+
+      const { grkbObligations, grkbValidationReports, evidenceAtoms } = await import("@shared/schema");
+      const { db } = await import("./db");
+      const { eq, and, inArray } = await import("drizzle-orm");
+
+      // Check if we have a cached validation report
+      const existingReports = await db.select()
+        .from(grkbValidationReports)
+        .where(eq(grkbValidationReports.psurCaseId, id))
+        .orderBy(grkbValidationReports.validatedAt);
+
+      if (existingReports.length > 0) {
+        const report = existingReports[existingReports.length - 1];
+        return res.json(report);
+      }
+
+      // Calculate fresh validation
+      const jurisdictions = psurCase.jurisdictions || ["EU_MDR"];
+      const templateId = psurCase.templateId;
+
+      // Get mandatory obligations for these jurisdictions
+      const obligations = await db.select()
+        .from(grkbObligations)
+        .where(and(
+          inArray(grkbObligations.jurisdiction, jurisdictions),
+          eq(grkbObligations.mandatory, true)
+        ));
+
+      // Get evidence atoms for this case
+      const atoms = await db.select()
+        .from(evidenceAtoms)
+        .where(eq(evidenceAtoms.psurCaseId, id));
+
+      // Calculate coverage
+      const availableEvidenceTypes = new Set(atoms.map(a => a.evidenceType));
+      const requiredEvidenceTypes = new Set<string>();
+
+      obligations.forEach(ob => {
+        if (ob.requiredEvidenceTypes) {
+          ob.requiredEvidenceTypes.forEach(t => requiredEvidenceTypes.add(t));
+        }
+      });
+
+      const satisfiedObligations = obligations.filter(ob => {
+        if (!ob.requiredEvidenceTypes || ob.requiredEvidenceTypes.length === 0) return true;
+        return ob.requiredEvidenceTypes.some(t => availableEvidenceTypes.has(t));
+      });
+
+      const missingEvidenceTypes = Array.from(requiredEvidenceTypes).filter(t => !availableEvidenceTypes.has(t));
+      const blockingIssues = obligations
+        .filter(ob => ob.mandatory && ob.requiredEvidenceTypes?.some(t => !availableEvidenceTypes.has(t)))
+        .map(ob => ({
+          obligationId: ob.obligationId,
+          obligationText: ob.text,
+          sourceCitation: ob.sourceCitation || "",
+          requiredEvidenceTypes: ob.requiredEvidenceTypes || [],
+          missingEvidenceTypes: ob.requiredEvidenceTypes?.filter(t => !availableEvidenceTypes.has(t)) || [],
+          severity: "critical" as const,
+        }));
+
+      const validationStatus = blockingIssues.length > 0 ? "FAIL" :
+        missingEvidenceTypes.length > 0 ? "WARNING" : "PASS";
+
+      const validation = {
+        validationStatus,
+        canProceed: blockingIssues.length === 0,
+        mandatoryObligationsTotal: obligations.length,
+        mandatoryObligationsSatisfied: satisfiedObligations.length,
+        optionalObligationsTotal: 0,
+        optionalObligationsSatisfied: 0,
+        requiredEvidenceTypesTotal: requiredEvidenceTypes.size,
+        requiredEvidenceTypesPresent: Array.from(requiredEvidenceTypes).filter(t => availableEvidenceTypes.has(t)).length,
+        evidenceCoveragePercent: requiredEvidenceTypes.size > 0
+          ? Math.round((Array.from(requiredEvidenceTypes).filter(t => availableEvidenceTypes.has(t)).length / requiredEvidenceTypes.size) * 100).toString()
+          : "100",
+        blockingIssues,
+        warnings: [],
+        missingEvidenceTypes,
+        unsatisfiedObligationIds: obligations.filter(ob => !satisfiedObligations.includes(ob)).map(ob => ob.obligationId),
+        slotDetails: [],
+        validatedAt: new Date().toISOString(),
+      };
+
+      res.json(validation);
+    } catch (error) {
+      console.error("[GET /api/psur-cases/:id/grkb-validation] Error:", error);
+      res.status(500).json({ error: "Failed to validate GRKB compliance" });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // SENTENCE ATTRIBUTIONS ENDPOINT - Granular provenance data
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  app.get("/api/psur-cases/:id/sentences/:slotId", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const slotId = req.params.slotId;
+
+      const psurCase = await storage.getPSURCase(id);
+      if (!psurCase) {
+        return res.status(404).json({ error: "PSUR case not found" });
+      }
+
+      const { sentenceAttributions } = await import("@shared/schema");
+      const { db } = await import("./db");
+      const { eq, and } = await import("drizzle-orm");
+
+      const sentences = await db.select()
+        .from(sentenceAttributions)
+        .where(and(
+          eq(sentenceAttributions.psurCaseId, id),
+          eq(sentenceAttributions.slotId, slotId)
+        ))
+        .orderBy(sentenceAttributions.paragraphIndex, sentenceAttributions.sentenceIndex);
+
+      res.json(sentences);
+    } catch (error) {
+      console.error("[GET /api/psur-cases/:id/sentences/:slotId] Error:", error);
+      res.status(500).json({ error: "Failed to fetch sentence attributions" });
+    }
+  });
+
+  // Get all sentences for a case (for search/filtering)
+  app.get("/api/psur-cases/:id/sentences", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+
+      const { sentenceAttributions } = await import("@shared/schema");
+      const { db } = await import("./db");
+      const { eq } = await import("drizzle-orm");
+
+      const sentences = await db.select()
+        .from(sentenceAttributions)
+        .where(eq(sentenceAttributions.psurCaseId, id))
+        .orderBy(sentenceAttributions.slotId, sentenceAttributions.paragraphIndex, sentenceAttributions.sentenceIndex);
+
+      res.json(sentences);
+    } catch (error) {
+      console.error("[GET /api/psur-cases/:id/sentences] Error:", error);
+      res.status(500).json({ error: "Failed to fetch sentence attributions" });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // PROVENANCE GRAPH ENDPOINT - For graph visualization
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  app.get("/api/psur-cases/:id/provenance-graph", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+
+      const { provenanceEdges, sentenceAttributions, evidenceAtoms } = await import("@shared/schema");
+      const { db } = await import("./db");
+      const { eq } = await import("drizzle-orm");
+
+      // Get all edges for this case
+      const edges = await db.select()
+        .from(provenanceEdges)
+        .where(eq(provenanceEdges.psurCaseId, id));
+
+      // Get sentences as vertices
+      const sentences = await db.select()
+        .from(sentenceAttributions)
+        .where(eq(sentenceAttributions.psurCaseId, id));
+
+      // Get evidence atoms as vertices
+      const atoms = await db.select()
+        .from(evidenceAtoms)
+        .where(eq(evidenceAtoms.psurCaseId, id));
+
+      // Build graph structure
+      const vertices = [
+        ...sentences.map(s => ({
+          id: `sentence:${s.id}`,
+          type: "sentence",
+          label: s.sentenceText.substring(0, 50) + "...",
+          data: s,
+        })),
+        ...atoms.map(a => ({
+          id: `atom:${a.id}`,
+          type: "evidence_atom",
+          label: `${a.evidenceType || "Evidence"} #${a.id}`,
+          data: a,
+        })),
+      ];
+
+      res.json({
+        vertices,
+        edges: edges.map(e => ({
+          source: `${e.sourceVertexType}:${e.sourceVertexId}`,
+          target: `${e.targetVertexType}:${e.targetVertexId}`,
+          type: e.edgeType,
+          properties: e.properties,
+        })),
+      });
+    } catch (error) {
+      console.error("[GET /api/psur-cases/:id/provenance-graph] Error:", error);
+      res.status(500).json({ error: "Failed to fetch provenance graph" });
     }
   });
 
@@ -1813,9 +2499,9 @@ export async function registerRoutes(
       if (!evidenceType || !sourceColumns || !Array.isArray(sourceColumns)) {
         return res.status(400).json({ error: "evidenceType and sourceColumns array are required" });
       }
-      
+
       const matchingProfile = await storage.findMatchingMappingProfile(evidenceType, sourceColumns);
-      
+
       if (matchingProfile) {
         // Auto-apply: return the profile with a flag indicating it can be used directly
         res.json({
@@ -1842,13 +2528,13 @@ export async function registerRoutes(
     try {
       const profileId = parseInt(req.params.id);
       const { name, columnMappings, sourceSystemHint } = req.body;
-      
+
       const updated = await storage.updateColumnMappingProfile(profileId, {
         name,
         columnMappings,
         sourceSystemHint,
       });
-      
+
       if (updated) {
         res.json(updated);
       } else {
@@ -1864,7 +2550,7 @@ export async function registerRoutes(
     try {
       const profileId = parseInt(req.params.id);
       const deleted = await storage.deleteColumnMappingProfile(profileId);
-      
+
       if (deleted) {
         res.json({ success: true });
       } else {
@@ -2075,7 +2761,7 @@ export async function registerRoutes(
           uploadId: evidenceUpload.id,
           atoms: atomRecords,
         });
-        
+
         // Invalidate preview cache when new evidence is added
         invalidatePreviewCache(parseInt(psurCaseId));
       }
@@ -2320,15 +3006,15 @@ export async function registerRoutes(
 
       // Get evidence types that have at least one atom
       const typesWithData = Object.keys(byType);
-      
+
       // Import source mapping to expand coverage
       const { getExpandedCoveredTypes } = await import("./src/parsers/sourceMapping");
       const { coveredTypes, coveredSources, coverageBySource } = getExpandedCoveredTypes(typesWithData);
-      
+
       // Mark types as "covered" even if they have 0 atoms
       // This happens when a source is uploaded but a specific type has no data (e.g., "N/A" for recalls)
       const coveredByType: Record<string, { count: number; covered: boolean; source: string | null }> = {};
-      
+
       for (const type of coveredTypes) {
         const count = byType[type] || 0;
         // Find which source this type belongs to
@@ -2361,6 +3047,7 @@ export async function registerRoutes(
   });
 
   // POST /api/evidence/atoms/batch - Create multiple atoms at once with optional decision tracing
+  // OPTIMIZED: Batch all atoms into a single persistEvidenceAtoms call
   app.post("/api/evidence/atoms/batch", async (req, res) => {
     // Helper to convert Excel serial dates to ISO strings
     function excelSerialToISODate(value: unknown): string {
@@ -2385,31 +3072,35 @@ export async function registerRoutes(
 
     try {
       const { atoms, decisionTrace, psurCaseId: batchPsurCaseId, sourceType, filename } = req.body;
-      
+
       if (!Array.isArray(atoms) || atoms.length === 0) {
         return res.status(400).json({ error: "atoms must be a non-empty array" });
       }
-      
-      let created = 0;
+
+      console.log(`[POST /api/evidence/atoms/batch] Processing ${atoms.length} atoms...`);
+      const startTime = Date.now();
+
       const errors: Array<{ index: number; error: string }> = [];
-      const createdAtomIds: string[] = [];
-      
+      const atomRecords: EvidenceAtomRecord[] = [];
+      const atomIdMap: Map<string, any> = new Map();
+
+      // Prepare all atoms in memory first (fast)
       for (let i = 0; i < atoms.length; i++) {
         const atom = atoms[i];
         try {
           const atomId = makeAtomId(coerceEvType(atom.evidence_type), atom.normalized_data || {});
           const contentHash = makeContentHash(atom.normalized_data || {});
-          
+
           // Normalize provenance fields - client may send different field names
           const rawProvenance = atom.provenance || {};
-          const extractDate = rawProvenance.extractDate || 
-                              rawProvenance.extracted_at || 
-                              rawProvenance.uploadedAt || 
-                              new Date().toISOString();
-          const uploadedAt = rawProvenance.uploadedAt || 
-                             rawProvenance.extracted_at || 
-                             new Date().toISOString();
-          
+          const extractDate = rawProvenance.extractDate ||
+            rawProvenance.extracted_at ||
+            rawProvenance.uploadedAt ||
+            new Date().toISOString();
+          const uploadedAt = rawProvenance.uploadedAt ||
+            rawProvenance.extracted_at ||
+            new Date().toISOString();
+
           const record: EvidenceAtomRecord = {
             atomId,
             evidenceType: coerceEvType(atom.evidence_type),
@@ -2427,26 +3118,95 @@ export async function registerRoutes(
               ...(sourceType && { sourceType }),
             },
           };
-          
-          // Convert Excel serial dates to ISO date strings
-          const periodStart = excelSerialToISODate(atom.period_start);
-          const periodEnd = excelSerialToISODate(atom.period_end);
-          
-          await persistEvidenceAtoms({
-            psurCaseId: atom.psur_case_id || batchPsurCaseId,
-            deviceCode: atom.device_code,
-            periodStart,
-            periodEnd,
-            atoms: [record],
-          });
-          created++;
-          createdAtomIds.push(atomId);
+
+          atomRecords.push(record);
+          atomIdMap.set(atomId, atom);
         } catch (err: any) {
           errors.push({ index: i, error: err?.message || String(err) });
         }
       }
-      
-      // Store EVIDENCE_ATOM_CREATED trace events for each created atom
+
+      // Get common parameters from first atom
+      const firstAtom = atoms[0];
+      const periodStart = excelSerialToISODate(firstAtom.period_start);
+      const periodEnd = excelSerialToISODate(firstAtom.period_end);
+      const psurCaseId = firstAtom.psur_case_id || batchPsurCaseId;
+      const deviceCode = firstAtom.device_code;
+
+      // OPTIMIZED: Single batch insert
+      console.log(`[POST /api/evidence/atoms/batch] Inserting ${atomRecords.length} atoms...`);
+      const { inserted, atomIds: createdAtomIds } = await persistEvidenceAtoms({
+        psurCaseId,
+        deviceCode,
+        periodStart,
+        periodEnd,
+        atoms: atomRecords,
+      });
+
+      console.log(`[POST /api/evidence/atoms/batch] Inserted ${inserted} atoms in ${Date.now() - startTime}ms`);
+
+      // Auto-extract device info from device_registry_record atoms and update PSUR case
+      if (psurCaseId && inserted > 0) {
+        try {
+          const deviceRegistryAtoms = atoms.filter((a: any) =>
+            a.evidence_type === "device_registry_record" && a.normalized_data
+          );
+
+          if (deviceRegistryAtoms.length > 0) {
+            // Get the most complete device info from the atoms
+            const deviceAtom = deviceRegistryAtoms[0];
+            const data = deviceAtom.normalized_data || {};
+
+            // Helper to ensure value is a string (handles arrays by taking first element or joining)
+            const ensureString = (value: unknown): string | undefined => {
+              if (value === undefined || value === null) return undefined;
+              if (Array.isArray(value)) return value.length > 0 ? String(value[0]) : undefined;
+              return String(value);
+            };
+
+            // Extract device info fields (handle various field name formats)
+            const extractedDeviceInfo: Record<string, string | undefined> = {
+              deviceName: ensureString(data.device_name || data.deviceName || data.name || data.trade_name),
+              deviceCode: ensureString(data.device_code || data.deviceCode || data.model || data.model_number),
+              manufacturerName: ensureString(data.manufacturer_name || data.manufacturerName || data.manufacturer),
+              udiDi: ensureString(data.udi_di || data.udiDi || data.udi),
+              gmdnCode: ensureString(data.gmdn_code || data.gmdnCode || data.gmdn),
+              riskClass: ensureString(data.risk_class || data.riskClass || data.classification),
+              intendedPurpose: ensureString(data.intended_purpose || data.intendedPurpose || data.intended_use),
+              extractedFrom: filename || deviceAtom.provenance?.source_file || "evidence_upload",
+              extractedAt: new Date().toISOString(),
+            };
+
+            // Only update if we extracted meaningful device info
+            const hasDeviceInfo = extractedDeviceInfo.deviceName || extractedDeviceInfo.manufacturerName;
+            if (hasDeviceInfo) {
+              // Get current case to merge device info
+              const currentCase = await storage.getPSURCase(psurCaseId);
+              const existingDeviceInfo = (currentCase?.deviceInfo as Record<string, unknown>) || {};
+
+              // Merge: extracted values take precedence over existing, but don't overwrite with undefined
+              const mergedDeviceInfo = { ...existingDeviceInfo };
+              for (const [key, value] of Object.entries(extractedDeviceInfo)) {
+                if (value !== undefined && value !== null && value !== "") {
+                  mergedDeviceInfo[key] = value;
+                }
+              }
+
+              await storage.updatePSURCase(psurCaseId, { deviceInfo: mergedDeviceInfo } as any);
+              console.log(`[POST /api/evidence/atoms/batch] Updated PSUR case ${psurCaseId} with extracted device info:`, {
+                deviceName: mergedDeviceInfo.deviceName,
+                manufacturerName: mergedDeviceInfo.manufacturerName,
+              });
+            }
+          }
+        } catch (deviceErr) {
+          console.warn("[POST /api/evidence/atoms/batch] Failed to extract device info:", deviceErr);
+          // Don't fail the request - device info extraction is optional
+        }
+      }
+
+      // Store EVIDENCE_ATOM_CREATED trace events (skip individual tracing for performance)
+      // Only log a summary trace event instead of one per atom
       if (createdAtomIds.length > 0 && batchPsurCaseId) {
         try {
           const { startTrace, resumeTrace, logTraceEvent } = await import("./src/services/decisionTraceService");
@@ -2454,29 +3214,26 @@ export async function registerRoutes(
           if (!ctx) {
             ctx = await startTrace(batchPsurCaseId);
           }
-          
-          for (const atomId of createdAtomIds) {
-            const atom = atoms.find((a: any) => makeAtomId(coerceEvType(a.evidence_type), a.normalized_data || {}) === atomId);
-            if (atom) {
-              await logTraceEvent(ctx, {
-                eventType: "EVIDENCE_ATOM_CREATED",
-                actor: "batchUpload",
-                workflowStep: 2,
-                entityType: "evidence_atom",
-                entityId: atomId,
-                outputData: {
-                  evidenceType: atom.evidence_type,
-                  sourceFile: filename || "batch_upload",
-                  sourceType: sourceType || "unknown",
-                },
-              });
-            }
-          }
+
+          // Single batch trace event
+          await logTraceEvent(ctx, {
+            eventType: "EVIDENCE_ATOM_CREATED",
+            actor: "batchUpload",
+            workflowStep: 2,
+            entityType: "evidence_batch",
+            entityId: `batch-${Date.now()}`,
+            outputData: {
+              atomCount: createdAtomIds.length,
+              evidenceTypes: [...new Set(atoms.map((a: any) => a.evidence_type))],
+              sourceFile: filename || "batch_upload",
+              sourceType: sourceType || "unknown",
+            },
+          });
         } catch (traceErr) {
           console.error("[batch] Failed to store atom traces:", traceErr);
         }
       }
-      
+
       // Store ingestion decision traces if provided
       let tracesStored = 0;
       if (decisionTrace && Array.isArray(decisionTrace) && decisionTrace.length > 0) {
@@ -2484,13 +3241,13 @@ export async function registerRoutes(
           const psurCaseIdForTrace = batchPsurCaseId || atoms[0]?.psur_case_id;
           if (psurCaseIdForTrace) {
             const { startTrace, resumeTrace, logTraceEventBatch } = await import("./src/services/decisionTraceService");
-            
+
             // Get or create trace context
             let ctx = await resumeTrace(psurCaseIdForTrace);
             if (!ctx) {
               ctx = await startTrace(psurCaseIdForTrace);
             }
-            
+
             // Log ingestion traces
             const traceEvents = decisionTrace.map((t: any) => ({
               eventType: "EVIDENCE_UPLOADED" as const,
@@ -2499,21 +3256,21 @@ export async function registerRoutes(
               entityType: "evidence_extraction",
               entityId: t.traceId,
               decision: t.decision,
-              inputData: { 
-                stage: t.stage, 
+              inputData: {
+                stage: t.stage,
                 inputSummary: t.inputSummary,
                 filename: filename || "unknown",
                 sourceType: sourceType || "unknown",
               },
-              outputData: { 
-                outputSummary: t.outputSummary, 
+              outputData: {
+                outputSummary: t.outputSummary,
                 confidence: t.confidence,
                 alternativesConsidered: t.alternativesConsidered,
               },
               reasons: t.reasoning,
               relatedEntityIds: createdAtomIds.slice(0, 10), // Link to created atoms
             }));
-            
+
             await logTraceEventBatch(ctx, traceEvents);
             tracesStored = traceEvents.length;
             console.log(`[POST /api/evidence/atoms/batch] Stored ${tracesStored} decision traces for PSUR case ${psurCaseIdForTrace}`);
@@ -2522,10 +3279,12 @@ export async function registerRoutes(
           console.warn(`[POST /api/evidence/atoms/batch] Failed to store decision traces:`, traceErr?.message);
         }
       }
-      
+
+      console.log(`[POST /api/evidence/atoms/batch] Complete: ${inserted} atoms, ${tracesStored} traces in ${Date.now() - startTime}ms`);
+
       res.json({
         success: true,
-        created,
+        created: inserted,
         atomIds: createdAtomIds,
         tracesStored,
         errors: errors.length > 0 ? errors : undefined,
@@ -2541,28 +3300,28 @@ export async function registerRoutes(
   // e.g., "No FSCAs during period", "No CAPAs", etc.
   app.post("/api/evidence/mark-na", async (req, res) => {
     try {
-      const { 
-        psurCaseId, 
-        deviceCode, 
-        periodStart, 
-        periodEnd, 
+      const {
+        psurCaseId,
+        deviceCode,
+        periodStart,
+        periodEnd,
         evidenceTypes, // Array of evidence types to mark as N/A
         reason // Optional reason/justification
       } = req.body;
-      
+
       if (!psurCaseId || !deviceCode || !periodStart || !periodEnd || !evidenceTypes || !Array.isArray(evidenceTypes)) {
-        return res.status(400).json({ 
-          error: "Missing required fields: psurCaseId, deviceCode, periodStart, periodEnd, evidenceTypes (array)" 
+        return res.status(400).json({
+          error: "Missing required fields: psurCaseId, deviceCode, periodStart, periodEnd, evidenceTypes (array)"
         });
       }
-      
+
       const createdAtomIds: string[] = [];
       const errors: Array<{ evidenceType: string; error: string }> = [];
-      
+
       for (const evidenceType of evidenceTypes) {
         try {
           const normalizedType = coerceEvType(evidenceType);
-          
+
           // Create negative evidence atom
           const normalizedData = {
             isNegativeEvidence: true,
@@ -2574,10 +3333,10 @@ export async function registerRoutes(
             verificationDate: new Date().toISOString(),
             verifiedBy: "user",
           };
-          
+
           const atomId = makeAtomId(normalizedType, normalizedData);
           const contentHash = makeContentHash(normalizedData);
-          
+
           const record: EvidenceAtomRecord = {
             atomId,
             evidenceType: normalizedType,
@@ -2593,7 +3352,7 @@ export async function registerRoutes(
               verificationMethod: "user_confirmation",
             },
           };
-          
+
           await persistEvidenceAtoms({
             psurCaseId,
             deviceCode,
@@ -2601,9 +3360,9 @@ export async function registerRoutes(
             periodEnd,
             atoms: [record],
           });
-          
+
           createdAtomIds.push(atomId);
-          
+
           // Log trace event
           try {
             const { startTrace, resumeTrace, logTraceEvent } = await import("./src/services/decisionTraceService");
@@ -2611,7 +3370,7 @@ export async function registerRoutes(
             if (!ctx) {
               ctx = await startTrace(psurCaseId);
             }
-            
+
             await logTraceEvent(ctx, {
               eventType: "NEGATIVE_EVIDENCE_CREATED",
               actor: "user",
@@ -2626,12 +3385,12 @@ export async function registerRoutes(
           } catch (traceErr) {
             console.warn("[mark-na] Failed to log trace:", traceErr);
           }
-          
+
         } catch (err: any) {
           errors.push({ evidenceType, error: err?.message || String(err) });
         }
       }
-      
+
       res.json({
         success: true,
         created: createdAtomIds.length,
@@ -2672,12 +3431,12 @@ export async function registerRoutes(
         return res.status(400).json({ error: parsed.error.errors });
       }
       const atom = await storage.createEvidenceAtom(parsed.data);
-      
+
       // Invalidate preview cache when new evidence is added
       if (parsed.data.psurCaseId) {
         invalidatePreviewCache(parsed.data.psurCaseId);
       }
-      
+
       res.status(201).json(atom);
     } catch (error) {
       res.status(500).json({ error: "Failed to create evidence atom" });
@@ -3170,7 +3929,7 @@ export async function registerRoutes(
   app.get("/api/audit-bundles/:psurCaseId/download", async (req, res) => {
     try {
       const psurCaseId = parseInt(req.params.psurCaseId);
-      
+
       // Get the bundle record
       const bundles = await storage.getAuditBundles(psurCaseId);
       if (!bundles || bundles.length === 0) {
@@ -3196,17 +3955,17 @@ export async function registerRoutes(
       const acceptedProposals = proposals.filter(p => p.status === "accepted");
 
       // Build the bundle files - fetch complete decision trace from database
-      const { 
-        exportTraceAsJsonl: exportTrace, 
+      const {
+        exportTraceAsJsonl: exportTrace,
         exportTraceSummary: exportSummary,
-        verifyTraceChain: verifyChain 
+        verifyTraceChain: verifyChain
       } = await import("./src/services/decisionTraceService");
-      
+
       // Get complete trace JSONL from database
       let traceJsonlContent = "";
       let traceSummaryData: any = null;
       let traceVerification: any = null;
-      
+
       try {
         traceJsonlContent = await exportTrace(psurCaseId);
         traceSummaryData = await exportSummary(psurCaseId);
@@ -3216,7 +3975,7 @@ export async function registerRoutes(
       } catch (e) {
         console.warn("Could not fetch decision trace from database, using fallback:", e);
       }
-      
+
       // Fallback trace data if DB trace not available
       const traceData = traceJsonlContent ? null : {
         bundleReference: bundle.bundleReference,
@@ -3294,14 +4053,14 @@ export async function registerRoutes(
 
       // SOTA: Generate PSUR using CompileOrchestrator with LLM-powered agents
       console.log(`[Audit Bundle] Generating SOTA documents for case ${psurCaseId}`);
-      
+
       const devices = await storage.getDevices();
       const psurCaseAny = psurCase as any;
       const deviceCode = psurCaseAny.deviceCode || (psurCaseAny.deviceId ? devices.find((d: any) => d.id === psurCaseAny.deviceId)?.deviceCode : null) || devices[0]?.deviceCode || "DEVICE-001";
-      
+
       const { CompileOrchestrator } = await import("./src/agents/runtime/compileOrchestrator");
       const orchestrator = new CompileOrchestrator();
-      
+
       const compileResult = await orchestrator.compile({
         psurCaseId,
         templateId: psurCase.templateId,
@@ -3322,7 +4081,7 @@ export async function registerRoutes(
       markdownParts.push(``);
       markdownParts.push(`---`);
       markdownParts.push(``);
-      
+
       for (const section of compileResult.sections) {
         markdownParts.push(`## ${section.title}`);
         markdownParts.push(``);
@@ -3335,10 +4094,10 @@ export async function registerRoutes(
         markdownParts.push(`---`);
         markdownParts.push(``);
       }
-      
+
       const psurMarkdown = markdownParts.join("\n");
       const psurDocx = compileResult.success && compileResult.document ? compileResult.document.buffer : null;
-      
+
       console.log(`[Audit Bundle] SOTA compilation: ${compileResult.sections.length} sections, success=${compileResult.success}`);
 
       // Create ZIP file using archiver
@@ -3356,7 +4115,7 @@ export async function registerRoutes(
       } else {
         archive.append(JSON.stringify(traceData, null, 2), { name: "trace.jsonl" });
       }
-      
+
       // Append trace summary with verification info
       if (traceSummaryData) {
         archive.append(JSON.stringify({
@@ -3364,12 +4123,12 @@ export async function registerRoutes(
           verification: traceVerification,
         }, null, 2), { name: "trace_summary.json" });
       }
-      
+
       archive.append(JSON.stringify(coverageReport, null, 2), { name: "coverage_report.json" });
       archive.append(JSON.stringify(evidenceRegister, null, 2), { name: "evidence_register.json" });
       archive.append(JSON.stringify(qualificationReport, null, 2), { name: "qualification_report.json" });
       archive.append(psurMarkdown, { name: "psur.md" });
-      
+
       // Include compile result details
       archive.append(JSON.stringify({
         success: compileResult.success,
@@ -3378,7 +4137,7 @@ export async function registerRoutes(
         sectionCount: compileResult.sections.length,
         chartCount: compileResult.charts.length,
       }, null, 2), { name: "compile_report.json" });
-      
+
       if (psurDocx) {
         archive.append(psurDocx, { name: "psur.docx" });
       }
@@ -3411,11 +4170,11 @@ export async function registerRoutes(
     try {
       const psurCaseId = parseInt(req.params.psurCaseId);
       const summary = await getTraceSummary(psurCaseId);
-      
+
       if (!summary) {
         return res.status(404).json({ error: "No trace found for this case" });
       }
-      
+
       res.json(summary);
     } catch (error: any) {
       console.error("[GET /api/psur-cases/:psurCaseId/trace/summary] Error:", error);
@@ -3427,7 +4186,7 @@ export async function registerRoutes(
   app.get("/api/psur-cases/:psurCaseId/trace/entries", async (req, res) => {
     try {
       const psurCaseId = parseInt(req.params.psurCaseId);
-      const eventTypes = req.query.eventTypes 
+      const eventTypes = req.query.eventTypes
         ? (req.query.eventTypes as string).split(",") as any[]
         : undefined;
       const entityType = req.query.entityType as string | undefined;
@@ -3435,7 +4194,7 @@ export async function registerRoutes(
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 100;
       const offset = req.query.offset ? parseInt(req.query.offset as string) : 0;
       const orderBy = (req.query.orderBy as "asc" | "desc") || "asc";
-      
+
       const entries = await queryTraceEntries({
         psurCaseId,
         eventTypes,
@@ -3445,7 +4204,7 @@ export async function registerRoutes(
         offset,
         orderBy,
       });
-      
+
       res.json({
         psurCaseId,
         count: entries.length,
@@ -3464,7 +4223,7 @@ export async function registerRoutes(
     try {
       const slotId = req.params.slotId;
       const chain = await getSlotDecisionChain(slotId);
-      
+
       res.json({
         slotId,
         decisionChain: chain,
@@ -3480,7 +4239,7 @@ export async function registerRoutes(
     try {
       const { entityType, entityId } = req.params;
       const entries = await getEntityTrace(entityType, entityId);
-      
+
       res.json({
         entityType,
         entityId,
@@ -3498,13 +4257,13 @@ export async function registerRoutes(
     try {
       const psurCaseId = parseInt(req.params.psurCaseId);
       const summary = await getTraceSummary(psurCaseId);
-      
+
       if (!summary) {
         return res.status(404).json({ error: "No trace found for this case" });
       }
-      
+
       const validation = await verifyTraceChain(summary.traceId);
-      
+
       res.json({
         psurCaseId,
         traceId: summary.traceId,
@@ -3521,7 +4280,7 @@ export async function registerRoutes(
     try {
       const psurCaseId = parseInt(req.params.psurCaseId);
       const format = req.query.format as string || "jsonl";
-      
+
       if (format === "jsonl") {
         const jsonl = await exportTraceAsJsonl(psurCaseId);
         res.setHeader("Content-Type", "application/x-ndjson");
@@ -3549,13 +4308,13 @@ export async function registerRoutes(
       const psurCaseId = parseInt(req.params.psurCaseId);
       const searchText = req.query.q as string;
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
-      
+
       if (!searchText || searchText.trim().length === 0) {
         return res.status(400).json({ error: "Search query 'q' is required" });
       }
-      
+
       const entries = await searchTraces(psurCaseId, searchText, limit);
-      
+
       res.json({
         psurCaseId,
         searchQuery: searchText,
@@ -3583,13 +4342,13 @@ export async function registerRoutes(
     try {
       const psurCaseId = parseInt(req.params.psurCaseId);
       const obligationId = req.params.obligationId;
-      
+
       // Get obligation context from GRKB
       const obligationContext = await getObligationContext(obligationId);
-      
+
       // Get all traces related to this obligation
       const entries = await queryTracesByObligation(psurCaseId, obligationId);
-      
+
       res.json({
         psurCaseId,
         obligationId,
@@ -3623,9 +4382,9 @@ export async function registerRoutes(
     try {
       const psurCaseId = parseInt(req.params.psurCaseId);
       const format = req.query.format as string || "text";
-      
+
       const narrative = await exportAuditNarrative(psurCaseId);
-      
+
       if (format === "download") {
         res.setHeader("Content-Type", "text/plain; charset=utf-8");
         res.setHeader("Content-Disposition", `attachment; filename="audit-narrative-${psurCaseId}.txt"`);
@@ -3635,7 +4394,7 @@ export async function registerRoutes(
         const lines = narrative.split("\n");
         const sections: { title: string; content: string[] }[] = [];
         let currentSection: { title: string; content: string[] } | null = null;
-        
+
         for (const line of lines) {
           if (line.startsWith("## ")) {
             if (currentSection) sections.push(currentSection);
@@ -3645,7 +4404,7 @@ export async function registerRoutes(
           }
         }
         if (currentSection) sections.push(currentSection);
-        
+
         res.json({
           psurCaseId,
           generatedAt: new Date().toISOString(),
@@ -3667,13 +4426,13 @@ export async function registerRoutes(
     try {
       const psurCaseId = parseInt(req.params.psurCaseId);
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 100;
-      
+
       const entries = await queryTraceEntries({
         psurCaseId,
         orderBy: "asc",
         limit,
       });
-      
+
       const timeline = entries.map(e => ({
         timestamp: e.eventTimestamp,
         step: e.workflowStep,
@@ -3682,11 +4441,11 @@ export async function registerRoutes(
         decision: e.decision,
         summary: e.humanSummary || `[${e.eventType}] ${e.decision || ""} - ${e.entityId || ""}`,
         hasRegulatoryContext: !!e.regulatoryContext,
-        complianceStatus: e.complianceAssertion 
+        complianceStatus: e.complianceAssertion
           ? (e.complianceAssertion as any).riskLevel || "unknown"
           : "not_applicable",
       }));
-      
+
       res.json({
         psurCaseId,
         eventCount: timeline.length,
@@ -3702,14 +4461,14 @@ export async function registerRoutes(
   app.get("/api/psur-cases/:psurCaseId/trace/compliance-summary", async (req, res) => {
     try {
       const psurCaseId = parseInt(req.params.psurCaseId);
-      
+
       // Get all obligation-related traces
       const obligationTraces = await queryTraceEntries({
         psurCaseId,
         eventTypes: ["OBLIGATION_SATISFIED", "OBLIGATION_UNSATISFIED"],
         orderBy: "asc",
       });
-      
+
       const satisfied: string[] = [];
       const unsatisfied: string[] = [];
       const complianceDetails: Array<{
@@ -3718,18 +4477,18 @@ export async function registerRoutes(
         humanSummary: string | null;
         sourceCitation: string | null;
       }> = [];
-      
+
       for (const entry of obligationTraces) {
         const obligationId = entry.entityId;
         if (!obligationId) continue;
-        
+
         const status = entry.eventType === "OBLIGATION_SATISFIED" ? "satisfied" : "unsatisfied";
         if (status === "satisfied") {
           satisfied.push(obligationId);
         } else {
           unsatisfied.push(obligationId);
         }
-        
+
         const regCtx = entry.regulatoryContext as any;
         complianceDetails.push({
           obligationId,
@@ -3738,7 +4497,7 @@ export async function registerRoutes(
           sourceCitation: regCtx?.sourceCitation || null,
         });
       }
-      
+
       res.json({
         psurCaseId,
         totalObligations: satisfied.length + unsatisfied.length,
@@ -3768,7 +4527,7 @@ export async function registerRoutes(
       const enableAccessibility = req.query.accessibility !== "false";
       const prepareForSignature = req.query.signature === "true";
       const noCache = req.query.nocache === "true";
-      
+
       const psurCase = await storage.getPSURCase(psurCaseId);
       if (!psurCase) {
         return res.status(404).json({ error: "PSUR case not found" });
@@ -3787,7 +4546,7 @@ export async function registerRoutes(
           return res.send(cached.docx);
         }
       }
-      
+
       console.log(`[PSUR DOCX] SOTA generation: case=${psurCaseId}, style=${documentStyle}, LLM=${enableLLM}, accessibility=${enableAccessibility}`);
 
       // Get device info
@@ -3800,7 +4559,7 @@ export async function registerRoutes(
       // SOTA CompileOrchestrator with all enhancements
       const { CompileOrchestrator } = await import("./src/agents/runtime/compileOrchestrator");
       const orchestrator = new CompileOrchestrator();
-      
+
       const result = await orchestrator.compile({
         psurCaseId,
         templateId: psurCase.templateId,
@@ -3830,7 +4589,7 @@ export async function registerRoutes(
           generatedAt: Date.now(),
           expiresAt: Date.now() + COMPILED_DOC_CACHE_TTL,
         });
-        
+
         console.log(`[PSUR DOCX] Generated: ${result.document.pageCount} pages, ${result.sections.length} sections, accessibility: ${JSON.stringify(result.document.accessibility)}`);
         res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
         res.setHeader("Content-Disposition", `attachment; filename="PSUR-${psurCase.psurReference}.docx"`);
@@ -3840,10 +4599,10 @@ export async function registerRoutes(
         res.send(result.document.docx);
       } else {
         console.error("[PSUR DOCX] Compilation failed:", result.errors);
-        res.status(500).json({ 
-          error: "PSUR compilation failed", 
+        res.status(500).json({
+          error: "PSUR compilation failed",
           details: result.errors.join("; "),
-          warnings: result.warnings 
+          warnings: result.warnings
         });
       }
     } catch (error: any) {
@@ -3861,7 +4620,7 @@ export async function registerRoutes(
       const documentStyle = (req.query.style as string) || "regulatory"; // Default to regulatory for PDF
       const prepareForSignature = req.query.signature === "true";
       const noCache = req.query.nocache === "true";
-      
+
       const psurCase = await storage.getPSURCase(psurCaseId);
       if (!psurCase) {
         return res.status(404).json({ error: "PSUR case not found" });
@@ -3880,7 +4639,7 @@ export async function registerRoutes(
           return res.send(cached.pdf);
         }
       }
-      
+
       console.log(`[PSUR PDF] SOTA PDF/A generation: case=${psurCaseId}, style=${documentStyle}, signature=${prepareForSignature}`);
 
       // Get device info
@@ -3893,7 +4652,7 @@ export async function registerRoutes(
       // SOTA CompileOrchestrator with PDF output
       const { CompileOrchestrator } = await import("./src/agents/runtime/compileOrchestrator");
       const orchestrator = new CompileOrchestrator();
-      
+
       const result = await orchestrator.compile({
         psurCaseId,
         templateId: psurCase.templateId,
@@ -3923,7 +4682,7 @@ export async function registerRoutes(
           generatedAt: Date.now(),
           expiresAt: Date.now() + COMPILED_DOC_CACHE_TTL,
         });
-        
+
         console.log(`[PSUR PDF] Generated: ${result.document.pageCount} pages, PDF/UA compliant: ${result.document.accessibility.pdfUaCompliant}`);
         res.setHeader("Content-Type", "application/pdf");
         res.setHeader("Content-Disposition", `attachment; filename="PSUR-${psurCase.psurReference}.pdf"`);
@@ -3934,10 +4693,10 @@ export async function registerRoutes(
         res.send(result.document.pdf);
       } else {
         console.error("[PSUR PDF] Compilation failed:", result.errors);
-        res.status(500).json({ 
-          error: "PSUR PDF generation failed", 
+        res.status(500).json({
+          error: "PSUR PDF generation failed",
           details: result.errors.join("; "),
-          warnings: result.warnings 
+          warnings: result.warnings
         });
       }
     } catch (error: any) {
@@ -3950,9 +4709,9 @@ export async function registerRoutes(
   app.get("/api/psur-cases/:psurCaseId/live-content", async (req, res) => {
     try {
       const psurCaseId = parseInt(req.params.psurCaseId);
-      
+
       const liveContent = getLiveContent(psurCaseId);
-      
+
       if (!liveContent) {
         // No live content yet, return empty but valid response
         return res.json({
@@ -3962,7 +4721,7 @@ export async function registerRoutes(
           lastUpdated: null,
         });
       }
-      
+
       // Convert Map to array for JSON serialization
       const sections = Array.from(liveContent.sections.entries()).map(([slotId, data]) => ({
         slotId,
@@ -3970,7 +4729,7 @@ export async function registerRoutes(
         content: data.content,
         status: data.status,
       }));
-      
+
       res.json({
         psurCaseId,
         sections,
@@ -3995,9 +4754,9 @@ export async function registerRoutes(
       const offset = parseInt(req.query.offset as string) || 0;
       const eventTypes = req.query.eventTypes ? (req.query.eventTypes as string).split(",") : undefined;
       const orderBy = (req.query.orderBy as string) === "desc" ? "desc" : "asc";
-      
+
       const { queryTraceEntries } = await import("./src/services/decisionTraceService");
-      
+
       const entries = await queryTraceEntries({
         psurCaseId,
         eventTypes: eventTypes as any,
@@ -4005,7 +4764,7 @@ export async function registerRoutes(
         offset,
         orderBy,
       });
-      
+
       res.json({
         psurCaseId,
         total: entries.length,
@@ -4038,11 +4797,11 @@ export async function registerRoutes(
   app.get("/api/psur-cases/:psurCaseId/decision-traces/summary", async (req, res) => {
     try {
       const psurCaseId = parseInt(req.params.psurCaseId);
-      
+
       const { getTraceSummary, verifyTraceChain } = await import("./src/services/decisionTraceService");
-      
+
       const summary = await getTraceSummary(psurCaseId);
-      
+
       if (!summary) {
         return res.json({
           psurCaseId,
@@ -4051,9 +4810,9 @@ export async function registerRoutes(
           chainValidation: null,
         });
       }
-      
+
       const chainValidation = await verifyTraceChain(summary.traceId);
-      
+
       res.json({
         psurCaseId,
         exists: true,
@@ -4089,15 +4848,15 @@ export async function registerRoutes(
       const psurCaseId = parseInt(req.params.psurCaseId);
       const searchText = req.query.q as string;
       const limit = parseInt(req.query.limit as string) || 50;
-      
+
       if (!searchText || searchText.trim().length < 2) {
         return res.status(400).json({ error: "Search query must be at least 2 characters" });
       }
-      
+
       const { searchTraces } = await import("./src/services/decisionTraceService");
-      
+
       const entries = await searchTraces(psurCaseId, searchText.trim(), limit);
-      
+
       res.json({
         psurCaseId,
         query: searchText,
@@ -4126,9 +4885,9 @@ export async function registerRoutes(
     try {
       const psurCaseId = parseInt(req.params.psurCaseId);
       const format = req.query.format as string || "text";
-      
+
       const { exportAuditNarrative, exportTraceSummary } = await import("./src/services/decisionTraceService");
-      
+
       if (format === "json") {
         const data = await exportTraceSummary(psurCaseId);
         res.json(data);
@@ -4147,16 +4906,16 @@ export async function registerRoutes(
   app.get("/api/psur-cases/:psurCaseId/decision-traces/timeline", async (req, res) => {
     try {
       const psurCaseId = parseInt(req.params.psurCaseId);
-      
+
       const { queryTraceEntries, getTraceSummary } = await import("./src/services/decisionTraceService");
-      
+
       const summary = await getTraceSummary(psurCaseId);
       const entries = await queryTraceEntries({
         psurCaseId,
         orderBy: "asc",
         limit: 500,
       });
-      
+
       // Group by workflow step
       const byStep: Record<number, any[]> = {};
       const stepNames: Record<number, string> = {
@@ -4170,7 +4929,7 @@ export async function registerRoutes(
         7: "Document Rendering",
         8: "Bundle Export",
       };
-      
+
       for (const entry of entries) {
         const step = entry.workflowStep || 0;
         if (!byStep[step]) byStep[step] = [];
@@ -4186,7 +4945,7 @@ export async function registerRoutes(
           entityId: entry.entityId,
         });
       }
-      
+
       const timeline = Object.entries(byStep)
         .map(([step, events]) => ({
           step: parseInt(step),
@@ -4196,7 +4955,7 @@ export async function registerRoutes(
           hasMore: events.length > 20,
         }))
         .sort((a, b) => a.step - b.step);
-      
+
       res.json({
         psurCaseId,
         summary: summary ? {
@@ -4217,13 +4976,13 @@ export async function registerRoutes(
     try {
       const psurCaseId = parseInt(req.params.psurCaseId);
       const entityId = req.params.entityId;
-      
+
       const { getEntityTrace, getSlotDecisionChain } = await import("./src/services/decisionTraceService");
-      
+
       // Try to get full slot decision chain if it's a slot
       const slotChain = await getSlotDecisionChain(entityId);
       const entityTrace = await getEntityTrace("", entityId);
-      
+
       res.json({
         psurCaseId,
         entityId,
@@ -4252,7 +5011,7 @@ export async function registerRoutes(
       const psurCaseId = parseInt(req.params.psurCaseId);
       const documentStyle = (req.query.style as string) || "premium";
       const noCache = (req.query.nocache as string) === "1";
-      
+
       // Check cache first (unless nocache)
       if (!noCache) {
         const cached = getCachedPreview(psurCaseId, documentStyle);
@@ -4264,7 +5023,7 @@ export async function registerRoutes(
           return res.send(cached.html);
         }
       }
-      
+
       const psurCase = await storage.getPSURCase(psurCaseId);
       if (!psurCase) {
         return res.status(404).json({ error: "PSUR case not found" });
@@ -4273,17 +5032,17 @@ export async function registerRoutes(
       // Generate fast preview - use template structure without full LLM generation
       const template = loadTemplate(psurCase.templateId);
       const slots = template.slots || [];
-      
+
       // Get evidence counts for display
       const atoms = await storage.getEvidenceAtoms(psurCaseId);
       const atomsByType: Record<string, number> = {};
       atoms.forEach((a: any) => {
         atomsByType[a.evidenceType] = (atomsByType[a.evidenceType] || 0) + 1;
       });
-      
+
       // Get live content if available
       const liveContent = getLiveContent(psurCaseId);
-      
+
       // Generate lightweight HTML preview with live content
       const html = generateFastPreviewHTML({
         psurCase,
@@ -4294,12 +5053,12 @@ export async function registerRoutes(
         documentStyle,
         liveContent,
       });
-      
+
       // Only cache if not actively generating (live content updates frequently)
       if (!liveContent?.isGenerating) {
         setCachedPreview(psurCaseId, documentStyle, html);
       }
-      
+
       console.log(`[PSUR Preview] Generated fast preview for case ${psurCaseId}`);
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       res.setHeader("X-Preview-Cached", "false");
@@ -4319,7 +5078,7 @@ export async function registerRoutes(
       const documentStyle = (req.query.style as string) || "premium";
       const download = (req.query.download as string) === "1";
       const noCache = (req.query.nocache as string) === "1";
-      
+
       // Check cache first for non-download requests
       if (!download && !noCache) {
         const cached = getCachedPreview(psurCaseId, `full:${documentStyle}`);
@@ -4331,9 +5090,9 @@ export async function registerRoutes(
           return res.send(cached.html);
         }
       }
-      
+
       console.log(`[PSUR HTML] SOTA HTML generation: case=${psurCaseId}, style=${documentStyle}`);
-      
+
       const psurCase = await storage.getPSURCase(psurCaseId);
       if (!psurCase) {
         return res.status(404).json({ error: "PSUR case not found" });
@@ -4349,7 +5108,7 @@ export async function registerRoutes(
       // SOTA CompileOrchestrator with HTML output
       const { CompileOrchestrator } = await import("./src/agents/runtime/compileOrchestrator");
       const orchestrator = new CompileOrchestrator();
-      
+
       const result = await orchestrator.compile({
         psurCaseId,
         templateId: psurCase.templateId,
@@ -4367,7 +5126,7 @@ export async function registerRoutes(
       if (result.success && result.document?.html) {
         // Cache the full HTML
         setCachedPreview(psurCaseId, `full:${documentStyle}`, result.document.html);
-        
+
         console.log(`[PSUR HTML] Generated: WCAG ${result.document.accessibility.wcagLevel} compliant`);
         res.setHeader("Content-Type", "text/html; charset=utf-8");
         if (download) {
@@ -4378,10 +5137,10 @@ export async function registerRoutes(
         res.send(result.document.html);
       } else {
         console.error("[PSUR HTML] Compilation failed:", result.errors);
-        res.status(500).json({ 
-          error: "PSUR HTML generation failed", 
+        res.status(500).json({
+          error: "PSUR HTML generation failed",
           details: result.errors.join("; "),
-          warnings: result.warnings 
+          warnings: result.warnings
         });
       }
     } catch (error: any) {
@@ -4395,9 +5154,9 @@ export async function registerRoutes(
     try {
       const psurCaseId = parseInt(req.params.psurCaseId);
       const documentStyle = (req.query.style as string) || "corporate";
-      
+
       console.log(`[PSUR MD] Generating SOTA markdown for case ${psurCaseId}`);
-      
+
       const psurCase = await storage.getPSURCase(psurCaseId);
       if (!psurCase) {
         return res.status(404).json({ error: "PSUR case not found" });
@@ -4411,7 +5170,7 @@ export async function registerRoutes(
       // ALWAYS use SOTA CompileOrchestrator
       const { CompileOrchestrator } = await import("./src/agents/runtime/compileOrchestrator");
       const orchestrator = new CompileOrchestrator();
-      
+
       const result = await orchestrator.compile({
         psurCaseId,
         templateId: psurCase.templateId,
@@ -4433,7 +5192,7 @@ export async function registerRoutes(
         markdownParts.push(``);
         markdownParts.push(`---`);
         markdownParts.push(``);
-        
+
         for (const section of result.sections) {
           markdownParts.push(`## ${section.title}`);
           markdownParts.push(``);
@@ -4446,19 +5205,19 @@ export async function registerRoutes(
           markdownParts.push(`---`);
           markdownParts.push(``);
         }
-        
+
         const psurMarkdown = markdownParts.join("\n");
-        
+
         console.log(`[PSUR MD] Successfully generated ${result.sections.length} sections`);
         res.setHeader("Content-Type", "text/markdown; charset=utf-8");
         res.setHeader("Content-Disposition", `attachment; filename="PSUR-${psurCase.psurReference}.md"`);
         res.send(psurMarkdown);
       } else {
         console.error("[PSUR MD] Compilation failed:", result.errors);
-        res.status(500).json({ 
-          error: "PSUR compilation failed", 
+        res.status(500).json({
+          error: "PSUR compilation failed",
           details: result.errors.join("; "),
-          warnings: result.warnings 
+          warnings: result.warnings
         });
       }
     } catch (error: any) {
@@ -4540,7 +5299,7 @@ export async function registerRoutes(
   });
 
   // ============== AI AGENT ROUTES ==============
-  
+
   // Health check for AI agents
   app.get("/api/agents/health", async (req, res) => {
     try {
@@ -4593,7 +5352,7 @@ export async function registerRoutes(
     try {
       const { EVIDENCE_TYPE_MAPPINGS, getEvidenceTypesByCategory } = await import("./src/agents/config");
       const category = req.query.category as string;
-      
+
       if (category) {
         res.json(getEvidenceTypesByCategory(category as any));
       } else {
@@ -4684,10 +5443,10 @@ export async function registerRoutes(
       // Run the mapping agent
       const { FieldMappingAgent } = await import("./src/agents/ingestion/fieldMappingAgent");
       const { startTrace } = await import("./src/services/decisionTraceService");
-      
+
       const agent = new FieldMappingAgent();
       const traceCtx = await startTrace(0); // No case yet
-      
+
       const result = await agent.run(
         { sourceColumns, targetSchema, evidenceType },
         { psurCaseId: 0, traceCtx }
@@ -4712,7 +5471,7 @@ export async function registerRoutes(
     try {
       const psurCaseId = parseInt(req.params.psurCaseId);
       const psurCase = await storage.getPSURCase(psurCaseId);
-      
+
       if (!psurCase) {
         return res.status(404).json({ error: "PSUR case not found" });
       }
@@ -4758,7 +5517,7 @@ export async function registerRoutes(
   app.post("/api/agents/test-llm", async (req, res) => {
     try {
       const { complete } = await import("./src/agents/llmService");
-      
+
       const response = await complete({
         messages: [
           { role: "system", content: "You are a test assistant." },
@@ -4788,13 +5547,13 @@ export async function registerRoutes(
   });
 
   // ============== COMPILE TRACE ENDPOINTS ==============
-  
+
   // Get full compile trace for a PSUR case
   app.get("/api/trace/compile/:psurCaseId", async (req, res) => {
     try {
       const psurCaseId = parseInt(req.params.psurCaseId);
       const { getCompileTrace } = await import("./src/services/compileTraceRepository");
-      
+
       const entries = await getCompileTrace(psurCaseId);
       res.json({ psurCaseId, entries, count: entries.length });
     } catch (error: any) {
@@ -4807,7 +5566,7 @@ export async function registerRoutes(
     try {
       const psurCaseId = parseInt(req.params.psurCaseId);
       const { getTraceSummary } = await import("./src/services/compileTraceRepository");
-      
+
       const summary = await getTraceSummary(psurCaseId);
       res.json(summary);
     } catch (error: any) {
@@ -4821,7 +5580,7 @@ export async function registerRoutes(
       const psurCaseId = parseInt(req.params.psurCaseId);
       const slotId = req.params.slotId;
       const { getTraceBySlot } = await import("./src/services/compileTraceRepository");
-      
+
       const entries = await getTraceBySlot(psurCaseId, slotId);
       res.json({ psurCaseId, slotId, entries, count: entries.length });
     } catch (error: any) {
@@ -4835,7 +5594,7 @@ export async function registerRoutes(
       const psurCaseId = parseInt(req.params.psurCaseId);
       const agentType = req.params.agentType;
       const { getTraceByAgent } = await import("./src/services/compileTraceRepository");
-      
+
       const entries = await getTraceByAgent(psurCaseId, agentType);
       res.json({ psurCaseId, agentType, entries, count: entries.length });
     } catch (error: any) {
@@ -4849,7 +5608,7 @@ export async function registerRoutes(
       const psurCaseId = parseInt(req.params.psurCaseId);
       const phase = req.params.phase as "NARRATIVE" | "TABLE" | "CHART" | "FORMAT" | "ORCHESTRATION";
       const { getTraceByPhase } = await import("./src/services/compileTraceRepository");
-      
+
       const entries = await getTraceByPhase(psurCaseId, phase);
       res.json({ psurCaseId, phase, entries, count: entries.length });
     } catch (error: any) {
@@ -4862,7 +5621,7 @@ export async function registerRoutes(
     try {
       const psurCaseId = parseInt(req.params.psurCaseId);
       const { getGaps } = await import("./src/services/compileTraceRepository");
-      
+
       const gaps = await getGaps(psurCaseId);
       res.json({ psurCaseId, gaps, count: gaps.length });
     } catch (error: any) {
@@ -4875,7 +5634,7 @@ export async function registerRoutes(
     try {
       const psurCaseId = parseInt(req.params.psurCaseId);
       const { verifyTraceIntegrity } = await import("./src/services/compileTraceRepository");
-      
+
       const verification = await verifyTraceIntegrity(psurCaseId);
       res.json({ psurCaseId, ...verification });
     } catch (error: any) {
@@ -4888,7 +5647,7 @@ export async function registerRoutes(
     try {
       const psurCaseId = parseInt(req.params.psurCaseId);
       const { exportTraceJSON } = await import("./src/services/compileTraceRepository");
-      
+
       const json = await exportTraceJSON(psurCaseId);
       res.setHeader("Content-Type", "application/json");
       res.setHeader("Content-Disposition", `attachment; filename=compile-trace-${psurCaseId}.json`);

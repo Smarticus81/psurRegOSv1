@@ -6,60 +6,12 @@
  */
 
 import { BaseNarrativeAgent, NarrativeInput } from "./baseNarrativeAgent";
+import { PROMPT_TEMPLATES } from "../../llmService";
 
 export class PMSActivityNarrativeAgent extends BaseNarrativeAgent {
   protected readonly sectionType = "PMS_ACTIVITY";
-  
-  protected readonly systemPrompt = `You are an expert medical device regulatory writer specializing in Post-Market Surveillance documentation under EU MDR.
 
-## YOUR ROLE
-Generate comprehensive descriptions of PMS activities performed during the reporting period, including data sources, collection methods, and analysis approaches.
-
-## REGULATORY REQUIREMENTS (EU MDR Article 83, Article 86)
-This section MUST include:
-1. Overview of PMS system and plan
-2. Data sources used (internal and external)
-3. Collection methods and frequency
-4. Analysis methodology
-5. Integration with quality management system
-
-## WRITING STANDARDS
-- Use methodological language appropriate for regulatory submission
-- Be specific about data sources and collection periods
-- Include metrics on data completeness
-- Write clean prose WITHOUT inline citations
-- Demonstrate systematic approach to PMS
-
-## CRITICAL: DO NOT USE CITATIONS IN OUTPUT
-- DO NOT write [ATOM-xxx] in your narrative text
-- Evidence references are tracked automatically via the JSON metadata
-- Write clean, professional prose without any citation markers
-- Report the atom IDs you used in the JSON "citedAtoms" field only
-
-## STRUCTURE FOR PMS OVERVIEW:
-1. PMS plan summary (reference document)
-2. Proactive vs. reactive surveillance activities
-3. Data collection methods
-4. Analysis and trending approach
-5. Responsible personnel/functions
-
-## STRUCTURE FOR SALES/EXPOSURE:
-1. Sales volume by region/market
-2. Estimated patient exposure
-3. Usage frequency data
-4. Denominator data quality assessment
-
-## OUTPUT FORMAT
-Write the narrative section content WITHOUT any citation markers. After the narrative, provide a JSON block with the atom IDs you referenced:
-\`\`\`json
-{
-  "citedAtoms": ["actual-atom-id-1", "actual-atom-id-2"],
-  "uncitedAtoms": ["other-atom-ids"],
-  "dataGaps": ["description of missing data", ...],
-  "confidence": 0.0-1.0,
-  "reasoning": "explanation of content decisions"
-}
-\`\`\``;
+  protected readonly systemPrompt = PROMPT_TEMPLATES.PMS_ACTIVITY_SYSTEM;
 
   constructor() {
     super(
@@ -82,8 +34,8 @@ Write the narrative section content WITHOUT any citation markers. After the narr
     }
 
     // Check for sales/exposure data
-    const hasSales = input.evidenceAtoms.some(a => 
-      a.evidenceType.includes("sales") || 
+    const hasSales = input.evidenceAtoms.some(a =>
+      a.evidenceType.includes("sales") ||
       a.evidenceType.includes("distribution")
     );
     if (!hasSales) {
@@ -99,7 +51,7 @@ Write the narrative section content WITHOUT any citation markers. After the narr
     evidenceRecords: string
   ): string {
     // Calculate sales metrics
-    const salesAtoms = input.evidenceAtoms.filter(a => 
+    const salesAtoms = input.evidenceAtoms.filter(a =>
       a.evidenceType.includes("sales") || a.evidenceType.includes("volume")
     );
 
@@ -108,7 +60,7 @@ Write the narrative section content WITHOUT any citation markers. After the narr
       return sum + qty;
     }, 0);
 
-    const regionSet = new Set(salesAtoms.map(a => 
+    const regionSet = new Set(salesAtoms.map(a =>
       a.normalizedData.region || a.normalizedData.country || "Unknown"
     ));
     const regions = Array.from(regionSet);

@@ -529,8 +529,12 @@ export async function extractEvidence(
     }
   }
 
-  // PHASE 2: Standard table extraction (for non-CER or as supplement)
-  if (result.extractedEvidence.length === 0 || sourceType?.toLowerCase() !== "cer") {
+  // PHASE 2: Standard table extraction (ONLY if CER extraction didn't run or failed)
+  // Skip if CER extraction already succeeded - it handles all evidence types
+  const cerExtracted = result.cerExtractionResult && result.extractedEvidence.length > 0;
+  
+  if (!cerExtracted) {
+    console.log(`[Evidence Extractor] Running standard table extraction (CER not applicable or failed)`);
     for (const table of document.tables) {
       const tableTraceId = randomUUID();
       const tableStart = Date.now();
@@ -556,10 +560,12 @@ export async function extractEvidence(
         durationMs: Date.now() - tableStart,
       });
     }
+  } else {
+    console.log(`[Evidence Extractor] Skipping standard table extraction - CER already extracted ${result.extractedEvidence.length} items`);
   }
 
-  // PHASE 3: Section extraction (for non-tabular content, skip for CER as already handled)
-  if (sourceType?.toLowerCase() !== "cer") {
+  // PHASE 3: Section extraction (ONLY if CER extraction didn't run)
+  if (!cerExtracted) {
     for (const section of document.sections) {
       const sectionTraceId = randomUUID();
       const sectionStart = Date.now();

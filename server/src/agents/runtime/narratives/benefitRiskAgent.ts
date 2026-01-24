@@ -6,71 +6,12 @@
  */
 
 import { BaseNarrativeAgent, NarrativeInput } from "./baseNarrativeAgent";
+import { PROMPT_TEMPLATES } from "../../llmService";
 
 export class BenefitRiskNarrativeAgent extends BaseNarrativeAgent {
   protected readonly sectionType = "BENEFIT_RISK";
-  
-  protected readonly systemPrompt = `You are an expert medical device regulatory scientist specializing in benefit-risk assessment under EU MDR.
 
-## YOUR ROLE
-Generate comprehensive benefit-risk narratives that provide balanced, evidence-based conclusions on whether the device's benefits continue to outweigh its risks.
-
-## REGULATORY REQUIREMENTS (EU MDR Article 2, Article 61, Article 86)
-Benefit-Risk section MUST include:
-1. Summary of known benefits (clinical data, intended purpose)
-2. Summary of known risks (PMS data, complaints, incidents)
-3. Emerging risks from current period
-4. Comparison with state of the art
-5. Overall benefit-risk conclusion
-6. Acceptability determination
-
-## BENEFIT-RISK FRAMEWORK
-- Benefits: Clinical effectiveness, patient outcomes, quality of life
-- Risks: Adverse events, device failures, use errors
-- Risk mitigation: Labeling, training, design controls
-- Residual risk: Acceptable vs. unacceptable
-
-## WRITING STANDARDS
-- Be balanced - present both benefits and risks objectively
-- Use specific data to support conclusions
-- Write clean prose WITHOUT inline citations
-- Clearly state the conclusion
-- Justify acceptability determination
-
-## CRITICAL: DO NOT USE CITATIONS IN OUTPUT
-- DO NOT write [ATOM-xxx] in your narrative text
-- Evidence references are tracked automatically via the JSON metadata
-- Write clean, professional prose without any citation markers
-- Report the atom IDs you used in the JSON "citedAtoms" field only
-
-## STRUCTURE:
-1. Benefits summary
-   - Intended purpose and clinical context
-   - Clinical evidence of effectiveness
-   - Patient outcomes data
-2. Risks summary
-   - Known risks (from risk management)
-   - Emerging risks (from current PMS)
-   - Risk rates and severity
-3. Benefit-risk comparison
-   - Balance assessment
-   - Comparison with alternatives
-4. Conclusion
-   - Overall determination
-   - Acceptability statement
-   - Any conditions or recommendations
-
-## OUTPUT FORMAT
-Write the narrative section content WITHOUT any citation markers. After the narrative, provide a JSON block with the atom IDs you referenced:
-\`\`\`json
-{
-  "citedAtoms": ["actual-atom-id-1", "actual-atom-id-2"],
-  "uncitedAtoms": ["other-atom-ids"],
-  "dataGaps": ["description of missing data", ...],
-  "confidence": 0.0-1.0,
-  "reasoning": "explanation of content decisions"
-}
-\`\`\``;
+  protected readonly systemPrompt = PROMPT_TEMPLATES.BENEFIT_RISK_SYSTEM;
 
   constructor() {
     super(
@@ -93,8 +34,8 @@ Write the narrative section content WITHOUT any citation markers. After the narr
     }
 
     // Need PMS data for current period risks
-    const hasPMSData = input.evidenceAtoms.some(a => 
-      a.evidenceType.includes("complaint") || 
+    const hasPMSData = input.evidenceAtoms.some(a =>
+      a.evidenceType.includes("complaint") ||
       a.evidenceType.includes("incident")
     );
     if (!hasPMSData) {
@@ -110,17 +51,17 @@ Write the narrative section content WITHOUT any citation markers. After the narr
     evidenceRecords: string
   ): string {
     // Calculate risk metrics
-    const complaintAtoms = input.evidenceAtoms.filter(a => 
+    const complaintAtoms = input.evidenceAtoms.filter(a =>
       a.evidenceType.includes("complaint")
     );
-    const incidentAtoms = input.evidenceAtoms.filter(a => 
+    const incidentAtoms = input.evidenceAtoms.filter(a =>
       a.evidenceType.includes("incident")
     );
-    const salesAtoms = input.evidenceAtoms.filter(a => 
+    const salesAtoms = input.evidenceAtoms.filter(a =>
       a.evidenceType.includes("sales")
     );
-    const clinicalAtoms = input.evidenceAtoms.filter(a => 
-      a.evidenceType.includes("clinical") || 
+    const clinicalAtoms = input.evidenceAtoms.filter(a =>
+      a.evidenceType.includes("clinical") ||
       a.evidenceType.includes("pmcf") ||
       a.evidenceType.includes("benefit")
     );
@@ -131,17 +72,17 @@ Write the narrative section content WITHOUT any citation markers. After the narr
     }, 0);
 
     // Severity breakdown
-    const seriousComplaints = complaintAtoms.filter(a => 
-      a.normalizedData.severity === "HIGH" || 
+    const seriousComplaints = complaintAtoms.filter(a =>
+      a.normalizedData.severity === "HIGH" ||
       a.normalizedData.severity === "CRITICAL" ||
       a.normalizedData.serious === true
     );
 
-    const complaintRate = totalSales > 0 
+    const complaintRate = totalSales > 0
       ? ((complaintAtoms.length / totalSales) * 1000).toFixed(2)
       : "N/A";
 
-    const seriousRate = totalSales > 0 
+    const seriousRate = totalSales > 0
       ? ((seriousComplaints.length / totalSales) * 1000).toFixed(4)
       : "N/A";
 

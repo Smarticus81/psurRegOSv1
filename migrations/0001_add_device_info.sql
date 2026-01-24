@@ -1,0 +1,1 @@
+ALTER TABLE "psur_cases" ADD COLUMN "device_info" jsonb;

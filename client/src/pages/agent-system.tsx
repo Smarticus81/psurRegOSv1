@@ -1,317 +1,285 @@
+/**
+ * Report Generation System Page
+ * 
+ * User-friendly overview of how the PSUR generation works.
+ * Explains the process in terms PMS professionals understand.
+ */
+
 import { useState, useEffect } from "react";
-import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Cpu, Zap, Activity, Brain, Workflow, Terminal, ArrowRight, ShieldCheck, History, Loader2, ExternalLink } from "lucide-react";
+import {
+    FileText,
+    Upload,
+    ClipboardCheck,
+    FileOutput,
+    CheckCircle2,
+    ArrowRight,
+    Shield,
+    Activity,
+    Clock,
+    ArrowLeft
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Link } from "wouter";
 
-interface OrchestratorStatus {
+interface SystemStatus {
     initialized: boolean;
     euObligations: number;
     ukObligations: number;
     constraints: number;
 }
 
-interface TraceEntry {
+interface RecentActivity {
     type: string;
-    actor: string;
-    decision: string;
-    summary: string;
-    timestamp?: string;
+    description: string;
+    timestamp: string;
+    status: "success" | "pending" | "error";
 }
 
-interface PSURCase {
-    id: number;
-    psurReference: string;
-    status: string;
-}
+export default function ReportGenerationSystem() {
+    const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
 
-export default function AgentSystem() {
-    const [activeAgent, setActiveAgent] = useState<string>("orchestrator");
-    const [orchestratorStatus, setOrchestratorStatus] = useState<OrchestratorStatus | null>(null);
-    const [statusLoading, setStatusLoading] = useState(true);
-    const [recentTraces, setRecentTraces] = useState<TraceEntry[]>([]);
-    const [tracesLoading, setTracesLoading] = useState(true);
-    const [activePsurCase, setActivePsurCase] = useState<PSURCase | null>(null);
-
-    // Fetch orchestrator status
     useEffect(() => {
         async function fetchStatus() {
             try {
                 const res = await fetch("/api/orchestrator/status");
                 if (res.ok) {
                     const data = await res.json();
-                    setOrchestratorStatus(data);
+                    setSystemStatus(data);
                 }
             } catch (e) {
-                console.error("[AgentSystem] Failed to fetch orchestrator status:", e);
+                console.error("Failed to fetch system status:", e);
             } finally {
-                setStatusLoading(false);
+                setLoading(false);
             }
         }
         fetchStatus();
-    }, []);
 
-    // Fetch recent traces from most recent PSUR case
-    useEffect(() => {
-        async function fetchRecentTraces() {
+        // Fetch recent activity from PSUR cases
+        async function fetchActivity() {
             try {
-                // Get most recent PSUR case
                 const casesRes = await fetch("/api/psur-cases");
-                if (!casesRes.ok) throw new Error("Failed to fetch cases");
-                
-                const cases: PSURCase[] = await casesRes.json();
-                const recentCase = cases.find(c => c.status === "compiling" || c.status === "compiled" || c.status === "draft");
-                
-                if (recentCase) {
-                    setActivePsurCase(recentCase);
-                    
-                    // Fetch decision traces for this case
-                    const tracesRes = await fetch(`/api/psur-cases/${recentCase.id}/decision-traces?limit=6`);
-                    if (tracesRes.ok) {
-                        const data = await tracesRes.json();
-                        const traces: TraceEntry[] = (data.traces || data || []).slice(0, 6).map((t: any) => ({
-                            type: t.eventType || t.type || "DECISION",
-                            actor: t.actor || t.agentId || "system",
-                            decision: t.decision || t.status || "RECORDED",
-                            summary: t.summary || t.description || t.details?.summary || "Decision recorded",
-                            timestamp: t.timestamp || t.createdAt
-                        }));
-                        setRecentTraces(traces);
-                    }
+                if (casesRes.ok) {
+                    const cases = await casesRes.json();
+                    const activities: RecentActivity[] = cases.slice(0, 5).map((c: any) => ({
+                        type: "Report",
+                        description: `${c.psurReference || "PSUR"} - ${c.status}`,
+                        timestamp: c.updatedAt || c.createdAt,
+                        status: c.status === "exported" || c.status === "compiled" ? "success" :
+                            c.status === "failed" ? "error" : "pending"
+                    }));
+                    setRecentActivity(activities);
                 }
             } catch (e) {
-                console.error("[AgentSystem] Failed to fetch traces:", e);
-            } finally {
-                setTracesLoading(false);
+                console.error("Failed to fetch activity:", e);
             }
         }
-        fetchRecentTraces();
+        fetchActivity();
     }, []);
 
-    const agents = [
+    const processSteps = [
         {
-            id: "orchestrator",
-            name: "Orchestrator Kernel",
-            icon: Workflow,
-            color: "blue",
-            desc: "The central intelligence module managing the end-to-end PSUR workflow. It handles state transitions, dependency resolution, and agent spawning.",
-            capabilities: ["Multi-step Workflow Control", "Parallel Agent Spawning", "Integrity Verification"]
+            step: 1,
+            title: "Setup Report",
+            description: "Configure device, reporting period, and select jurisdictions",
+            icon: FileText,
+            color: "bg-blue-500"
         },
         {
-            id: "ingestion",
-            name: "Neural Ingestion Agent",
-            icon: Brain,
-            color: "emerald",
-            desc: "Specialized in structural extraction of compliance data from unstructured sources. Maps raw data to canonical intelligence atoms.",
-            capabilities: ["Schema Recognition", "Semantic Field Mapping", "Format Normalization"]
+            step: 2,
+            title: "Import Data",
+            description: "Upload complaints, sales, FSCA records, and other surveillance data",
+            icon: Upload,
+            color: "bg-emerald-500"
         },
         {
-            id: "narrative",
-            name: "Clinical Narrative Agent",
-            icon: Zap,
-            color: "amber",
-            desc: "Synthesizes evidence atoms into professional regulatory prose. Ensures clinical continuity and alignment with IFU requirements.",
-            capabilities: ["Natural Language Synthesis", "Citation Embedding", "Tone Alignment"]
+            step: 3,
+            title: "Verify Completeness",
+            description: "System checks all required data categories are covered",
+            icon: ClipboardCheck,
+            color: "bg-amber-500"
         },
         {
-            id: "validation",
-            name: "Strict Gate Validator",
-            icon: ShieldCheck,
-            color: "destructive",
-            desc: "Enforces regulatory constraints and data quality rules. Blocks the workflow if safety signals or data gaps are detected.",
-            capabilities: ["Constraint Checking", "Completeness Audit", "Signal Detection"]
+            step: 4,
+            title: "Generate Document",
+            description: "Automated narrative generation with regulatory compliance",
+            icon: FileOutput,
+            color: "bg-purple-500"
         }
-    ];
-
-    const activeAgentData = agents.find(a => a.id === activeAgent) || agents[0];
-
-    // Computed kernel health from real status
-    const kernelHealth = orchestratorStatus ? [
-        { label: "Kernel Initialized", val: orchestratorStatus.initialized ? "Active" : "Inactive" },
-        { label: "EU Obligations", val: String(orchestratorStatus.euObligations) },
-        { label: "UK Obligations", val: String(orchestratorStatus.ukObligations) },
-        { label: "Constraints", val: String(orchestratorStatus.constraints) }
-    ] : [
-        { label: "Kernel Status", val: "Loading..." }
     ];
 
     return (
-        <div className="h-full overflow-hidden flex flex-col space-y-6 max-w-6xl mx-auto px-4 py-6">
+        <div className="h-full flex flex-col overflow-hidden bg-background">
             {/* Header */}
-            <div className="space-y-1">
-                <div className="flex items-center gap-2 text-primary font-black tracking-tighter uppercase text-xs">
-                    <Cpu className="w-3 h-3" />
-                    System Architecture
-                </div>
-                <h1 className="text-3xl font-black tracking-tighter text-foreground">Multi-Agent Intelligence</h1>
-                <p className="text-muted-foreground text-sm font-medium">High-fidelity decision engine powered by neural orchestration.</p>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Agent Selection & Info */}
-                <div className="lg:col-span-2 space-y-6">
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                        {agents.map((agent) => (
-                            <button
-                                key={agent.id}
-                                onClick={() => setActiveAgent(agent.id)}
-                                className={cn(
-                                    "p-4 rounded-2xl border transition-all duration-300 text-left group",
-                                    activeAgent === agent.id 
-                                        ? "bg-primary/5 border-primary/20 shadow-lg shadow-primary/5" 
-                                        : "bg-background border-border/50 hover:border-primary/20"
-                                )}
-                            >
-                                <agent.icon className={cn(
-                                    "w-6 h-6 mb-3 transition-colors",
-                                    activeAgent === agent.id ? "text-primary" : "text-muted-foreground group-hover:text-primary/60"
-                                )} />
-                                <div className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1">{agent.id}</div>
-                                <div className="text-sm font-black tracking-tight text-foreground">{agent.name}</div>
-                            </button>
-                        ))}
+            <header className="shrink-0 border-b border-border bg-background/95 backdrop-blur z-50">
+                <div className="max-w-[1400px] mx-auto px-6 py-3">
+                    <div className="flex items-center gap-4">
+                        <Link href="/psur" className="text-muted-foreground hover:text-foreground transition-colors">
+                            <ArrowLeft className="w-5 h-5" />
+                        </Link>
+                        <div>
+                            <h1 className="text-lg font-bold text-foreground">Intelligence System</h1>
+                            <p className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground">Orchestration & Rules Engine</p>
+                        </div>
                     </div>
+                </div>
+            </header>
 
-                    <div className="glass-card p-8 min-h-[300px] flex flex-col justify-between animate-slide-up" key={activeAgent}>
-                        <div className="space-y-6">
-                            <div className="flex items-center gap-4">
-                                <div className={cn(
-                                    "w-12 h-12 rounded-2xl flex items-center justify-center shadow-inner",
-                                    activeAgentData.color === "blue" && "bg-blue-500/10 text-blue-600",
-                                    activeAgentData.color === "emerald" && "bg-emerald-500/10 text-emerald-600",
-                                    activeAgentData.color === "amber" && "bg-amber-500/10 text-amber-600",
-                                    activeAgentData.color === "destructive" && "bg-destructive/10 text-destructive",
-                                )} >
-                                    <activeAgentData.icon className="w-6 h-6" />
+            <main className="flex-1 overflow-y-auto px-6 py-8 scroll-smooth">
+                <div className="max-w-[1400px] mx-auto space-y-10">
+                    {/* System Status */}
+                    <section className="glass-card p-6">
+                        <h2 className="text-lg font-semibold text-foreground mb-4">System Status</h2>
+                        {loading ? (
+                            <div className="flex items-center gap-3 text-muted-foreground">
+                                <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                                Checking system...
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <div className="p-4 rounded-xl bg-secondary/50">
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <div className={cn(
+                                            "w-2 h-2 rounded-full",
+                                            systemStatus?.initialized ? "bg-emerald-500" : "bg-amber-500"
+                                        )} />
+                                        <span className="text-sm text-muted-foreground">System</span>
+                                    </div>
+                                    <div className="font-semibold text-foreground">
+                                        {systemStatus?.initialized ? "Ready" : "Initializing"}
+                                    </div>
                                 </div>
-                                <div>
-                                    <h3 className="text-xl font-black tracking-tight text-foreground">{activeAgentData.name}</h3>
-                                    <div className="flex gap-2 mt-1">
-                                        <Badge variant="outline" className="text-[8px] font-black tracking-widest uppercase">ACTIVE_NODE</Badge>
-                                        <Badge variant="outline" className="text-[8px] font-black tracking-widest uppercase">STATELESS</Badge>
+                                <div className="p-4 rounded-xl bg-secondary/50">
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <Shield className="w-4 h-4 text-blue-500" />
+                                        <span className="text-sm text-muted-foreground">EU MDR Rules</span>
+                                    </div>
+                                    <div className="font-semibold text-foreground">
+                                        {systemStatus?.euObligations || 0} loaded
+                                    </div>
+                                </div>
+                                <div className="p-4 rounded-xl bg-secondary/50">
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <Shield className="w-4 h-4 text-purple-500" />
+                                        <span className="text-sm text-muted-foreground">UK MDR Rules</span>
+                                    </div>
+                                    <div className="font-semibold text-foreground">
+                                        {systemStatus?.ukObligations || 0} loaded
+                                    </div>
+                                </div>
+                                <div className="p-4 rounded-xl bg-secondary/50">
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <ClipboardCheck className="w-4 h-4 text-amber-500" />
+                                        <span className="text-sm text-muted-foreground">Quality Checks</span>
+                                    </div>
+                                    <div className="font-semibold text-foreground">
+                                        {systemStatus?.constraints || 0} active
                                     </div>
                                 </div>
                             </div>
-                            
-                            <p className="text-muted-foreground font-medium leading-relaxed italic">"{activeAgentData.desc}"</p>
-                            
-                            <div className="space-y-3">
-                                <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-foreground">Core Capabilities</h4>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                    {activeAgentData.capabilities.map((cap, i) => (
-                                        <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-secondary/30 border border-border/30 group hover:border-primary/20 transition-all">
-                                            <div className="w-1.5 h-1.5 rounded-full bg-primary/40 group-hover:bg-primary transition-colors" />
-                                            <span className="text-xs font-black text-foreground/80">{cap}</span>
+                        )}
+                    </section>
+
+                    {/* How It Works */}
+                    <section>
+                        <h2 className="text-lg font-semibold text-foreground mb-6">How Report Generation Works</h2>
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                            {processSteps.map((step, idx) => (
+                                <div key={step.step} className="relative">
+                                    <div className="glass-card p-6 h-full">
+                                        <div className={cn(
+                                            "w-12 h-12 rounded-xl flex items-center justify-center text-white mb-4",
+                                            step.color
+                                        )}>
+                                            <step.icon className="w-6 h-6" />
                                         </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="mt-8 pt-6 border-t border-border/30 flex items-center justify-between">
-                            <div className="flex items-center gap-6">
-                                <div className="text-center">
-                                    <div className="text-lg font-black tracking-tighter text-foreground">
-                                        {orchestratorStatus?.euObligations ?? "-"}
+                                        <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">
+                                            Step {step.step}
+                                        </div>
+                                        <h3 className="font-semibold text-foreground mb-2">{step.title}</h3>
+                                        <p className="text-sm text-muted-foreground">{step.description}</p>
                                     </div>
-                                    <div className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">EU Obligations</div>
+                                    {idx < processSteps.length - 1 && (
+                                        <div className="hidden md:block absolute top-1/2 -right-2 transform -translate-y-1/2 z-10">
+                                            <ArrowRight className="w-4 h-4 text-muted-foreground/50" />
+                                        </div>
+                                    )}
                                 </div>
-                                <div className="w-px h-8 bg-border/30" />
-                                <div className="text-center">
-                                    <div className="text-lg font-black tracking-tighter text-foreground">
-                                        {orchestratorStatus?.constraints ?? "-"}
-                                    </div>
-                                    <div className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">Constraints</div>
-                                </div>
-                            </div>
-                            <Link href="/instructions">
-                                <button className="flex items-center gap-2 text-xs font-black text-primary hover:gap-3 transition-all">
-                                    View Documentation <ExternalLink className="w-3 h-3" />
-                                </button>
-                            </Link>
+                            ))}
                         </div>
-                    </div>
-                </div>
+                    </section>
 
-                {/* Decision Tracing Explanation */}
-                <div className="space-y-6">
-                    <div className="glass-card p-6 bg-slate-950 text-slate-50 border-none shadow-2xl relative overflow-hidden group">
-                        <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                            <History className="w-24 h-24" />
-                        </div>
-                        
-                        <div className="relative z-10 space-y-6">
-                            <div className="space-y-1">
-                                <div className="flex items-center gap-2 text-primary font-black tracking-tighter uppercase text-[10px]">
-                                    <Terminal className="w-3 h-3" />
-                                    Immutable Audit Trail
-                                </div>
-                                <h3 className="text-xl font-black tracking-tight italic">Decision Tracing</h3>
+                    {/* Key Features */}
+                    <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="glass-card p-6">
+                            <div className="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-600 mb-4">
+                                <CheckCircle2 className="w-5 h-5" />
                             </div>
-                            
-                            <p className="text-xs text-slate-400 font-medium leading-relaxed">
-                                Every decision made by the agent system is hashed and recorded in a sequential audit trail. This provides 100% transparency for regulatory submissions.
+                            <h3 className="font-semibold text-foreground mb-2">Regulatory Compliant</h3>
+                            <p className="text-sm text-muted-foreground">
+                                Follows MDCG 2022-21 guidelines and EU MDR Article 86 requirements for PSUR content and structure.
                             </p>
-
-                            <div className="space-y-3">
-                                {tracesLoading ? (
-                                    <div className="flex items-center justify-center py-8">
-                                        <Loader2 className="w-5 h-5 animate-spin text-primary" />
-                                    </div>
-                                ) : recentTraces.length > 0 ? (
-                                    recentTraces.map((t, i) => (
-                                        <div key={i} className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-1 hover:bg-white/10 transition-all cursor-default">
-                                            <div className="flex items-center justify-between">
-                                                <span className="text-[8px] font-black text-primary tracking-widest">{t.type}</span>
-                                                <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">{t.decision}</span>
-                                            </div>
-                                            <div className="text-[10px] font-bold text-slate-200 line-clamp-1">{t.summary}</div>
-                                        </div>
-                                    ))
-                                ) : (
-                                    <div className="text-center py-6 text-slate-500 text-xs">
-                                        No recent traces. Run a PSUR workflow to generate decision traces.
-                                    </div>
-                                )}
+                        </div>
+                        <div className="glass-card p-6">
+                            <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-600 mb-4">
+                                <Activity className="w-5 h-5" />
                             </div>
-
-                            <Link href="/traces">
-                                <button className="w-full py-3 rounded-xl bg-primary text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-primary/20 hover:-translate-y-0.5 transition-all active:translate-y-0">
-                                    {activePsurCase ? "View Full Trace Log" : "Go to Decision Traces"}
-                                </button>
-                            </Link>
+                            <h3 className="font-semibold text-foreground mb-2">Full Audit Trail</h3>
+                            <p className="text-sm text-muted-foreground">
+                                Every decision is logged and traceable. Export complete audit documentation for regulatory submissions.
+                            </p>
                         </div>
-                    </div>
-
-                    <div className="glass-card p-6 border-emerald-500/20 bg-emerald-500/[0.02]">
-                        <div className="flex items-center gap-3 mb-4">
-                            <Activity className="w-4 h-4 text-emerald-600" />
-                            <h4 className="text-xs font-black uppercase tracking-widest text-foreground">Kernel Health</h4>
+                        <div className="glass-card p-6">
+                            <div className="w-10 h-10 rounded-lg bg-purple-500/10 flex items-center justify-center text-purple-600 mb-4">
+                                <Clock className="w-5 h-5" />
+                            </div>
+                            <h3 className="font-semibold text-foreground mb-2">Faster Reporting</h3>
+                            <p className="text-sm text-muted-foreground">
+                                Automated narrative generation reduces manual effort while maintaining quality and accuracy.
+                            </p>
                         </div>
-                        <div className="space-y-4">
-                            {statusLoading ? (
-                                <div className="flex items-center justify-center py-4">
-                                    <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
-                                </div>
-                            ) : (
-                                kernelHealth.map((stat, i) => (
-                                    <div key={i} className="flex items-center justify-between text-[10px] font-black">
-                                        <span className="text-muted-foreground uppercase tracking-widest">{stat.label}</span>
-                                        <span className={cn(
-                                            stat.val === "Active" || stat.val === "Verified" || stat.val === "Optimal" || stat.val === "100%" 
-                                                ? "text-emerald-600" 
-                                                : stat.val === "Inactive" || stat.val === "Loading..." 
-                                                    ? "text-amber-500" 
-                                                    : "text-foreground"
-                                        )}>{stat.val}</span>
+                    </section>
+
+                    {/* Recent Activity */}
+                    {recentActivity.length > 0 && (
+                        <section className="glass-card p-6">
+                            <h2 className="text-lg font-semibold text-foreground mb-4">Recent Reports</h2>
+                            <div className="space-y-3">
+                                {recentActivity.map((activity, idx) => (
+                                    <div key={idx} className="flex items-center justify-between p-3 rounded-lg bg-secondary/30">
+                                        <div className="flex items-center gap-3">
+                                            <div className={cn(
+                                                "w-2 h-2 rounded-full",
+                                                activity.status === "success" ? "bg-emerald-500" :
+                                                    activity.status === "error" ? "bg-red-500" : "bg-amber-500"
+                                            )} />
+                                            <span className="text-foreground">{activity.description}</span>
+                                        </div>
+                                        <span className="text-sm text-muted-foreground">
+                                            {new Date(activity.timestamp).toLocaleDateString()}
+                                        </span>
                                     </div>
-                                ))
-                            )}
-                        </div>
-                    </div>
+                                ))}
+                            </div>
+                        </section>
+                    )}
+
+                    {/* Quick Actions */}
+                    <section className="flex justify-center gap-4">
+                        <Link href="/psur">
+                            <button className="px-6 py-3 rounded-xl bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors">
+                                Start New Report
+                            </button>
+                        </Link>
+                        <Link href="/admin">
+                            <button className="px-6 py-3 rounded-xl border border-border text-foreground font-medium hover:bg-muted transition-colors">
+                                Configure Settings
+                            </button>
+                        </Link>
+                    </section>
                 </div>
-            </div>
+            </main>
         </div>
     );
 }

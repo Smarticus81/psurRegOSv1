@@ -72,7 +72,7 @@ const SOTA_EXACT_MATCHES: Record<string, string[]> = {
     "ae_id", "ae_number", "mdr_number", "vigilance_id", "vigilance_number", "report_id", "report_number",
     "incidentid", "eventid", "aeid", "mdrno"
   ],
-  
+
   // Dates - comprehensive coverage (maps to complaintDate/eventDate)
   complaintDate: [
     "date_received", "received_date", "receive_date", "received", "date received", "date_reported",
@@ -92,7 +92,7 @@ const SOTA_EXACT_MATCHES: Record<string, string[]> = {
     "resolution_date", "date_resolved", "date_completed", "final_date", "end_date",
     "dateclosed", "closeddate", "closuredate", "resolveddate"
   ],
-  
+
   // Descriptions and narratives
   description: [
     "description", "complaint_description", "issue_description", "details", "narrative", "summary",
@@ -101,7 +101,7 @@ const SOTA_EXACT_MATCHES: Record<string, string[]> = {
     "complaint_text", "issue_text", "complaint_summary", "notes", "comments", "free_text",
     "freetext", "complaintdesc", "issuedesc", "problemdesc", "eventdesc", "desc"
   ],
-  
+
   // Severity and classification
   severity: [
     "severity", "severity_level", "seriousness", "priority", "criticality", "severity_rating",
@@ -109,7 +109,7 @@ const SOTA_EXACT_MATCHES: Record<string, string[]> = {
     "classification", "severity_classification", "complaint_severity", "incident_severity",
     "severitylevel", "harmcode", "risklevel", "impactlevel", "class"
   ],
-  
+
   // Geographic
   region: [
     "region", "market", "territory", "geography", "location", "area", "zone",
@@ -120,7 +120,7 @@ const SOTA_EXACT_MATCHES: Record<string, string[]> = {
     "country", "country_code", "country_name", "countrycode", "countryname",
     "customer_country", "site_country", "incident_country", "nation", "state"
   ],
-  
+
   // Device identification - maps to deviceCode
   deviceCode: [
     "device_code", "device_id", "device id", "product_id", "product id", "product_code",
@@ -134,7 +134,7 @@ const SOTA_EXACT_MATCHES: Record<string, string[]> = {
     "product_description", "device_description", "article_name", "material_name",
     "devicename", "productname", "itemname", "articlename", "materialname", "trade_name"
   ],
-  
+
   // Patient outcomes - maps to patientOutcome
   patientOutcome: [
     "patient_outcome", "patient_status", "injury", "harm", "patient_harm", "injury_type",
@@ -144,7 +144,7 @@ const SOTA_EXACT_MATCHES: Record<string, string[]> = {
     "consequence", "effect_on_patient", "patient_effect", "patient_involvement",
     "patientinvolvement", "additional_medical_attention"
   ],
-  
+
   // Root cause and investigation - maps to rootCause
   rootCause: [
     "root_cause", "cause", "failure_mode", "reason", "root_cause_analysis", "rca",
@@ -152,7 +152,7 @@ const SOTA_EXACT_MATCHES: Record<string, string[]> = {
     "failure_category", "investigation_findings", "findings", "determination",
     "rootcause", "failuremode", "causecode", "failurecategory", "causation"
   ],
-  
+
   // Actions and resolutions - maps to correctiveAction
   correctiveAction: [
     "corrective_action", "action_taken", "resolution", "fix", "corrective_measure",
@@ -167,7 +167,7 @@ const SOTA_EXACT_MATCHES: Record<string, string[]> = {
     "currentstatus", "complaintstatus", "casestatus", "recordstatus", "workflowstatus",
     "investigation_status", "investigationstatus"
   ],
-  
+
   // Sales/Volume data
   quantity: [
     "quantity", "qty", "count", "units", "volume", "units_sold", "sales_volume",
@@ -185,7 +185,7 @@ const SOTA_EXACT_MATCHES: Record<string, string[]> = {
   periodEnd: [
     "period_end", "periodend", "end_date", "to_date", "through_date"
   ],
-  
+
   // CAPA specific - maps to capaId
   capaId: [
     "capa_id", "capa_number", "capa_no", "capa#", "capa_ref", "capa_reference",
@@ -197,7 +197,7 @@ const SOTA_EXACT_MATCHES: Record<string, string[]> = {
     "verification_result", "capa_effectiveness", "closure_effectiveness",
     "effectivenesscheck", "verificationresult", "capaeffectiveness"
   ],
-  
+
   // FSCA/Recall specific - maps to fscaId  
   fscaId: [
     "fsca_id", "fsca_number", "fsca_no", "recall_id", "recall_number", "recall_no",
@@ -210,7 +210,7 @@ const SOTA_EXACT_MATCHES: Record<string, string[]> = {
     "recall_quantity", "scope", "affected_devices", "impacted_units",
     "affectedunits", "unitsaffected", "affectedqty", "affectedcount", "recallqty"
   ],
-  
+
   // Literature/PMCF - maps to studyId
   studyId: [
     "study_id", "study_number", "protocol_id", "protocol_number", "trial_id",
@@ -229,7 +229,7 @@ const SOTA_EXACT_MATCHES: Record<string, string[]> = {
     "journal", "publication", "source", "publisher", "journal_name",
     "journalname", "pub", "pub_source"
   ],
-  
+
   // IMDRF codes
   imdrf_code: [
     "imdrf_code", "imdrf", "annex_code", "problem_code", "device_problem_code",
@@ -319,63 +319,7 @@ const SEMANTIC_KEYWORDS = SOTA_SEMANTIC_KEYWORDS;
 // SOTA CHAIN-OF-THOUGHT PROMPTS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const SOTA_FIELD_MAPPING_PROMPT = `You are a SOTA field mapping expert for medical device regulatory data.
-
-Your task is to analyze source column names and sample values to determine the correct target field mapping.
-
-## ANALYSIS APPROACH (Chain of Thought):
-1. **Column Name Analysis**: What does the column name suggest? Consider:
-   - Medical device terminology (complaints, incidents, CAPA, FSCA, vigilance)
-   - Regulatory terminology (severity, patient outcome, IMDRF codes)
-   - Common abbreviations (CCR, QMS, AE, MDR, NC)
-   
-2. **Sample Value Analysis**: What do the actual values tell us?
-   - Date patterns: YYYY-MM-DD, MM/DD/YYYY, etc.
-   - ID patterns: alphanumeric codes, sequential numbers
-   - Categorical values: severity levels, status codes
-   - Geographic codes: country codes, region names
-   
-3. **Context Reasoning**: Given this is evidence for a PSUR:
-   - What evidence types commonly have this kind of data?
-   - Which target field makes the most sense semantically?
-   
-4. **Alternative Consideration**: Could this column map to multiple fields?
-   - List alternatives with reasoning
-   - Rank by likelihood
-
-## OUTPUT FORMAT:
-Respond with valid JSON only:
-{
-  "targetField": "field_name or null if truly unmappable",
-  "confidence": 0.0-1.0,
-  "reasoning": "Detailed chain-of-thought explanation",
-  "alternatives": [{"field": "alt_field", "confidence": 0.0-1.0}],
-  "shouldReassign": true/false
-}`;
-
-const SOTA_BATCH_MAPPING_PROMPT = `You are mapping multiple source columns to target evidence fields for medical device regulatory data.
-
-## INSTRUCTIONS:
-1. Analyze ALL columns together to understand the overall data structure
-2. Consider how columns relate to each other (e.g., date columns, ID columns, description columns)
-3. Use medical device domain knowledge:
-   - Complaint IDs often have formats like CCR-XXXX, C12345, QMS00123
-   - Dates may be received_date, incident_date, closed_date (different meanings!)
-   - Severity can be numeric (1-5), Roman (I-V), or text (Low/Medium/High/Critical)
-4. Avoid duplicate mappings - each target can only have one source
-
-## RESPONSE FORMAT:
-{
-  "mappings": [
-    {
-      "sourceColumn": "column_name",
-      "targetField": "target_field or null",
-      "confidence": 0.0-1.0,
-      "reasoning": "Brief explanation"
-    }
-  ],
-  "overallAnalysis": "High-level understanding of the data structure"
-}`;
+// Prompts are now managed via PROMPT_TEMPLATES in llmService.ts
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // FIELD MAPPING AGENT
@@ -442,7 +386,7 @@ export class FieldMappingAgent extends BaseAgent<FieldMappingInput, FieldMapping
           requiresConfirmation: false,
         });
         mappedTargets.add(exactMatch.field);
-        
+
         await this.logTrace("FIELD_MAPPING_RESOLVED", "PASS", "EVIDENCE_ATOM", undefined, {
           sourceColumn: col.name,
           targetField: exactMatch.field,
@@ -470,7 +414,7 @@ export class FieldMappingAgent extends BaseAgent<FieldMappingInput, FieldMapping
           requiresConfirmation: sampleMatch.confidence < 0.85,
         });
         mappedTargets.add(sampleMatch.field);
-        
+
         await this.logTrace("FIELD_MAPPING_RESOLVED", "PASS", "EVIDENCE_ATOM", undefined, {
           sourceColumn: col.name,
           targetField: sampleMatch.field,
@@ -498,7 +442,7 @@ export class FieldMappingAgent extends BaseAgent<FieldMappingInput, FieldMapping
           requiresConfirmation: semanticMatch.confidence < 0.85,
         });
         mappedTargets.add(semanticMatch.field);
-        
+
         await this.logTrace("FIELD_MAPPING_RESOLVED", "PASS", "EVIDENCE_ATOM", undefined, {
           sourceColumn: col.name,
           targetField: semanticMatch.field,
@@ -529,16 +473,16 @@ export class FieldMappingAgent extends BaseAgent<FieldMappingInput, FieldMapping
           if (llmMapping.targetField) {
             mappedTargets.add(llmMapping.targetField);
           }
-          
-          await this.logTrace("FIELD_MAPPING_RESOLVED", 
-            llmMapping.confidence >= 0.7 ? "PASS" : "INFO", 
+
+          await this.logTrace("FIELD_MAPPING_RESOLVED",
+            llmMapping.confidence >= 0.7 ? "PASS" : "INFO",
             "EVIDENCE_ATOM", undefined, {
-              sourceColumn: llmMapping.sourceColumn,
-              targetField: llmMapping.targetField,
-              confidence: llmMapping.confidence,
-              method: "llm_inferred",
-              reasoning: llmMapping.reasoning,
-            });
+            sourceColumn: llmMapping.sourceColumn,
+            targetField: llmMapping.targetField,
+            confidence: llmMapping.confidence,
+            method: "llm_inferred",
+            reasoning: llmMapping.reasoning,
+          });
         }
       }
     }
@@ -599,8 +543,8 @@ export class FieldMappingAgent extends BaseAgent<FieldMappingInput, FieldMapping
       .map(t => t.fieldName);
 
     const overallConfidence = mappings.length > 0
-      ? mappings.filter(m => m.targetField !== null).reduce((sum, m) => sum + m.confidence, 0) / 
-        Math.max(1, mappings.filter(m => m.targetField !== null).length)
+      ? mappings.filter(m => m.targetField !== null).reduce((sum, m) => sum + m.confidence, 0) /
+      Math.max(1, mappings.filter(m => m.targetField !== null).length)
       : 0;
 
     // Generate suggestions
@@ -702,7 +646,7 @@ export class FieldMappingAgent extends BaseAgent<FieldMappingInput, FieldMapping
         if (!sourceCol) continue;
 
         // Get alternatives that aren't already mapped
-        const availableTargets = targetSchema.filter(t => 
+        const availableTargets = targetSchema.filter(t =>
           !mappedTargets.has(t.fieldName) || t.fieldName === mapping.targetField
         );
 
@@ -713,26 +657,15 @@ export class FieldMappingAgent extends BaseAgent<FieldMappingInput, FieldMapping
           alternatives: { field: string; confidence: number }[];
           shouldReassign: boolean;
         }>(
-          SOTA_FIELD_MAPPING_PROMPT,
-          `## CURRENT MAPPING TO EVALUATE AND POTENTIALLY IMPROVE
-
-Source Column: "${sourceCol.name}"
-Sample Values: ${JSON.stringify(sourceCol.sampleValues.slice(0, 8))}
-Current Mapping: "${mapping.targetField}" (confidence: ${mapping.confidence})
-Current Reasoning: ${mapping.reasoning}
-
-## AVAILABLE TARGET FIELDS
-${availableTargets.map(t => `- ${t.fieldName} (${t.displayName}): ${t.description || t.type}${t.required ? " [REQUIRED]" : ""}`).join("\n")}
-
-## CONTEXT
-Evidence Type: ${evidenceType}
-This is a ${evidenceType} file being mapped to the standard evidence schema.
-
-## TASK
-1. Analyze whether the current mapping is correct or if a better mapping exists
-2. Consider domain-specific medical device terminology
-3. If the sample values clearly indicate a different field type, recommend reassignment
-4. Provide your reasoning using chain-of-thought analysis`,
+          PROMPT_TEMPLATES.FIELD_MAPPING_REFINEMENT
+            .replace("{sourceColumn}", sourceCol.name)
+            .replace("{sampleValues}", JSON.stringify(sourceCol.sampleValues.slice(0, 8)))
+            .replace("{targetField}", mapping.targetField || "null")
+            .replace("{confidence}", mapping.confidence.toString())
+            .replace("{reasoning}", mapping.reasoning)
+            .replace("{targetFields}", availableTargets.map(t => `- ${t.fieldName} (${t.displayName}): ${t.description || t.type}${t.required ? " [REQUIRED]" : ""}`).join("\n"))
+            .replace("{evidenceType}", evidenceType),
+          "Analyze the field mapping refinement task.",
           undefined,
           {
             operation: "FIELD_MAPPING_REFINEMENT",
@@ -787,7 +720,7 @@ This is a ${evidenceType} file being mapped to the standard evidence schema.
       if (alreadyMapped.has(target.fieldName)) continue;
 
       const targetNormalized = target.fieldName.toLowerCase();
-      
+
       // Direct match
       if (normalized === targetNormalized) {
         return { field: target.fieldName, confidence: 1.0 };
@@ -821,7 +754,7 @@ This is a ${evidenceType} file being mapped to the standard evidence schema.
 
       const keywords = SEMANTIC_KEYWORDS[target.fieldName] || [];
       let matchCount = 0;
-      
+
       for (const keyword of keywords) {
         if (normalized.includes(keyword)) {
           matchCount++;
@@ -837,7 +770,7 @@ This is a ${evidenceType} file being mapped to the standard evidence schema.
     if (scores.length === 0) return null;
 
     scores.sort((a, b) => b.score - a.score);
-    
+
     return {
       field: scores[0].field,
       confidence: scores[0].score,
@@ -870,17 +803,15 @@ This is a ${evidenceType} file being mapped to the standard evidence schema.
           reasoning: string;
           alternatives: { field: string; confidence: number }[];
         }>(
-          SOTA_FIELD_MAPPING_PROMPT,
-          `## SOURCE COLUMN TO MAP
-Column Name: "${col.name}"
-Sample Values: ${JSON.stringify(col.sampleValues.slice(0, 8))}
-
-## AVAILABLE TARGET FIELDS
-${availableTargets.map(t => `- ${t.fieldName} (${t.displayName}): ${t.description || t.type}${t.required ? " [REQUIRED]" : ""}`).join("\n")}
-
-## CONTEXT
-Evidence Type: ${evidenceType}
-This is data from a ${evidenceType} source being mapped to the standard evidence schema for PSUR generation.`,
+          PROMPT_TEMPLATES.FIELD_MAPPING_REFINEMENT
+            .replace("{sourceColumn}", col.name)
+            .replace("{sampleValues}", JSON.stringify(col.sampleValues.slice(0, 8)))
+            .replace("{targetField}", "null")
+            .replace("{confidence}", "0")
+            .replace("{reasoning}", "None")
+            .replace("{targetFields}", availableTargets.map(t => `- ${t.fieldName} (${t.displayName}): ${t.description || t.type}${t.required ? " [REQUIRED]" : ""}`).join("\n"))
+            .replace("{evidenceType}", evidenceType),
+          "Perform initial field mapping inference.",
           undefined,
           {
             operation: "FIELD_MAPPING_INFERENCE",
@@ -922,11 +853,11 @@ This is data from a ${evidenceType} source being mapped to the standard evidence
     evidenceType: string
   ): Promise<FieldMapping[]> {
     try {
-      const columnsDescription = columns.map(col => 
+      const columnsDescription = columns.map(col =>
         `- "${col.name}": samples = ${JSON.stringify(col.sampleValues.slice(0, 5))}`
       ).join("\n");
 
-      const targetsDescription = availableTargets.map(t => 
+      const targetsDescription = availableTargets.map(t =>
         `- ${t.fieldName} (${t.displayName}): ${t.description || t.type}${t.required ? " [REQUIRED]" : ""}`
       ).join("\n");
 
@@ -939,18 +870,11 @@ This is data from a ${evidenceType} source being mapped to the standard evidence
         }>;
         overallAnalysis: string;
       }>(
-        SOTA_BATCH_MAPPING_PROMPT,
-        `## SOURCE COLUMNS TO MAP
-${columnsDescription}
-
-## AVAILABLE TARGET FIELDS
-${targetsDescription}
-
-## CONTEXT
-Evidence Type: ${evidenceType}
-This is data from a ${evidenceType} source file being mapped to the standard evidence schema.
-
-Analyze all columns together to understand the data structure, then provide mappings for each.`,
+        PROMPT_TEMPLATES.BATCH_FIELD_MAPPING
+          .replace("{columnsDescription}", columnsDescription)
+          .replace("{targetsDescription}", targetsDescription)
+          .replace("{evidenceType}", evidenceType),
+        "Perform batch field mapping inference.",
         undefined,
         {
           operation: "BATCH_FIELD_MAPPING_INFERENCE",
@@ -1014,7 +938,7 @@ Analyze all columns together to understand the data structure, then provide mapp
 
     } catch (error: any) {
       this.addWarning(`Batch LLM mapping failed, falling back to individual mapping: ${error.message}`);
-      
+
       // Fall back to individual mapping
       const results: FieldMapping[] = [];
       for (const col of columns) {

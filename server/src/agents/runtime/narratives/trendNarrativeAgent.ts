@@ -6,62 +6,12 @@
  */
 
 import { BaseNarrativeAgent, NarrativeInput } from "./baseNarrativeAgent";
+import { PROMPT_TEMPLATES } from "../../llmService";
 
 export class TrendNarrativeAgent extends BaseNarrativeAgent {
   protected readonly sectionType = "TREND";
-  
-  protected readonly systemPrompt = `You are an expert medical device trend analyst specializing in Article 88 trend reporting under EU MDR.
 
-## YOUR ROLE
-Generate comprehensive trend analysis narratives that identify statistically significant changes in safety data and provide signal detection conclusions with full regulatory rationale.
-
-## REGULATORY REQUIREMENTS (EU MDR Article 88)
-Trend reporting MUST include:
-1. Methodology for trend analysis
-2. Baseline rates and current rates
-3. Thresholds used for signal detection
-4. Statistical methods applied
-5. Conclusions on significant increases
-6. Comparison with state of the art
-
-## STATISTICAL TERMINOLOGY
-- Use appropriate statistical language (rates, ratios, confidence intervals)
-- Define thresholds clearly (e.g., "2x baseline" or "p<0.05")
-- Distinguish between statistical and clinical significance
-- Reference MEDDEV 2.12 or MDCG guidance on signal management
-
-## WRITING STANDARDS
-- Be precise about statistical methods
-- Include specific numbers and calculations
-- Clearly state whether signals were detected
-- Document rationale for threshold selection
-- Write clean, professional prose without markdown formatting symbols
-
-## CRITICAL: DO NOT USE CITATIONS IN OUTPUT
-- Do NOT include [ATOM-xxx] or any citation markers in the narrative text
-- Evidence references will be added automatically from metadata
-- Write clean, readable prose without inline citations
-
-## STRUCTURE:
-1. Trend methodology overview
-2. Metrics analyzed (complaint rate, incident rate, etc.)
-3. Baseline establishment (source and period)
-4. Current period results
-5. Statistical comparison
-6. Signal detection conclusion
-7. Actions taken or planned (if signals detected)
-
-## OUTPUT FORMAT
-Write the narrative section content WITHOUT any citation markers. After the narrative, provide a JSON block:
-\`\`\`json
-{
-  "citedAtoms": ["actual-atom-id-from-evidence", ...],
-  "uncitedAtoms": [],
-  "dataGaps": ["description of missing data", ...],
-  "confidence": 0.0-1.0,
-  "reasoning": "explanation of content decisions"
-}
-\`\`\``;
+  protected readonly systemPrompt = PROMPT_TEMPLATES.TREND_NARRATIVE_SYSTEM;
 
   constructor() {
     super(
@@ -80,8 +30,8 @@ Write the narrative section content WITHOUT any citation markers. After the narr
     }
 
     // Need historical data for comparison
-    const hasHistorical = input.evidenceAtoms.some(a => 
-      a.normalizedData.baseline_rate || 
+    const hasHistorical = input.evidenceAtoms.some(a =>
+      a.normalizedData.baseline_rate ||
       a.normalizedData.previous_rate ||
       a.normalizedData.historical
     );
@@ -90,8 +40,8 @@ Write the narrative section content WITHOUT any citation markers. After the narr
     }
 
     // Need current period data
-    const hasCurrent = input.evidenceAtoms.some(a => 
-      a.evidenceType.includes("complaint") || 
+    const hasCurrent = input.evidenceAtoms.some(a =>
+      a.evidenceType.includes("complaint") ||
       a.evidenceType.includes("sales")
     );
     if (!hasCurrent) {
@@ -107,13 +57,13 @@ Write the narrative section content WITHOUT any citation markers. After the narr
     evidenceRecords: string
   ): string {
     // Extract trend-specific data
-    const trendAtoms = input.evidenceAtoms.filter(a => 
+    const trendAtoms = input.evidenceAtoms.filter(a =>
       a.evidenceType === "trend_analysis" || a.evidenceType === "signal_log"
     );
-    const complaintAtoms = input.evidenceAtoms.filter(a => 
+    const complaintAtoms = input.evidenceAtoms.filter(a =>
       a.evidenceType.includes("complaint")
     );
-    const salesAtoms = input.evidenceAtoms.filter(a => 
+    const salesAtoms = input.evidenceAtoms.filter(a =>
       a.evidenceType.includes("sales")
     );
 
@@ -122,12 +72,12 @@ Write the narrative section content WITHOUT any citation markers. After the narr
       return sum + qty;
     }, 0);
 
-    const currentRate = totalSales > 0 
+    const currentRate = totalSales > 0
       ? (complaintAtoms.length / totalSales) * 1000
       : 0;
 
     // Check for signals
-    const signalsDetected = trendAtoms.some(a => 
+    const signalsDetected = trendAtoms.some(a =>
       a.normalizedData.signal_detected === true ||
       a.normalizedData.significant === true
     );

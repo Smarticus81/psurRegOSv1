@@ -45,6 +45,7 @@ export {
 // Ingestion Agents
 export { FieldMappingAgent, FieldMappingInput, FieldMappingOutput, FieldMapping } from "./ingestion/fieldMappingAgent";
 export { EvidenceExtractionAgent, ExtractionInput, ExtractionOutput, ExtractedRecord } from "./ingestion/evidenceExtractionAgent";
+export { DocumentAnalyzerAgent, analyzeDocument, quickDetectEvidenceTypes, DocumentAnalysisInput, DocumentAnalysisOutput, DetectedEvidenceType } from "./ingestion/documentAnalyzerAgent";
 
 // Runtime Agents
 export { NarrativeWriterAgent, NarrativeInput, NarrativeOutput } from "./runtime/narrativeWriterAgent";

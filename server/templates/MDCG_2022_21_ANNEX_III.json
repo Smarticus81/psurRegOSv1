@@ -1,0 +1,222 @@
+{
+    "template_id": "MDCG_2022_21_ANNEX_III",
+    "name": "MDCG 2022-21 Annex III — PSUR for Legacy Devices (MDD/AIMDD)",
+    "version": "1.0.0",
+    "jurisdiction_scope": [
+        "EU_MDR"
+    ],
+    "normative_basis": [
+        "EU.MDR.2017/745.ART120",
+        "MDCG.2022-21.ANNEX_III"
+    ],
+    "mandatory_obligation_ids": [
+        "ANNEX_III_1_PRODUCT_DESC",
+        "ANNEX_III_2_SALES_EXPOSURE",
+        "ANNEX_III_3_COMPLAINTS",
+        "ANNEX_III_4_VIGILANCE",
+        "ANNEX_III_5_FSCA",
+        "ANNEX_III_6_PMCF",
+        "ANNEX_III_7_BENEFIT_RISK",
+        "ANNEX_III_8_CONCLUSIONS"
+    ],
+    "defaults": {
+        "require_traceability": true,
+        "require_method_statement": true,
+        "require_claimed_obligations": true,
+        "min_method_chars": 10,
+        "min_evidence_atoms": 1
+    },
+    "slots": [
+        {
+            "slot_id": "MDCG.ANNEXIII.COVER",
+            "title": "PSUR Cover Page (Legacy)",
+            "section_path": "Cover",
+            "slot_kind": "ADMIN",
+            "required": true,
+            "evidence_requirements": {
+                "required_types": [
+                    "device_registry_record",
+                    "manufacturer_profile"
+                ],
+                "min_atoms": 1,
+                "allow_empty_with_justification": false
+            },
+            "output_requirements": {
+                "renderer": "md",
+                "render_as": "cover_page"
+            }
+        },
+        {
+            "slot_id": "MDCG.ANNEXIII.1_DESC",
+            "title": "1. Product description and intended purpose",
+            "section_path": "1. Description",
+            "slot_kind": "NARRATIVE",
+            "required": true,
+            "evidence_requirements": {
+                "required_types": [
+                    "device_registry_record",
+                    "ifu_extract"
+                ],
+                "min_atoms": 1,
+                "allow_empty_with_justification": false
+            },
+            "output_requirements": {
+                "renderer": "md",
+                "render_as": "narrative"
+            }
+        },
+        {
+            "slot_id": "MDCG.ANNEXIII.2_SALES",
+            "title": "2. Sales volume and population exposure",
+            "section_path": "2. Sales & Exposure",
+            "slot_kind": "NARRATIVE",
+            "required": true,
+            "evidence_requirements": {
+                "required_types": [
+                    "sales_volume"
+                ],
+                "min_atoms": 1,
+                "allow_empty_with_justification": false
+            },
+            "output_requirements": {
+                "renderer": "md",
+                "render_as": "narrative"
+            }
+        },
+        {
+            "slot_id": "MDCG.ANNEXIII.3_COMPLAINTS",
+            "title": "3. Complaints",
+            "section_path": "3. Complaints",
+            "slot_kind": "NARRATIVE",
+            "required": true,
+            "evidence_requirements": {
+                "required_types": [
+                    "complaint_summary",
+                    "complaint_record"
+                ],
+                "min_atoms": 1,
+                "allow_empty_with_justification": true
+            },
+            "output_requirements": {
+                "renderer": "md",
+                "render_as": "narrative"
+            }
+        },
+        {
+            "slot_id": "MDCG.ANNEXIII.4_VIGILANCE",
+            "title": "4. Vigilance reporting",
+            "section_path": "4. Vigilance",
+            "slot_kind": "NARRATIVE",
+            "required": true,
+            "evidence_requirements": {
+                "required_types": [
+                    "serious_incident_record",
+                    "vigilance_report"
+                ],
+                "min_atoms": 0,
+                "allow_empty_with_justification": true
+            },
+            "output_requirements": {
+                "renderer": "md",
+                "render_as": "narrative"
+            }
+        },
+        {
+            "slot_id": "MDCG.ANNEXIII.5_FSCA",
+            "title": "5. Field Safety Corrective Actions (FSCA)",
+            "section_path": "5. FSCA",
+            "slot_kind": "NARRATIVE",
+            "required": true,
+            "evidence_requirements": {
+                "required_types": [
+                    "fsca_record"
+                ],
+                "min_atoms": 0,
+                "allow_empty_with_justification": true
+            },
+            "output_requirements": {
+                "renderer": "md",
+                "render_as": "narrative"
+            }
+        },
+        {
+            "slot_id": "MDCG.ANNEXIII.6_PMCF",
+            "title": "6. Summary of findings from PMCF",
+            "section_path": "6. PMCF",
+            "slot_kind": "NARRATIVE",
+            "required": true,
+            "evidence_requirements": {
+                "required_types": [
+                    "pmcf_result"
+                ],
+                "min_atoms": 0,
+                "allow_empty_with_justification": true
+            },
+            "output_requirements": {
+                "renderer": "md",
+                "render_as": "narrative"
+            }
+        },
+        {
+            "slot_id": "MDCG.ANNEXIII.7_BENEFIT_RISK",
+            "title": "7. Benefit-risk analysis",
+            "section_path": "7. Benefit-Risk",
+            "slot_kind": "NARRATIVE",
+            "required": true,
+            "evidence_requirements": {
+                "required_types": [
+                    "risk_analysis",
+                    "benefit_risk_assessment"
+                ],
+                "min_atoms": 1,
+                "allow_empty_with_justification": false
+            },
+            "output_requirements": {
+                "renderer": "md",
+                "render_as": "narrative"
+            }
+        },
+        {
+            "slot_id": "MDCG.ANNEXIII.8_CONCLUSIONS",
+            "title": "8. Conclusions",
+            "section_path": "8. Conclusions",
+            "slot_kind": "NARRATIVE",
+            "required": true,
+            "evidence_requirements": {
+                "required_types": [],
+                "min_atoms": 0,
+                "allow_empty_with_justification": true
+            },
+            "output_requirements": {
+                "renderer": "md",
+                "render_as": "narrative"
+            }
+        }
+    ],
+    "mapping": {
+        "MDCG.ANNEXIII.1_DESC": [
+            "ANNEX_III_1_PRODUCT_DESC"
+        ],
+        "MDCG.ANNEXIII.2_SALES": [
+            "ANNEX_III_2_SALES_EXPOSURE"
+        ],
+        "MDCG.ANNEXIII.3_COMPLAINTS": [
+            "ANNEX_III_3_COMPLAINTS"
+        ],
+        "MDCG.ANNEXIII.4_VIGILANCE": [
+            "ANNEX_III_4_VIGILANCE"
+        ],
+        "MDCG.ANNEXIII.5_FSCA": [
+            "ANNEX_III_5_FSCA"
+        ],
+        "MDCG.ANNEXIII.6_PMCF": [
+            "ANNEX_III_6_PMCF"
+        ],
+        "MDCG.ANNEXIII.7_BENEFIT_RISK": [
+            "ANNEX_III_7_BENEFIT_RISK"
+        ],
+        "MDCG.ANNEXIII.8_CONCLUSIONS": [
+            "ANNEX_III_8_CONCLUSIONS"
+        ]
+    }
+}

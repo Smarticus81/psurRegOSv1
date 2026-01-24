@@ -6,67 +6,12 @@
  */
 
 import { BaseNarrativeAgent, NarrativeInput } from "./baseNarrativeAgent";
+import { PROMPT_TEMPLATES } from "../../llmService";
 
 export class SafetyNarrativeAgent extends BaseNarrativeAgent {
   protected readonly sectionType = "SAFETY";
-  
-  protected readonly systemPrompt = `You are an expert medical device safety analyst specializing in vigilance reporting and complaint analysis under EU MDR.
 
-## YOUR ROLE
-Generate comprehensive safety narratives analyzing serious incidents, complaints, and adverse events with appropriate regulatory terminology and IMDRF coding references.
-
-## REGULATORY REQUIREMENTS (EU MDR Article 86.1, Article 87)
-This section MUST include:
-1. Summary of all serious incidents (with IMDRF coding where available)
-2. Analysis of complaints by type, severity, and region
-3. Patient outcomes and clinical consequences
-4. Root cause analysis summary
-5. Trend comparison with previous periods
-
-## SAFETY CLASSIFICATION (EU MDR)
-- Serious Incident: Death, serious deterioration in health
-- Non-serious: All other complaints/incidents
-- Use IMDRF Annex A-D codes where applicable
-
-## WRITING STANDARDS
-- Use precise safety terminology
-- Be explicit about patient outcomes
-- Include specific counts and rates per 1000 units
-- Write clear, professional prose without markdown formatting symbols
-- Do NOT minimize or editorialize safety data
-
-## STRUCTURE FOR SERIOUS INCIDENTS:
-1. Total count and classification
-2. IMDRF code breakdown (if available)
-3. Patient outcomes summary
-4. Regional distribution
-5. Root cause summary
-6. Regulatory reporting status
-
-## STRUCTURE FOR COMPLAINTS:
-1. Total complaints vs previous period
-2. Breakdown by severity/seriousness
-3. Top complaint categories
-4. Rate per 1000 units by region
-5. Investigation outcomes
-
-## CRITICAL: DO NOT USE CITATIONS IN OUTPUT
-- Do NOT include [ATOM-xxx] or any citation markers in the narrative text
-- Evidence references will be added automatically from metadata
-- Write clean, readable prose without inline citations
-- Focus on content quality and regulatory compliance
-
-## OUTPUT FORMAT
-Write the narrative section content WITHOUT any citation markers. After the narrative, provide a JSON block with the actual atom IDs used:
-\`\`\`json
-{
-  "citedAtoms": ["actual-atom-id-from-evidence", ...],
-  "uncitedAtoms": [],
-  "dataGaps": ["description of missing data", ...],
-  "confidence": 0.0-1.0,
-  "reasoning": "explanation of content decisions"
-}
-\`\`\``;
+  protected readonly systemPrompt = PROMPT_TEMPLATES.SAFETY_NARRATIVE_SYSTEM;
 
   constructor() {
     super(
@@ -89,8 +34,8 @@ Write the narrative section content WITHOUT any citation markers. After the narr
     }
 
     // Check for IMDRF coding
-    const hasIMDRF = input.evidenceAtoms.some(a => 
-      a.normalizedData.imdrf_code || 
+    const hasIMDRF = input.evidenceAtoms.some(a =>
+      a.normalizedData.imdrf_code ||
       a.normalizedData.event_code ||
       a.normalizedData.problem_code
     );
@@ -99,7 +44,7 @@ Write the narrative section content WITHOUT any citation markers. After the narr
     }
 
     // Check for sales data for rate calculation
-    const hasSales = input.evidenceAtoms.some(a => 
+    const hasSales = input.evidenceAtoms.some(a =>
       a.evidenceType.includes("sales")
     );
     if (!hasSales) {
@@ -115,13 +60,13 @@ Write the narrative section content WITHOUT any citation markers. After the narr
     evidenceRecords: string
   ): string {
     // Calculate safety statistics
-    const complaintAtoms = input.evidenceAtoms.filter(a => 
+    const complaintAtoms = input.evidenceAtoms.filter(a =>
       a.evidenceType.includes("complaint")
     );
-    const incidentAtoms = input.evidenceAtoms.filter(a => 
+    const incidentAtoms = input.evidenceAtoms.filter(a =>
       a.evidenceType.includes("incident") || a.evidenceType.includes("vigilance")
     );
-    const salesAtoms = input.evidenceAtoms.filter(a => 
+    const salesAtoms = input.evidenceAtoms.filter(a =>
       a.evidenceType.includes("sales")
     );
 
@@ -142,7 +87,7 @@ Write the narrative section content WITHOUT any citation markers. After the narr
       .map(a => a.normalizedData.patient_outcome || a.normalizedData.patientOutcome)
       .filter(Boolean);
 
-    const complaintRate = totalSales > 0 
+    const complaintRate = totalSales > 0
       ? ((complaintAtoms.length / totalSales) * 1000).toFixed(2)
       : "N/A";
 

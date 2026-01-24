@@ -6,55 +6,14 @@
  */
 
 import { BaseNarrativeAgent, NarrativeInput } from "./baseNarrativeAgent";
+import { PROMPT_TEMPLATES } from "../../llmService";
 
 export class ExecSummaryNarrativeAgent extends BaseNarrativeAgent {
   protected readonly sectionType = "EXEC_SUMMARY";
-  
-  protected readonly systemPrompt = `You are an expert medical device regulatory writer specializing in PSUR Executive Summaries under EU MDR.
 
-## YOUR ROLE
-Generate a comprehensive Executive Summary that synthesizes ALL post-market surveillance data into actionable conclusions for regulatory review.
-
-## REGULATORY REQUIREMENTS (EU MDR Article 86)
-The Executive Summary MUST include:
-1. Overall conclusions on safety and performance
-2. Key PMS findings during the reporting period
-3. Summary of benefit-risk assessment
-4. Any actions taken or recommended
-5. Changes since previous PSUR
-
-## WRITING STANDARDS
-- Use formal regulatory language appropriate for Notified Body submission
-- Be precise and factual - no speculation
-- Include specific numbers, dates, and statistics
-- State conclusions with confidence levels
-- Identify any data gaps explicitly
-- Write clear, professional prose without markdown formatting symbols
-
-## STRUCTURE
-1. Opening statement (device, period, scope)
-2. Key safety findings (incidents, complaints, trends)
-3. Performance summary (PMCF, literature)
-4. Benefit-risk conclusion
-5. Recommended actions (if any)
-
-## CRITICAL: DO NOT USE CITATIONS IN OUTPUT
-- Do NOT include [ATOM-xxx] or any citation markers in the narrative text
-- Evidence references will be added automatically from metadata
-- Write clean, readable prose without inline citations
-- Focus on content quality and regulatory compliance
-
-## OUTPUT FORMAT
-Write the narrative section content WITHOUT any citation markers. After the narrative, provide a JSON block with the actual atom IDs used:
-\`\`\`json
-{
-  "citedAtoms": ["actual-atom-id-from-evidence", ...],
-  "uncitedAtoms": [],
-  "dataGaps": ["description of missing data", ...],
-  "confidence": 0.0-1.0,
-  "reasoning": "explanation of content decisions"
-}
-\`\`\``;
+  protected get systemPrompt(): string {
+    return PROMPT_TEMPLATES.EXEC_SUMMARY_SYSTEM;
+  }
 
   constructor() {
     super(
@@ -94,16 +53,16 @@ Write the narrative section content WITHOUT any citation markers. After the narr
     evidenceRecords: string
   ): string {
     // Calculate key statistics for exec summary
-    const complaintAtoms = input.evidenceAtoms.filter(a => 
+    const complaintAtoms = input.evidenceAtoms.filter(a =>
       a.evidenceType.includes("complaint")
     );
-    const incidentAtoms = input.evidenceAtoms.filter(a => 
+    const incidentAtoms = input.evidenceAtoms.filter(a =>
       a.evidenceType.includes("incident") || a.evidenceType.includes("vigilance")
     );
-    const salesAtoms = input.evidenceAtoms.filter(a => 
+    const salesAtoms = input.evidenceAtoms.filter(a =>
       a.evidenceType.includes("sales")
     );
-    const fscaAtoms = input.evidenceAtoms.filter(a => 
+    const fscaAtoms = input.evidenceAtoms.filter(a =>
       a.evidenceType.includes("fsca") || a.evidenceType.includes("recall")
     );
 

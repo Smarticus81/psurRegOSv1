@@ -64,23 +64,23 @@ async function main() {
     console.log(`    ✓ Company ID: ${companyId}`);
 
     // ─────────────────────────────────────────────
-    // 3. DEFAULT DEVICE
+    // 3. SAMPLE DEVICE (can be modified or deleted)
     // ─────────────────────────────────────────────
-    console.log("  → Creating default device...");
+    console.log("  → Creating sample device...");
     const [device] = await db
         .insert(devices)
         .values({
             companyId: companyId,
-            deviceName: "Janice Scalpel 3000",
-            deviceCode: "JS3000X",
+            deviceName: "Sample Medical Device",
+            deviceCode: "SAMPLE-001",
             riskClass: "Class IIa",
             jurisdictions: ["EU_MDR", "UK_MDR"],
-            gmdnCode: "35211",
-            imdrfClassification: "surgical-cutting"
+            gmdnCode: "00000",
+            imdrfClassification: "general-medical"
         })
         .onConflictDoNothing()
         .returning();
-    console.log(`    ✓ Device: ${device?.deviceName ?? "already exists"}`);
+    console.log(`    ✓ Device: ${device?.deviceName ?? "already exists"} (sample - edit or delete in Admin > Device Registry)`);
 
     // ─────────────────────────────────────────────
     // 4. GRKB OBLIGATIONS – EU MDR PSUR (Article 86)

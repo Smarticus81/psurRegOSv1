@@ -325,10 +325,10 @@ export default function Instructions() {
       <div className="max-w-5xl mx-auto space-y-12 py-8">
         <div className="text-center space-y-3">
           <h1 className="text-3xl font-semibold tracking-tight text-foreground">
-            Documentation
+            Data Guide
           </h1>
           <p className="text-muted-foreground max-w-lg mx-auto">
-            Learn how to prepare evidence files and understand the data requirements for PSUR generation.
+            Learn how to prepare your surveillance data files for PSUR generation.
           </p>
         </div>
 
@@ -336,30 +336,30 @@ export default function Instructions() {
           <div className="flex justify-center">
             <TabsList className="bg-secondary/50 p-1 rounded-xl border border-border">
               <TabsTrigger value="overview" className="rounded-lg px-6 py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm font-medium text-sm transition-all">Getting Started</TabsTrigger>
-              <TabsTrigger value="evidence-types" className="rounded-lg px-6 py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm font-medium text-sm transition-all">Evidence Types</TabsTrigger>
+              <TabsTrigger value="evidence-types" className="rounded-lg px-6 py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm font-medium text-sm transition-all">Data Categories</TabsTrigger>
               <TabsTrigger value="troubleshooting" className="rounded-lg px-6 py-2 data-[state=active]:bg-background data-[state=active]:shadow-sm font-medium text-sm transition-all">Troubleshooting</TabsTrigger>
             </TabsList>
           </div>
 
           <TabsContent value="overview" className="space-y-8 mt-0 focus-visible:outline-none">
-            <div className="glass-card p-10 space-y-10 shadow-2xl">
+            <div className="glass-card p-10 space-y-10">
               <div className="space-y-2">
-                <h3 className="text-2xl font-black tracking-tighter text-foreground">Operational Sequence</h3>
-                <p className="text-muted-foreground font-medium italic">Standard procedure for initializing reporting cycles.</p>
+                <h3 className="text-2xl font-bold tracking-tight text-foreground">How to Prepare Your Data</h3>
+                <p className="text-muted-foreground">Follow these steps to prepare your surveillance data for PSUR generation.</p>
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
                 {[
-                  { step: "01", title: "Artifact Preparation", desc: "Export intelligence from quality management systems into high-fidelity CSV or Excel formats. Ensure structural integrity of all metadata." },
-                  { step: "02", title: "Draft Orchestration", desc: "Initialize a new PSUR instance. Select framework templates (MDR/UK MDR) and define the intelligence period." },
-                  { step: "03", title: "Neural Ingestion", desc: "Deploy evidence files via the ingestion engine. Our models will automatically extract and map compliance atoms." },
-                  { step: "04", title: "Gap Verification", desc: "Audit extraction results against the compliance matrix. Certify all required intelligence categories." }
+                  { step: "01", title: "Export Your Data", desc: "Export data from your quality management system (QMS) into CSV or Excel format. Include all required columns with proper headers." },
+                  { step: "02", title: "Create Report Draft", desc: "Start a new PSUR report. Select your device, regulatory template (EU MDR / UK MDR), and define the reporting period." },
+                  { step: "03", title: "Upload Data Files", desc: "Upload your prepared files. The system will automatically recognize columns and map them to the appropriate data categories." },
+                  { step: "04", title: "Verify Coverage", desc: "Review the data completeness checklist. Ensure all required categories are covered before generating the document." }
                 ].map((s, i) => (
                   <div key={i} className="flex gap-6 group hover:-translate-y-1 transition-transform duration-500">
-                    <div className="flex-shrink-0 w-14 h-14 rounded-2xl bg-secondary flex items-center justify-center text-xl font-black text-primary/40 shadow-inner group-hover:bg-primary group-hover:text-white transition-all duration-500">{s.step}</div>
+                    <div className="flex-shrink-0 w-14 h-14 rounded-2xl bg-secondary flex items-center justify-center text-xl font-bold text-primary/40 shadow-inner group-hover:bg-primary group-hover:text-white transition-all duration-500">{s.step}</div>
                     <div className="space-y-2">
-                      <h4 className="text-lg font-black tracking-tight text-foreground">{s.title}</h4>
-                      <p className="text-sm text-muted-foreground font-medium leading-relaxed">{s.desc}</p>
+                      <h4 className="text-lg font-semibold text-foreground">{s.title}</h4>
+                      <p className="text-sm text-muted-foreground leading-relaxed">{s.desc}</p>
                     </div>
                   </div>
                 ))}
@@ -370,42 +370,42 @@ export default function Instructions() {
               <div className="glass-card p-8 space-y-6">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-600 shadow-sm"><FileSpreadsheet className="h-5 w-5" /></div>
-                  <h3 className="text-xl font-black tracking-tight text-foreground uppercase tracking-widest">Supported Architectures</h3>
+                  <h3 className="text-lg font-semibold text-foreground">Supported File Formats</h3>
                 </div>
                 <div className="space-y-4">
                   <div className="p-5 rounded-2xl bg-white/50 border border-border/50 space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="font-black text-xs uppercase tracking-widest text-foreground">CSV Protocol</span>
-                      <span className="ios-pill bg-emerald-500 text-white text-[9px] font-black border-none">OPTIMIZED</span>
+                      <span className="font-semibold text-sm text-foreground">CSV Files</span>
+                      <span className="ios-pill bg-emerald-500 text-white text-[9px] font-bold border-none">RECOMMENDED</span>
                     </div>
-                    <p className="text-xs text-muted-foreground font-medium leading-relaxed">UTF-8 encoding required. First row must contain valid semantic headers. Quotes mandatory for complex values.</p>
+                    <p className="text-xs text-muted-foreground leading-relaxed">Use UTF-8 encoding. First row should be column headers. Wrap text with commas in quotes.</p>
                   </div>
                   <div className="p-5 rounded-2xl bg-white/50 border border-border/50 space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="font-black text-xs uppercase tracking-widest text-foreground">XLSX Engine</span>
-                      <span className="ios-pill bg-blue-500 text-white text-[9px] font-black border-none">COMPATIBLE</span>
+                      <span className="font-semibold text-sm text-foreground">Excel Files (.xlsx)</span>
+                      <span className="ios-pill bg-blue-500 text-white text-[9px] font-bold border-none">SUPPORTED</span>
                     </div>
-                    <p className="text-xs text-muted-foreground font-medium leading-relaxed">Primary workbook ingestion. Auto-detection of semantic headers. Date columns verified against ISO protocols.</p>
+                    <p className="text-xs text-muted-foreground leading-relaxed">Data is read from the first sheet. Column headers should be in the first row.</p>
                   </div>
                 </div>
               </div>
 
-              <div className="glass-card p-8 space-y-6 bg-amber-500/[0.02] border-amber-500/20 shadow-xl shadow-amber-500/5">
+              <div className="glass-card p-8 space-y-6 bg-amber-500/[0.02] border-amber-500/20 shadow-amber-500/5">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-600 shadow-sm"><AlertTriangle className="h-5 w-5" /></div>
-                  <h3 className="text-xl font-black tracking-tight text-foreground uppercase tracking-widest">Compliance Alerts</h3>
+                  <h3 className="text-lg font-semibold text-foreground">Important Notes</h3>
                 </div>
                 <ul className="space-y-4">
                   {[
-                    { t: "DEVICE SYNCHRONIZATION", d: "Device codes must match the core registry exactly. Draft-sensitive verification in effect." },
-                    { t: "TEMPORAL PROTOCOLS", d: "All dates must adhere to ISO-8601 (YYYY-MM-DD). Non-standard formats trigger extraction bypass." },
-                    { t: "STRUCTURAL INTEGRITY", d: "Empty rows or placeholder records (N/A, null) are automatically filtered from intelligence atoms." }
+                    { t: "Device Codes", d: "Device codes in your data must match exactly with your registered device code." },
+                    { t: "Date Format", d: "Use ISO format for dates: YYYY-MM-DD (e.g., 2024-06-15). Other formats may not be recognized." },
+                    { t: "Empty Rows", d: "Empty rows and placeholder values (N/A, null, -) are automatically skipped during processing." }
                   ].map((note, i) => (
                     <li key={i} className="flex gap-4">
                       <div className="mt-1 w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" />
                       <div className="space-y-1">
-                        <div className="text-[10px] font-black text-amber-700 tracking-widest">{note.t}</div>
-                        <p className="text-xs text-amber-900/70 font-medium leading-relaxed">{note.d}</p>
+                        <div className="text-xs font-semibold text-amber-700">{note.t}</div>
+                        <p className="text-xs text-amber-900/70 leading-relaxed">{note.d}</p>
                       </div>
                     </li>
                   ))}
@@ -415,16 +415,16 @@ export default function Instructions() {
           </TabsContent>
 
           <TabsContent value="evidence-types" className="mt-0 focus-visible:outline-none">
-            <div className="glass-card p-10 space-y-10 shadow-2xl">
+            <div className="glass-card p-10 space-y-10">
               <div className="space-y-2 text-center">
-                <h3 className="text-3xl font-black tracking-tighter text-foreground italic">Intelligence Dictionary</h3>
-                <p className="text-lg text-muted-foreground font-medium">Canonical specification for all synchronized evidence types.</p>
+                <h3 className="text-2xl font-bold text-foreground">Data Categories Reference</h3>
+                <p className="text-muted-foreground">Detailed specifications for each type of surveillance data.</p>
               </div>
               
               <Accordion type="single" collapsible className="w-full space-y-4">
                 {EVIDENCE_EXAMPLES.map((example) => (
                   <AccordionItem key={example.type} value={example.type} className="border-none">
-                    <AccordionTrigger className="glass-card px-8 py-6 hover:no-underline hover:bg-white transition-all group data-[state=open]:bg-white data-[state=open]:shadow-xl border border-border/50">
+                    <AccordionTrigger className="glass-card px-8 py-6 hover:no-underline hover:bg-white transition-all group data-[state=open]:bg-white border border-border/50">
                       <div className="flex items-center gap-6">
                         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-secondary group-hover:bg-primary group-hover:text-white transition-all duration-500 shadow-sm">
                           <example.icon className="h-6 w-6" />
@@ -442,7 +442,7 @@ export default function Instructions() {
                         <div className="space-y-6">
                           <h4 className="text-sm font-black uppercase tracking-[0.2em] text-foreground flex items-center gap-3">
                             <Info className="h-4 w-4 text-primary" />
-                            Neural Mapping Schema
+                            Required Columns
                           </h4>
                           <div className="rounded-3xl border border-border/50 overflow-hidden bg-white shadow-xl">
                             <Table>
@@ -513,34 +513,31 @@ export default function Instructions() {
           <TabsContent value="troubleshooting" className="mt-0 focus-visible:outline-none">
             <div className="glass-card p-10 space-y-10 shadow-2xl animate-slide-up">
               <div className="space-y-2 text-center">
-                <h3 className="text-3xl font-black tracking-tighter text-foreground italic">Optimization Center</h3>
-                <p className="text-lg text-muted-foreground font-medium">Diagnostics and resolution protocols for ingestion anomalies.</p>
+                <h3 className="text-2xl font-bold text-foreground">Common Issues</h3>
+                <p className="text-muted-foreground">Solutions for common data import problems.</p>
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {[
-                  { q: "NO RECORDS DETECTED", a: "Verify artifact payload contains structural data below header index. Ensure UTF-8 encoding integrity." },
-                  { q: "DEVICE SYNC FAILURE", a: "Renaming non-canonical headers to 'device_code' or mapping them via the orchestration panel is required." },
-                  { q: "TEMPORAL PROTOCOL ERROR", a: "ISO-8601 strictness in effect. Excel users: deploy YYYY-MM-DD custom cell formatting." },
-                  { q: "SYNCHRONIZATION BYPASS", a: "Duplicates identified within the same case reference are automatically filtered to maintain intelligence purity." }
+                  { q: "No Records Found", a: "Check that your file has data rows below the header row. Make sure the file is saved as UTF-8 encoded CSV or XLSX." },
+                  { q: "Device Code Not Recognized", a: "The device code in your file must match exactly with your registered device. Use the column mapping tool to rename columns if needed." },
+                  { q: "Date Format Error", a: "Dates must be in YYYY-MM-DD format (e.g., 2024-06-15). In Excel, format date cells as Custom: YYYY-MM-DD before exporting." },
+                  { q: "Duplicate Records Skipped", a: "The system automatically removes duplicate records based on unique identifiers to prevent double-counting in your report." }
                 ].map((item, i) => (
                   <div key={i} className="glass-card p-8 bg-white/50 border border-border/50 hover:border-primary/30 transition-all space-y-4 group">
                     <div className="flex items-center gap-3">
-                      <div className="w-2 h-2 rounded-full bg-primary shadow-[0_0_8px_rgba(var(--primary),0.5)]" />
-                      <h4 className="text-xs font-black uppercase tracking-widest text-foreground group-hover:text-primary transition-colors">{item.q}</h4>
+                      <div className="w-2 h-2 rounded-full bg-primary" />
+                      <h4 className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">{item.q}</h4>
                     </div>
-                    <p className="text-sm text-muted-foreground font-medium leading-relaxed">{item.a}</p>
+                    <p className="text-sm text-muted-foreground leading-relaxed">{item.a}</p>
                   </div>
                 ))}
               </div>
 
-              <div className="ios-pill bg-primary/10 text-primary border-primary/20 py-8 px-10 flex items-center justify-between group cursor-pointer hover:bg-primary hover:text-white transition-all duration-700 shadow-xl shadow-primary/5">
-                <div className="space-y-1 text-left">
-                  <div className="text-xl font-black tracking-tighter">Need Advanced Support?</div>
-                  <p className="text-sm font-medium opacity-70 group-hover:opacity-100">Our regulatory engineers are monitoring the intelligence stream 24/7.</p>
-                </div>
-                <div className="w-14 h-14 rounded-2xl bg-white/20 flex items-center justify-center backdrop-blur-md group-hover:scale-110 transition-transform">
-                  <ArrowRight className="w-6 h-6" />
+              <div className="p-6 rounded-xl bg-primary/5 border border-primary/10">
+                <div className="space-y-2">
+                  <div className="text-lg font-semibold text-foreground">Need Help?</div>
+                  <p className="text-sm text-muted-foreground">If you're having trouble with data import or have questions about PSUR requirements, contact your regulatory affairs team or system administrator.</p>
                 </div>
               </div>
             </div>

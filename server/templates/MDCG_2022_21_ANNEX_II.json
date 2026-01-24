@@ -1,0 +1,156 @@
+{
+    "template_id": "MDCG_2022_21_ANNEX_II",
+    "name": "MDCG 2022-21 Annex II — PSUR Web Form Data (EUDAMED)",
+    "version": "1.0.0",
+    "jurisdiction_scope": [
+        "EU_MDR"
+    ],
+    "normative_basis": [
+        "EU.MDR.2017/745.ART86",
+        "MDCG.2022-21.ANNEX_II"
+    ],
+    "mandatory_obligation_ids": [
+        "ANNEX_II_1_MFG_INFO",
+        "ANNEX_II_2_DEVICE_INFO",
+        "ANNEX_II_3_PERIOD",
+        "ANNEX_II_4_SALES_METRICS",
+        "ANNEX_II_5_INCIDENTS_METRICS",
+        "ANNEX_II_6_CONCLUSION"
+    ],
+    "defaults": {
+        "require_traceability": true,
+        "require_method_statement": false,
+        "require_claimed_obligations": true,
+        "min_method_chars": 0,
+        "min_evidence_atoms": 1
+    },
+    "slots": [
+        {
+            "slot_id": "MDCG.ANNEXII.MFG_INFO",
+            "title": "Manufacturer Information",
+            "section_path": "Form Data",
+            "slot_kind": "ADMIN",
+            "required": true,
+            "evidence_requirements": {
+                "required_types": [
+                    "manufacturer_profile"
+                ],
+                "min_atoms": 1,
+                "allow_empty_with_justification": false
+            },
+            "output_requirements": {
+                "renderer": "json",
+                "render_as": "form_field"
+            }
+        },
+        {
+            "slot_id": "MDCG.ANNEXII.DEVICE_INFO",
+            "title": "Device Information (UDI-DI)",
+            "section_path": "Form Data",
+            "slot_kind": "ADMIN",
+            "required": true,
+            "evidence_requirements": {
+                "required_types": [
+                    "device_registry_record"
+                ],
+                "min_atoms": 1,
+                "allow_empty_with_justification": false
+            },
+            "output_requirements": {
+                "renderer": "json",
+                "render_as": "form_field"
+            }
+        },
+        {
+            "slot_id": "MDCG.ANNEXII.PERIOD",
+            "title": "Reporting Period",
+            "section_path": "Form Data",
+            "slot_kind": "ADMIN",
+            "required": true,
+            "evidence_requirements": {
+                "required_types": [],
+                "min_atoms": 0,
+                "allow_empty_with_justification": false
+            },
+            "output_requirements": {
+                "renderer": "json",
+                "render_as": "form_field"
+            }
+        },
+        {
+            "slot_id": "MDCG.ANNEXII.SALES_METRICS",
+            "title": "Sales Volume (Global/EU)",
+            "section_path": "Form Data",
+            "slot_kind": "TABLE",
+            "required": true,
+            "evidence_requirements": {
+                "required_types": [
+                    "sales_volume"
+                ],
+                "min_atoms": 1,
+                "allow_empty_with_justification": false
+            },
+            "output_requirements": {
+                "renderer": "json",
+                "render_as": "form_field"
+            }
+        },
+        {
+            "slot_id": "MDCG.ANNEXII.INCIDENTS_METRICS",
+            "title": "Incidents Summary",
+            "section_path": "Form Data",
+            "slot_kind": "TABLE",
+            "required": true,
+            "evidence_requirements": {
+                "required_types": [
+                    "serious_incident_summary",
+                    "complaint_summary"
+                ],
+                "min_atoms": 1,
+                "allow_empty_with_justification": false
+            },
+            "output_requirements": {
+                "renderer": "json",
+                "render_as": "form_field"
+            }
+        },
+        {
+            "slot_id": "MDCG.ANNEXII.CONCLUSION",
+            "title": "Conclusion Statement",
+            "section_path": "Form Data",
+            "slot_kind": "NARRATIVE",
+            "required": true,
+            "evidence_requirements": {
+                "required_types": [
+                    "benefit_risk_assessment"
+                ],
+                "min_atoms": 1,
+                "allow_empty_with_justification": false
+            },
+            "output_requirements": {
+                "renderer": "text",
+                "render_as": "form_field"
+            }
+        }
+    ],
+    "mapping": {
+        "MDCG.ANNEXII.MFG_INFO": [
+            "ANNEX_II_1_MFG_INFO"
+        ],
+        "MDCG.ANNEXII.DEVICE_INFO": [
+            "ANNEX_II_2_DEVICE_INFO"
+        ],
+        "MDCG.ANNEXII.PERIOD": [
+            "ANNEX_II_3_PERIOD"
+        ],
+        "MDCG.ANNEXII.SALES_METRICS": [
+            "ANNEX_II_4_SALES_METRICS"
+        ],
+        "MDCG.ANNEXII.INCIDENTS_METRICS": [
+            "ANNEX_II_5_INCIDENTS_METRICS"
+        ],
+        "MDCG.ANNEXII.CONCLUSION": [
+            "ANNEX_II_6_CONCLUSION"
+        ]
+    }
+}

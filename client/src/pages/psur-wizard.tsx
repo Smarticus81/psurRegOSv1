@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { EvidenceIngestionPanel } from "@/components/evidence-ingestion-panel";
+import { CompilationRuntimeViewer } from "@/components/compilation-runtime-viewer";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
+import { Badge } from "@/components/ui/badge";
 import { FileText, Settings, Info, LayoutDashboard, Search, CheckCircle2, AlertCircle, Trash2, ArrowRight, Loader2, ChevronDown, ChevronUp } from "lucide-react";
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -22,9 +25,9 @@ type CreateCasePayload = {
 };
 
 type CreateCaseResponse = { id: number; psurReference: string };
-type AtomCountsResponse = { 
-    psurCaseId: number; 
-    totals: { all: number }; 
+type AtomCountsResponse = {
+    psurCaseId: number;
+    totals: { all: number };
     byType: Record<string, number>;
     // Enhanced coverage - includes ALL evidence types from uploaded sources
     coverage?: {
@@ -41,7 +44,15 @@ type RunWorkflowResponse = {
     steps: WorkflowStep[];
 };
 type TraceSummary = { totalEvents: number; acceptedSlots: number; rejectedSlots: number; chainValid: boolean };
-type Device = { id: number; deviceName: string; deviceCode: string; riskClass: string };
+type Device = {
+    id: number;
+    deviceName: string;
+    deviceCode: string;
+    riskClass: string;
+    jurisdictions?: string[];
+    gmdnCode?: string;
+    basicUdf?: string;
+};
 
 // Column mapping types
 type ColumnMapping = {
@@ -93,12 +104,12 @@ interface LiveSection {
     status: "pending" | "generating" | "done";
 }
 
-function LiveContentViewer({ 
-    psurCaseId, 
-    documentStyle, 
+function LiveContentViewer({
+    psurCaseId,
+    documentStyle,
     runtimeEvents,
-    isGenerating 
-}: { 
+    isGenerating
+}: {
     psurCaseId: number;
     documentStyle: string;
     runtimeEvents: any[];
@@ -108,11 +119,11 @@ function LiveContentViewer({
     const [isExpanded, setIsExpanded] = useState(false);
     const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
     const [lastFetch, setLastFetch] = useState(0);
-    
+
     // Fetch live content periodically while generating
     useEffect(() => {
         if (!psurCaseId) return;
-        
+
         const fetchLiveContent = async () => {
             try {
                 const res = await fetch(`/api/psur-cases/${psurCaseId}/live-content`);
@@ -136,18 +147,18 @@ function LiveContentViewer({
             }
             setLastFetch(Date.now());
         };
-        
+
         fetchLiveContent();
-        
+
         // Poll while generating
         let interval: NodeJS.Timeout | null = null;
         if (isGenerating) {
             interval = setInterval(fetchLiveContent, 2000);
         }
-        
+
         return () => { if (interval) clearInterval(interval); };
     }, [psurCaseId, isGenerating]);
-    
+
     const toggleSection = (slotId: string) => {
         setExpandedSections(prev => {
             const next = new Set(prev);
@@ -159,17 +170,17 @@ function LiveContentViewer({
             return next;
         });
     };
-    
+
     const doneCount = sections.filter(s => s.status === "done").length;
     const generatingCount = sections.filter(s => s.status === "generating").length;
     const pendingCount = sections.filter(s => s.status === "pending").length;
-    
+
     return (
         <div className="mt-6 w-full glass-card overflow-hidden rounded-2xl border border-border/30">
             {/* Header */}
             <div className="px-4 py-3 border-b border-border/30 flex items-center justify-between bg-background/80">
                 <div className="flex items-center gap-3">
-                    <button 
+                    <button
                         onClick={() => setIsExpanded(!isExpanded)}
                         className="p-1.5 rounded-lg hover:bg-muted transition-colors"
                     >
@@ -204,7 +215,7 @@ function LiveContentViewer({
                     )}
                 </div>
             </div>
-            
+
             {/* Content */}
             {isExpanded && (
                 <div className="max-h-[60vh] overflow-y-auto bg-background/50">
@@ -232,26 +243,26 @@ function LiveContentViewer({
                                             <div className={cn(
                                                 "w-2 h-2 rounded-full shrink-0",
                                                 section.status === "done" ? "bg-emerald-500" :
-                                                section.status === "generating" ? "bg-primary animate-pulse" :
-                                                "bg-muted-foreground/30"
+                                                    section.status === "generating" ? "bg-primary animate-pulse" :
+                                                        "bg-muted-foreground/30"
                                             )} />
-                                            
+
                                             {/* Title */}
                                             <span className={cn(
                                                 "text-sm font-medium",
                                                 section.status === "done" ? "text-foreground" :
-                                                section.status === "generating" ? "text-primary" :
-                                                "text-muted-foreground"
+                                                    section.status === "generating" ? "text-primary" :
+                                                        "text-muted-foreground"
                                             )}>
                                                 {section.title || section.slotId}
                                             </span>
-                                            
+
                                             {/* Status Badge */}
                                             {section.status === "generating" && (
                                                 <span className="text-xs text-primary animate-pulse">Writing...</span>
                                             )}
                                         </div>
-                                        
+
                                         {/* Expand Arrow */}
                                         {section.content && (
                                             <svg className={cn(
@@ -262,7 +273,7 @@ function LiveContentViewer({
                                             </svg>
                                         )}
                                     </button>
-                                    
+
                                     {/* Section Content */}
                                     {expandedSections.has(section.slotId) && section.content && (
                                         <div className="px-4 pb-4 animate-in slide-in-from-top-2">
@@ -294,8 +305,8 @@ function LiveContentViewer({
 // MODAL COMPONENT (Redesigned - Fixed centering and shadows)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function Modal({ open, onClose, title, size = "lg", children }: { 
-    open: boolean; onClose: () => void; title: string; size?: "md" | "lg" | "xl" | "full"; children: React.ReactNode 
+function Modal({ open, onClose, title, size = "lg", children }: {
+    open: boolean; onClose: () => void; title: string; size?: "md" | "lg" | "xl" | "full"; children: React.ReactNode
 }) {
     // Prevent body scroll when modal is open
     useEffect(() => {
@@ -306,17 +317,17 @@ function Modal({ open, onClose, title, size = "lg", children }: {
         }
         return () => { document.body.style.overflow = ""; };
     }, [open]);
-    
+
     if (!open) return null;
     const sizeClass = {
         md: "max-w-2xl",
-        lg: "max-w-4xl", 
+        lg: "max-w-4xl",
         xl: "max-w-6xl",
         full: "max-w-[95vw]"
     }[size];
-    
+
     return (
-        <div 
+        <div
             className="fixed inset-0 z-[100] overflow-y-auto"
             onClick={onClose}
             role="dialog"
@@ -324,25 +335,26 @@ function Modal({ open, onClose, title, size = "lg", children }: {
         >
             {/* Backdrop - no shadow, just blur */}
             <div className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity" />
-            
+
             {/* Centering container */}
             <div className="flex min-h-full items-center justify-center p-4">
                 {/* Modal */}
-                <div 
+                <div
                     className={cn(
                         "relative w-full transform transition-all",
                         sizeClass,
-                        "bg-background border border-border rounded-2xl shadow-lg",
+                        "bg-background border border-border rounded-2xl",
                         "max-h-[85vh] flex flex-col",
                         "animate-scale-in"
                     )}
+                    style={{ boxShadow: 'var(--ios-shadow-modal)' }}
                     onClick={e => e.stopPropagation()}
                 >
                     {/* Header */}
                     <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
                         <h3 className="text-lg font-semibold tracking-tight text-foreground">{title}</h3>
-                        <button 
-                            onClick={onClose} 
+                        <button
+                            onClick={onClose}
                             className="p-2 rounded-lg hover:bg-muted transition-colors"
                         >
                             <svg className="w-5 h-5 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -350,7 +362,7 @@ function Modal({ open, onClose, title, size = "lg", children }: {
                             </svg>
                         </button>
                     </div>
-                    
+
                     {/* Content */}
                     <div className="flex-1 overflow-y-auto p-6">{children}</div>
                 </div>
@@ -394,11 +406,11 @@ type SavedMappingProfile = {
     usageCount: number;
 };
 
-function ColumnMappingTool({ 
-    sourceColumns, 
-    evidenceType, 
-    onMappingComplete 
-}: { 
+function ColumnMappingTool({
+    sourceColumns,
+    evidenceType,
+    onMappingComplete
+}: {
     sourceColumns: string[];
     evidenceType: string;
     onMappingComplete: (mappings: ColumnMapping[]) => void;
@@ -412,7 +424,7 @@ function ColumnMappingTool({
     const [savedProfile, setSavedProfile] = useState<SavedMappingProfile | null>(null);
     const [loadingProfile, setLoadingProfile] = useState(true);
     const [profileApplied, setProfileApplied] = useState(false);
-    
+
     // Check for existing saved mapping profile on mount
     useEffect(() => {
         const checkForProfile = async () => {
@@ -423,12 +435,12 @@ function ColumnMappingTool({
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ evidenceType, sourceColumns })
                 });
-                
+
                 if (res.ok) {
                     const data = await res.json();
                     if (data.found && data.profile) {
                         setSavedProfile(data.profile);
-                        
+
                         // If profile can be auto-applied (verified previously), apply it immediately
                         if (data.canAutoApply) {
                             applyProfile(data.profile);
@@ -448,14 +460,14 @@ function ColumnMappingTool({
                 setLoadingProfile(false);
             }
         };
-        
+
         checkForProfile();
     }, [sourceColumns, evidenceType]);
-    
+
     const applyProfile = (profile: SavedMappingProfile) => {
         const profileMappings: ColumnMapping[] = [];
         const mappingsData = profile.columnMappings as Record<string, string>;
-        
+
         for (const [sourceCol, targetField] of Object.entries(mappingsData)) {
             // Find matching source column (case-insensitive)
             const matchedSource = sourceColumns.find(
@@ -470,10 +482,10 @@ function ColumnMappingTool({
                 });
             }
         }
-        
+
         setMappings(profileMappings);
     };
-    
+
     const performAutoMapping = async () => {
         // Try SOTA backend agent first
         try {
@@ -485,7 +497,7 @@ function ColumnMappingTool({
                     evidenceType
                 })
             });
-            
+
             if (res.ok) {
                 const data = await res.json();
                 if (data.success && data.mappings) {
@@ -497,7 +509,7 @@ function ColumnMappingTool({
                             confidence: m.confidence,
                             autoMapped: m.method !== "user_provided"
                         }));
-                    
+
                     setMappings(agentMappings);
                     return;
                 }
@@ -505,12 +517,12 @@ function ColumnMappingTool({
         } catch {
             // Fall back to local matching
         }
-        
+
         // Local fallback with enhanced matching
         const autoMappings: ColumnMapping[] = [];
         const usedSource = new Set<string>();
         const usedTarget = new Set<string>();
-        
+
         // Enhanced alias dictionary - keys are canonical field names matching backend expectations
         const COLUMN_ALIASES: Record<string, string[]> = {
             // Complaint fields
@@ -540,17 +552,17 @@ function ColumnMappingTool({
             closeDate: ["close_date", "date_closed", "closure_date", "completion_date"],
             effectiveness: ["effectiveness", "effectiveness_check", "verification_result"]
         };
-        
+
         sourceColumns.forEach(src => {
             const srcNorm = src.toLowerCase().replace(/[_\s-]/g, "");
             let bestMatch: { field: string; score: number } | null = null;
-            
+
             targetFields.forEach(target => {
                 if (usedTarget.has(target)) return;
                 const targetNorm = target.toLowerCase().replace(/[_\s-]/g, "");
-                
+
                 let score = 0;
-                
+
                 // Check exact match
                 if (srcNorm === targetNorm) {
                     score = 1.0;
@@ -578,32 +590,33 @@ function ColumnMappingTool({
                         score = 0.5;
                     }
                 }
-                
+
                 if (score > 0 && (!bestMatch || score > bestMatch.score)) {
                     bestMatch = { field: target, score };
                 }
             });
-            
-            if (bestMatch && bestMatch.score >= 0.5) {
+
+            const finalMatch = bestMatch as { field: string; score: number } | null;
+            if (finalMatch && finalMatch.score >= 0.5) {
                 autoMappings.push({
                     sourceColumn: src,
-                    targetField: bestMatch.field,
-                    confidence: bestMatch.score,
+                    targetField: finalMatch.field,
+                    confidence: finalMatch.score,
                     autoMapped: true
                 });
                 usedSource.add(src);
-                usedTarget.add(bestMatch.field);
+                usedTarget.add(finalMatch.field);
             }
         });
-        
+
         setMappings(autoMappings);
     };
-    
+
     const unmappedSource = sourceColumns.filter(s => !mappings.find(m => m.sourceColumn === s));
     const unmappedTarget = targetFields.filter(t => !mappings.find(m => m.targetField === t));
     const lowConfidenceMappings = mappings.filter(m => m.confidence < 0.9 && m.autoMapped);
     const hasIssues = lowConfidenceMappings.length > 0 || unmappedTarget.length > 0;
-    
+
     const updateMapping = (sourceColumn: string, targetField: string) => {
         setIsVerified(false);
         setMappings(prev => {
@@ -617,33 +630,33 @@ function ColumnMappingTool({
             return [...prev, { sourceColumn, targetField, confidence: 1, autoMapped: false }];
         });
     };
-    
+
     const addMapping = (sourceColumn: string, targetField: string) => {
         if (!sourceColumn || !targetField) return;
         setIsVerified(false);
         setMappings(prev => [...prev, { sourceColumn, targetField, confidence: 1, autoMapped: false }]);
     };
-    
+
     const removeMapping = (sourceColumn: string) => {
         setIsVerified(false);
         setMappings(prev => prev.filter(m => m.sourceColumn !== sourceColumn));
     };
-    
+
     const handleVerify = () => {
         setIsVerified(true);
     };
-    
+
     const handleSaveProfile = async () => {
         if (!profileName.trim()) return;
         setSaving(true);
-        
+
         try {
             // Convert mappings to the format needed for storage
             const columnMappings: Record<string, string> = {};
             for (const m of mappings) {
                 columnMappings[m.sourceColumn] = m.targetField;
             }
-            
+
             const res = await fetch("/api/column-mapping-profiles", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -653,7 +666,7 @@ function ColumnMappingTool({
                     columnMappings
                 })
             });
-            
+
             if (res.ok) {
                 const newProfile = await res.json();
                 setSavedProfile(newProfile);
@@ -666,7 +679,7 @@ function ColumnMappingTool({
             setSaving(false);
         }
     };
-    
+
     if (loadingProfile) {
         return (
             <div className="flex items-center justify-center py-8">
@@ -680,7 +693,7 @@ function ColumnMappingTool({
             </div>
         );
     }
-    
+
     return (
         <div className="space-y-4">
             {/* Profile Status Banner */}
@@ -701,7 +714,7 @@ function ColumnMappingTool({
                     </p>
                 </div>
             )}
-            
+
             {/* Low Confidence Warning */}
             {!profileApplied && hasIssues && (
                 <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
@@ -718,7 +731,7 @@ function ColumnMappingTool({
                     </p>
                 </div>
             )}
-            
+
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
@@ -749,26 +762,25 @@ function ColumnMappingTool({
                     )}
                 </div>
             </div>
-            
+
             {/* Mapping Grid */}
             <div className="grid grid-cols-[1fr,auto,1fr] gap-2 items-center">
                 {/* Headers */}
                 <div className="px-3 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">Source Column</div>
                 <div></div>
                 <div className="px-3 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">Target Field</div>
-                
+
                 {/* Existing Mappings */}
                 {mappings.map((m, i) => {
                     const isLowConfidence = m.confidence < 0.9 && m.autoMapped;
                     return (
                         <div key={i} className="contents group">
-                            <div className={`px-3 py-2 rounded-l border ${
-                                isLowConfidence 
-                                    ? "border-orange-500/50 bg-orange-500/10" 
-                                    : m.autoMapped 
-                                        ? "border-blue-500/30 bg-blue-500/5" 
-                                        : "border-border bg-muted/30"
-                            }`}>
+                            <div className={`px-3 py-2 rounded-l border ${isLowConfidence
+                                ? "border-orange-500/50 bg-orange-500/10"
+                                : m.autoMapped
+                                    ? "border-blue-500/30 bg-blue-500/5"
+                                    : "border-border bg-muted/30"
+                                }`}>
                                 <span className="text-sm font-medium">{m.sourceColumn}</span>
                                 {m.autoMapped && (
                                     <span className={`ml-2 text-[10px] ${isLowConfidence ? "text-orange-500" : "text-blue-500"}`}>
@@ -783,9 +795,8 @@ function ColumnMappingTool({
                             </div>
                             <div className="flex items-center gap-2">
                                 <select
-                                    className={`flex-1 px-3 py-2 rounded-r border bg-background text-sm ${
-                                        isLowConfidence ? "border-orange-500/50" : "border-border"
-                                    }`}
+                                    className={`flex-1 px-3 py-2 rounded-r border bg-background text-sm ${isLowConfidence ? "border-orange-500/50" : "border-border"
+                                        }`}
                                     value={m.targetField}
                                     onChange={e => updateMapping(m.sourceColumn, e.target.value)}
                                 >
@@ -794,7 +805,7 @@ function ColumnMappingTool({
                                         <option key={t} value={t}>{t}</option>
                                     ))}
                                 </select>
-                                <button 
+                                <button
                                     onClick={() => removeMapping(m.sourceColumn)}
                                     className="p-2 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
                                 >
@@ -807,7 +818,7 @@ function ColumnMappingTool({
                     );
                 })}
             </div>
-            
+
             {/* Unmapped Sections */}
             {(unmappedSource.length > 0 || unmappedTarget.length > 0) && (
                 <div className="grid grid-cols-2 gap-4 pt-4 border-t">
@@ -821,7 +832,7 @@ function ColumnMappingTool({
                             {unmappedSource.length === 0 && <span className="text-xs text-muted-foreground">All columns mapped</span>}
                         </div>
                     </div>
-                    
+
                     {/* Unmapped Target */}
                     <div>
                         <div className="text-xs font-medium text-muted-foreground mb-2">Required Fields (Unmapped)</div>
@@ -834,7 +845,7 @@ function ColumnMappingTool({
                     </div>
                 </div>
             )}
-            
+
             {/* Add Mapping */}
             {unmappedSource.length > 0 && unmappedTarget.length > 0 && (
                 <div className="flex items-center gap-2 pt-2">
@@ -861,7 +872,7 @@ function ColumnMappingTool({
                     </button>
                 </div>
             )}
-            
+
             {/* Save Profile Dialog */}
             {showSaveDialog && (
                 <div className="p-4 rounded-lg border border-border bg-muted/30">
@@ -893,7 +904,7 @@ function ColumnMappingTool({
                     </div>
                 </div>
             )}
-            
+
             {/* Action Buttons */}
             <div className="flex items-center justify-between pt-4 border-t">
                 <div className="flex items-center gap-2">
@@ -909,7 +920,7 @@ function ColumnMappingTool({
                         </button>
                     )}
                 </div>
-                
+
                 <div className="flex items-center gap-2">
                     {!isVerified && (
                         <button
@@ -925,11 +936,10 @@ function ColumnMappingTool({
                     <button
                         onClick={() => onMappingComplete(mappings)}
                         disabled={!isVerified}
-                        className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
-                            isVerified 
-                                ? "bg-green-600 text-white hover:bg-green-700" 
-                                : "bg-muted text-muted-foreground cursor-not-allowed"
-                        }`}
+                        className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${isVerified
+                            ? "bg-green-600 text-white hover:bg-green-700"
+                            : "bg-muted text-muted-foreground cursor-not-allowed"
+                            }`}
                     >
                         Apply Mapping ({mappings.length} fields)
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -946,9 +956,9 @@ function ColumnMappingTool({
 // ENHANCED AI INGESTION WITH MAPPING
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function EnhancedIngestionPanel({ 
-    psurCaseId, deviceCode, periodStart, periodEnd, onComplete 
-}: { 
+function EnhancedIngestionPanel({
+    psurCaseId, deviceCode, periodStart, periodEnd, onComplete
+}: {
     psurCaseId: number; deviceCode: string; periodStart: string; periodEnd: string; onComplete: () => void;
 }) {
     const [file, setFile] = useState<File | null>(null);
@@ -959,7 +969,7 @@ function EnhancedIngestionPanel({
     const [mappings, setMappings] = useState<ColumnMapping[]>([]);
     const [creating, setCreating] = useState(false);
     const [docxSections, setDocxSections] = useState<{ title: string; content: string; type: string }[]>([]);
-    
+
     // 8 high-level input categories aligned with sourceMapping.ts
     const sourceTypes = [
         { id: "cer", label: "CER Documents", formats: "DOCX, PDF", evidenceType: "cer_extract" },
@@ -971,23 +981,23 @@ function EnhancedIngestionPanel({
         { id: "capa", label: "CAPA Records", formats: "Excel, CSV", evidenceType: "capa_record" },
         { id: "admin", label: "Admin Data", formats: "Excel, CSV", evidenceType: "device_registry_record" },
     ];
-    
+
     const currentSource = sourceTypes.find(s => s.id === sourceType);
-    
+
     const parseFile = async () => {
         if (!file) return;
         setParsing(true);
-        
+
         try {
             const formData = new FormData();
             formData.append("file", file);
             formData.append("sourceType", sourceType);
-            
+
             const res = await fetch("/api/ingest/parse-preview", { method: "POST", body: formData });
-            
+
             if (res.ok) {
                 const data = await res.json();
-                
+
                 if (data.type === "tabular") {
                     setParsedData({ columns: data.columns, rows: data.rows, preview: data.preview });
                     setShowMapping(true);
@@ -1021,7 +1031,7 @@ function EnhancedIngestionPanel({
             setParsing(false);
         }
     };
-    
+
     const createAtoms = async () => {
         setCreating(true);
         try {
@@ -1033,7 +1043,7 @@ function EnhancedIngestionPanel({
                     columnMappingsObj[m.sourceColumn] = m.targetField;
                 }
             }
-            
+
             // Create records from mapped data
             const formData = new FormData();
             formData.append("psur_case_id", String(psurCaseId));
@@ -1042,10 +1052,10 @@ function EnhancedIngestionPanel({
             formData.append("period_end", periodEnd);
             formData.append("evidence_type", currentSource?.evidenceType || "complaint_record");
             if (file) formData.append("file", file);
-            
+
             // Send column_mappings in the format backend expects
             formData.append("column_mappings", JSON.stringify(columnMappingsObj));
-            
+
             const res = await fetch("/api/evidence/upload", { method: "POST", body: formData });
             if (res.ok) {
                 onComplete();
@@ -1059,7 +1069,7 @@ function EnhancedIngestionPanel({
             setCreating(false);
         }
     };
-    
+
     return (
         <div className="space-y-5">
             {/* Source Type Selection */}
@@ -1070,11 +1080,10 @@ function EnhancedIngestionPanel({
                         <button
                             key={s.id}
                             onClick={() => { setSourceType(s.id); setParsedData(null); setShowMapping(false); setDocxSections([]); }}
-                            className={`p-3 rounded-lg border text-left transition-all ${
-                                sourceType === s.id 
-                                    ? "border-blue-500 bg-blue-500/10" 
-                                    : "border-border hover:border-blue-300"
-                            }`}
+                            className={`p-3 rounded-lg border text-left transition-all ${sourceType === s.id
+                                ? "border-blue-500 bg-blue-500/10"
+                                : "border-border hover:border-blue-300"
+                                }`}
                         >
                             <div className="font-medium text-sm">{s.label}</div>
                             <div className="text-[10px] text-muted-foreground">{s.formats}</div>
@@ -1082,7 +1091,7 @@ function EnhancedIngestionPanel({
                     ))}
                 </div>
             </div>
-            
+
             {/* File Upload */}
             <div>
                 <label className="text-sm font-medium mb-2 block">Upload File</label>
@@ -1107,7 +1116,7 @@ function EnhancedIngestionPanel({
                 </div>
                 {file && <p className="text-xs text-muted-foreground mt-1">{file.name} ({(file.size / 1024).toFixed(1)} KB)</p>}
             </div>
-            
+
             {/* Tabular Data Preview & Mapping */}
             {parsedData && showMapping && (
                 <div className="space-y-4">
@@ -1137,7 +1146,7 @@ function EnhancedIngestionPanel({
                             </div>
                         </div>
                     </div>
-                    
+
                     {/* Column Mapping Tool */}
                     <div className="rounded-lg border p-4">
                         <ColumnMappingTool
@@ -1146,7 +1155,7 @@ function EnhancedIngestionPanel({
                             onMappingComplete={(m) => { setMappings(m); }}
                         />
                     </div>
-                    
+
                     {/* Create Records */}
                     {mappings.length > 0 && (
                         <button
@@ -1159,7 +1168,7 @@ function EnhancedIngestionPanel({
                     )}
                 </div>
             )}
-            
+
             {/* DOCX/PDF Section Mapping */}
             {docxSections.length > 0 && (
                 <div className="space-y-4">
@@ -1183,7 +1192,7 @@ function EnhancedIngestionPanel({
                             ))}
                         </div>
                     </div>
-                    
+
                     <button
                         onClick={createAtoms}
                         disabled={creating}
@@ -1232,7 +1241,7 @@ function ReconcileStep({
     const [showNAModal, setShowNAModal] = useState(false);
     const [showUploadModal, setShowUploadModal] = useState(false);
     const [uploadType, setUploadType] = useState<string | null>(null);
-    
+
     const toggleType = (t: string) => {
         const newSet = new Set(selectedTypes);
         if (newSet.has(t)) {
@@ -1242,15 +1251,15 @@ function ReconcileStep({
         }
         setSelectedTypes(newSet);
     };
-    
+
     const selectAllMissing = () => {
         setSelectedTypes(new Set(missingTypes));
     };
-    
+
     const clearSelection = () => {
         setSelectedTypes(new Set());
     };
-    
+
     const markSelectedAsNA = async () => {
         if (selectedTypes.size === 0) return;
         setMarkingNA(true);
@@ -1279,7 +1288,7 @@ function ReconcileStep({
             setMarkingNA(false);
         }
     };
-    
+
     const openUploadForType = (type: string) => {
         setUploadType(type);
         setShowUploadModal(true);
@@ -1290,8 +1299,8 @@ function ReconcileStep({
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h2 className="text-2xl font-semibold tracking-tight text-foreground mb-1">Reconcile Evidence</h2>
-                    <p className="text-muted-foreground">Review requirement status and mark non-applicable evidence types.</p>
+                    <h2 className="text-2xl font-semibold tracking-tight text-foreground mb-1">Data Verification</h2>
+                    <p className="text-muted-foreground">Review data completeness and mark non-applicable categories.</p>
                 </div>
                 <div className="flex items-center gap-3">
                     <div className="ios-pill bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
@@ -1307,16 +1316,16 @@ function ReconcileStep({
 
             {/* Action Bar */}
             {missingTypes.length > 0 && (
-                <div className="glass-card p-4 flex items-center justify-between shadow-xl">
+                <div className="bg-white dark:bg-card border border-border shadow-sm rounded-lg p-4 flex items-center justify-between shadow-xl">
                     <div className="flex items-center gap-2">
-                        <button 
+                        <button
                             onClick={selectAllMissing}
                             className="ios-pill hover:bg-white/80 active:scale-95 transition-all"
                         >
                             Select All Missing
                         </button>
                         {selectedTypes.size > 0 && (
-                            <button 
+                            <button
                                 onClick={clearSelection}
                                 className="text-sm font-medium text-muted-foreground hover:text-foreground px-4"
                             >
@@ -1325,7 +1334,7 @@ function ReconcileStep({
                         )}
                     </div>
                     <div className="flex items-center gap-4">
-                        <button 
+                        <button
                             onClick={onUpload}
                             className="glossy-button bg-primary text-primary-foreground shadow-lg"
                         >
@@ -1334,7 +1343,7 @@ function ReconcileStep({
                             </svg>
                             <span>Upload Data</span>
                         </button>
-                        <button 
+                        <button
                             onClick={() => selectedTypes.size > 0 && setShowNAModal(true)}
                             disabled={selectedTypes.size === 0}
                             className="glossy-button bg-white text-foreground border-border/50 disabled:opacity-40"
@@ -1359,7 +1368,7 @@ function ReconcileStep({
                         </div>
                         <h3 className="text-2xl font-bold text-foreground tracking-tight">System Fully Synchronized</h3>
                         <p className="text-lg text-muted-foreground max-w-md">
-                            All required regulatory evidence has been successfully reconciled and mapped.
+                            All required surveillance data has been verified and mapped.
                         </p>
                     </div>
                 ) : (
@@ -1372,13 +1381,13 @@ function ReconcileStep({
                             </h3>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 {missingTypes.map(t => (
-                                    <div 
-                                        key={t} 
+                                    <div
+                                        key={t}
                                         onClick={() => toggleType(t)}
                                         className={cn(
-                                            "glass-card p-6 cursor-pointer group hover:scale-105",
-                                            selectedTypes.has(t) 
-                                                ? "border-primary bg-primary/5 shadow-2xl scale-[1.02]" 
+                                            "bg-white dark:bg-card border border-border shadow-sm rounded-lg p-6 cursor-pointer group hover:scale-105",
+                                            selectedTypes.has(t)
+                                                ? "border-primary bg-primary/5 shadow-2xl scale-[1.02]"
                                                 : "hover:bg-white/80"
                                         )}
                                     >
@@ -1393,7 +1402,7 @@ function ReconcileStep({
                                                     </svg>
                                                 )}
                                             </div>
-                                            <button 
+                                            <button
                                                 onClick={(e) => { e.stopPropagation(); openUploadForType(t); }}
                                                 className="w-10 h-10 rounded-full flex items-center justify-center bg-secondary/50 hover:bg-white transition-all text-muted-foreground hover:text-primary shadow-sm"
                                             >
@@ -1404,7 +1413,7 @@ function ReconcileStep({
                                         </div>
                                         <div className="space-y-1">
                                             <div className="text-lg font-bold text-foreground group-hover:text-primary transition-colors">{formatType(t)}</div>
-                                            <div className="text-sm font-medium text-amber-600/80">Missing Evidence</div>
+                                            <div className="text-sm font-medium text-amber-600/80">Missing Data</div>
                                         </div>
                                     </div>
                                 ))}
@@ -1415,14 +1424,14 @@ function ReconcileStep({
                         <div>
                             <h3 className="text-xl font-bold text-foreground mb-6 flex items-center gap-2">
                                 <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                                Verified Evidence ({requiredTypes.length - missingTypes.length})
+                                Verified Data ({requiredTypes.length - missingTypes.length})
                             </h3>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 opacity-80">
                                 {requiredTypes.filter(t => isTypeCovered(t)).map(t => {
                                     const atomCount = counts?.byType?.[t] || 0;
                                     const coverageInfo = counts?.coverage?.coveredByType?.[t];
                                     return (
-                                        <div key={t} className="glass-card p-6 bg-emerald-500/[0.02] border-emerald-500/10">
+                                        <div key={t} className="bg-white dark:bg-card border border-border shadow-sm rounded-lg p-6 bg-emerald-500/[0.02] border-emerald-500/10">
                                             <div className="flex items-center justify-between mb-6">
                                                 <div className="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center shadow-sm">
                                                     <svg className="w-5 h-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1450,11 +1459,11 @@ function ReconcileStep({
             {showNAModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setShowNAModal(false)}>
                     <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-                    <div className="relative max-w-lg w-full rounded-xl border border-border bg-card shadow-2xl" onClick={e => e.stopPropagation()}>
+                    <div className="relative max-w-lg w-full rounded-xl border border-border bg-card" style={{ boxShadow: 'var(--ios-shadow-modal)' }} onClick={e => e.stopPropagation()}>
                         <div className="p-5 border-b border-border">
-                            <h3 className="text-lg font-semibold text-foreground">Mark Evidence as N/A</h3>
+                            <h3 className="text-lg font-semibold text-foreground">Mark as Not Applicable</h3>
                             <p className="text-sm text-muted-foreground mt-1">
-                                Confirm that the selected evidence types have no applicable data for this PSUR period.
+                                Confirm that the selected data categories have no applicable records for this PSUR period.
                             </p>
                         </div>
                         <div className="p-5">
@@ -1484,19 +1493,19 @@ function ReconcileStep({
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                                     </svg>
                                     <div className="text-sm text-amber-300">
-                                        This will create "negative evidence" records confirming no data exists for these types. This is auditable and traceable.
+                                        This will create a documented justification confirming no data exists for these categories. This is auditable and traceable.
                                     </div>
                                 </div>
                             </div>
                         </div>
                         <div className="p-5 border-t border-border flex items-center justify-end gap-3">
-                            <button 
+                            <button
                                 onClick={() => setShowNAModal(false)}
                                 className="px-4 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground"
                             >
                                 Cancel
                             </button>
-                            <button 
+                            <button
                                 onClick={markSelectedAsNA}
                                 disabled={markingNA}
                                 className="px-4 py-2 rounded-lg text-sm font-medium bg-amber-600 text-white hover:bg-amber-500 disabled:opacity-50 flex items-center gap-2"
@@ -1526,7 +1535,7 @@ function ReconcileStep({
             {/* Upload for Specific Type Modal */}
             {showUploadModal && uploadType && (
                 <Modal open={showUploadModal} onClose={() => { setShowUploadModal(false); setUploadType(null); }} title={`Upload ${formatType(uploadType)}`} size="md">
-                    <SingleTypeUploadForm 
+                    <SingleTypeUploadForm
                         psurCaseId={psurCaseId}
                         deviceCode={deviceCode}
                         periodStart={periodStart}
@@ -1541,8 +1550,8 @@ function ReconcileStep({
 }
 
 // Single type upload form for reconciliation
-function SingleTypeUploadForm({ 
-    psurCaseId, deviceCode, periodStart, periodEnd, evidenceType, onSuccess 
+function SingleTypeUploadForm({
+    psurCaseId, deviceCode, periodStart, periodEnd, evidenceType, onSuccess
 }: {
     psurCaseId: number; deviceCode: string; periodStart: string; periodEnd: string; evidenceType: string; onSuccess: () => void;
 }) {
@@ -1564,7 +1573,7 @@ function SingleTypeUploadForm({
             const resp = await fetch("/api/evidence/upload", { method: "POST", body: form });
             const data = await resp.json();
             if (!resp.ok) throw new Error(data.error);
-            setMsg(`Imported ${data.summary?.atomsCreated || 0} records`);
+            setMsg(`Imported ${data.summary?.recordsCreated || data.summary?.atomsCreated || 0} records`);
             setFile(null);
             setTimeout(onSuccess, 1000);
         } catch (e: any) { setMsg(`Error: ${e.message}`); }
@@ -1580,17 +1589,17 @@ function SingleTypeUploadForm({
             </div>
             <div>
                 <label className="text-sm font-medium mb-1 block">File (.xlsx, .csv)</label>
-                <input 
-                    type="file" 
-                    accept=".xlsx,.csv,.xls" 
-                    className="w-full border rounded px-3 py-2 bg-background" 
-                    onChange={e => setFile(e.target.files?.[0] || null)} 
+                <input
+                    type="file"
+                    accept=".xlsx,.csv,.xls"
+                    className="w-full border rounded px-3 py-2 bg-background"
+                    onChange={e => setFile(e.target.files?.[0] || null)}
                 />
             </div>
             <div className="flex items-center gap-3">
-                <button 
-                    onClick={upload} 
-                    disabled={busy || !file} 
+                <button
+                    onClick={upload}
+                    disabled={busy || !file}
                     className="px-4 py-2 rounded bg-blue-600 text-white text-sm font-medium disabled:opacity-50"
                 >
                     {busy ? "Uploading..." : "Upload"}
@@ -1605,6 +1614,19 @@ function SingleTypeUploadForm({
 // MAIN WIZARD
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// Type for device info extracted from evidence
+interface ExtractedDeviceInfo {
+    deviceCode?: string;
+    deviceName?: string;
+    manufacturerName?: string;
+    udiDi?: string;
+    gmdnCode?: string;
+    riskClass?: string;
+    intendedPurpose?: string;
+    extractedFrom?: string;
+    extractedAt?: string;
+}
+
 // Type for existing PSUR cases from API
 interface ExistingCase {
     id: number;
@@ -1617,22 +1639,38 @@ interface ExistingCase {
     leadingDeviceId: number;
     status: string;
     createdAt: string;
+    deviceInfo?: ExtractedDeviceInfo;
 }
 
 export default function PsurWizard() {
+    const { toast } = useToast();
     const [step, setStep] = useState<WizardStep>(1);
 
     // Draft state
-    const [deviceCode, setDeviceCode] = useState("JS3000X");
-    const [deviceId, setDeviceId] = useState(1);
+    const [deviceCode, setDeviceCode] = useState("");
+    const [deviceId, setDeviceId] = useState(0);
     const [templateId, setTemplateId] = useState("MDCG_2022_21_ANNEX_I");
     const [jurisdictions, setJurisdictions] = useState<string[]>(["EU_MDR"]);
-    const [periodStart, setPeriodStart] = useState("2024-01-01");
-    const [periodEnd, setPeriodEnd] = useState("2024-12-31");
+    const [periodStart, setPeriodStart] = useState(() => {
+        const now = new Date();
+        return `${now.getFullYear() - 1}-01-01`;
+    });
+    const [periodEnd, setPeriodEnd] = useState(() => {
+        const now = new Date();
+        return `${now.getFullYear() - 1}-12-31`;
+    });
     const [psurCaseId, setPsurCaseId] = useState<number | null>(null);
     const [psurRef, setPsurRef] = useState<string | null>(null);
     const [createBusy, setCreateBusy] = useState(false);
     const [createError, setCreateError] = useState("");
+
+    // State for Bulk Upload
+    const [bulkMode, setBulkMode] = useState(false);
+    const [bulkCodes, setBulkCodes] = useState("");
+    // State for Custom Templates
+    const [templateType, setTemplateType] = useState<"standard" | "custom">("standard");
+    const [customTemplate, setCustomTemplate] = useState<File | null>(null);
+    const [templateValidation, setTemplateValidation] = useState<{ valid: boolean; missingTags: string[] }>({ valid: false, missingTags: [] });
     const [conflictCase, setConflictCase] = useState<{ id: number; psurReference: string; status: string } | null>(null);
 
     // Device Information (for report generation)
@@ -1644,7 +1682,7 @@ export default function PsurWizard() {
     const [deviceRiskClass, setDeviceRiskClass] = useState<"I" | "IIa" | "IIb" | "III">("IIa");
     const [showDeviceDetails, setShowDeviceDetails] = useState(false);
 
-    // Data
+    // Data (devices array no longer used - device info entered directly)
     const [devices, setDevices] = useState<Device[]>([]);
     const [existingDrafts, setExistingDrafts] = useState<ExistingCase[]>([]);
     const [counts, setCounts] = useState<AtomCountsResponse | null>(null);
@@ -1661,18 +1699,19 @@ export default function PsurWizard() {
     const [runtimeConnected, setRuntimeConnected] = useState(false);
     const runtimeEsRef = useRef<EventSource | null>(null);
 
-    // Polling for workflow progress
+    // Polling for workflow progress - faster polling for real-time updates
     useEffect(() => {
         let interval: NodeJS.Timeout | null = null;
-        
+
         if (pollingActive && psurCaseId) {
+            // Poll every 1.5 seconds for responsive UI during workflow execution
             interval = setInterval(async () => {
                 try {
                     const data = await api<RunWorkflowResponse>(`/api/orchestrator/cases/${psurCaseId}`);
                     setRunResult(data);
                     setPollError("");
                     setPollFailures(0);
-                    
+
                     // Check if everything is finished
                     const isFinished = data.steps.every(s => s.status === "COMPLETED" || s.status === "FAILED" || s.status === "BLOCKED");
                     if (isFinished) {
@@ -1684,16 +1723,16 @@ export default function PsurWizard() {
                     setPollError(message);
                     setPollFailures(prev => {
                         const next = prev + 1;
-                        if (next >= 3) {
+                        if (next >= 5) {
                             setPollingActive(false);
                             setRunBusy(false);
                         }
                         return next;
                     });
                 }
-            }, 5000);
+            }, 1500); // Reduced from 5000ms to 1500ms for real-time responsiveness
         }
-        
+
         return () => { if (interval) clearInterval(interval); };
     }, [pollingActive, psurCaseId]);
 
@@ -1704,8 +1743,8 @@ export default function PsurWizard() {
         if (!pollingActive && !runBusy) return;
 
         // close any previous stream (may already be closed, which is fine)
-        try { 
-            runtimeEsRef.current?.close(); 
+        try {
+            runtimeEsRef.current?.close();
         } catch (e) {
             // EventSource may already be closed - this is expected during cleanup
             console.debug("[RuntimeStream] Previous stream cleanup:", e);
@@ -1730,8 +1769,8 @@ export default function PsurWizard() {
         });
 
         return () => {
-            try { 
-                es.close(); 
+            try {
+                es.close();
             } catch (e) {
                 // EventSource cleanup - may already be closed
                 console.debug("[RuntimeStream] Stream cleanup:", e);
@@ -1741,10 +1780,10 @@ export default function PsurWizard() {
         };
     }, [psurCaseId, pollingActive, runBusy]);
     const [traceSummary, setTraceSummary] = useState<TraceSummary | null>(null);
-    
+
     // AI Options - Default to ON for SOTA narrative generation
     const [enableAIGeneration, setEnableAIGeneration] = useState(true);
-    
+
     // Document Style Options
     type DocumentStyle = "corporate" | "regulatory" | "premium";
     const [documentStyle, setDocumentStyle] = useState<DocumentStyle>("corporate");
@@ -1756,15 +1795,15 @@ export default function PsurWizard() {
     const [isEvidenceGridOpen, setIsEvidenceGridOpen] = useState(true);
 
     // Load data
-    useEffect(() => { 
+    useEffect(() => {
         api<Device[]>("/api/devices")
             .then(setDevices)
-            .catch((e) => console.error("[PSURWizard] Failed to load devices:", e)); 
+            .catch((e) => console.error("[PSURWizard] Failed to load devices:", e));
     }, []);
-    useEffect(() => { 
+    useEffect(() => {
         api<ExistingCase[]>("/api/psur-cases")
             .then(cases => setExistingDrafts(cases.filter(c => c.status === "draft")))
-            .catch((e) => console.error("[PSURWizard] Failed to load PSUR cases:", e)); 
+            .catch((e) => console.error("[PSURWizard] Failed to load PSUR cases:", e));
     }, []);
     useEffect(() => {
         api<{ requiredEvidenceTypes: string[] }>(`/api/templates/${templateId}/requirements`)
@@ -1778,22 +1817,86 @@ export default function PsurWizard() {
         catch { setCounts(null); }
     }, [psurCaseId]);
 
+    // Refresh device info from case data (called after evidence import)
+    const refreshDeviceInfo = useCallback(async () => {
+        if (!psurCaseId) return;
+        try {
+            const cases = await api<ExistingCase[]>("/api/psur-cases");
+            const currentCase = cases.find(c => c.id === psurCaseId);
+            if (currentCase?.deviceInfo) {
+                const info = currentCase.deviceInfo;
+                // Helper to ensure value is a string (handles arrays from legacy data)
+                const ensureStr = (val: unknown): string => {
+                    if (Array.isArray(val)) return val.length > 0 ? String(val[0]) : "";
+                    return val ? String(val) : "";
+                };
+
+                const extractedName = ensureStr(info.deviceName);
+                if (extractedName && extractedName !== deviceName) {
+                    setDeviceName(extractedName);
+                    toast({
+                        title: "Device Info Updated",
+                        description: `Device name extracted: ${extractedName}`,
+                    });
+                }
+                if (info.deviceCode) setDeviceCode(ensureStr(info.deviceCode));
+                if (info.manufacturerName) setManufacturerName(ensureStr(info.manufacturerName));
+                if (info.udiDi) setUdiDi(ensureStr(info.udiDi));
+                if (info.gmdnCode) setGmdnCode(ensureStr(info.gmdnCode));
+                if (info.riskClass) {
+                    const riskStr = ensureStr(info.riskClass);
+                    const validClass = ["I", "IIa", "IIb", "III"].includes(riskStr)
+                        ? riskStr as "I" | "IIa" | "IIb" | "III"
+                        : riskStr.replace(/Class\s*/i, "") as "I" | "IIa" | "IIb" | "III";
+                    if (["I", "IIa", "IIb", "III"].includes(validClass)) {
+                        setDeviceRiskClass(validClass);
+                    }
+                }
+                if (info.intendedPurpose) setIntendedPurpose(ensureStr(info.intendedPurpose));
+                console.log("[PSURWizard] Device info refreshed from evidence:", info);
+            }
+        } catch (e) {
+            console.warn("[PSURWizard] Failed to refresh device info:", e);
+        }
+    }, [psurCaseId, deviceName, toast]);
+
     useEffect(() => { if (psurCaseId) refreshCounts(); }, [psurCaseId, refreshCounts]);
 
     // Actions
     async function createDraft() {
         setCreateBusy(true); setCreateError(""); setConflictCase(null);
+
+        // Ensure deviceCode is set (auto-generate from name if empty)
+        const finalDeviceCode = deviceCode.trim() || deviceName.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 12) || "DEVICE";
+        if (!deviceCode.trim()) {
+            setDeviceCode(finalDeviceCode);
+        }
+
+        // Build PSUR reference: PSUR-[DeviceName]-[Start]-[End]
+        const normalizedDeviceName = deviceName.trim() || "Device";
+        const sanitizedDeviceName = normalizedDeviceName
+            .replace(/[^a-zA-Z0-9\s-]/g, "")
+            .replace(/\s+/g, "-")
+            .substring(0, 30);
+        const normalizeDate = (value: string) => {
+            const date = new Date(value);
+            return Number.isNaN(date.getTime()) ? value : date.toISOString().split("T")[0];
+        };
+        const startRef = normalizeDate(periodStart);
+        const endRef = normalizeDate(periodEnd);
+        const psurReference = `PSUR-${sanitizedDeviceName}-${startRef}-${endRef}`;
+
         try {
             const data = await api<CreateCaseResponse>("/api/psur-cases", {
                 method: "POST",
                 body: JSON.stringify({
-                    psurReference: `PSUR-${Date.now().toString(36).toUpperCase()}`,
+                    psurReference,
                     version: 1, templateId, jurisdictions, startPeriod: periodStart, endPeriod: periodEnd,
-                    deviceIds: [deviceId], leadingDeviceId: deviceId, status: "draft",
+                    deviceIds: deviceId ? [deviceId] : [], leadingDeviceId: deviceId || null, status: "draft",
                     // Include device information for the case
                     deviceInfo: {
-                        deviceCode,
-                        deviceName: deviceName || deviceCode,
+                        deviceCode: finalDeviceCode,
+                        deviceName: deviceName.trim(),
                         manufacturerName,
                         udiDi,
                         gmdnCode,
@@ -1803,43 +1906,41 @@ export default function PsurWizard() {
                 }),
             });
             setPsurCaseId(data.id); setPsurRef(data.psurReference);
-            
-            // Create device_registry_record evidence atom if device info was provided
-            if (deviceName || manufacturerName || intendedPurpose) {
-                try {
-                    await api("/api/evidence/atoms/batch", {
-                        method: "POST",
-                        body: JSON.stringify({
-                            psurCaseId: data.id,
-                            evidenceType: "device_registry_record",
-                            atoms: [{
-                                device_code: deviceCode,
-                                device_name: deviceName || deviceCode,
-                                name: deviceName || deviceCode,
-                                manufacturer_name: manufacturerName,
-                                udi_di: udiDi,
-                                gmdn_code: gmdnCode,
-                                gmdn: gmdnCode,
-                                intended_purpose: intendedPurpose,
-                                intended_use: intendedPurpose,
-                                risk_class: deviceRiskClass,
-                                classification: `Class ${deviceRiskClass}`,
-                                model: deviceCode,
-                                isUserProvided: true,
-                                _provenance: {
-                                    sourceFile: "user_input",
-                                    extractedAt: new Date().toISOString(),
-                                    deviceRef: { deviceCode },
-                                }
-                            }],
-                        }),
-                    });
-                    console.log("[PSURWizard] Created device_registry_record from user input");
-                } catch (atomErr) {
-                    console.warn("[PSURWizard] Failed to create device_registry_record atom:", atomErr);
-                }
+
+            // Create device_registry_record evidence atom with device info
+            try {
+                await api("/api/evidence/atoms/batch", {
+                    method: "POST",
+                    body: JSON.stringify({
+                        psurCaseId: data.id,
+                        evidenceType: "device_registry_record",
+                        atoms: [{
+                            device_code: finalDeviceCode,
+                            device_name: deviceName.trim(),
+                            name: deviceName.trim(),
+                            manufacturer_name: manufacturerName,
+                            udi_di: udiDi,
+                            gmdn_code: gmdnCode,
+                            gmdn: gmdnCode,
+                            intended_purpose: intendedPurpose,
+                            intended_use: intendedPurpose,
+                            risk_class: deviceRiskClass,
+                            classification: `Class ${deviceRiskClass}`,
+                            model: finalDeviceCode,
+                            isUserProvided: true,
+                            _provenance: {
+                                sourceFile: "user_input",
+                                extractedAt: new Date().toISOString(),
+                                deviceRef: { deviceCode: finalDeviceCode },
+                            }
+                        }],
+                    }),
+                });
+                console.log("[PSURWizard] Created device_registry_record from user input");
+            } catch (atomErr) {
+                console.warn("[PSURWizard] Failed to create device_registry_record atom:", atomErr);
             }
-            
+
             setStep(2);
             // Remove from existing drafts list since it's now active
             setExistingDrafts(prev => prev.filter(c => c.id !== data.id));
@@ -1887,19 +1988,63 @@ export default function PsurWizard() {
             setPeriodStart(caseData.startPeriod.split("T")[0]);
             setPeriodEnd(caseData.endPeriod.split("T")[0]);
             setDeviceId(caseData.leadingDeviceId);
-            
-            // Find device code from devices list
-            const device = devices.find(d => d.id === caseData.leadingDeviceId);
-            if (device) setDeviceCode(device.deviceCode);
-            
+
+            // Load extracted device info from evidence (if available)
+            const extractedInfo = caseData.deviceInfo;
+            if (extractedInfo) {
+                // Helper to ensure value is a string (handles arrays from legacy data)
+                const ensureString = (val: unknown): string => {
+                    if (Array.isArray(val)) return val.length > 0 ? String(val[0]) : "";
+                    return val ? String(val) : "";
+                };
+
+                // Use extracted device info from evidence documents
+                if (extractedInfo.deviceName) setDeviceName(ensureString(extractedInfo.deviceName));
+                if (extractedInfo.deviceCode) setDeviceCode(ensureString(extractedInfo.deviceCode));
+                if (extractedInfo.manufacturerName) setManufacturerName(extractedInfo.manufacturerName);
+                if (extractedInfo.udiDi) setUdiDi(extractedInfo.udiDi);
+                if (extractedInfo.gmdnCode) setGmdnCode(extractedInfo.gmdnCode);
+                if (extractedInfo.riskClass) {
+                    const validClass = ["I", "IIa", "IIb", "III"].includes(extractedInfo.riskClass)
+                        ? extractedInfo.riskClass as "I" | "IIa" | "IIb" | "III"
+                        : extractedInfo.riskClass.replace(/Class\s*/i, "") as "I" | "IIa" | "IIb" | "III";
+                    if (["I", "IIa", "IIb", "III"].includes(validClass)) {
+                        setDeviceRiskClass(validClass);
+                    }
+                }
+                if (extractedInfo.intendedPurpose) setIntendedPurpose(extractedInfo.intendedPurpose);
+                console.log(`[PSURWizard] Loaded extracted device info:`, extractedInfo);
+            } else {
+                // Fallback to devices list lookup
+                const device = devices.find(d => d.id === caseData.leadingDeviceId);
+                if (device) setDeviceCode(device.deviceCode);
+            }
+
             // Load evidence counts for this draft
+            console.log(`[PSURWizard] Loading evidence for case ${caseData.id}...`);
             const countsData = await api<AtomCountsResponse>(`/api/evidence/atoms/counts?psur_case_id=${caseData.id}`);
             setCounts(countsData);
-            
-            // Determine which step to go to based on evidence
-            const hasEvidence = countsData.totals.all > 0;
-            setStep(hasEvidence ? 2 : 2); // Go to upload step, user can proceed from there
-            
+
+            // Log what was found
+            const totalRecords = countsData.totals.all || 0;
+            const dataCategories = Object.keys(countsData.byType || {}).length;
+            console.log(`[PSURWizard] Loaded ${totalRecords} records across ${dataCategories} categories`);
+
+            // Determine which step to go to based on data
+            const hasData = totalRecords > 0;
+            setStep(hasData ? 2 : 2); // Go to upload step, user can proceed from there
+
+            // Show toast with data status and extracted device info
+            if (hasData) {
+                const deviceNote = extractedInfo?.deviceName
+                    ? ` Device: ${extractedInfo.deviceName}`
+                    : "";
+                toast({
+                    title: "Draft Resumed",
+                    description: `Loaded ${totalRecords} records from ${dataCategories} categories.${deviceNote}`,
+                });
+            }
+
         } catch (e: any) { setCreateError(e?.message || "Failed to load draft"); }
         finally { setLoadingDraft(false); }
     }
@@ -1911,9 +2056,29 @@ export default function PsurWizard() {
         setPollError("");
         setPollFailures(0);
         try {
+            // Ensure deviceCode is always a string (handle legacy array data)
+            const safeDeviceCode = Array.isArray(deviceCode)
+                ? (deviceCode.length > 0 ? String(deviceCode[0]) : "DEVICE")
+                : (deviceCode || "DEVICE");
+
+            // Build request payload - only include deviceId if it's a valid positive number
+            const payload: Record<string, unknown> = {
+                templateId,
+                jurisdictions,
+                deviceCode: safeDeviceCode,
+                periodStart,
+                periodEnd,
+                psurCaseId,
+                enableAIGeneration,
+                documentStyle,
+                enableCharts,
+            };
+            if (deviceId > 0) {
+                payload.deviceId = deviceId;
+            }
             await api<{ ok: true; psurCaseId: number; status: string }>("/api/orchestrator/run", {
                 method: "POST",
-                body: JSON.stringify({ templateId, jurisdictions, deviceCode, deviceId, periodStart, periodEnd, psurCaseId, enableAIGeneration, documentStyle, enableCharts }),
+                body: JSON.stringify(payload),
             });
             // Prime UI immediately (avoid waiting for first polling tick)
             try {
@@ -1964,7 +2129,7 @@ export default function PsurWizard() {
 
     // Computed
     const totalAtoms = counts?.totals.all || 0;
-    
+
     // Enhanced coverage: a type is "covered" if it has atoms OR if its source was uploaded
     // This ensures that when FSCA is uploaded with "N/A" for recalls, both fsca_record AND recall_record are covered
     const coveredTypes = new Set<string>(counts?.coverage?.coveredTypes || []);
@@ -1973,12 +2138,12 @@ export default function PsurWizard() {
         const isCoveredBySource = coveredTypes.has(t);
         return !hasAtoms && !isCoveredBySource;
     });
-    
+
     // Helper to check if a type is covered (either has atoms or source was uploaded)
     const isTypeCovered = (t: string): boolean => {
         return (counts?.byType?.[t] || 0) > 0 || coveredTypes.has(t);
     };
-    
+
     const canGoStep2 = !!psurCaseId;
     const canGoStep3 = canGoStep2 && totalAtoms > 0;
     const canGoStep4 = canGoStep3;
@@ -1986,812 +2151,873 @@ export default function PsurWizard() {
     const allComplete = runResult?.steps.every(s => s.status === "COMPLETED");
 
     return (
-        <div className="h-full flex flex-col space-y-12 pb-24">
+        <div className="h-full flex flex-col overflow-hidden bg-background/30 px-6 py-2">
             {/* Minimalist Step Indicator */}
-            <div className="flex items-center justify-center gap-4">
+            <div className="flex items-center justify-center gap-2 mb-4 shrink-0 scale-90">
                 {[1, 2, 3, 4, 5].map(n => {
                     const isCompleted = step > n;
                     const isActive = step === n;
                     const isDisabled = (n === 2 && !canGoStep2) || (n === 3 && !canGoStep3) || (n === 4 && !canGoStep4) || (n === 5 && !canGoStep5);
-                    const label = ["Draft", "Evidence", "Reconcile", "Review", "Compile"][n - 1];
+                    const label = ["Setup", "Data", "Verify", "Review", "Generate"][n - 1];
+                    const desc = ["Config", "Import", "Checks", "Finalize", "Done"][n - 1];
 
                     return (
-                        <div key={n} className="flex items-center gap-4">
-                            <button
-                                onClick={() => !isDisabled && setStep(n as WizardStep)}
-                                disabled={isDisabled}
-                                className={cn(
-                                    "group relative flex items-center gap-3 px-6 py-2.5 rounded-full transition-all duration-500",
-                                    isActive 
-                                        ? "bg-primary text-primary-foreground shadow-2xl scale-110 z-10" 
-                                        : isCompleted
-                                            ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
-                                            : "bg-white/50 text-muted-foreground border border-border/50 hover:bg-white disabled:opacity-30"
-                                )}
-                            >
-                                <div className={cn(
-                                    "w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold border",
-                                    isActive ? "bg-white text-primary border-white" : "border-current"
-                                )}>
-                                    {isCompleted ? (
-                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                        </svg>
-                                    ) : n}
-                                </div>
-                                <span className="text-sm font-bold tracking-tight">{label}</span>
-                            </button>
-                            {n < 5 && <div className="w-8 h-px bg-border/30" />}
-                        </div>
+                        <button
+                            key={n}
+                            onClick={() => !isDisabled && setStep(n as WizardStep)}
+                            disabled={isDisabled}
+                            className={cn(
+                                "flex-1 relative group flex flex-col items-center justify-center py-4 px-2 rounded-xl border-2 transition-all duration-300",
+                                isActive
+                                    ? "bg-white dark:bg-card border-primary shadow-lg scale-105 z-10"
+                                    : isCompleted
+                                        ? "bg-emerald-50/50 border-emerald-200 text-emerald-700"
+                                        : "bg-secondary/30 border-transparent text-muted-foreground hover:bg-white hover:border-border/50 disabled:opacity-40 disabled:hover:bg-secondary/30 disabled:hover:border-transparent"
+                            )}
+                        >
+                            <div className={cn(
+                                "text-2xl font-black mb-1 transition-colors",
+                                isActive ? "text-primary" : isCompleted ? "text-emerald-600" : "text-muted-foreground/50"
+                            )}>
+                                {isCompleted ? <CheckCircle2 className="w-8 h-8" /> : `0${n}`}
+                            </div>
+                            <div className={cn(
+                                "text-xs font-bold uppercase tracking-wider",
+                                isActive ? "text-foreground" : "text-muted-foreground"
+                            )}>
+                                {label}
+                            </div>
+                            {isActive && (
+                                <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-8 h-1 bg-primary rounded-full shadow-[0_0_10px_rgba(59,130,246,0.5)]" />
+                            )}
+                        </button>
                     );
                 })}
             </div>
 
             {/* Step Content */}
-            <div className="flex-1 min-h-0">
+            <div className="flex-1 overflow-y-auto min-h-0 w-full scroll-smooth pr-2 no-scrollbar ">
                 {/* STEP 1: CREATE DRAFT */}
                 {step === 1 && (
-                    <div className="max-w-4xl mx-auto space-y-12 animate-slide-up">
-                        <div className="text-center space-y-4">
-                            <h2 className="text-4xl font-semibold tracking-tight text-foreground leading-tight">Create a new PSUR Draft</h2>
-                            <p className="text-lg text-muted-foreground max-w-lg mx-auto">Configure device, reporting period, and jurisdiction to begin your periodic safety update report draft.</p>
+                    <div className="max-w-7xl mx-auto space-y-6 animate-slide-up pb-10">
+                        <div className="text-center space-y-2">
+                            <h2 className="text-2xl font-semibold tracking-tight text-foreground leading-tight">Create a new PSUR Draft</h2>
+                            <p className="text-sm text-muted-foreground max-w-lg mx-auto">Configure device and reporting period to begin.</p>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                            {/* Template & Jurisdictions */}
-                            <div className="glass-card p-8 space-y-8">
-                                <div className="space-y-3">
-                                    <label className="text-sm font-medium text-muted-foreground">Template</label>
-                                    <div className="p-4 rounded-xl bg-secondary/50 flex items-center gap-3">
-                                        <FileText className="w-5 h-5 text-muted-foreground" />
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 pb-20">
+                            {/* LEFT COLUMN: Device Configuration (Span 2) */}
+                            <div className="lg:col-span-2 bg-white dark:bg-card rounded-lg border border-border shadow-sm p-6 space-y-6 h-fit">
+                                <div className="flex items-center justify-between border-b border-border pb-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 rounded bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400">
+                                            <Settings className="w-5 h-5" />
+                                        </div>
                                         <div>
-                                            <div className="font-medium text-foreground">MDCG 2022-21 Annex I</div>
-                                            <div className="text-xs text-muted-foreground">EU MDR Compliant</div>
+                                            <h3 className="font-bold text-foreground">Device Configuration</h3>
+                                            <p className="text-xs text-muted-foreground">Setup reporting parameters</p>
                                         </div>
                                     </div>
                                 </div>
 
-                                <div className="space-y-3">
-                                    <label className="text-sm font-medium text-muted-foreground">Jurisdictions</label>
-                                    <div className="flex gap-3">
-                                        {["EU_MDR", "UK_MDR"].map(j => (
-                                            <label key={j} className={cn(
-                                                "flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border cursor-pointer transition-all duration-200",
-                                                jurisdictions.includes(j) 
-                                                    ? "bg-foreground/5 border-foreground/20 text-foreground" 
-                                                    : "bg-transparent border-border text-muted-foreground hover:border-foreground/20"
-                                            )}>
-                                                <input type="checkbox" checked={jurisdictions.includes(j)} onChange={() => setJurisdictions(jurisdictions.includes(j) ? jurisdictions.filter(x => x !== j) : [...jurisdictions, j])} className="hidden" />
-                                                <span className="text-sm font-medium">{j.replace("_", " ")}</span>
-                                            </label>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+                                    {/* Left Sub-Column: Identity */}
+                                    <div className="space-y-6">
+                                        <div className="space-y-3">
+                                            <div className="flex items-center justify-between">
+                                                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Device Selection</label>
+                                                <div className="flex items-center gap-2 p-1 rounded-lg bg-secondary/50 border border-border">
+                                                    <button
+                                                        onClick={() => setBulkMode(false)}
+                                                        className={cn(
+                                                            "px-2 py-1 rounded text-[10px] font-bold transition-all",
+                                                            !bulkMode ? "bg-white shadow-sm text-primary" : "text-muted-foreground hover:text-foreground"
+                                                        )}
+                                                    >
+                                                        Single
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setBulkMode(true)}
+                                                        className={cn(
+                                                            "px-2 py-1 rounded text-[10px] font-bold transition-all",
+                                                            bulkMode ? "bg-white shadow-sm text-primary" : "text-muted-foreground hover:text-foreground"
+                                                        )}
+                                                    >
+                                                        Bulk List
+                                                    </button>
+                                                </div>
+                                            </div>
 
-                            {/* Device & Period */}
-                            <div className="glass-card p-8 space-y-6">
-                                <div className="space-y-3">
-                                    <label className="text-sm font-medium text-muted-foreground">Device Code</label>
-                                    {devices.length > 0 ? (
-                                        <select 
-                                            className="w-full bg-secondary/50 border border-border rounded-xl px-4 py-3 font-medium focus:ring-2 focus:ring-foreground/10 focus:border-foreground/20 transition-all outline-none appearance-none cursor-pointer"
-                                            value={deviceId}
-                                            onChange={e => { setDeviceId(parseInt(e.target.value)); const d = devices.find(x => x.id === parseInt(e.target.value)); if (d) setDeviceCode(d.deviceCode); }}
-                                        >
-                                            {devices.map(d => <option key={d.id} value={d.id}>{d.deviceCode}</option>)}
-                                        </select>
-                                    ) : (
-                                        <input 
-                                            className="w-full bg-secondary/50 border border-border rounded-xl px-4 py-3 font-medium focus:ring-2 focus:ring-foreground/10 focus:border-foreground/20 outline-none"
-                                            value={deviceCode} 
-                                            onChange={e => setDeviceCode(e.target.value)} 
-                                            placeholder="Enter device code"
-                                        />
-                                    )}
-                                </div>
-
-                                <div className="space-y-3">
-                                    <label className="text-sm font-medium text-muted-foreground">Reporting Period</label>
-                                    <div className="flex items-center gap-3">
-                                        <input type="date" className="flex-1 bg-secondary/50 border border-border rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-foreground/10 focus:border-foreground/20 outline-none" value={periodStart} onChange={e => setPeriodStart(e.target.value)} />
-                                        <span className="text-muted-foreground">to</span>
-                                        <input type="date" className="flex-1 bg-secondary/50 border border-border rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-foreground/10 focus:border-foreground/20 outline-none" value={periodEnd} onChange={e => setPeriodEnd(e.target.value)} />
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Device Information Section */}
-                        <div className="glass-card p-8 space-y-6">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <h3 className="text-lg font-semibold text-foreground">Device Information</h3>
-                                    <p className="text-sm text-muted-foreground">Enter device details for accurate PSUR generation</p>
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={() => setShowDeviceDetails(!showDeviceDetails)}
-                                    className={cn(
-                                        "px-4 py-2 rounded-xl text-sm font-medium transition-all",
-                                        showDeviceDetails
-                                            ? "bg-foreground/10 text-foreground"
-                                            : "bg-secondary/50 text-muted-foreground hover:bg-secondary"
-                                    )}
-                                >
-                                    {showDeviceDetails ? "Hide Details" : "Add Details"}
-                                </button>
-                            </div>
-
-                            {showDeviceDetails && (
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-border/50 animate-in fade-in slide-in-from-top-2 duration-300">
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-medium text-muted-foreground">Device Name</label>
-                                        <input
-                                            className="w-full bg-secondary/50 border border-border rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-foreground/10 focus:border-foreground/20 outline-none"
-                                            value={deviceName}
-                                            onChange={e => setDeviceName(e.target.value)}
-                                            placeholder="e.g., LEEP Electrode System"
-                                        />
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-medium text-muted-foreground">Manufacturer</label>
-                                        <input
-                                            className="w-full bg-secondary/50 border border-border rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-foreground/10 focus:border-foreground/20 outline-none"
-                                            value={manufacturerName}
-                                            onChange={e => setManufacturerName(e.target.value)}
-                                            placeholder="e.g., CooperSurgical, Inc."
-                                        />
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-medium text-muted-foreground">UDI-DI</label>
-                                        <input
-                                            className="w-full bg-secondary/50 border border-border rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-foreground/10 focus:border-foreground/20 outline-none"
-                                            value={udiDi}
-                                            onChange={e => setUdiDi(e.target.value)}
-                                            placeholder="e.g., 00850003829XXX"
-                                        />
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-medium text-muted-foreground">GMDN Code</label>
-                                        <input
-                                            className="w-full bg-secondary/50 border border-border rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-foreground/10 focus:border-foreground/20 outline-none"
-                                            value={gmdnCode}
-                                            onChange={e => setGmdnCode(e.target.value)}
-                                            placeholder="e.g., 35421"
-                                        />
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-medium text-muted-foreground">Risk Class</label>
-                                        <select
-                                            className="w-full bg-secondary/50 border border-border rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-foreground/10 focus:border-foreground/20 outline-none appearance-none cursor-pointer"
-                                            value={deviceRiskClass}
-                                            onChange={e => setDeviceRiskClass(e.target.value as "I" | "IIa" | "IIb" | "III")}
-                                        >
-                                            <option value="I">Class I</option>
-                                            <option value="IIa">Class IIa</option>
-                                            <option value="IIb">Class IIb</option>
-                                            <option value="III">Class III</option>
-                                        </select>
-                                    </div>
-
-                                    <div className="md:col-span-2 space-y-2">
-                                        <label className="text-sm font-medium text-muted-foreground">Intended Purpose</label>
-                                        <textarea
-                                            className="w-full bg-secondary/50 border border-border rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-foreground/10 focus:border-foreground/20 outline-none min-h-[80px] resize-none"
-                                            value={intendedPurpose}
-                                            onChange={e => setIntendedPurpose(e.target.value)}
-                                            placeholder="e.g., The device is intended for use in electrosurgical procedures for the removal of abnormal cervical tissue..."
-                                        />
-                                    </div>
-                                </div>
-                            )}
-
-                            {!showDeviceDetails && (
-                                <div className="text-sm text-muted-foreground bg-amber-500/5 border border-amber-500/20 rounded-xl p-4">
-                                    <strong className="text-amber-600">Recommended:</strong> Adding device details ensures your PSUR report accurately reflects your device information instead of using default data.
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="space-y-6">
-                            <button 
-                                onClick={createDraft} 
-                                disabled={createBusy || !!psurCaseId}
-                                className="w-full py-4 rounded-2xl border border-border hover:border-foreground/20 hover:bg-secondary/50 text-foreground font-medium transition-all duration-200 disabled:opacity-50 flex items-center justify-center gap-3"
-                            >
-                                {createBusy ? (
-                                    <>
-                                        <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> 
-                                        <span>Creating...</span>
-                                    </>
-                                ) : psurCaseId ? (
-                                    <>
-                                        <svg className="w-5 h-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg> 
-                                        <span>Draft Created</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                                        <span>Create PSUR Draft</span>
-                                    </>
-                                )}
-                            </button>
-                            
-                            {createError && (
-                                <div className="text-center space-y-2">
-                                    <div className="text-sm text-destructive">{createError}</div>
-                                    {conflictCase && (
-                                        <button
-                                            onClick={resumeConflictCase}
-                                            disabled={loadingDraft}
-                                            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 transition-colors text-sm font-medium"
-                                        >
-                                            {loadingDraft ? (
-                                                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                            {bulkMode ? (
+                                                <div className="space-y-2 animate-in fade-in slide-in-from-top-2">
+                                                    <textarea
+                                                        className="w-full h-32 bg-background border border-input rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all shadow-sm resize-none font-mono"
+                                                        placeholder="Paste product codes (one per line)...&#10;MK-001&#10;MK-002&#10;MK-003"
+                                                        value={bulkCodes}
+                                                        onChange={e => setBulkCodes(e.target.value)}
+                                                    />
+                                                    <p className="text-[10px] text-muted-foreground">
+                                                        {bulkCodes.split('\n').filter(l => l.trim()).length} codes detected
+                                                    </p>
+                                                </div>
                                             ) : (
-                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                                                devices.length > 0 ? (
+                                                    <div className="space-y-2 animate-in fade-in slide-in-from-top-2">
+                                                        <select
+                                                            className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all shadow-sm appearance-none cursor-pointer"
+                                                            value={deviceId || ""}
+                                                            onChange={e => {
+                                                                const id = parseInt(e.target.value);
+                                                                if (id) {
+                                                                    const device = devices.find(d => d.id === id);
+                                                                    if (device) {
+                                                                        setDeviceId(device.id);
+                                                                        setDeviceName(device.deviceName);
+                                                                        setDeviceCode(device.deviceCode);
+                                                                        setDeviceRiskClass(device.riskClass as "I" | "IIa" | "IIb" | "III");
+                                                                        if (device.gmdnCode) setGmdnCode(device.gmdnCode);
+                                                                    }
+                                                                } else {
+                                                                    setDeviceId(0);
+                                                                }
+                                                            }}
+                                                        >
+                                                            <option value="">Select from registry...</option>
+                                                            {devices.map(d => (
+                                                                <option key={d.id} value={d.id}>{d.deviceName} ({d.deviceCode})</option>
+                                                            ))}
+                                                        </select>
+                                                        {!deviceId && (
+                                                            <input
+                                                                className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all shadow-sm"
+                                                                value={deviceName}
+                                                                onChange={e => {
+                                                                    setDeviceName(e.target.value);
+                                                                    if (!deviceCode) {
+                                                                        setDeviceCode(e.target.value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 12) || "DEVICE");
+                                                                    }
+                                                                }}
+                                                                placeholder="Or enter new device name..."
+                                                            />
+                                                        )}
+                                                    </div>
+                                                ) : (
+                                                    <input
+                                                        className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all shadow-sm"
+                                                        value={deviceName}
+                                                        onChange={e => {
+                                                            setDeviceName(e.target.value);
+                                                            if (!deviceCode) {
+                                                                setDeviceCode(e.target.value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 12) || "DEVICE");
+                                                            }
+                                                        }}
+                                                        placeholder="e.g., CardioSync Pacemaker Model X"
+                                                    />
+                                                )
                                             )}
-                                            <span>Resume {conflictCase.psurReference}</span>
-                                        </button>
-                                    )}
-                                </div>
-                            )}
-                        </div>
+                                        </div>
 
-                        {/* Resume Existing Draft - Limited to 3 most recent */}
-                        {existingDrafts.length > 0 && !psurCaseId && (
-                            <div className="animate-slide-up" style={{ animationDelay: "200ms" }}>
-                                <div className="flex items-center justify-between mb-4">
-                                    <h3 className="text-sm font-medium text-muted-foreground tracking-wide">Recent Drafts</h3>
-                                </div>
-                                <div className="space-y-2">
-                                    {existingDrafts.slice(0, 3).map(c => {
-                                        const device = devices.find(d => d.id === c.leadingDeviceId);
-                                        return (
-                                            <div key={c.id} 
-                                                className="p-4 rounded-2xl bg-secondary/30 hover:bg-secondary/50 cursor-pointer group transition-all duration-200 flex items-center justify-between"
-                                                onClick={() => !loadingDraft && resumeDraft(c)}
-                                            >
-                                                <div className="flex items-center gap-4">
-                                                    <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center">
-                                                        <svg className="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                                        </svg>
+                                        <div className="space-y-3">
+                                            <div className="flex items-center justify-between">
+                                                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Template Strategy</label>
+                                                <div className="flex items-center gap-2 p-1 rounded-lg bg-secondary/50 border border-border">
+                                                    <button onClick={() => setTemplateType("standard")} className={cn("px-2 py-1 rounded text-[10px] font-bold transition-all", templateType === "standard" ? "bg-white shadow-sm text-primary" : "text-muted-foreground hover:text-foreground")}>Standard</button>
+                                                    <button onClick={() => setTemplateType("custom")} className={cn("px-2 py-1 rounded text-[10px] font-bold transition-all", templateType === "custom" ? "bg-white shadow-sm text-primary" : "text-muted-foreground hover:text-foreground")}>Custom</button>
+                                                </div>
+                                            </div>
+
+                                            {templateType === "standard" ? (
+                                                <div className="p-3 rounded-md bg-secondary/20 border border-border flex items-center gap-3 animate-in fade-in slide-in-from-top-1">
+                                                    <div className="w-8 h-8 rounded bg-white flex items-center justify-center border border-border">
+                                                        <span className="font-bold text-xs text-primary">EU</span>
                                                     </div>
                                                     <div>
-                                                        <div className="font-semibold text-foreground">{device?.deviceCode || c.psurReference}</div>
-                                                        <div className="text-xs text-muted-foreground">{c.jurisdictions?.join(", ").replace(/_/g, " ")}</div>
+                                                        <div className="font-bold text-sm text-foreground">MDCG 2022-21 Annex I</div>
+                                                        <div className="text-[10px] text-muted-foreground">Standardized PSUR Template</div>
                                                     </div>
                                                 </div>
-                                                <svg className="w-5 h-5 text-muted-foreground group-hover:text-foreground group-hover:translate-x-1 transition-all" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                                </svg>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                )}
+                                            ) : (
+                                                <div className="space-y-3 animate-in fade-in slide-in-from-top-1">
+                                                    <div className="border-2 border-dashed border-border rounded-lg p-6 hover:bg-secondary/20 transition-colors text-center cursor-pointer relative group">
+                                                        <input
+                                                            type="file"
+                                                            accept=".docx"
+                                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                                            onChange={async (e) => {
+                                                                const file = e.target.files?.[0];
+                                                                if (file) {
+                                                                    setCustomTemplate(file);
+                                                                    setTemplateValidation({ valid: false, missingTags: [] });
 
-                {/* STEP 2: UPLOAD */}
-                {step === 2 && psurCaseId && (
-                    <div className="max-w-5xl mx-auto space-y-12 animate-slide-up">
-                        <div className="text-center space-y-3">
-                            <h2 className="text-3xl font-semibold tracking-tight text-foreground">Upload Evidence</h2>
-                            <p className="text-muted-foreground max-w-lg mx-auto">Add supporting documents and data files for your PSUR report.</p>
-                        </div>
+                                                                    const formData = new FormData();
+                                                                    formData.append("file", file);
 
-                        {/* Top Stats Cards */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                            <div className="glass-card p-8 bg-primary/5 border-primary/10 shadow-xl group hover:scale-105">
-                                <div className="text-sm font-black text-primary uppercase tracking-[0.2em] mb-4">Intelligence Atoms</div>
-                                <div className="text-6xl font-black text-primary tracking-tighter group-hover:scale-110 transition-transform">{totalAtoms}</div>
-                            </div>
-                            <div className="glass-card p-8 bg-emerald-500/5 border-emerald-500/10 shadow-xl group hover:scale-105">
-                                <div className="text-sm font-black text-emerald-600 uppercase tracking-[0.2em] mb-4">Requirements Status</div>
-                                <div className="text-6xl font-black text-emerald-600 tracking-tighter group-hover:scale-110 transition-transform">{((requiredTypes.length - missingTypes.length) / requiredTypes.length * 100).toFixed(0)}%</div>
-                            </div>
-                            <div className="glass-card p-8 bg-amber-500/5 border-amber-500/10 shadow-xl group hover:scale-105">
-                                <div className="text-sm font-black text-amber-600 uppercase tracking-[0.2em] mb-4">Verification Gaps</div>
-                                <div className="text-6xl font-black text-amber-600 tracking-tighter group-hover:scale-110 transition-transform">{missingTypes.length}</div>
-                            </div>
-                        </div>
+                                                                    try {
+                                                                        const res = await fetch("/api/templates/upload", { method: "POST", body: formData });
+                                                                        const data = await res.json();
 
-                        {/* Large Action Panels */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                            <button onClick={() => setShowIngestionModal(true)} className="glass-card p-10 text-left space-y-8 group hover:shadow-2xl active:scale-95">
-                                <div className="w-20 h-20 rounded-3xl bg-primary/10 flex items-center justify-center text-primary group-hover:scale-110 group-hover:rotate-3 transition-all duration-500 shadow-inner">
-                                    <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
-                                </div>
-                                <div className="space-y-4">
-                                    <h3 className="text-3xl font-black tracking-tighter text-foreground group-hover:text-primary transition-colors">AI Document Ingestion</h3>
-                                    <p className="text-lg text-muted-foreground font-medium leading-relaxed">Neural-powered extraction for CER, Risk, and PMCF dossiers with automated entity recognition.</p>
-                                </div>
-                            </button>
-
-                            <button onClick={() => setShowEvidenceModal(true)} className="glass-card p-10 text-left space-y-8 group hover:shadow-2xl active:scale-95">
-                                <div className="w-20 h-20 rounded-3xl bg-emerald-500/10 flex items-center justify-center text-emerald-600 group-hover:scale-110 group-hover:-rotate-3 transition-all duration-500 shadow-inner">
-                                    <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
-                                </div>
-                                <div className="space-y-4">
-                                    <h3 className="text-3xl font-black tracking-tighter text-foreground group-hover:text-emerald-600 transition-colors">Direct Evidence Mapping</h3>
-                                    <p className="text-lg text-muted-foreground font-medium leading-relaxed">High-velocity structured data import for Sales, Complaints, and FSCA repositories.</p>
-                                </div>
-                            </button>
-                        </div>
-
-                        {/* Evidence Status Grid */}
-                        <div className="glass-card p-10 space-y-10 shadow-2xl">
-                            <div className="flex items-center justify-between cursor-pointer group" onClick={() => setIsEvidenceGridOpen(!isEvidenceGridOpen)}>
-                                <div className="flex items-center gap-4">
-                                    <h3 className="text-2xl font-black tracking-tighter text-foreground">Compliance Matrix</h3>
-                                    {isEvidenceGridOpen ? <ChevronUp className="w-6 h-6 text-muted-foreground group-hover:text-primary transition-colors" /> : <ChevronDown className="w-6 h-6 text-muted-foreground group-hover:text-primary transition-colors" />}
-                                </div>
-                                <button onClick={(e) => { e.stopPropagation(); refreshCounts(); }} className="w-12 h-12 rounded-full flex items-center justify-center bg-secondary hover:bg-white hover:text-primary transition-all active:rotate-180">
-                                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                                </button>
-                            </div>
-                            
-                            {isEvidenceGridOpen && (
-                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 animate-in fade-in slide-in-from-top-4 duration-500">
-                                    {requiredTypes.map(t => {
-                                        const c = counts?.byType?.[t] || 0;
-                                        const isCovered = isTypeCovered(t);
-                                        const coverageInfo = counts?.coverage?.coveredByType?.[t];
-                                        const sourceName = coverageInfo?.source;
-                                        return (
-                                            <div key={t} className={cn(
-                                                "p-6 rounded-3xl border transition-all duration-500 flex flex-col justify-between h-40 group hover:-translate-y-2",
-                                                isCovered ? "bg-emerald-500/[0.03] border-emerald-500/20 shadow-lg shadow-emerald-500/5" : "bg-secondary/30 border-border/50 hover:border-amber-500/30"
-                                            )}>
-                                                <div className="flex items-start justify-between">
-                                                    <span className={cn(
-                                                        "text-[10px] font-black uppercase tracking-[0.2em]",
-                                                        isCovered ? "text-emerald-600" : "text-muted-foreground"
-                                                    )}>
-                                                        {formatType(t)}
-                                                    </span>
-                                                    {isCovered && <div className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-lg"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>}
-                                                </div>
-                                                <div className="space-y-4">
-                                                    <div className={cn(
-                                                        "text-4xl font-black tracking-tighter transition-all group-hover:scale-110 origin-left",
-                                                        isCovered ? "text-foreground" : "text-muted-foreground/30"
-                                                    )}>
-                                                        {c}
+                                                                        if (res.ok && data.success) {
+                                                                            setTemplateValidation({ valid: true, missingTags: [] });
+                                                                            setTemplateId(data.templateId);
+                                                                            toast({ title: "Template Validated", description: `Loaded template: ${data.name}`, variant: "default" });
+                                                                        } else {
+                                                                            setTemplateValidation({ valid: false, missingTags: data.details || [data.error || "Invalid template"] });
+                                                                            toast({ title: "Validation Failed", description: data.error || "Refer to missing tags", variant: "destructive" });
+                                                                        }
+                                                                    } catch (err) {
+                                                                        console.error(err);
+                                                                        setTemplateValidation({ valid: false, missingTags: ["Network error"] });
+                                                                        toast({ title: "Upload Error", description: "Failed to upload template", variant: "destructive" });
+                                                                    }
+                                                                }
+                                                            }}
+                                                        />
+                                                        <div className="flex flex-col items-center gap-2">
+                                                            <div className="p-2 rounded-full bg-primary/10 text-primary group-hover:scale-110 transition-transform">
+                                                                <FileText className="w-5 h-5" />
+                                                            </div>
+                                                            <div className="space-y-1">
+                                                                <p className="text-sm font-semibold text-foreground">
+                                                                    {customTemplate ? customTemplate.name : "Upload Corporate Template"}
+                                                                </p>
+                                                                <p className="text-xs text-muted-foreground">
+                                                                    {customTemplate ? "Click to change" : "Drag & drop or click to browse (.docx)"}
+                                                                </p>
+                                                            </div>
+                                                        </div>
                                                     </div>
-                                                    <div className={cn(
-                                                        "ios-pill inline-flex border-none text-[10px] font-black",
-                                                        c > 0 ? "bg-emerald-500 text-white" 
-                                                        : isCovered ? "bg-primary text-white" 
-                                                        : "bg-muted text-muted-foreground"
-                                                    )}>
-                                                        {c > 0 ? "READY" : isCovered ? sourceName?.toUpperCase() : "MISSING"}
+
+                                                    {customTemplate && (
+                                                        <div className={cn("p-3 rounded-md border flex items-center gap-3", templateValidation.valid ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-700" : "bg-amber-500/10 border-amber-500/20 text-amber-700")}>
+                                                            {templateValidation.valid ? <CheckCircle2 className="w-4 h-4" /> : <Loader2 className="w-4 h-4 animate-spin" />}
+                                                            <div className="text-xs font-medium">
+                                                                {templateValidation.valid ? "Template validated successfully. All tags found." : "Validating template structure..."}
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    <div className="flex justify-between items-center px-1">
+                                                        <a href="#" className="text-[10px] text-primary hover:underline flex items-center gap-1">
+                                                            <ArrowRight className="w-3 h-3" />
+                                                            Download Tag Reference
+                                                        </a>
                                                     </div>
                                                 </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                )}
-
-                {/* STEP 3: RECONCILE - Handle Missing Evidence Types */}
-                {step === 3 && psurCaseId && (
-                    <ReconcileStep 
-                        psurCaseId={psurCaseId}
-                        deviceCode={deviceCode}
-                        periodStart={periodStart}
-                        periodEnd={periodEnd}
-                        requiredTypes={requiredTypes}
-                        counts={counts}
-                        missingTypes={missingTypes}
-                        coveredTypes={coveredTypes}
-                        isTypeCovered={isTypeCovered}
-                        onRefresh={refreshCounts}
-                        onUpload={() => setShowIngestionModal(true)}
-                    />
-                )}
-
-                {/* STEP 4: REVIEW */}
-                {step === 4 && psurCaseId && (
-                    <div className="h-full flex flex-col">
-                        {/* Stats Row */}
-                        <div className="grid grid-cols-4 gap-3 mb-3">
-                            <div className="p-4 rounded-xl glass-card border border-primary/20 text-center">
-                                <div className="text-2xl font-bold text-primary">{totalAtoms}</div>
-                                <div className="text-xs text-muted-foreground">Total Atoms</div>
-                            </div>
-                            <div className="p-4 rounded-xl glass-card border border-emerald-500/20 text-center">
-                                <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{requiredTypes.length - missingTypes.length}</div>
-                                <div className="text-xs text-muted-foreground">Requirements Met</div>
-                            </div>
-                            <div className="p-4 rounded-xl glass-card border border-amber-500/20 text-center">
-                                <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">{missingTypes.length}</div>
-                                <div className="text-xs text-muted-foreground">Types Missing</div>
-                            </div>
-                            <div className={`p-4 rounded-xl glass-card border text-center ${missingTypes.length === 0 ? "border-emerald-500/30 bg-emerald-500/5" : "border-amber-500/30 bg-amber-500/5"}`}>
-                                <div className={`text-lg font-bold ${missingTypes.length === 0 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>{missingTypes.length === 0 ? "Ready" : "Incomplete"}</div>
-                                <div className="text-xs text-muted-foreground">Status</div>
-                            </div>
-                        </div>
-
-                        {/* Evidence Grid */}
-                        <div className="flex-1 min-h-0 overflow-y-auto glass-card rounded-xl p-4">
-                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-                                {requiredTypes.map(t => {
-                                    const c = counts?.byType?.[t] || 0;
-                                    const isCovered = isTypeCovered(t);
-                                    const coverageInfo = counts?.coverage?.coveredByType?.[t];
-                                    return (
-                                        <div key={t} className={cn(
-                                            "flex items-center justify-between px-3 py-2 rounded-lg border transition-all",
-                                            isCovered 
-                                                ? c > 0 
-                                                    ? "bg-emerald-500/10 border-emerald-500/30 dark:bg-emerald-500/5" 
-                                                    : "bg-primary/10 border-primary/30 dark:bg-primary/5"
-                                                : "bg-destructive/10 border-destructive/30 dark:bg-destructive/5"
-                                        )}>
-                                            <span className="text-sm font-medium truncate mr-2 text-foreground">{formatType(t)}</span>
-                                            <span className={cn(
-                                                "text-sm font-bold",
-                                                c > 0 ? "text-emerald-600 dark:text-emerald-400" 
-                                                : isCovered ? "text-primary" 
-                                                : "text-destructive"
-                                            )}>
-                                                {c > 0 ? c : isCovered ? `(${coverageInfo?.source || "covered"})` : "-"}
-                                            </span>
+                                            )}
                                         </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
 
-                        {missingTypes.length > 0 && (
-                            <div className="mt-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-700 dark:text-amber-300">
-                                Missing: {missingTypes.slice(0, 5).map(formatType).join(", ")}{missingTypes.length > 5 && ` +${missingTypes.length - 5} more`}
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {/* STEP 5: COMPILE - Minimalist iOS Design */}
-                {step === 5 && psurCaseId && (
-                    <div className="h-full flex flex-col -mx-4 -my-2">
-                        {/* Pre-compile configuration */}
-                        {!runResult ? (
-                            <div className="flex-1 flex flex-col">
-                                {/* Header */}
-                                <div className="text-center mb-8">
-                                    <h2 className="text-2xl font-semibold tracking-tight text-foreground mb-2">Generate Document</h2>
-                                    <p className="text-muted-foreground">Configure your PSUR output settings</p>
-                                </div>
-
-                                {/* Configuration Grid */}
-                                <div className="grid grid-cols-2 gap-8 max-w-3xl mx-auto w-full mb-8">
-                                    {/* Left Column - Summary */}
-                                    <div className="glass-card p-6 space-y-5">
-                                        <h3 className="text-sm font-semibold text-foreground mb-4">Report Summary</h3>
-                                        {[
-                                            { label: "Template", value: templateId.split("_")[0] },
-                                            { label: "Jurisdictions", value: jurisdictions.join(", ") },
-                                            { label: "Device", value: deviceCode },
-                                            { label: "Period", value: `${periodStart} to ${periodEnd}` },
-                                            { label: "Total Inputs", value: String(totalAtoms) },
-                                        ].map((item, i) => (
-                                            <div key={i} className="flex justify-between items-center py-2 border-b border-border/30 last:border-0">
-                                                <span className="text-sm text-muted-foreground">{item.label}</span>
-                                                <span className="text-sm font-medium text-foreground">{item.value}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-
-                                    {/* Right Column - Options */}
-                                    <div className="glass-card p-6 space-y-6">
-                                        <h3 className="text-sm font-semibold text-foreground mb-4">Output Options</h3>
-                                        
-                                        {/* Smart Narrative Toggle */}
-                                        <label className="flex items-center justify-between cursor-pointer group">
-                                            <div>
-                                                <div className="text-sm font-medium text-foreground">Smart Narrative</div>
-                                                <div className="text-xs text-muted-foreground">Auto-generate contextual summaries</div>
-                                            </div>
-                                            <div className={`relative w-11 h-6 rounded-full transition-all ${enableAIGeneration ? "bg-primary" : "bg-border"}`}>
-                                                <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${enableAIGeneration ? "left-5" : "left-0.5"}`}></div>
-                                            </div>
-                                        </label>
-
-                                        {/* Charts Toggle */}
-                                        <label className="flex items-center justify-between cursor-pointer group">
-                                            <div>
-                                                <div className="text-sm font-medium text-foreground">Visual Charts</div>
-                                                <div className="text-xs text-muted-foreground">Include trend visualizations</div>
-                                            </div>
-                                            <div className={`relative w-11 h-6 rounded-full transition-all ${enableCharts ? "bg-primary" : "bg-border"}`}>
-                                                <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${enableCharts ? "left-5" : "left-0.5"}`}></div>
-                                            </div>
-                                        </label>
-
-                                        {/* Document Style */}
-                                        <div>
-                                            <div className="text-sm font-medium text-foreground mb-3">Document Style</div>
-                                            <div className="grid grid-cols-3 gap-2">
-                                                {([
-                                                    { value: "corporate" as const, label: "Corporate" },
-                                                    { value: "regulatory" as const, label: "Regulatory" },
-                                                    { value: "premium" as const, label: "Premium" },
-                                                ]).map(style => (
-                                                    <button 
-                                                        key={style.value}
-                                                        onClick={() => setDocumentStyle(style.value)}
-                                                        className={`py-2.5 px-3 rounded-xl text-xs font-medium transition-all ${
-                                                            documentStyle === style.value 
-                                                                ? "bg-primary text-primary-foreground shadow-sm"
-                                                                : "bg-secondary/50 text-muted-foreground hover:bg-secondary"
-                                                        }`}
-                                                    >
-                                                        {style.label}
-                                                    </button>
+                                        <div className="space-y-3">
+                                            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Jurisdictions</label>
+                                            <div className="flex gap-3">
+                                                {["EU_MDR", "UK_MDR"].map(j => (
+                                                    <label key={j} className={cn(
+                                                        "flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border cursor-pointer transition-all duration-300",
+                                                        jurisdictions.includes(j)
+                                                            ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                                                            : "bg-background border-input text-muted-foreground hover:bg-secondary/50"
+                                                    )}>
+                                                        <input type="checkbox" checked={jurisdictions.includes(j)} onChange={() => setJurisdictions(jurisdictions.includes(j) ? jurisdictions.filter(x => x !== j) : [...jurisdictions, j])} className="hidden" />
+                                                        <span className="text-xs font-bold uppercase tracking-widest">{j.replace("_", " ")}</span>
+                                                        {jurisdictions.includes(j) && <CheckCircle2 className="w-3 h-3" />}
+                                                    </label>
                                                 ))}
                                             </div>
                                         </div>
                                     </div>
-                                </div>
 
-                                {/* Generate Button */}
-                                <div className="flex justify-center">
-                                    <button 
-                                        onClick={runWorkflow} 
-                                        disabled={runBusy}
-                                        className="px-8 py-4 rounded-2xl bg-foreground text-background font-medium shadow-lg hover:shadow-xl transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 flex items-center gap-3"
-                                    >
-                                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                        </svg>
-                                        Generate PSUR
-                                    </button>
+                                    {/* Right Sub-Column: Temporal & Details */}
+                                    <div className="space-y-6">
+                                        <div className="space-y-3">
+                                            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Reporting Period</label>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div className="space-y-1">
+                                                    <span className="text-[10px] font-bold text-muted-foreground uppercase ml-1">Start</span>
+                                                    <input type="date" className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all shadow-sm" value={periodStart} onChange={e => setPeriodStart(e.target.value)} />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <span className="text-[10px] font-bold text-muted-foreground uppercase ml-1">End</span>
+                                                    <input type="date" className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all shadow-sm" value={periodEnd} onChange={e => setPeriodEnd(e.target.value)} />
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="pt-8">
+                                            <button
+                                                onClick={createDraft}
+                                                disabled={createBusy || !deviceName || !deviceCode || (templateType === 'custom' && !templateValidation.valid) || existingDrafts.length > 0}
+                                                className="w-full py-3 rounded-md bg-primary text-primary-foreground font-bold shadow-md hover:bg-primary/90 transition-all disabled:opacity-50 flex items-center justify-center gap-2 disabled:cursor-not-allowed"
+                                            >
+                                                {createBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : existingDrafts.length > 0 ? "Draft in Progress" : "Initialize Draft"}
+                                                {existingDrafts.length === 0 && <ArrowRight className="w-4 h-4" />}
+                                                {existingDrafts.length > 0 && <AlertCircle className="w-4 h-4" />}
+                                            </button>
+
+                                            {createError && <p className="text-xs text-red-500 font-medium text-center mt-2">{createError}</p>}
+
+                                            {existingDrafts.length > 0 && (
+                                                <div className="flex items-center gap-2 justify-center mt-3 text-amber-600 bg-amber-50 p-2 rounded border border-amber-200">
+                                                    <AlertCircle className="w-3.5 h-3.5" />
+                                                    <p className="text-[10px] font-medium">Please resume, delete, or cancel the active draft to start a new one.</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
-                        ) : (
-                            /* Compilation in progress / Complete */
-                            <div className="flex-1 flex gap-6">
-                                {/* Left Panel - Progress */}
-                                <div className="w-80 flex flex-col">
-                                    <div className="glass-card p-6 flex-1">
-                                        <h3 className="text-sm font-semibold text-foreground mb-6">Generation Progress</h3>
-                                        {pollError && (
-                                            <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700">
-                                                Connection issue: {pollError}
+
+                            {/* RIGHT COLUMN: Recent Drafts (Span 1) */}
+                            <div className="lg:col-span-1 space-y-3">
+                                {existingDrafts.length > 0 ? (
+                                    <div className="grid grid-cols-1 gap-3">
+                                        {existingDrafts.map(draft => (
+                                            <div
+                                                key={draft.id}
+                                                onClick={() => !loadingDraft && resumeDraft(draft)}
+                                                className="bg-white dark:bg-card border border-border rounded-lg p-5 shadow-sm hover:border-primary/50 hover:shadow-md cursor-pointer transition-all group h-full flex flex-col justify-between"
+                                            >
+                                                <div className="flex justify-between items-start mb-2">
+                                                    <span className="font-bold text-sm text-foreground group-hover:text-primary transition-colors">{draft.psurReference}</span>
+                                                    <Badge variant="outline" className="text-[10px] h-5 bg-secondary/50">{draft.status}</Badge>
+                                                </div>
+                                                <div className="text-xs text-muted-foreground mb-4 line-clamp-1 font-medium">
+                                                    {draft.deviceInfo?.deviceName || "Unknown Device"}
+                                                </div>
+                                                <div className="flex items-center justify-between text-[10px] text-muted-foreground mt-auto">
+                                                    <span className="font-medium bg-secondary/50 px-1.5 py-0.5 rounded">{draft.startPeriod || "N/A"}</span>
+                                                    <ArrowRight className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0 text-primary" />
+                                                </div>
                                             </div>
-                                        )}
-                                        
-                                        {/* Steps */}
-                                        <div className="space-y-1">
-                                            {runResult.steps.map((s, i) => (
-                                                <div key={s.step} className="flex items-start gap-3 py-3">
-                                                    {/* Status Icon */}
-                                                    <div className="mt-0.5">
-                                                        {s.status === "COMPLETED" ? (
-                                                            <div className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center">
-                                                                <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-                                                            </div>
-                                                        ) : s.status === "FAILED" ? (
-                                                            <div className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center">
-                                                                <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
-                                                            </div>
-                                                        ) : s.status === "RUNNING" ? (
-                                                            <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center">
-                                                                <svg className="w-3 h-3 text-white animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
-                                                            </div>
-                                                        ) : (
-                                                            <div className="w-5 h-5 rounded-full bg-border flex items-center justify-center">
-                                                                <span className="text-[10px] text-muted-foreground font-medium">{s.step}</span>
-                                                            </div>
-                                                        )}
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="bg-secondary/20 border border-dashed border-border rounded-lg p-8 text-center h-full flex flex-col items-center justify-center">
+                                        <p className="text-sm text-muted-foreground">No recent drafts found.</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                    </div >
+                )}
+
+                {/* STEP 2: UPLOAD */}
+                {
+                    step === 2 && psurCaseId && (
+                        <div className="max-w-5xl mx-auto space-y-12 animate-slide-up">
+                            <div className="text-center space-y-3">
+                                <h2 className="text-3xl font-semibold tracking-tight text-foreground">Import Source Data</h2>
+                                <p className="text-muted-foreground max-w-lg mx-auto">Add surveillance data and documentation for your PSUR report.</p>
+                            </div>
+
+                            {/* Top Stats Cards */}
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                                <div className="bg-white dark:bg-card border border-border shadow-sm rounded-lg p-8 bg-primary/5 border-primary/10 shadow-xl group hover:scale-105">
+                                    <div className="text-sm font-black text-primary uppercase tracking-[0.2em] mb-4">Data Records</div>
+                                    <div className="text-6xl font-black text-primary tracking-tighter group-hover:scale-110 transition-transform">{totalAtoms}</div>
+                                </div>
+                                <div className="bg-white dark:bg-card border border-border shadow-sm rounded-lg p-8 bg-emerald-500/5 border-emerald-500/10 shadow-xl group hover:scale-105">
+                                    <div className="text-sm font-black text-emerald-600 uppercase tracking-[0.2em] mb-4">Requirements Status</div>
+                                    <div className="text-6xl font-black text-emerald-600 tracking-tighter group-hover:scale-110 transition-transform">{((requiredTypes.length - missingTypes.length) / requiredTypes.length * 100).toFixed(0)}%</div>
+                                </div>
+                                <div className="bg-white dark:bg-card border border-border shadow-sm rounded-lg p-8 bg-amber-500/5 border-amber-500/10 shadow-xl group hover:scale-105">
+                                    <div className="text-sm font-black text-amber-600 uppercase tracking-[0.2em] mb-4">Verification Gaps</div>
+                                    <div className="text-6xl font-black text-amber-600 tracking-tighter group-hover:scale-110 transition-transform">{missingTypes.length}</div>
+                                </div>
+                            </div>
+
+                            {/* Large Action Panels */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                <button onClick={() => setShowIngestionModal(true)} className="bg-white dark:bg-card border border-border shadow-sm rounded-lg p-10 text-left space-y-8 group active:scale-95">
+                                    <div className="w-20 h-20 rounded-3xl bg-primary/10 flex items-center justify-center text-primary group-hover:scale-110 group-hover:rotate-3 transition-all duration-500 shadow-inner">
+                                        <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+                                    </div>
+                                    <div className="space-y-4">
+                                        <h3 className="text-3xl font-black tracking-tighter text-foreground group-hover:text-primary transition-colors">Document Import</h3>
+                                        <p className="text-lg text-muted-foreground font-medium leading-relaxed">Smart extraction from CER, Risk Assessment, and PMCF dossiers.</p>
+                                    </div>
+                                </button>
+
+                                <button onClick={() => setShowEvidenceModal(true)} className="bg-white dark:bg-card border border-border shadow-sm rounded-lg p-10 text-left space-y-8 group active:scale-95">
+                                    <div className="w-20 h-20 rounded-3xl bg-emerald-500/10 flex items-center justify-center text-emerald-600 group-hover:scale-110 group-hover:-rotate-3 transition-all duration-500 shadow-inner">
+                                        <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+                                    </div>
+                                    <div className="space-y-4">
+                                        <h3 className="text-3xl font-black tracking-tighter text-foreground group-hover:text-emerald-600 transition-colors">Structured Data Import</h3>
+                                        <p className="text-lg text-muted-foreground font-medium leading-relaxed">Import Sales, Complaints, and FSCA data from spreadsheets.</p>
+                                    </div>
+                                </button>
+                            </div>
+
+                            {/* Evidence Status Grid */}
+                            <div className="bg-white dark:bg-card border border-border shadow-sm rounded-lg p-10 space-y-10 shadow-2xl">
+                                <div className="flex items-center justify-between cursor-pointer group" onClick={() => setIsEvidenceGridOpen(!isEvidenceGridOpen)}>
+                                    <div className="flex items-center gap-4">
+                                        <h3 className="text-2xl font-black tracking-tighter text-foreground">Compliance Matrix</h3>
+                                        {isEvidenceGridOpen ? <ChevronUp className="w-6 h-6 text-muted-foreground group-hover:text-primary transition-colors" /> : <ChevronDown className="w-6 h-6 text-muted-foreground group-hover:text-primary transition-colors" />}
+                                    </div>
+                                    <button onClick={(e) => { e.stopPropagation(); refreshCounts(); }} className="w-12 h-12 rounded-full flex items-center justify-center bg-secondary hover:bg-white hover:text-primary transition-all active:rotate-180">
+                                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                                    </button>
+                                </div>
+
+                                {isEvidenceGridOpen && (
+                                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 animate-in fade-in slide-in-from-top-4 duration-500">
+                                        {requiredTypes.map(t => {
+                                            const c = counts?.byType?.[t] || 0;
+                                            const isCovered = isTypeCovered(t);
+                                            const coverageInfo = counts?.coverage?.coveredByType?.[t];
+                                            const sourceName = coverageInfo?.source;
+                                            return (
+                                                <div key={t} className={cn(
+                                                    "p-6 rounded-3xl border transition-all duration-500 flex flex-col justify-between h-40 group hover:-translate-y-2",
+                                                    isCovered ? "bg-emerald-500/[0.03] border-emerald-500/20 shadow-lg shadow-emerald-500/5" : "bg-secondary/30 border-border/50 hover:border-amber-500/30"
+                                                )}>
+                                                    <div className="flex items-start justify-between">
+                                                        <span className={cn(
+                                                            "text-[10px] font-black uppercase tracking-[0.2em]",
+                                                            isCovered ? "text-emerald-600" : "text-muted-foreground"
+                                                        )}>
+                                                            {formatType(t)}
+                                                        </span>
+                                                        {isCovered && <div className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-lg"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>}
                                                     </div>
-                                                    
-                                                    {/* Step Info */}
-                                                    <div className="flex-1 min-w-0">
-                                                        <div className={`text-sm font-medium ${
-                                                            s.status === "COMPLETED" ? "text-foreground" :
-                                                            s.status === "RUNNING" ? "text-primary" :
-                                                            s.status === "FAILED" ? "text-red-500" : "text-muted-foreground"
-                                                        }`}>{s.name}</div>
-                                                        {s.status === "RUNNING" && (
-                                                            <div className="mt-1.5 h-1 bg-border rounded-full overflow-hidden">
-                                                                <div className="h-full bg-primary rounded-full animate-pulse" style={{ width: '60%' }}></div>
-                                                            </div>
-                                                        )}
-                                                        {s.error && <div className="text-xs text-red-500 mt-1">{s.error}</div>}
+                                                    <div className="space-y-4">
+                                                        <div className={cn(
+                                                            "text-4xl font-black tracking-tighter transition-all group-hover:scale-110 origin-left",
+                                                            isCovered ? "text-foreground" : "text-muted-foreground/30"
+                                                        )}>
+                                                            {c}
+                                                        </div>
+                                                        <div className={cn(
+                                                            "ios-pill inline-flex border-none text-[10px] font-black",
+                                                            c > 0 ? "bg-emerald-500 text-white"
+                                                                : isCovered ? "bg-primary text-white"
+                                                                    : "bg-muted text-muted-foreground"
+                                                        )}>
+                                                            {c > 0 ? "READY" : isCovered ? sourceName?.toUpperCase() : "MISSING"}
+                                                        </div>
                                                     </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )
+                }
+
+                {/* STEP 3: RECONCILE - Handle Missing Evidence Types */}
+                {
+                    step === 3 && psurCaseId && (
+                        <ReconcileStep
+                            psurCaseId={psurCaseId}
+                            deviceCode={deviceCode}
+                            periodStart={periodStart}
+                            periodEnd={periodEnd}
+                            requiredTypes={requiredTypes}
+                            counts={counts}
+                            missingTypes={missingTypes}
+                            coveredTypes={coveredTypes}
+                            isTypeCovered={isTypeCovered}
+                            onRefresh={refreshCounts}
+                            onUpload={() => setShowIngestionModal(true)}
+                        />
+                    )
+                }
+
+                {/* STEP 4: REVIEW */}
+                {
+                    step === 4 && psurCaseId && (
+                        <div className="h-full flex flex-col">
+                            {/* Stats Row */}
+                            <div className="grid grid-cols-4 gap-3 mb-3">
+                                <div className="p-4 rounded-xl bg-white dark:bg-card border border-border shadow-sm rounded-lg border border-primary/20 text-center">
+                                    <div className="text-2xl font-bold text-primary">{totalAtoms}</div>
+                                    <div className="text-xs text-muted-foreground">Total Records</div>
+                                </div>
+                                <div className="p-4 rounded-xl bg-white dark:bg-card border border-border shadow-sm rounded-lg border border-emerald-500/20 text-center">
+                                    <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{requiredTypes.length - missingTypes.length}</div>
+                                    <div className="text-xs text-muted-foreground">Requirements Met</div>
+                                </div>
+                                <div className="p-4 rounded-xl bg-white dark:bg-card border border-border shadow-sm rounded-lg border border-amber-500/20 text-center">
+                                    <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">{missingTypes.length}</div>
+                                    <div className="text-xs text-muted-foreground">Types Missing</div>
+                                </div>
+                                <div className={`p-4 rounded-xl bg-white dark:bg-card border border-border shadow-sm rounded-lg border text-center ${missingTypes.length === 0 ? "border-emerald-500/30 bg-emerald-500/5" : "border-amber-500/30 bg-amber-500/5"}`}>
+                                    <div className={`text-lg font-bold ${missingTypes.length === 0 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>{missingTypes.length === 0 ? "Ready" : "Incomplete"}</div>
+                                    <div className="text-xs text-muted-foreground">Status</div>
+                                </div>
+                            </div>
+
+                            {/* Evidence Grid */}
+                            <div className="flex-1 min-h-0 overflow-y-auto bg-white dark:bg-card border border-border shadow-sm rounded-lg rounded-xl p-4">
+                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                                    {requiredTypes.map(t => {
+                                        const c = counts?.byType?.[t] || 0;
+                                        const isCovered = isTypeCovered(t);
+                                        const coverageInfo = counts?.coverage?.coveredByType?.[t];
+                                        return (
+                                            <div key={t} className={cn(
+                                                "flex items-center justify-between px-3 py-2 rounded-lg border transition-all",
+                                                isCovered
+                                                    ? c > 0
+                                                        ? "bg-emerald-500/10 border-emerald-500/30 dark:bg-emerald-500/5"
+                                                        : "bg-primary/10 border-primary/30 dark:bg-primary/5"
+                                                    : "bg-destructive/10 border-destructive/30 dark:bg-destructive/5"
+                                            )}>
+                                                <span className="text-sm font-medium truncate mr-2 text-foreground">{formatType(t)}</span>
+                                                <span className={cn(
+                                                    "text-sm font-bold",
+                                                    c > 0 ? "text-emerald-600 dark:text-emerald-400"
+                                                        : isCovered ? "text-primary"
+                                                            : "text-destructive"
+                                                )}>
+                                                    {c > 0 ? c : isCovered ? `(${coverageInfo?.source || "covered"})` : "-"}
+                                                </span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {missingTypes.length > 0 && (
+                                <div className="mt-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-700 dark:text-amber-300">
+                                    Missing: {missingTypes.slice(0, 5).map(formatType).join(", ")}{missingTypes.length > 5 && ` +${missingTypes.length - 5} more`}
+                                </div>
+                            )}
+                        </div>
+                    )
+                }
+
+                {/* STEP 5: COMPILE - Minimalist iOS Design */}
+                {
+                    step === 5 && psurCaseId && (
+                        <div className="h-full flex flex-col -mx-4 -my-2">
+                            {/* Pre-compile configuration */}
+                            {!runResult ? (
+                                <div className="flex-1 flex flex-col">
+                                    {/* Header */}
+                                    <div className="text-center mb-8">
+                                        <h2 className="text-2xl font-semibold tracking-tight text-foreground mb-2">Generate Document</h2>
+                                        <p className="text-muted-foreground">Configure your PSUR output settings</p>
+                                    </div>
+
+                                    {/* Configuration Grid */}
+                                    <div className="grid grid-cols-2 gap-8 max-w-3xl mx-auto w-full mb-8">
+                                        {/* Left Column - Summary */}
+                                        <div className="bg-white dark:bg-card border border-border shadow-sm rounded-lg p-6 space-y-5">
+                                            <h3 className="text-sm font-semibold text-foreground mb-4">Report Summary</h3>
+                                            {[
+                                                { label: "Template", value: templateId.split("_")[0] },
+                                                { label: "Jurisdictions", value: jurisdictions.join(", ").replace(/_/g, " ") },
+                                                { label: "Device", value: deviceName || deviceCode },
+                                                { label: "Period", value: `${periodStart} to ${periodEnd}` },
+                                                { label: "Data Records", value: String(totalAtoms) },
+                                            ].map((item, i) => (
+                                                <div key={i} className="flex justify-between items-center py-2 border-b border-border/30 last:border-0">
+                                                    <span className="text-sm text-muted-foreground">{item.label}</span>
+                                                    <span className="text-sm font-medium text-foreground">{item.value}</span>
                                                 </div>
                                             ))}
                                         </div>
 
-                                        {/* Stats */}
-                                        {traceSummary && (
-                                            <div className="mt-6 pt-6 border-t border-border/30 grid grid-cols-2 gap-3">
-                                                <div className="text-center p-3 rounded-xl bg-secondary/30">
-                                                    <div className="text-lg font-semibold text-foreground">{traceSummary.totalEvents}</div>
-                                                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Events</div>
+                                        {/* Right Column - Options */}
+                                        <div className="bg-white dark:bg-card border border-border shadow-sm rounded-lg p-6 space-y-6">
+                                            <h3 className="text-sm font-semibold text-foreground mb-4">Output Options</h3>
+
+                                            {/* Smart Narrative Toggle */}
+                                            <label className="flex items-center justify-between cursor-pointer group">
+                                                <div>
+                                                    <div className="text-sm font-medium text-foreground">Smart Narrative</div>
+                                                    <div className="text-xs text-muted-foreground">Auto-generate contextual summaries</div>
                                                 </div>
-                                                <div className="text-center p-3 rounded-xl bg-emerald-500/10">
-                                                    <div className="text-lg font-semibold text-emerald-600">{traceSummary.acceptedSlots}</div>
-                                                    <div className="text-[10px] text-emerald-600 uppercase tracking-wider">Processed</div>
+                                                <div className={`relative w-11 h-6 rounded-full transition-all ${enableAIGeneration ? "bg-primary" : "bg-border"}`}>
+                                                    <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${enableAIGeneration ? "left-5" : "left-0.5"}`}></div>
+                                                </div>
+                                            </label>
+
+                                            {/* Charts Toggle */}
+                                            <label className="flex items-center justify-between cursor-pointer group">
+                                                <div>
+                                                    <div className="text-sm font-medium text-foreground">Visual Charts</div>
+                                                    <div className="text-xs text-muted-foreground">Include trend visualizations</div>
+                                                </div>
+                                                <div className={`relative w-11 h-6 rounded-full transition-all ${enableCharts ? "bg-primary" : "bg-border"}`}>
+                                                    <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${enableCharts ? "left-5" : "left-0.5"}`}></div>
+                                                </div>
+                                            </label>
+
+                                            {/* Document Style */}
+                                            <div>
+                                                <div className="text-sm font-medium text-foreground mb-3">Document Style</div>
+                                                <div className="grid grid-cols-3 gap-2">
+                                                    {([
+                                                        { value: "corporate" as const, label: "Corporate" },
+                                                        { value: "regulatory" as const, label: "Regulatory" },
+                                                        { value: "premium" as const, label: "Premium" },
+                                                    ]).map(style => (
+                                                        <button
+                                                            key={style.value}
+                                                            onClick={() => setDocumentStyle(style.value)}
+                                                            className={`py-2.5 px-3 rounded-xl text-xs font-medium transition-all ${documentStyle === style.value
+                                                                ? "bg-primary text-primary-foreground shadow-sm"
+                                                                : "bg-secondary/50 text-muted-foreground hover:bg-secondary"
+                                                                }`}
+                                                        >
+                                                            {style.label}
+                                                        </button>
+                                                    ))}
                                                 </div>
                                             </div>
-                                        )}
+                                        </div>
+                                    </div>
+
+                                    {/* Generate Button */}
+                                    <div className="flex justify-center">
+                                        <button
+                                            onClick={runWorkflow}
+                                            disabled={runBusy}
+                                            className="px-8 py-4 rounded-2xl bg-foreground text-background font-medium shadow-lg hover:shadow-xl transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 flex items-center gap-3"
+                                        >
+                                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                            </svg>
+                                            Generate PSUR
+                                        </button>
                                     </div>
                                 </div>
+                            ) : (
+                                /* Compilation in progress / Complete */
+                                <div className="flex-1 flex gap-6">
+                                    {/* Left Panel - Progress */}
+                                    <div className="w-80 flex flex-col">
+                                        <div className="bg-white dark:bg-card border border-border shadow-sm rounded-lg p-6 flex-1">
+                                            <h3 className="text-sm font-semibold text-foreground mb-6">Generation Progress</h3>
+                                            {pollError && (
+                                                <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700">
+                                                    Connection issue: {pollError}
+                                                </div>
+                                            )}
 
-                                {/* Right Panel - Document Preview / Success */}
-                                <div className="flex-1 flex flex-col">
-                                    <div className="glass-card flex-1 flex flex-col overflow-hidden">
-                                        {allComplete ? (
-                                            /* Success State */
-                                            <div className="flex-1 flex flex-col">
-                                                {/* Preview Header */}
-                                                <div className="px-6 py-4 border-b border-border/30 flex items-center justify-between bg-white/40">
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
-                                                            <svg className="w-4 h-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                            {/* Steps */}
+                                            <div className="space-y-1">
+                                                {runResult.steps.map((s, i) => (
+                                                    <div key={s.step} className="flex items-start gap-3 py-3">
+                                                        {/* Status Icon */}
+                                                        <div className="mt-0.5">
+                                                            {s.status === "COMPLETED" ? (
+                                                                <div className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center">
+                                                                    <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                                                                </div>
+                                                            ) : s.status === "FAILED" ? (
+                                                                <div className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center">
+                                                                    <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
+                                                                </div>
+                                                            ) : s.status === "RUNNING" ? (
+                                                                <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center">
+                                                                    <svg className="w-3 h-3 text-white animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="w-5 h-5 rounded-full bg-border flex items-center justify-center">
+                                                                    <span className="text-[10px] text-muted-foreground font-medium">{s.step}</span>
+                                                                </div>
+                                                            )}
                                                         </div>
-                                                        <div>
-                                                            <div className="text-sm font-semibold text-foreground">Document Ready</div>
-                                                            <div className="text-xs text-muted-foreground">PSUR_{psurCaseId}.{documentStyle}</div>
+
+                                                        {/* Step Info */}
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className={`text-sm font-medium ${s.status === "COMPLETED" ? "text-foreground" :
+                                                                s.status === "RUNNING" ? "text-primary" :
+                                                                    s.status === "FAILED" ? "text-red-500" : "text-muted-foreground"
+                                                                }`}>{s.name}</div>
+                                                            {s.status === "RUNNING" && (
+                                                                <div className="mt-1.5 h-1 bg-border rounded-full overflow-hidden">
+                                                                    <div className="h-full bg-primary rounded-full animate-pulse" style={{ width: '60%' }}></div>
+                                                                </div>
+                                                            )}
+                                                            {s.error && <div className="text-xs text-red-500 mt-1">{s.error}</div>}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+
+                                            {/* Stats */}
+                                            {traceSummary && (
+                                                <div className="mt-6 pt-6 border-t border-border/30 grid grid-cols-2 gap-3">
+                                                    <div className="text-center p-3 rounded-xl bg-secondary/30">
+                                                        <div className="text-lg font-semibold text-foreground">{traceSummary.totalEvents}</div>
+                                                        <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Events</div>
+                                                    </div>
+                                                    <div className="text-center p-3 rounded-xl bg-emerald-500/10">
+                                                        <div className="text-lg font-semibold text-emerald-600">{traceSummary.acceptedSlots}</div>
+                                                        <div className="text-[10px] text-emerald-600 uppercase tracking-wider">Processed</div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Right Panel - Document Preview / Success */}
+                                    <div className="flex-1 flex flex-col">
+                                        <div className="bg-white dark:bg-card border border-border shadow-sm rounded-lg flex-1 flex flex-col overflow-hidden">
+                                            {allComplete ? (
+                                                /* Success State */
+                                                <div className="flex-1 flex flex-col">
+                                                    {/* Preview Header */}
+                                                    <div className="px-6 py-4 border-b border-border/30 flex items-center justify-between bg-white/40">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+                                                                <svg className="w-4 h-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                                            </div>
+                                                            <div>
+                                                                <div className="text-sm font-semibold text-foreground">Document Ready</div>
+                                                                <div className="text-xs text-muted-foreground">PSUR_{psurCaseId}.{documentStyle}</div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Document Preview */}
+                                                    <div className="flex-1 p-6 overflow-auto bg-secondary/20">
+                                                        <iframe
+                                                            src={`/api/psur-cases/${psurCaseId}/psur.html?style=${documentStyle}`}
+                                                            className="w-full h-full rounded-lg border border-border/30 bg-white shadow-sm"
+                                                            title="PSUR Preview"
+                                                        />
+                                                    </div>
+
+                                                    {/* Download Actions */}
+                                                    <div className="px-6 py-4 border-t border-border/30 bg-white/40">
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="flex gap-2">
+                                                                <a href={`/api/psur-cases/${psurCaseId}/psur.docx?style=${documentStyle}`} download
+                                                                    className="px-4 py-2 rounded-xl bg-blue-500 text-white text-sm font-medium hover:bg-blue-600 transition-all flex items-center gap-2 shadow-sm">
+                                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                                                    DOCX
+                                                                </a>
+                                                                <a href={`/api/psur-cases/${psurCaseId}/psur.pdf?style=${documentStyle}`} download
+                                                                    className="px-4 py-2 rounded-xl bg-red-500 text-white text-sm font-medium hover:bg-red-600 transition-all flex items-center gap-2 shadow-sm">
+                                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                                                    PDF
+                                                                </a>
+                                                                <a href={`/api/audit-bundles/${psurCaseId}/download`}
+                                                                    className="px-4 py-2 rounded-xl bg-secondary text-foreground text-sm font-medium hover:bg-secondary/80 transition-all flex items-center gap-2">
+                                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
+                                                                    Audit Bundle
+                                                                </a>
+                                                            </div>
+                                                            <button onClick={resetWizard}
+                                                                className="px-4 py-2 rounded-xl border border-border text-muted-foreground text-sm font-medium hover:bg-secondary/50 transition-all flex items-center gap-2">
+                                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                                                </svg>
+                                                                New Report
+                                                            </button>
                                                         </div>
                                                     </div>
                                                 </div>
+                                            ) : (
+                                                /* Building State */
+                                                <div className="flex-1 flex flex-col items-center justify-center p-8">
+                                                    <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-6">
+                                                        <svg className="w-8 h-8 text-primary animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                        </svg>
+                                                    </div>
+                                                    <h3 className="text-lg font-semibold text-foreground mb-2">Building Your Document</h3>
+                                                    <p className="text-sm text-muted-foreground text-center max-w-xs mb-6">
+                                                        Processing inputs and generating your regulatory report...
+                                                    </p>
 
-                                                {/* Document Preview */}
-                                                <div className="flex-1 p-6 overflow-auto bg-secondary/20">
-                                                    <iframe 
-                                                        src={`/api/psur-cases/${psurCaseId}/psur.html?style=${documentStyle}`}
-                                                        className="w-full h-full rounded-lg border border-border/30 bg-white shadow-sm"
-                                                        title="PSUR Preview"
+                                                    {/* Streaming text effect */}
+                                                    <div className="w-full max-w-md bg-white dark:bg-card border border-border shadow-sm rounded-lg p-4 rounded-xl">
+                                                        <div className="font-mono text-xs text-muted-foreground space-y-1">
+                                                            {runResult.steps.filter(s => s.status === "COMPLETED" || s.status === "RUNNING").map((s, i) => (
+                                                                <div key={i} className={`flex items-center gap-2 ${s.status === "RUNNING" ? "text-primary" : ""}`}>
+                                                                    <span className="text-emerald-500">{s.status === "COMPLETED" ? "Done" : "..."}</span>
+                                                                    <span>{s.name}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="mt-6 flex items-center gap-3">
+                                                        <button
+                                                            onClick={cancelDrafting}
+                                                            className="px-4 py-2 rounded-xl bg-destructive text-white text-sm font-medium hover:bg-destructive/90 transition-all shadow-sm"
+                                                        >
+                                                            Cancel Drafting
+                                                        </button>
+                                                        <div className={cn(
+                                                            "text-xs font-mono px-3 py-2 rounded-lg border",
+                                                            runtimeConnected ? "border-emerald-500/30 text-emerald-700 bg-emerald-500/10" : "border-border text-muted-foreground bg-secondary/30"
+                                                        )}>
+                                                            {runtimeConnected ? "runtime:connected" : "runtime:disconnected"}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* SOTA Real-Time Compilation Viewer */}
+                                                    <CompilationRuntimeViewer
+                                                        psurCaseId={psurCaseId!}
+                                                        isGenerating={!allComplete}
                                                     />
                                                 </div>
-
-                                                {/* Download Actions */}
-                                                <div className="px-6 py-4 border-t border-border/30 bg-white/40">
-                                                    <div className="flex items-center justify-between">
-                                                        <div className="flex gap-2">
-                                                            <a href={`/api/psur-cases/${psurCaseId}/psur.docx?style=${documentStyle}`} download 
-                                                               className="px-4 py-2 rounded-xl bg-blue-500 text-white text-sm font-medium hover:bg-blue-600 transition-all flex items-center gap-2 shadow-sm">
-                                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                                                                DOCX
-                                                            </a>
-                                                            <a href={`/api/psur-cases/${psurCaseId}/psur.pdf?style=${documentStyle}`} download 
-                                                               className="px-4 py-2 rounded-xl bg-red-500 text-white text-sm font-medium hover:bg-red-600 transition-all flex items-center gap-2 shadow-sm">
-                                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                                                                PDF
-                                                            </a>
-                                                            <a href={`/api/audit-bundles/${psurCaseId}/download`} 
-                                                               className="px-4 py-2 rounded-xl bg-secondary text-foreground text-sm font-medium hover:bg-secondary/80 transition-all flex items-center gap-2">
-                                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
-                                                                Audit Bundle
-                                                            </a>
-                                                        </div>
-                                                        <button onClick={resetWizard}
-                                                            className="px-4 py-2 rounded-xl border border-border text-muted-foreground text-sm font-medium hover:bg-secondary/50 transition-all flex items-center gap-2">
-                                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                                                            </svg>
-                                                            New Report
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            /* Building State */
-                                            <div className="flex-1 flex flex-col items-center justify-center p-8">
-                                                <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-6">
-                                                    <svg className="w-8 h-8 text-primary animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                                    </svg>
-                                                </div>
-                                                <h3 className="text-lg font-semibold text-foreground mb-2">Building Your Document</h3>
-                                                <p className="text-sm text-muted-foreground text-center max-w-xs mb-6">
-                                                    Processing inputs and generating your regulatory report...
-                                                </p>
-                                                
-                                                {/* Streaming text effect */}
-                                                <div className="w-full max-w-md glass-card p-4 rounded-xl">
-                                                    <div className="font-mono text-xs text-muted-foreground space-y-1">
-                                                        {runResult.steps.filter(s => s.status === "COMPLETED" || s.status === "RUNNING").map((s, i) => (
-                                                            <div key={i} className={`flex items-center gap-2 ${s.status === "RUNNING" ? "text-primary" : ""}`}>
-                                                                <span className="text-emerald-500">{s.status === "COMPLETED" ? "Done" : "..."}</span>
-                                                                <span>{s.name}</span>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-
-                                                <div className="mt-6 flex items-center gap-3">
-                                                    <button
-                                                        onClick={cancelDrafting}
-                                                        className="px-4 py-2 rounded-xl bg-destructive text-white text-sm font-medium hover:bg-destructive/90 transition-all shadow-sm"
-                                                    >
-                                                        Cancel Drafting
-                                                    </button>
-                                                    <div className={cn(
-                                                        "text-xs font-mono px-3 py-2 rounded-lg border",
-                                                        runtimeConnected ? "border-emerald-500/30 text-emerald-700 bg-emerald-500/10" : "border-border text-muted-foreground bg-secondary/30"
-                                                    )}>
-                                                        {runtimeConnected ? "runtime:connected" : "runtime:disconnected"}
-                                                    </div>
-                                                </div>
-
-                                                {/* Live Content Viewer */}
-                                                <LiveContentViewer 
-                                                    psurCaseId={psurCaseId!}
-                                                    documentStyle={documentStyle}
-                                                    runtimeEvents={runtimeEvents}
-                                                    isGenerating={!allComplete}
-                                                />
-                                            </div>
-                                        )}
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        )}
-                    </div>
-                )}
-            </div>
+                            )}
+                        </div>
+                    )
+                }
+            </div >
 
             {/* Compact Navigation (Hidden on Step 1) */}
-            {step > 1 && (
-                <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50">
-                    <div className="glass-card px-4 py-3 flex items-center gap-6 shadow-2xl rounded-full">
-                        <button 
-                            onClick={() => setStep((step - 1) as WizardStep)} 
-                            disabled={step === 1} 
-                            className="w-12 h-12 rounded-full flex items-center justify-center bg-secondary hover:bg-white text-muted-foreground hover:text-foreground transition-all active:scale-90 disabled:opacity-20"
-                        >
-                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 19l-7-7 7-7" /></svg>
-                        </button>
-                        
-                        <div className="flex flex-col items-center">
-                            <span className="text-[10px] font-black text-muted-foreground tracking-[0.2em] uppercase">Phase</span>
-                            <span className="text-lg font-black text-foreground tabular-nums">{step} <span className="text-muted-foreground/30 mx-1">/</span> 5</span>
-                        </div>
+            {
+                step > 1 && (
+                    <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50">
+                        <div className="bg-white dark:bg-card border border-border shadow-sm rounded-lg px-4 py-3 flex items-center gap-6 shadow-2xl rounded-full">
+                            <button
+                                onClick={() => setStep((step - 1) as WizardStep)}
+                                disabled={step === 1}
+                                className="w-12 h-12 rounded-full flex items-center justify-center bg-secondary hover:bg-white text-muted-foreground hover:text-foreground transition-all active:scale-90 disabled:opacity-20"
+                            >
+                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 19l-7-7 7-7" /></svg>
+                            </button>
 
-                        <button 
-                            onClick={() => setStep((step + 1) as WizardStep)} 
-                            disabled={step === 5 || (step === 1 && !canGoStep2) || (step === 2 && !canGoStep3) || (step === 3 && !canGoStep4) || (step === 4 && !canGoStep5)} 
-                            className="w-12 h-12 rounded-full flex items-center justify-center bg-primary text-primary-foreground shadow-lg hover:scale-110 transition-all active:scale-90 disabled:opacity-20"
-                        >
-                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" /></svg>
-                        </button>
+                            <div className="flex flex-col items-center">
+                                <span className="text-[10px] font-black text-muted-foreground tracking-[0.2em] uppercase">Phase</span>
+                                <span className="text-lg font-black text-foreground tabular-nums">{step} <span className="text-muted-foreground/30 mx-1">/</span> 5</span>
+                            </div>
+
+                            <button
+                                onClick={() => setStep((step + 1) as WizardStep)}
+                                disabled={step === 5 || (step === 1 && !canGoStep2) || (step === 2 && !canGoStep3) || (step === 3 && !canGoStep4) || (step === 4 && !canGoStep5)}
+                                className="w-12 h-12 rounded-full flex items-center justify-center bg-primary text-primary-foreground shadow-lg hover:scale-110 transition-all active:scale-90 disabled:opacity-20"
+                            >
+                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" /></svg>
+                            </button>
+                        </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
             {/* Smart Ingestion Modal */}
             <Modal open={showIngestionModal} onClose={() => setShowIngestionModal(false)} title="Import Data Source" size="xl">
-                <EvidenceIngestionPanel 
-                    psurCaseId={psurCaseId!} 
-                    deviceCode={deviceCode} 
-                    periodStart={periodStart} 
-                    periodEnd={periodEnd} 
-                    onEvidenceCreated={() => { refreshCounts(); setShowIngestionModal(false); }} 
+                <EvidenceIngestionPanel
+                    psurCaseId={psurCaseId!}
+                    deviceCode={deviceCode}
+                    periodStart={periodStart}
+                    periodEnd={periodEnd}
+                    onEvidenceCreated={() => { refreshCounts(); refreshDeviceInfo(); setShowIngestionModal(false); }}
                 />
             </Modal>
 
             {/* Manual Upload Modal */}
-            <Modal open={showEvidenceModal} onClose={() => setShowEvidenceModal(false)} title="Structured Evidence Import" size="md">
-                <ManualUploadForm psurCaseId={psurCaseId!} deviceCode={deviceCode} periodStart={periodStart} periodEnd={periodEnd} requiredTypes={requiredTypes} onSuccess={() => { refreshCounts(); setShowEvidenceModal(false); }} />
+            <Modal open={showEvidenceModal} onClose={() => setShowEvidenceModal(false)} title="Import Data File" size="md">
+                <ManualUploadForm psurCaseId={psurCaseId!} deviceCode={deviceCode} periodStart={periodStart} periodEnd={periodEnd} requiredTypes={requiredTypes} onSuccess={() => { refreshCounts(); refreshDeviceInfo(); setShowEvidenceModal(false); }} />
             </Modal>
-        </div>
+        </div >
     );
 }
 
@@ -2821,7 +3047,7 @@ function ManualUploadForm({ psurCaseId, deviceCode, periodStart, periodEnd, requ
             const resp = await fetch("/api/evidence/upload", { method: "POST", body: form });
             const data = await resp.json();
             if (!resp.ok) throw new Error(data.error);
-            setMsg(`Imported ${data.summary?.atomsCreated || 0} records`);
+            setMsg(`Imported ${data.summary?.recordsCreated || data.summary?.atomsCreated || 0} records`);
             setFile(null);
             setTimeout(onSuccess, 1000);
         } catch (e: any) { setMsg(`Error: ${e.message}`); }
@@ -2831,26 +3057,26 @@ function ManualUploadForm({ psurCaseId, deviceCode, periodStart, periodEnd, requ
     return (
         <div className="space-y-8 animate-slide-up">
             <div className="space-y-4">
-                <label className="text-sm font-black uppercase tracking-widest text-muted-foreground">Evidence Category</label>
-                <select 
-                    className="w-full bg-secondary/50 border-none rounded-2xl px-6 py-4 font-bold text-lg focus:ring-2 focus:ring-primary/50 outline-none cursor-pointer" 
-                    value={evidenceType} 
+                <label className="text-sm font-semibold text-muted-foreground">Data Category</label>
+                <select
+                    className="w-full bg-secondary/50 border-none rounded-2xl px-6 py-4 font-bold text-lg focus:ring-2 focus:ring-primary/50 outline-none cursor-pointer"
+                    value={evidenceType}
                     onChange={e => setEvidenceType(e.target.value)}
                 >
                     {requiredTypes.map(t => <option key={t} value={t}>{formatType(t)}</option>)}
                 </select>
             </div>
-            
+
             <div className="space-y-4">
                 <label className="text-sm font-black uppercase tracking-widest text-muted-foreground">Intelligence Payload (.xlsx, .csv)</label>
                 <div className="relative group">
-                    <input 
-                        type="file" 
-                        accept=".xlsx,.csv,.xls" 
-                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" 
-                        onChange={e => setFile(e.target.files?.[0] || null)} 
+                    <input
+                        type="file"
+                        accept=".xlsx,.csv,.xls"
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                        onChange={e => setFile(e.target.files?.[0] || null)}
                     />
-                    <div className="glass-card p-8 border-2 border-dashed border-border/50 group-hover:border-primary/50 transition-all flex flex-col items-center justify-center text-center gap-4">
+                    <div className="bg-white dark:bg-card border border-border shadow-sm rounded-lg p-8 border-2 border-dashed border-border/50 group-hover:border-primary/50 transition-all flex flex-col items-center justify-center text-center gap-4">
                         <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
                             <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
                         </div>
@@ -2863,9 +3089,9 @@ function ManualUploadForm({ psurCaseId, deviceCode, periodStart, periodEnd, requ
             </div>
 
             <div className="flex items-center gap-6">
-                <button 
-                    onClick={upload} 
-                    disabled={busy || !file} 
+                <button
+                    onClick={upload}
+                    disabled={busy || !file}
                     className="glossy-button bg-primary text-primary-foreground py-4 px-10 shadow-xl disabled:opacity-50"
                 >
                     {busy ? (
@@ -2880,3 +3106,6 @@ function ManualUploadForm({ psurCaseId, deviceCode, periodStart, periodEnd, requ
         </div>
     );
 }
+
+
+

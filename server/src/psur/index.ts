@@ -16,7 +16,10 @@
 export * from "./psurContract";
 
 // Mappings
+// Mappings
 export * from "./mappings/mdcg2022AnnexI";
+export { MDCG_ANNEX_II_OBLIGATIONS } from "./mappings/mdcg2022AnnexII";
+export { MDCG_ANNEX_III_OBLIGATIONS } from "./mappings/mdcg2022AnnexIII";
 
 // Engines
 // Note: Some types (ReportingPeriod, CalculationLogEntry) are defined in multiple engines
@@ -25,8 +28,8 @@ export * from "./engines/salesExposureEngine";
 
 // Re-export functions and unique types from other engines
 // (duplicate interfaces like ReportingPeriod are excluded)
-export { 
-  computeComplaintAnalysis, 
+export {
+  computeComplaintAnalysis,
   getComplaintNarrativeBlocks,
   type ComplaintAnalysisResult,
   type ComplaintEvidenceAtom,
@@ -36,7 +39,7 @@ export {
   type HarmLevel,
 } from "./engines/complaintEngine";
 
-export { 
+export {
   computeVigilanceAnalysis,
   getVigilanceNarrativeBlocks,
   type VigilanceAnalysisResult,
@@ -45,7 +48,7 @@ export {
   type CAPARecord,
 } from "./engines/vigilanceEngine";
 
-export { 
+export {
   computeLiteratureAnalysis,
   getLiteratureNarrativeBlocks,
   getLiteratureCitations,
@@ -54,7 +57,7 @@ export {
   type ExternalDatabaseSource,
 } from "./engines/literatureEngine";
 
-export { 
+export {
   computePMCFDecision,
   getPMCFNarrativeBlocks,
   getPMCFDecisionStatement,

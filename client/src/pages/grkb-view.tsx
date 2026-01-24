@@ -59,12 +59,12 @@ export default function GrkbView() {
             {/* Header */}
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
                 <div className="space-y-1">
-                    <div className="flex items-center gap-2 text-primary font-black tracking-tighter uppercase text-xs">
+                    <div className="flex items-center gap-2 text-primary font-semibold uppercase text-xs">
                         <Globe className="w-3 h-3" />
-                        Regulatory Intelligence
+                        Regulatory Reference
                     </div>
-                    <h1 className="text-3xl font-black tracking-tighter text-foreground">Global Knowledge Base</h1>
-                    <p className="text-muted-foreground text-sm font-medium">Canonical repository of PSUR obligations and constraints.</p>
+                    <h1 className="text-3xl font-bold text-foreground">PSUR Requirements</h1>
+                    <p className="text-muted-foreground text-sm">All regulatory requirements for PSUR content by jurisdiction.</p>
                 </div>
 
                 <div className="flex items-center gap-2 bg-secondary/50 p-1 rounded-xl border border-border/50">
@@ -85,11 +85,11 @@ export default function GrkbView() {
                 </div>
             </div>
 
-            {/* Workflow Chart - Premium Minimalist */}
+            {/* How It Works */}
             <div className="glass-card p-6 overflow-hidden">
                 <div className="flex items-center gap-3 mb-8">
                     <Layers className="w-4 h-4 text-primary" />
-                    <h3 className="text-sm font-black uppercase tracking-widest text-foreground">Qualification Engine Workflow</h3>
+                    <h3 className="text-sm font-semibold text-foreground">How Requirements Are Applied</h3>
                 </div>
                 
                 <div className="relative flex justify-between items-start gap-4">
@@ -97,19 +97,19 @@ export default function GrkbView() {
                     <div className="absolute top-10 left-0 right-0 h-px bg-gradient-to-r from-transparent via-border to-transparent z-0" />
                     
                     {[
-                        { step: "01", icon: Shield, title: "Obligation Sync", desc: "Real-time synchronization with GRKB regulatory atoms." },
-                        { step: "02", icon: BookOpen, title: "Template Mapping", desc: "Automated structural alignment with Annex I protocols." },
-                        { step: "03", icon: CheckCircle2, title: "Context Audit", desc: "Verification of device class and jurisdiction applicability." },
-                        { step: "04", icon: ArrowRight, title: "Compliance Gate", desc: "Locking the reporting scope for immutable audit trails." }
+                        { step: "01", icon: Shield, title: "Load Rules", desc: "Regulatory requirements are loaded for your selected jurisdiction." },
+                        { step: "02", icon: BookOpen, title: "Map Template", desc: "Requirements are matched to PSUR sections per MDCG 2022-21." },
+                        { step: "03", icon: CheckCircle2, title: "Verify Context", desc: "Requirements filtered based on device class and risk level." },
+                        { step: "04", icon: ArrowRight, title: "Generate Report", desc: "Applicable requirements guide the final document structure." }
                     ].map((s, i) => (
                         <div key={i} className="relative z-10 flex flex-col items-center text-center space-y-4 w-1/4">
                             <div className="w-20 h-20 rounded-3xl bg-background border border-border/50 shadow-xl flex items-center justify-center group hover:border-primary/30 transition-all duration-500">
                                 <s.icon className="w-8 h-8 text-primary/40 group-hover:text-primary transition-colors" />
-                                <div className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-primary text-[10px] font-black text-white flex items-center justify-center shadow-lg">{s.step}</div>
+                                <div className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-primary text-[10px] font-bold text-white flex items-center justify-center shadow-lg">{s.step}</div>
                             </div>
                             <div className="space-y-1 px-2">
-                                <h4 className="text-xs font-black text-foreground uppercase tracking-wider">{s.title}</h4>
-                                <p className="text-[10px] text-muted-foreground font-medium leading-relaxed">{s.desc}</p>
+                                <h4 className="text-xs font-semibold text-foreground">{s.title}</h4>
+                                <p className="text-[10px] text-muted-foreground leading-relaxed">{s.desc}</p>
                             </div>
                         </div>
                     ))}
@@ -130,13 +130,13 @@ export default function GrkbView() {
                 </div>
                 <div className="glass-card flex items-center justify-center gap-4 py-2 px-4">
                     <div className="text-center">
-                        <div className="text-xl font-black tracking-tighter text-primary">{filteredObligations.length}</div>
-                        <div className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">Active Atoms</div>
+                        <div className="text-xl font-bold text-primary">{filteredObligations.length}</div>
+                        <div className="text-[9px] font-semibold text-muted-foreground">Showing</div>
                     </div>
                     <div className="w-px h-8 bg-border/30" />
                     <div className="text-center">
-                        <div className="text-xl font-black tracking-tighter text-foreground">{stats?.totalObligations || 0}</div>
-                        <div className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">Global Total</div>
+                        <div className="text-xl font-bold text-foreground">{stats?.totalObligations || 0}</div>
+                        <div className="text-[9px] font-semibold text-muted-foreground">Total</div>
                     </div>
                 </div>
             </div>

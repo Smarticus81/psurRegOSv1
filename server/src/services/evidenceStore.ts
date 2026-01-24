@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { db } from "../../db";
 import { evidenceAtoms, CANONICAL_EVIDENCE_TYPES } from "@shared/schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 export type EvidenceType = string;
 
@@ -109,38 +109,63 @@ export async function persistEvidenceAtoms(params: {
 }): Promise<{ inserted: number; atomIds: string[] }> {
   const { psurCaseId, deviceCode, periodStart, periodEnd, uploadId, atoms } = params;
   
-  const insertedAtomIds: string[] = [];
+  if (atoms.length === 0) {
+    return { inserted: 0, atomIds: [] };
+  }
   
-  for (const atom of atoms) {
-    const existing = await db.query.evidenceAtoms.findFirst({
+  // OPTIMIZED: Query existing atoms in batches to avoid query size limits
+  const LOOKUP_BATCH_SIZE = 1000;
+  const atomIds = atoms.map(a => a.atomId);
+  const existingIds = new Set<string>();
+  
+  for (let i = 0; i < atomIds.length; i += LOOKUP_BATCH_SIZE) {
+    const batchIds = atomIds.slice(i, i + LOOKUP_BATCH_SIZE);
+    const existingAtoms = await db.query.evidenceAtoms.findMany({
       where: and(
-        eq(evidenceAtoms.atomId, atom.atomId),
+        inArray(evidenceAtoms.atomId, batchIds),
         eq(evidenceAtoms.psurCaseId, psurCaseId),
       ),
+      columns: { atomId: true },
     });
-    
-    if (!existing) {
-      await db.insert(evidenceAtoms).values({
-        atomId: atom.atomId,
-        psurCaseId,
-        uploadId: uploadId ?? null,
-        evidenceType: atom.evidenceType,
-        sourceSystem: atom.provenance.sourceFile || "upload",
-        extractDate: new Date(atom.provenance.extractDate || atom.provenance.uploadedAt),
-        contentHash: atom.contentHash,
-        periodStart: new Date(periodStart),
-        periodEnd: new Date(periodEnd),
-        deviceRef: { deviceCode },
-        data: atom.normalizedData,
-        normalizedData: atom.normalizedData,
-        provenance: atom.provenance,
-        status: "valid",
-        version: 1,
-      });
-      insertedAtomIds.push(atom.atomId);
+    for (const e of existingAtoms) {
+      existingIds.add(e.atomId);
     }
   }
   
+  // Filter to only new atoms
+  const newAtoms = atoms.filter(atom => !existingIds.has(atom.atomId));
+  
+  if (newAtoms.length === 0) {
+    return { inserted: 0, atomIds: [] };
+  }
+  
+  // OPTIMIZED: Batch insert in chunks to avoid stack overflow with large datasets
+  const BATCH_SIZE = 500; // Safe batch size for Drizzle ORM
+  const insertValues = newAtoms.map(atom => ({
+    atomId: atom.atomId,
+    psurCaseId,
+    uploadId: uploadId ?? null,
+    evidenceType: atom.evidenceType,
+    sourceSystem: atom.provenance.sourceFile || "upload",
+    extractDate: new Date(atom.provenance.extractDate || atom.provenance.uploadedAt),
+    contentHash: atom.contentHash,
+    periodStart: new Date(periodStart),
+    periodEnd: new Date(periodEnd),
+    deviceRef: { deviceCode },
+    data: atom.normalizedData,
+    normalizedData: atom.normalizedData,
+    provenance: atom.provenance,
+    status: "valid" as const,
+    version: 1,
+  }));
+  
+  // Insert in batches to prevent stack overflow
+  for (let i = 0; i < insertValues.length; i += BATCH_SIZE) {
+    const batch = insertValues.slice(i, i + BATCH_SIZE);
+    await db.insert(evidenceAtoms).values(batch);
+  }
+  
+  const insertedAtomIds = newAtoms.map(a => a.atomId);
   return { inserted: insertedAtomIds.length, atomIds: insertedAtomIds };
 }
 

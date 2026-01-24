@@ -368,12 +368,28 @@ export const psurCases = pgTable("psur_cases", {
   groupingRationale: text("grouping_rationale"),
   qualificationStatus: text("qualification_status").default("pending"),
   qualificationResult: jsonb("qualification_result"),
+  // Device info extracted from evidence (auto-populated during ingestion)
+  deviceInfo: jsonb("device_info").$type<{
+    deviceCode?: string;
+    deviceName?: string;
+    manufacturerName?: string;
+    udiDi?: string;
+    gmdnCode?: string;
+    riskClass?: string;
+    intendedPurpose?: string;
+    extractedFrom?: string; // source file name
+    extractedAt?: string;   // ISO timestamp
+  }>(),
   status: text("status").notNull().default("draft"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
   updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
-export const insertPsurCaseSchema = createInsertSchema(psurCases).omit({
+export const insertPsurCaseSchema = createInsertSchema(psurCases, {
+  // Coerce date strings to Date objects for timestamp fields
+  startPeriod: z.coerce.date(),
+  endPeriod: z.coerce.date(),
+}).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
@@ -727,51 +743,51 @@ export const decisionTraceEntries = pgTable("decision_trace_entries", {
   sequenceNum: integer("sequence_num").notNull(), // Order within a trace
   eventType: text("event_type").notNull(), // From decisionTraceEventTypeEnum
   eventTimestamp: timestamp("event_timestamp").notNull().default(sql`CURRENT_TIMESTAMP`),
-  
+
   // The actor/component that made the decision
   actor: text("actor").notNull(), // e.g., "workflowRunner", "adjudicator", "ingestEvidence"
-  
+
   // Core decision data
   entityType: text("entity_type"), // e.g., "slot", "evidence_atom", "obligation"
   entityId: text("entity_id"), // The ID of the entity being decided upon
   decision: text("decision"), // The outcome: "ACCEPT", "REJECT", "PASS", "FAIL", etc.
-  
+
   // ═══════════════════════════════════════════════════════════════════════════
   // ENHANCED TRACEABILITY FIELDS - Natural Language & GRKB Tie-back
   // ═══════════════════════════════════════════════════════════════════════════
-  
+
   // Human-readable summary for generalist understanding
   humanSummary: text("human_summary"), // Plain English explanation of the decision
-  
+
   // GRKB Regulatory Context - stores actual obligation text for audit trail
   regulatoryContext: jsonb("regulatory_context"), // {obligationId, obligationText, sourceCitation, jurisdictions, mandatory}
-  
+
   // Evidence Justification - explains why evidence satisfies the requirement
   evidenceJustification: jsonb("evidence_justification"), // {requiredTypes, providedTypes, atomCount, periodCoverage, justificationNarrative}
-  
+
   // Compliance Assertion - explicit statement of compliance status
   complianceAssertion: jsonb("compliance_assertion"), // {satisfies[], doesNotSatisfy[], complianceStatement}
-  
+
   // ═══════════════════════════════════════════════════════════════════════════
-  
+
   // Detailed data (JSON)
   inputData: jsonb("input_data"), // What went into the decision
   outputData: jsonb("output_data"), // What came out
   reasons: jsonb("reasons"), // Array of reasons for the decision
-  
+
   // Traceability links
   parentTraceEntryId: integer("parent_trace_entry_id"), // For hierarchical tracing
   relatedEntityIds: jsonb("related_entity_ids"), // Array of related IDs (evidence atoms, etc.)
-  
+
   // Verification
   contentHash: text("content_hash").notNull(), // SHA256 of the entry content for integrity
   previousHash: text("previous_hash"), // Hash of previous entry in chain
-  
+
   // Metadata
   workflowStep: integer("workflow_step"),
   templateId: text("template_id"),
   jurisdictions: jsonb("jurisdictions"),
-  
+
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 }, (table) => ({
   traceIdIdx: index("decision_trace_trace_id_idx").on(table.traceId),
@@ -834,7 +850,7 @@ export const decisionTraceSummaries = pgTable("decision_trace_summaries", {
   id: serial("id").primaryKey(),
   psurCaseId: integer("psur_case_id").references(() => psurCases.id, { onDelete: "cascade" }).unique(),
   traceId: text("trace_id").notNull().unique(),
-  
+
   // Counts by event type
   totalEvents: integer("total_events").notNull().default(0),
   acceptedSlots: integer("accepted_slots").notNull().default(0),
@@ -844,18 +860,18 @@ export const decisionTraceSummaries = pgTable("decision_trace_summaries", {
   negativeEvidence: integer("negative_evidence").notNull().default(0),
   obligationsSatisfied: integer("obligations_satisfied").notNull().default(0),
   obligationsUnsatisfied: integer("obligations_unsatisfied").notNull().default(0),
-  
+
   // Workflow status
   workflowStatus: text("workflow_status").notNull().default("NOT_STARTED"), // STARTED, COMPLETED, FAILED
   completedSteps: jsonb("completed_steps"), // Array of completed step numbers
   failedStep: integer("failed_step"),
   failureReason: text("failure_reason"),
-  
+
   // Chain verification
   firstEntryHash: text("first_entry_hash"),
   lastEntryHash: text("last_entry_hash"),
   chainValid: boolean("chain_valid").default(true),
-  
+
   // Timestamps
   startedAt: timestamp("started_at"),
   completedAt: timestamp("completed_at"),
@@ -869,6 +885,177 @@ export const insertDecisionTraceSummarySchema = createInsertSchema(decisionTrace
 
 export type DecisionTraceSummary = typeof decisionTraceSummaries.$inferSelect;
 export type InsertDecisionTraceSummary = z.infer<typeof insertDecisionTraceSummarySchema>;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SENTENCE-LEVEL ATTRIBUTION (Granular Traceability)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Each sentence/claim in generated content with full provenance chain
+export const sentenceAttributions = pgTable("sentence_attributions", {
+  id: serial("id").primaryKey(),
+  psurCaseId: integer("psur_case_id").notNull().references(() => psurCases.id, { onDelete: "cascade" }),
+  slotId: text("slot_id").notNull(),
+
+  // Content positioning
+  sentenceText: text("sentence_text").notNull(),
+  sentenceIndex: integer("sentence_index").notNull(),  // Position within paragraph
+  paragraphIndex: integer("paragraph_index").notNull(), // Position within slot
+  contentHash: text("content_hash").notNull(),  // For deduplication
+
+  // Attribution chain - links to sources
+  evidenceAtomIds: integer("evidence_atom_ids").array().notNull().default(sql`ARRAY[]::integer[]`),
+  obligationIds: text("obligation_ids").array().notNull().default(sql`ARRAY[]::text[]`),
+
+  // For computed values (totals, percentages, rates)
+  hasCalculation: boolean("has_calculation").default(false),
+  calculationTrace: jsonb("calculation_trace").$type<{
+    resultValue: string;
+    resultType: "count" | "sum" | "percentage" | "rate" | "average" | "ratio";
+    formula: string;
+    inputs: Array<{
+      atomId: number;
+      field: string;
+      value: number | string;
+      sourceDocument?: string;
+    }>;
+  }>(),
+
+  // Generation metadata
+  llmReasoning: text("llm_reasoning"),  // Why this content was generated
+  methodStatement: text("method_statement"),  // How it was derived
+  confidenceScore: text("confidence_score"),
+  generationModel: text("generation_model"),
+  generationTimestamp: timestamp("generation_timestamp").default(sql`CURRENT_TIMESTAMP`),
+
+  // Verification workflow
+  verificationStatus: text("verification_status").default("unverified"), // unverified, verified, rejected
+  verifiedBy: text("verified_by"),
+  verifiedAt: timestamp("verified_at"),
+  verificationNotes: text("verification_notes"),
+
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, (t) => ({
+  caseSlotIdx: index("sentence_attr_case_slot_idx").on(t.psurCaseId, t.slotId),
+  evidenceIdx: index("sentence_attr_evidence_idx").on(t.evidenceAtomIds),
+}));
+
+export const insertSentenceAttributionSchema = createInsertSchema(sentenceAttributions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type SentenceAttribution = typeof sentenceAttributions.$inferSelect;
+export type InsertSentenceAttribution = z.infer<typeof insertSentenceAttributionSchema>;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GRKB VALIDATION REPORTS (Pre-Generation Compliance Check)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Validation result before generation - blocks if mandatory requirements unmet
+export const grkbValidationReports = pgTable("grkb_validation_reports", {
+  id: serial("id").primaryKey(),
+  psurCaseId: integer("psur_case_id").notNull().references(() => psurCases.id, { onDelete: "cascade" }),
+  templateId: text("template_id").notNull(),
+  jurisdictions: text("jurisdictions").array().notNull().default(sql`ARRAY[]::text[]`),
+
+  // Overall status
+  validationStatus: text("validation_status").notNull(), // PASS, FAIL, WARNING
+  canProceed: boolean("can_proceed").notNull().default(false),
+
+  // Obligation coverage
+  mandatoryObligationsTotal: integer("mandatory_obligations_total").notNull(),
+  mandatoryObligationsSatisfied: integer("mandatory_obligations_satisfied").notNull(),
+  optionalObligationsTotal: integer("optional_obligations_total").notNull().default(0),
+  optionalObligationsSatisfied: integer("optional_obligations_satisfied").notNull().default(0),
+
+  // Evidence coverage
+  requiredEvidenceTypesTotal: integer("required_evidence_types_total").notNull(),
+  requiredEvidenceTypesPresent: integer("required_evidence_types_present").notNull(),
+  evidenceCoveragePercent: text("evidence_coverage_percent"),
+
+  // Blocking issues (mandatory obligations without evidence)
+  blockingIssues: jsonb("blocking_issues").$type<Array<{
+    obligationId: string;
+    obligationText: string;
+    sourceCitation: string;
+    requiredEvidenceTypes: string[];
+    missingEvidenceTypes: string[];
+    severity: "critical" | "high";
+  }>>(),
+
+  // Warnings (optional obligations without evidence)
+  warnings: jsonb("warnings").$type<Array<{
+    obligationId: string;
+    obligationText: string;
+    sourceCitation: string;
+    missingEvidenceTypes: string[];
+    severity: "medium" | "low";
+  }>>(),
+
+  // Evidence gaps summary
+  missingEvidenceTypes: text("missing_evidence_types").array().default(sql`ARRAY[]::text[]`),
+  unsatisfiedObligationIds: text("unsatisfied_obligation_ids").array().default(sql`ARRAY[]::text[]`),
+
+  // Slot readiness
+  slotsReady: integer("slots_ready").notNull().default(0),
+  slotsBlocked: integer("slots_blocked").notNull().default(0),
+  slotDetails: jsonb("slot_details").$type<Array<{
+    slotId: string;
+    slotTitle: string;
+    status: "ready" | "blocked" | "partial";
+    obligationsCovered: string[];
+    obligationsMissing: string[];
+    evidenceCount: number;
+  }>>(),
+
+  validatedAt: timestamp("validated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, (t) => ({
+  caseIdx: index("grkb_validation_case_idx").on(t.psurCaseId),
+}));
+
+export const insertGrkbValidationReportSchema = createInsertSchema(grkbValidationReports).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type GrkbValidationReport = typeof grkbValidationReports.$inferSelect;
+export type InsertGrkbValidationReport = z.infer<typeof insertGrkbValidationReportSchema>;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PROVENANCE GRAPH EDGES (For future graph DB sync)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Captures relationships for graph DB export
+export const provenanceEdges = pgTable("provenance_edges", {
+  id: serial("id").primaryKey(),
+  psurCaseId: integer("psur_case_id").notNull().references(() => psurCases.id, { onDelete: "cascade" }),
+
+  // Edge definition
+  edgeType: text("edge_type").notNull(), // "cites", "satisfies", "computed_from", "extracted_from", "belongs_to"
+  sourceVertexType: text("source_vertex_type").notNull(), // "sentence", "evidence_atom", "calculation", etc.
+  sourceVertexId: text("source_vertex_id").notNull(),
+  targetVertexType: text("target_vertex_type").notNull(),
+  targetVertexId: text("target_vertex_id").notNull(),
+
+  // Edge properties
+  properties: jsonb("properties").$type<Record<string, any>>(),
+  weight: text("weight"),  // For ranked relationships
+
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, (t) => ({
+  caseIdx: index("provenance_edges_case_idx").on(t.psurCaseId),
+  sourceIdx: index("provenance_edges_source_idx").on(t.sourceVertexType, t.sourceVertexId),
+  targetIdx: index("provenance_edges_target_idx").on(t.targetVertexType, t.targetVertexId),
+}));
+
+export const insertProvenanceEdgeSchema = createInsertSchema(provenanceEdges).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type ProvenanceEdge = typeof provenanceEdges.$inferSelect;
+export type InsertProvenanceEdge = z.infer<typeof insertProvenanceEdgeSchema>;
 
 // ============== COVERAGE SLOT QUEUE ==============
 export const coverageSlotQueues = pgTable("coverage_slot_queues", {
@@ -971,7 +1158,7 @@ export const CANONICAL_EVIDENCE_TYPES = {
   CAPA: "capa_record",
   NCR: "ncr_record",
   RECALL: "recall_record",
-  
+
   // Administrative records
   DEVICE_REGISTRY: "device_registry_record",
   MANUFACTURER_PROFILE: "manufacturer_profile",
@@ -979,7 +1166,7 @@ export const CANONICAL_EVIDENCE_TYPES = {
   CHANGE_CONTROL: "change_control_record",
   DATA_SOURCE_REGISTER: "data_source_register",
   PMS_ACTIVITY_LOG: "pms_activity_log",
-  
+
   // Document extracts
   CER_EXTRACT: "cer_extract",
   RMF_EXTRACT: "rmf_extract",
@@ -989,7 +1176,7 @@ export const CANONICAL_EVIDENCE_TYPES = {
   PREVIOUS_PSUR_EXTRACT: "previous_psur_extract",
   PMCF_REPORT_EXTRACT: "pmcf_report_extract",
   PMCF_ACTIVITY_RECORD: "pmcf_activity_record",
-  
+
   // Summaries (derived from raw data)
   SALES_SUMMARY: "sales_summary",
   SALES_BY_REGION: "sales_by_region",
@@ -1011,7 +1198,7 @@ export const CANONICAL_EVIDENCE_TYPES = {
   VIGILANCE_REPORT: "vigilance_report",
   BENEFIT_RISK_ASSESSMENT: "benefit_risk_assessment",
   RISK_ASSESSMENT: "risk_assessment",
-  
+
   // Change logs
   CER_CHANGE_LOG: "cer_change_log",
   RMF_CHANGE_LOG: "rmf_change_log",
@@ -1107,7 +1294,7 @@ export type InsertSlotObligationLink = z.infer<typeof insertSlotObligationLinkSc
 export type WorkflowStepStatus = "NOT_STARTED" | "RUNNING" | "COMPLETED" | "FAILED" | "BLOCKED";
 
 export interface WorkflowScope {
-  templateId: "MDCG_2022_21_ANNEX_I";
+  templateId: string;
   jurisdictions: ("EU_MDR" | "UK_MDR")[];
   deviceCode: string;
   periodStart: string;
@@ -1204,16 +1391,20 @@ export interface OrchestratorWorkflowResult {
 
 // Request schema for POST /api/orchestrator/run
 export const orchestratorRunRequestSchema = z.object({
-  templateId: z.enum(["MDCG_2022_21_ANNEX_I"]),
+  templateId: z.string(),
   jurisdictions: z.array(z.enum(["EU_MDR", "UK_MDR"])).min(1),
   deviceCode: z.string().min(1),
-  deviceId: z.number().int().positive(),
+  deviceId: z.number().int().positive().optional(), // Optional - not required if using deviceCode directly
   periodStart: z.string(),
   periodEnd: z.string(),
   psurCaseId: z.number().int().positive().optional(),
   runSteps: z.array(z.number().int().min(1).max(8)).optional(),
   /** Enable AI-powered narrative generation for NARRATIVE slots */
   enableAIGeneration: z.boolean().optional(),
+  /** Document styling: corporate, regulatory, or premium */
+  documentStyle: z.enum(["corporate", "regulatory", "premium"]).optional(),
+  /** Enable chart generation */
+  enableCharts: z.boolean().optional(),
 });
 
 export type OrchestratorRunRequest = z.infer<typeof orchestratorRunRequestSchema>;
@@ -1234,25 +1425,25 @@ export const psurEvidenceTypes = pgTable("psur_evidence_types", {
   displayName: text("display_name").notNull(),
   description: text("description"),
   category: text("category").notNull(), // safety, clinical, commercial, quality, regulatory
-  
+
   // Schema definition
   requiredFields: text("required_fields").array().default(sql`ARRAY[]::text[]`),
   optionalFields: text("optional_fields").array().default(sql`ARRAY[]::text[]`),
   fieldDefinitions: jsonb("field_definitions"), // {field: {type, format, description, enum?}}
-  
+
   // Validation rules
   validationRules: jsonb("validation_rules"), // Array of {rule, errorMessage, severity}
-  
+
   // Source expectations
   expectedSourceTypes: text("expected_source_types").array().default(sql`ARRAY['excel', 'csv']::text[]`),
-  
+
   // Classification
   supportsClassification: boolean("supports_classification").default(false),
   classificationModel: text("classification_model"), // Model to use if classification enabled
-  
+
   // PSUR section mapping hints
   typicalPsurSections: text("typical_psur_sections").array().default(sql`ARRAY[]::text[]`),
-  
+
   // Metadata
   version: text("version").notNull().default("1.0.0"),
   isActive: boolean("is_active").default(true),
@@ -1279,34 +1470,34 @@ export const psurSections = pgTable("psur_sections", {
   id: serial("id").primaryKey(),
   sectionId: text("section_id").notNull(), // e.g., "MDCG.ANNEX_I.A"
   templateId: text("template_id").notNull(), // MDCG_2022_21_ANNEX_I
-  
+
   // Hierarchy
   parentSectionId: text("parent_section_id"), // For nested sections
   sectionNumber: text("section_number").notNull(), // "A", "B.1", "3.2.1"
   sectionPath: text("section_path").notNull(), // "A > Device Description"
   displayOrder: integer("display_order").notNull(), // For sorting
-  
+
   // Content
   title: text("title").notNull(),
   description: text("description"),
   sectionType: text("section_type").notNull(), // cover, toc, narrative, table, appendix
-  
+
   // Requirements
   mandatory: boolean("mandatory").default(true),
   minimumWordCount: integer("minimum_word_count"),
   maximumWordCount: integer("maximum_word_count"),
-  
+
   // Evidence requirements for this section
   requiredEvidenceTypes: text("required_evidence_types").array().default(sql`ARRAY[]::text[]`),
   minimumEvidenceAtoms: integer("minimum_evidence_atoms").default(0),
-  
+
   // Rendering hints
   renderAs: text("render_as"), // narrative, table, bullet_list, etc.
   tableSchema: jsonb("table_schema"), // Column definitions for table sections
-  
+
   // Regulatory source
   regulatoryBasis: text("regulatory_basis"), // "MDCG 2022-21 Section 3.2"
-  
+
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 }, (table) => ({
   sectionIdIdx: index("psur_sections_section_id_idx").on(table.sectionId),
@@ -1336,25 +1527,25 @@ export type PsurObligationRelationType = typeof psurObligationRelationType[numbe
 
 export const psurObligationDependencies = pgTable("psur_obligation_dependencies", {
   id: serial("id").primaryKey(),
-  
+
   fromObligationId: text("from_obligation_id").notNull(), // References grkb_obligations.obligation_id
   toObligationId: text("to_obligation_id").notNull(),
-  
+
   relationType: text("relation_type").notNull(), // REQUIRES, CROSS_REFERENCES, etc.
-  
+
   // Metadata
   strength: text("strength").default("STRONG"), // STRONG, WEAK, INFORMATIONAL
   description: text("description"), // Why this relationship exists
   regulatoryBasis: text("regulatory_basis"), // Source citation for the relationship
-  
+
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 }, (table) => ({
   fromIdx: index("psur_obligation_deps_from_idx").on(table.fromObligationId),
   toIdx: index("psur_obligation_deps_to_idx").on(table.toObligationId),
   relationIdx: index("psur_obligation_deps_relation_idx").on(table.relationType),
   uniqueRelation: uniqueIndex("psur_obligation_deps_unique").on(
-    table.fromObligationId, 
-    table.toObligationId, 
+    table.fromObligationId,
+    table.toObligationId,
     table.relationType
   ),
 }));
@@ -1371,33 +1562,33 @@ export type InsertPsurObligationDependency = z.infer<typeof insertPsurObligation
 // Enhanced mapping between template slots and regulatory obligations
 export const psurSlotObligations = pgTable("psur_slot_obligations", {
   id: serial("id").primaryKey(),
-  
+
   templateId: text("template_id").notNull(),
   slotId: text("slot_id").notNull(),
   obligationId: text("obligation_id").notNull(), // References grkb_obligations.obligation_id
-  
+
   // Mapping metadata
   mandatory: boolean("mandatory").default(true), // Is this mapping required for compliance?
   coveragePercentage: integer("coverage_percentage").default(100), // How much of the obligation this slot covers
-  
+
   // Evidence requirements specific to this mapping
   minimumEvidenceAtoms: integer("minimum_evidence_atoms").default(1),
   allowEmptyWithJustification: boolean("allow_empty_with_justification").default(false),
-  
+
   // Rationale
   mappingRationale: text("mapping_rationale"), // Why this slot maps to this obligation
   regulatoryBasis: text("regulatory_basis"), // Citation supporting the mapping
-  
+
   // Validation
   validationRules: jsonb("validation_rules"), // Specific rules for this mapping
-  
+
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 }, (table) => ({
   templateSlotIdx: index("psur_slot_oblig_template_slot_idx").on(table.templateId, table.slotId),
   obligationIdx: index("psur_slot_oblig_obligation_idx").on(table.obligationId),
   uniqueMapping: uniqueIndex("psur_slot_oblig_unique").on(
-    table.templateId, 
-    table.slotId, 
+    table.templateId,
+    table.slotId,
     table.obligationId
   ),
 }));
@@ -1417,37 +1608,37 @@ export type PsurComplianceStatus = typeof psurComplianceStatus[number];
 
 export const psurComplianceChecklist = pgTable("psur_compliance_checklist", {
   id: serial("id").primaryKey(),
-  
+
   psurCaseId: integer("psur_case_id").notNull().references(() => psurCases.id, { onDelete: "cascade" }),
   obligationId: text("obligation_id").notNull(),
-  
+
   // Status
   status: text("status").notNull().default("pending"), // pending, satisfied, not_applicable, waived, failed
-  
+
   // Evidence linking
   satisfiedBySlots: text("satisfied_by_slots").array().default(sql`ARRAY[]::text[]`),
   evidenceAtomIds: text("evidence_atom_ids").array().default(sql`ARRAY[]::text[]`),
   evidenceCount: integer("evidence_count").default(0),
-  
+
   // Validation
   validationPassed: boolean("validation_passed"),
   validationErrors: text("validation_errors").array().default(sql`ARRAY[]::text[]`),
   validationWarnings: text("validation_warnings").array().default(sql`ARRAY[]::text[]`),
-  
+
   // Waivers / Justifications
   waiverJustification: text("waiver_justification"),
   waiverApprovedBy: text("waiver_approved_by"),
   waiverApprovedAt: timestamp("waiver_approved_at"),
-  
+
   // Audit
   lastCheckedAt: timestamp("last_checked_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
   checkedBy: text("checked_by").default("system"),
-  
+
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
   updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 }, (table) => ({
   caseObligationIdx: uniqueIndex("psur_checklist_case_obligation_idx").on(
-    table.psurCaseId, 
+    table.psurCaseId,
     table.obligationId
   ),
   statusIdx: index("psur_checklist_status_idx").on(table.status),
@@ -1479,5 +1670,50 @@ export const psurComplianceChecklistRelations = relations(psurComplianceChecklis
   psurCase: one(psurCases, {
     fields: [psurComplianceChecklist.psurCaseId],
     references: [psurCases.id],
+  }),
+}));
+
+// ============== SYSTEM INSTRUCTIONS ==============
+export const systemInstructions = pgTable("system_instructions", {
+  key: text("key").primaryKey(), // E.g., "NARRATIVE_GENERATION"
+  category: text("category").notNull(), // "ingestion", "runtime", "compliance"
+  description: text("description"),
+  template: text("template").notNull(), // The current active template
+  defaultTemplate: text("default_template").notNull(), // The original default (for reset)
+  version: integer("version").notNull().default(1),
+  variables: jsonb("variables"), // Array of variable names expected
+  lastUpdated: timestamp("last_updated").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  updatedBy: text("updated_by"),
+});
+
+export const insertSystemInstructionSchema = createInsertSchema(systemInstructions);
+export type SystemInstruction = typeof systemInstructions.$inferSelect;
+export type InsertSystemInstruction = z.infer<typeof insertSystemInstructionSchema>;
+
+export const instructionVersions = pgTable("instruction_versions", {
+  id: serial("id").primaryKey(),
+  instructionKey: text("instruction_key").notNull().references(() => systemInstructions.key, { onDelete: "cascade" }),
+  template: text("template").notNull(),
+  version: integer("version").notNull(),
+  changeReason: text("change_reason"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  createdBy: text("created_by"),
+});
+
+export const insertInstructionVersionSchema = createInsertSchema(instructionVersions).omit({
+  id: true,
+  createdAt: true,
+});
+export type InstructionVersion = typeof instructionVersions.$inferSelect;
+export type InsertInstructionVersion = z.infer<typeof insertInstructionVersionSchema>;
+
+export const systemInstructionsRelations = relations(systemInstructions, ({ many }) => ({
+  versions: many(instructionVersions),
+}));
+
+export const instructionVersionsRelations = relations(instructionVersions, ({ one }) => ({
+  instruction: one(systemInstructions, {
+    fields: [instructionVersions.instructionKey],
+    references: [systemInstructions.key],
   }),
 }));

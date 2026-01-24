@@ -6,68 +6,12 @@
  */
 
 import { BaseNarrativeAgent, NarrativeInput } from "./baseNarrativeAgent";
+import { PROMPT_TEMPLATES } from "../../llmService";
 
 export class ConclusionNarrativeAgent extends BaseNarrativeAgent {
   protected readonly sectionType = "CONCLUSION";
-  
-  protected readonly systemPrompt = `You are an expert medical device regulatory writer specializing in PSUR conclusions and action items under EU MDR.
 
-## YOUR ROLE
-Generate comprehensive conclusion narratives that summarize all PSUR findings and clearly state any actions taken or planned.
-
-## REGULATORY REQUIREMENTS (EU MDR Article 86)
-Conclusions section MUST include:
-1. Summary of overall safety conclusions
-2. Summary of performance conclusions
-3. Actions taken during the period
-4. Actions planned for next period
-5. Updates to documentation (PMS plan, CER, labeling)
-6. Confirmation of continued compliance
-
-## WRITING STANDARDS
-- Be definitive - conclusions must be clear
-- Use action-oriented language for actions
-- Include specific timelines where applicable
-- Write clean prose WITHOUT inline citations
-- End with compliance affirmation
-
-## CRITICAL: DO NOT USE CITATIONS IN OUTPUT
-- DO NOT write [ATOM-xxx] in your narrative text
-- Evidence references are tracked automatically via the JSON metadata
-- Write clean, professional prose without any citation markers
-- Report the atom IDs you used in the JSON "citedAtoms" field only
-
-## STRUCTURE:
-1. Safety conclusions
-   - Overall safety profile
-   - Any emerging safety concerns
-   - Signal detection conclusions
-2. Performance conclusions
-   - Clinical performance maintained
-   - Any performance concerns
-3. Actions taken
-   - CAPAs implemented
-   - Documentation updates
-   - Process improvements
-4. Actions planned
-   - Ongoing monitoring commitments
-   - Planned PMCF activities
-   - Next PSUR timeline
-5. Compliance statement
-   - Continued favorable B/R
-   - Compliance with Article 86/88
-
-## OUTPUT FORMAT
-Write the narrative section content WITHOUT any citation markers. After the narrative, provide a JSON block with the atom IDs you referenced:
-\`\`\`json
-{
-  "citedAtoms": ["actual-atom-id-1", "actual-atom-id-2"],
-  "uncitedAtoms": ["other-atom-ids"],
-  "dataGaps": ["description of missing data", ...],
-  "confidence": 0.0-1.0,
-  "reasoning": "explanation of content decisions"
-}
-\`\`\``;
+  protected readonly systemPrompt = PROMPT_TEMPLATES.CONCLUSION_SYSTEM;
 
   constructor() {
     super(
@@ -78,7 +22,7 @@ Write the narrative section content WITHOUT any citation markers. After the narr
 
   protected identifyGaps(input: NarrativeInput): string[] {
     const gaps: string[] = [];
-    
+
     // Conclusions need comprehensive preceding data
     // This section summarizes, so fewer specific requirements
     if (input.evidenceAtoms.length === 0) {
@@ -94,22 +38,22 @@ Write the narrative section content WITHOUT any citation markers. After the narr
     evidenceRecords: string
   ): string {
     // Summarize all evidence for conclusions
-    const complaintAtoms = input.evidenceAtoms.filter(a => 
+    const complaintAtoms = input.evidenceAtoms.filter(a =>
       a.evidenceType.includes("complaint")
     );
-    const incidentAtoms = input.evidenceAtoms.filter(a => 
+    const incidentAtoms = input.evidenceAtoms.filter(a =>
       a.evidenceType.includes("incident")
     );
-    const fscaAtoms = input.evidenceAtoms.filter(a => 
+    const fscaAtoms = input.evidenceAtoms.filter(a =>
       a.evidenceType.includes("fsca") || a.evidenceType.includes("recall")
     );
-    const capaAtoms = input.evidenceAtoms.filter(a => 
+    const capaAtoms = input.evidenceAtoms.filter(a =>
       a.evidenceType.includes("capa")
     );
-    const salesAtoms = input.evidenceAtoms.filter(a => 
+    const salesAtoms = input.evidenceAtoms.filter(a =>
       a.evidenceType.includes("sales")
     );
-    const trendAtoms = input.evidenceAtoms.filter(a => 
+    const trendAtoms = input.evidenceAtoms.filter(a =>
       a.evidenceType.includes("trend")
     );
 
@@ -119,16 +63,16 @@ Write the narrative section content WITHOUT any citation markers. After the narr
     }, 0);
 
     // Check for signals
-    const signalsDetected = trendAtoms.some(a => 
+    const signalsDetected = trendAtoms.some(a =>
       a.normalizedData.signal_detected === true ||
       a.normalizedData.significant === true
     );
 
     // Check for open items
-    const openCAPAs = capaAtoms.filter(a => 
+    const openCAPAs = capaAtoms.filter(a =>
       !a.normalizedData.close_date && a.normalizedData.status !== "CLOSED"
     );
-    const openFSCAs = fscaAtoms.filter(a => 
+    const openFSCAs = fscaAtoms.filter(a =>
       !a.normalizedData.date_closed && a.normalizedData.status !== "CLOSED"
     );
 

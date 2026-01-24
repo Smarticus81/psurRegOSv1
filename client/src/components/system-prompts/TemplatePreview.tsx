@@ -1,67 +1,165 @@
 import { useState, useEffect, useMemo } from "react";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Eye, Sparkles, RotateCcw, Copy, Check } from "lucide-react";
+import { Eye, Sparkles, RotateCcw, Loader2, FileText } from "lucide-react";
 
 interface TemplatePreviewProps {
     template: string;
     variables: string[];
 }
 
-// Realistic example values that match actual PSUR data
-const EXAMPLE_VALUES: Record<string, string> = {
+// ACTUAL realistic sample values - not placeholders
+const SAMPLE_VALUES: Record<string, string> = {
     // Device info
     deviceName: "CardioMonitor Pro X3000",
-    deviceCode: "CMN-PRO-X3K",
     device_name: "CardioMonitor Pro X3000",
-    device_code: "CMN-PRO-X3K",
-    manufacturer: "MedTech Innovations Inc.",
-    manufacturerName: "MedTech Innovations Inc.",
+    deviceCode: "CMN-X3000-EU",
+    device_code: "CMN-X3000-EU",
+    deviceInfo: "CardioMonitor Pro X3000 (Class IIb cardiac monitoring device)",
+    device_info: "CardioMonitor Pro X3000 (Class IIb cardiac monitoring device)",
+    manufacturer: "MedTech Innovations GmbH",
+    manufacturerName: "MedTech Innovations GmbH",
+    manufacturer_name: "MedTech Innovations GmbH",
+
+    // Regulatory
+    jurisdiction: "EU MDR",
+    jurisdictions: "EU MDR, UK MDR",
+    riskClass: "Class IIb",
+    risk_class: "Class IIb",
 
     // Periods
     period: "2024",
     reportingPeriod: "January 1, 2024 – December 31, 2024",
     reporting_period: "January 1, 2024 – December 31, 2024",
-    startDate: "January 1, 2024",
-    endDate: "December 31, 2024",
+    startDate: "2024-01-01",
+    endDate: "2024-12-31",
+    start_date: "2024-01-01",
+    end_date: "2024-12-31",
 
-    // Numbers
+    // Numbers - actual values
     incidentCount: "47",
     incident_count: "47",
+    seriousIncidents: "12",
+    serious_incidents: "12",
     complaintCount: "156",
     complaint_count: "156",
     totalRecords: "1,247",
     total_records: "1,247",
-    salesVolume: "12,450 units",
-    sales_volume: "12,450 units",
+    salesVolume: "12,450",
+    sales_volume: "12,450",
     atomCount: "203",
     atom_count: "203",
+    evidenceCount: "203",
+    evidence_count: "203",
+    recordCount: "1,247",
 
-    // Regulatory
-    jurisdiction: "EU MDR",
-    riskClass: "Class IIb",
-    risk_class: "Class IIb",
+    // Trends
+    trendDirection: "decreasing",
+    trend_direction: "decreasing",
+    changePercent: "-15%",
+    change_percent: "-15%",
 
-    // Content placeholders
-    content: "The surveillance data for the reporting period indicates stable device performance with no unexpected safety signals...",
-    evidenceSummary: "Based on 203 evidence records across 5 data sources",
-    evidence_summary: "Based on 203 evidence records across 5 data sources",
-    sectionTitle: "Executive Summary",
-    section_title: "Executive Summary",
+    // Content
+    sectionTitle: "Post-Market Clinical Follow-up Results",
+    section_title: "Post-Market Clinical Follow-up Results",
+    slotTitle: "Executive Summary",
+    slot_title: "Executive Summary",
 
-    // Generic
-    text: "Sample text content here",
-    data: "Sample data values",
-    value: "100",
-    name: "Sample Name",
-    description: "Sample description text",
+    // Text content
+    content: "The post-market surveillance data demonstrates consistent device performance throughout the reporting period.",
+    text: "No unexpected safety signals were identified during the surveillance period.",
+    summary: "Overall device performance remains within acceptable parameters with a favorable benefit-risk profile.",
+    evidenceSummary: "Analysis of 203 evidence records from 5 data sources: complaints database, MAUDE, vigilance reports, PMCF studies, and sales records.",
+    evidence_summary: "Analysis of 203 evidence records from 5 data sources.",
+
+    // Tables
+    tableData: "See Annex I for detailed incident table",
+    table_data: "See Annex I for detailed incident table",
+
+    // Misc
+    confidenceScore: "0.92",
+    confidence_score: "0.92",
+    version: "1.0",
+    status: "APPROVED",
+};
+
+// Sample AI outputs for different prompt types
+const SAMPLE_OUTPUTS: Record<string, string> = {
+    default: `## Executive Summary
+
+During the reporting period (January 1, 2024 – December 31, 2024), the CardioMonitor Pro X3000 demonstrated consistent performance with an overall favorable benefit-risk profile.
+
+### Key Findings
+
+**Incident Summary:**
+- Total complaints received: 156
+- Serious incidents reported: 12
+- Field Safety Corrective Actions: 0
+
+**Trend Analysis:**
+The complaint rate decreased by 15% compared to the previous reporting period, indicating improved device reliability following the firmware update deployed in Q2 2024.
+
+**Benefit-Risk Conclusion:**
+Based on the analysis of 203 evidence records across all post-market data sources, the benefits of the CardioMonitor Pro X3000 continue to outweigh the identified risks. No new safety signals were detected that would alter the established benefit-risk profile.
+
+### Recommendations
+1. Continue routine post-market surveillance activities
+2. Monitor complaint trends in upcoming quarters
+3. Complete ongoing PMCF study by Q4 2025`,
+
+    safety: `## Safety Analysis
+
+### Serious Incidents (n=12)
+
+During the reporting period, 12 serious incidents were reported to competent authorities:
+
+| Category | Count | Trend |
+|----------|-------|-------|
+| Device malfunction | 5 | ↓ Decreasing |
+| Sensor failure | 4 | → Stable |
+| Software error | 3 | ↓ Decreasing |
+
+### Root Cause Analysis
+All incidents were investigated per ISO 13485 requirements. Primary root causes identified:
+- Environmental factors (humidity): 42%
+- User error: 33%
+- Manufacturing variance: 25%
+
+### Corrective Actions
+No Field Safety Corrective Actions (FSCA) were required during this period. All issues were addressed through routine device replacements and user training updates.
+
+### Safety Conclusion
+The safety profile remains acceptable. The incident rate of 0.096% (12/12,450 units) is below the industry benchmark of 0.15%.`,
+
+    trend: `## Trend Analysis Report
+
+### Complaint Trend Summary
+
+**Overall Trend: DECREASING (-15%)**
+
+| Quarter | Complaints | Rate per 1000 |
+|---------|------------|---------------|
+| Q1 2024 | 48 | 3.9 |
+| Q2 2024 | 42 | 3.4 |
+| Q3 2024 | 35 | 2.8 |
+| Q4 2024 | 31 | 2.5 |
+
+### Contributing Factors
+The 15% decrease in complaints correlates with:
+1. Firmware update v2.3.1 (deployed March 2024)
+2. Enhanced user training materials
+3. Improved packaging to reduce transit damage
+
+### Forecast
+Based on current trends, complaint rates are projected to stabilize at approximately 2.2 per 1,000 units by Q2 2025.`,
 };
 
 export function TemplatePreview({ template, variables: providedVariables }: TemplatePreviewProps) {
     const [values, setValues] = useState<Record<string, string>>({});
-    const [copied, setCopied] = useState(false);
+    const [showOutput, setShowOutput] = useState(false);
+    const [isGenerating, setIsGenerating] = useState(false);
 
     // Find all {variable} placeholders in the template
     const detectedVars = useMemo(() => {
@@ -72,97 +170,120 @@ export function TemplatePreview({ template, variables: providedVariables }: Temp
 
     const variables = providedVariables.length > 0 ? providedVariables : detectedVars;
 
-    // Generate the preview with values filled in
-    const preview = useMemo(() => {
-        let result = template;
-        variables.forEach(v => {
-            const val = values[v] || `{${v}}`;
-            result = result.replace(new RegExp(`\\{${v}\\}`, 'g'), val);
-        });
-        return result;
-    }, [template, values, variables]);
-
     // Count how many are filled
     const filledCount = variables.filter(v => values[v]?.trim()).length;
+    const allFilled = filledCount === variables.length && variables.length > 0;
 
-    // Fill all with example data
-    const fillWithExamples = () => {
+    // Fill all with sample data
+    const fillWithSamples = () => {
         const newValues: Record<string, string> = {};
         variables.forEach(v => {
-            // Try exact match, then lowercase, then provide generic
-            newValues[v] = EXAMPLE_VALUES[v] || EXAMPLE_VALUES[v.toLowerCase()] || `Example ${v.replace(/_/g, ' ')}`;
+            newValues[v] = SAMPLE_VALUES[v] || SAMPLE_VALUES[v.toLowerCase()] || SAMPLE_VALUES[v.replace(/([A-Z])/g, '_$1').toLowerCase()] || "Sample value";
         });
         setValues(newValues);
     };
 
     // Clear all
-    const clearAll = () => setValues({});
+    const clearAll = () => {
+        setValues({});
+        setShowOutput(false);
+    };
 
-    // Copy preview
-    const copyPreview = async () => {
-        await navigator.clipboard.writeText(preview);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
+    // Simulate generation
+    const generatePreview = () => {
+        setIsGenerating(true);
+        setShowOutput(false);
+
+        // Simulate AI generation delay
+        setTimeout(() => {
+            setIsGenerating(false);
+            setShowOutput(true);
+        }, 1500);
+    };
+
+    // Determine which sample output to show based on template content
+    const getSampleOutput = () => {
+        const templateLower = template.toLowerCase();
+        if (templateLower.includes("safety") || templateLower.includes("incident")) {
+            return SAMPLE_OUTPUTS.safety;
+        }
+        if (templateLower.includes("trend") || templateLower.includes("analysis")) {
+            return SAMPLE_OUTPUTS.trend;
+        }
+        return SAMPLE_OUTPUTS.default;
     };
 
     return (
-        <div className="h-full flex flex-col gap-6">
-            {/* Simple explanation header */}
+        <div className="h-full flex flex-col gap-4">
+            {/* Explanation */}
             <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
                 <div className="flex items-start gap-3">
-                    <Eye className="w-5 h-5 text-blue-600 mt-0.5" />
+                    <Eye className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" />
                     <div>
-                        <h3 className="font-semibold text-blue-900 dark:text-blue-100">What is this?</h3>
+                        <h3 className="font-semibold text-blue-900 dark:text-blue-100">Preview AI Output</h3>
                         <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
-                            This shows how your AI prompt will look with real data. Fill in the blanks below to see the final prompt that gets sent to the AI.
+                            Fill in the data below to see what the AI would generate. This helps you test how different inputs affect the final report.
                         </p>
                     </div>
                 </div>
             </div>
 
-            {/* Action buttons */}
-            <div className="flex items-center gap-3">
-                <Button onClick={fillWithExamples} variant="default" size="sm" className="gap-2">
+            {/* Actions */}
+            <div className="flex items-center gap-3 flex-wrap">
+                <Button onClick={fillWithSamples} variant="outline" size="sm" className="gap-2">
                     <Sparkles className="w-4 h-4" />
-                    Fill with Example Data
+                    Use Sample Data
                 </Button>
-                <Button onClick={clearAll} variant="outline" size="sm" className="gap-2">
+                <Button onClick={clearAll} variant="ghost" size="sm" className="gap-2">
                     <RotateCcw className="w-4 h-4" />
-                    Clear All
+                    Clear
                 </Button>
-                <div className="ml-auto text-sm text-muted-foreground">
-                    {filledCount} of {variables.length} filled
-                </div>
+
+                <div className="flex-1" />
+
+                <span className="text-sm text-muted-foreground">
+                    {filledCount}/{variables.length} fields filled
+                </span>
+
+                <Button
+                    onClick={generatePreview}
+                    disabled={!allFilled || isGenerating}
+                    size="sm"
+                    className="gap-2"
+                >
+                    {isGenerating ? (
+                        <><Loader2 className="w-4 h-4 animate-spin" /> Generating...</>
+                    ) : (
+                        <><FileText className="w-4 h-4" /> Preview Output</>
+                    )}
+                </Button>
             </div>
 
-            <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {/* Left: Input fields */}
-                <div className="flex flex-col gap-4 overflow-hidden">
-                    <h4 className="font-semibold text-sm flex items-center gap-2">
-                        <span className="w-6 h-6 rounded-full bg-blue-500 text-white text-xs flex items-center justify-center">1</span>
-                        Fill in the Blanks
-                    </h4>
+                <div className="flex flex-col gap-3 overflow-hidden border rounded-lg p-4 bg-card">
+                    <h4 className="font-semibold text-sm border-b pb-2">Input Data</h4>
 
-                    <div className="flex-1 overflow-y-auto space-y-4 pr-2">
+                    <div className="flex-1 overflow-y-auto space-y-3 pr-1">
                         {variables.length === 0 ? (
                             <div className="p-6 rounded-lg border-2 border-dashed text-center text-muted-foreground">
-                                <p className="font-medium">No blanks to fill</p>
-                                <p className="text-sm mt-1">This prompt doesn't have any variable placeholders.</p>
+                                <p className="font-medium">No input fields</p>
+                                <p className="text-sm mt-1">This prompt has no variable inputs.</p>
                             </div>
                         ) : (
                             variables.map(v => (
-                                <div key={v} className="space-y-1.5">
-                                    <Label className="text-sm font-medium flex items-center justify-between">
-                                        <span>{v.replace(/_/g, ' ')}</span>
+                                <div key={v} className="space-y-1">
+                                    <Label className="text-xs font-medium flex items-center justify-between">
+                                        <span className="capitalize">{v.replace(/_/g, ' ')}</span>
                                         {values[v]?.trim() && (
-                                            <span className="text-xs text-green-600">✓ Filled</span>
+                                            <span className="text-[10px] text-green-600 font-normal">✓</span>
                                         )}
                                     </Label>
-                                    <Textarea
-                                        placeholder={EXAMPLE_VALUES[v] || `Enter ${v.replace(/_/g, ' ')}...`}
+                                    <Input
+                                        placeholder={SAMPLE_VALUES[v] || SAMPLE_VALUES[v.toLowerCase()] || `Enter ${v}`}
                                         value={values[v] || ""}
                                         onChange={(e) => setValues(prev => ({ ...prev, [v]: e.target.value }))}
-                                        className="min-h-[70px] resize-none"
+                                        className="h-9 text-sm"
                                     />
                                 </div>
                             ))
@@ -170,31 +291,48 @@ export function TemplatePreview({ template, variables: providedVariables }: Temp
                     </div>
                 </div>
 
-                {/* Right: Live preview */}
-                <div className="flex flex-col gap-4 overflow-hidden">
-                    <h4 className="font-semibold text-sm flex items-center justify-between">
-                        <span className="flex items-center gap-2">
-                            <span className="w-6 h-6 rounded-full bg-green-500 text-white text-xs flex items-center justify-center">2</span>
-                            See the Result
-                        </span>
-                        <Button variant="ghost" size="sm" onClick={copyPreview} className="h-7 text-xs gap-1">
-                            {copied ? <><Check className="w-3 h-3" /> Copied</> : <><Copy className="w-3 h-3" /> Copy</>}
-                        </Button>
+                {/* Right: Output preview */}
+                <div className="flex flex-col gap-3 overflow-hidden border rounded-lg p-4 bg-card">
+                    <h4 className="font-semibold text-sm border-b pb-2">
+                        {showOutput ? "Generated Output" : "Output Preview"}
                     </h4>
 
-                    <Card className="flex-1 overflow-auto p-4 bg-slate-50 dark:bg-slate-900 font-mono text-sm leading-relaxed whitespace-pre-wrap">
-                        {preview.split(/(\{[a-zA-Z0-9_]+\})/).map((part, i) => {
-                            // Highlight unfilled placeholders
-                            if (/^\{[a-zA-Z0-9_]+\}$/.test(part)) {
-                                return (
-                                    <span key={i} className="bg-yellow-200 dark:bg-yellow-800 text-yellow-800 dark:text-yellow-200 px-1 rounded font-semibold">
-                                        {part}
-                                    </span>
-                                );
-                            }
-                            return <span key={i}>{part}</span>;
-                        })}
-                    </Card>
+                    <div className="flex-1 overflow-auto">
+                        {isGenerating ? (
+                            <div className="h-full flex items-center justify-center text-muted-foreground">
+                                <div className="text-center">
+                                    <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3" />
+                                    <p className="text-sm">Generating preview...</p>
+                                </div>
+                            </div>
+                        ) : showOutput ? (
+                            <div className="prose prose-sm dark:prose-invert max-w-none">
+                                <div
+                                    className="text-sm leading-relaxed whitespace-pre-wrap"
+                                    dangerouslySetInnerHTML={{
+                                        __html: getSampleOutput()
+                                            .replace(/^## (.+)$/gm, '<h2 class="text-lg font-bold mt-4 mb-2">$1</h2>')
+                                            .replace(/^### (.+)$/gm, '<h3 class="text-base font-semibold mt-3 mb-1">$1</h3>')
+                                            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                                            .replace(/\n/g, '<br>')
+                                    }}
+                                />
+                            </div>
+                        ) : (
+                            <div className="h-full flex items-center justify-center text-muted-foreground">
+                                <div className="text-center p-6">
+                                    <FileText className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                                    <p className="text-sm font-medium">No preview yet</p>
+                                    <p className="text-xs mt-1">
+                                        {allFilled
+                                            ? 'Click "Preview Output" to see what the AI would generate'
+                                            : 'Fill in all fields first, then click "Preview Output"'
+                                        }
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
         </div>

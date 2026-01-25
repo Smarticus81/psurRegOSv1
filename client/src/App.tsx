@@ -14,7 +14,8 @@ import GrkbView from "@/pages/grkb-view";
 import AgentSystem from "@/pages/agent-system";
 import SystemInstructions from "@/pages/system-instructions";
 import ContentTraces from "@/pages/content-traces";
-import { LayoutDashboard, Settings, Info, Globe, Cpu, Brain, ShieldCheck, BarChart3 } from "lucide-react";
+import TemplateManagement from "@/pages/template-management";
+import { LayoutDashboard, Settings, Info, Globe, Cpu, Brain, ShieldCheck, BarChart3, FileText } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 function Navigation() {
@@ -25,6 +26,7 @@ function Navigation() {
     { href: "/content-traces", icon: BarChart3, label: "Content" },
     { href: "/system-instructions", icon: Brain, label: "Prompts" },
     { href: "/grkb", icon: Globe, label: "GRKB" },
+    { href: "/template-management", icon: FileText, label: "Templates" },
     { href: "/instructions", icon: Info, label: "Docs" },
     { href: "/admin", icon: Settings, label: "Admin" },
   ];
@@ -114,6 +116,7 @@ function Router() {
         <Route path="/system-instructions" component={SystemInstructions} />
         <Route path="/admin" component={Admin} />
         <Route path="/instructions" component={Instructions} />
+        <Route path="/template-management" component={TemplateManagement} />
         <Route component={NotFound} />
       </Switch>
     </div>

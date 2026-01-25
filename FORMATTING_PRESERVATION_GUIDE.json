@@ -1,0 +1,677 @@
+{
+  "document_name": "FormQAR-054 Formatting & Visual Layout Preservation Guide",
+  "version": "1.0",
+  "purpose": "Ensure programmatically generated PSURs maintain exact visual appearance of template",
+  
+  "critical_principle": "Every formatting element matters for regulatory compliance. Documents must look professional and match the approved template structure exactly.",
+  
+  "document_level_formatting": {
+    "page_setup": {
+      "page_size": "Letter (8.5\" x 11\")",
+      "orientation": "Portrait",
+      "margins": {
+        "top": "1.0 inch",
+        "bottom": "1.0 inch",
+        "left": "1.0 inch",
+        "right": "1.0 inch",
+        "gutter": "0 inch",
+        "header": "0.5 inch",
+        "footer": "0.5 inch"
+      }
+    },
+    
+    "default_styles": {
+      "normal": {
+        "font_name": "Arial",
+        "font_size": "11 pt",
+        "line_spacing": "Single (1.0)",
+        "space_before": "0 pt",
+        "space_after": "6 pt",
+        "alignment": "Left",
+        "first_line_indent": "0 inch"
+      }
+    }
+  },
+  
+  "typography_system": {
+    "font_hierarchy": {
+      "cover_page_title": {
+        "font": "Arial",
+        "size": "14 pt",
+        "weight": "Bold",
+        "alignment": "Center",
+        "space_after": "12 pt",
+        "example": "PSUR COVER PAGE"
+      },
+      
+      "section_headings": {
+        "font": "Arial",
+        "size": "12 pt",
+        "weight": "Bold",
+        "underline": true,
+        "alignment": "Left",
+        "space_before": "0 pt (on new page)",
+        "space_after": "12 pt",
+        "example": "Section A: Executive Summary"
+      },
+      
+      "subsection_headings": {
+        "font": "Arial",
+        "size": "11 pt",
+        "weight": "Bold",
+        "underline": true,
+        "alignment": "Left",
+        "space_before": "12 pt",
+        "space_after": "6 pt",
+        "example": "Previous PSUR Actions Status"
+      },
+      
+      "field_labels": {
+        "font": "Arial",
+        "size": "11 pt",
+        "weight": "Bold",
+        "underline": false,
+        "alignment": "Left",
+        "inline": true,
+        "example": "Company Name: "
+      },
+      
+      "field_values": {
+        "font": "Arial",
+        "size": "11 pt",
+        "weight": "Regular",
+        "alignment": "Left",
+        "inline": true,
+        "example": "CooperSurgical, Inc."
+      },
+      
+      "body_text": {
+        "font": "Arial",
+        "size": "11 pt",
+        "weight": "Regular",
+        "alignment": "Left",
+        "line_spacing": "Single",
+        "example": "Paragraph content..."
+      },
+      
+      "table_headers": {
+        "font": "Arial",
+        "size": "9 pt",
+        "weight": "Bold",
+        "alignment": "Left",
+        "vertical_alignment": "Top"
+      },
+      
+      "table_cells": {
+        "font": "Arial",
+        "size": "8 pt",
+        "weight": "Regular",
+        "alignment": "Left",
+        "vertical_alignment": "Top"
+      },
+      
+      "figure_captions": {
+        "font": "Arial",
+        "size": "10 pt",
+        "weight": "Bold",
+        "alignment": "Left",
+        "space_before": "12 pt",
+        "example": "Figure 1. Yearly sales graph for..."
+      }
+    }
+  },
+  
+  "spacing_and_indentation": {
+    "vertical_spacing": {
+      "between_sections": {
+        "method": "Page break",
+        "note": "Each main section (A-M) starts on new page"
+      },
+      
+      "after_section_heading": {
+        "space": "12 pt",
+        "blank_lines": "1 (achieved via paragraph spacing)"
+      },
+      
+      "after_subsection_heading": {
+        "space": "6 pt",
+        "blank_lines": "0"
+      },
+      
+      "between_paragraphs": {
+        "space": "6 pt",
+        "blank_lines": "0 (use spacing_after, not Enter key)"
+      },
+      
+      "before_tables": {
+        "space": "12 pt",
+        "blank_lines": "1"
+      },
+      
+      "after_tables": {
+        "space": "12 pt",
+        "blank_lines": "1"
+      },
+      
+      "within_multi_paragraph_fields": {
+        "space": "6 pt between paragraphs",
+        "blank_lines": "0"
+      }
+    },
+    
+    "horizontal_indentation": {
+      "cover_page_address_lines": {
+        "line_1": "0 inch (flush left with label)",
+        "line_2": "~1.2 inches (17 spaces approximation)",
+        "line_3": "~1.2 inches (17 spaces approximation)",
+        "method": "Use left_indent or tab stops, NOT spaces",
+        "spaces_warning": "Avoid using space characters for alignment - use proper indentation"
+      },
+      
+      "authorized_rep_address": {
+        "indentation": "~5.0 inches (72 spaces approximation)",
+        "method": "Use left_indent property",
+        "alignment": "Left within indented block"
+      },
+      
+      "checkbox_lists": {
+        "indentation": "0.5 inch",
+        "hanging_indent": "0 inch",
+        "method": "paragraph.paragraph_format.left_indent = Inches(0.5)"
+      },
+      
+      "nested_fields": {
+        "level_1": "0.5 inch",
+        "level_2": "1.0 inch",
+        "example": "     Details: [nested under Status]"
+      },
+      
+      "bullet_alternatives": {
+        "method": "Use '    - ' prefix instead of bullets",
+        "indentation": "4 spaces or 0.25 inch",
+        "example": "    - First EC/EU Certificate: [Date]"
+      },
+      
+      "certificate_status_lines": {
+        "indentation": "~1.5 inches using tabs",
+        "method": "Use tabs or left_indent",
+        "example": "\t\t\t      MDR 768166 R000 - Valid until..."
+      }
+    }
+  },
+  
+  "table_formatting": {
+    "standard_table_style": {
+      "style_name": "Table Grid",
+      "border_style": "All borders visible",
+      "border_width": "0.5 pt",
+      "border_color": "Black",
+      "cell_padding": {
+        "top": "0 pt",
+        "bottom": "0 pt",
+        "left": "5.4 pt",
+        "right": "5.4 pt"
+      }
+    },
+    
+    "header_row": {
+      "background_color": "None (white)",
+      "font": "Arial 9pt Bold",
+      "alignment": "Left",
+      "vertical_alignment": "Top",
+      "text_wrap": true,
+      "minimum_row_height": "Auto"
+    },
+    
+    "data_rows": {
+      "background_color": "None (white)",
+      "font": "Arial 8pt Regular",
+      "alignment": "Left",
+      "vertical_alignment": "Top",
+      "text_wrap": true,
+      "minimum_row_height": "Auto"
+    },
+    
+    "column_widths": {
+      "method": "Auto-fit to contents",
+      "note": "Let table auto-size based on content",
+      "exception": "Wide tables may need manual column width adjustment"
+    },
+    
+    "table_positioning": {
+      "alignment": "Left",
+      "text_wrap": "None",
+      "distance_from_text": "0 pt"
+    },
+    
+    "sales_tables_specific": {
+      "multi_row_headers": {
+        "row_1": "Main headers (Region, Preceding, Current, etc.)",
+        "row_2": "Date sub-headers",
+        "merged_cells": "Region column spans both header rows",
+        "note": "First column (Region) is regular cell in row 1, spans to row 2"
+      },
+      
+      "percentage_formatting": {
+        "format": "X.XXX%",
+        "alignment": "Left",
+        "decimal_places": 3,
+        "example": "32.399%"
+      },
+      
+      "number_formatting": {
+        "thousands_separator": "None or comma (,)",
+        "decimal_places": 0,
+        "example": "54279 or 54,279"
+      }
+    },
+    
+    "udi_table": {
+      "columns": 4,
+      "headers": ["Basic UDI-DI", "Device Trade Name", "EMDN Code", "Changes from Previous PSUR"],
+      "typical_rows": 1,
+      "note": "Usually single row for grouped products"
+    },
+    
+    "associated_documents_table": {
+      "columns": 3,
+      "headers": ["Document Type", "Document Number", "Document Title"],
+      "typical_rows": "4-6",
+      "row_examples": [
+        "PMS Plan",
+        "Clinical Evaluation Report",
+        "PMCF Plan",
+        "Risk Management File"
+      ]
+    }
+  },
+  
+  "special_formatting_elements": {
+    "checkboxes": {
+      "checked": "☒",
+      "unchecked": "☐",
+      "spacing": "One space after checkbox before text",
+      "format": "☒ Yes ☐ No",
+      "font": "Arial 11pt (same as surrounding text)",
+      "inline": true,
+      "warning": "Do not use form field checkboxes - use Unicode characters"
+    },
+    
+    "product_names_with_symbols": {
+      "registered_trademark": "® (U+00AE)",
+      "trademark": "™ (U+2122)",
+      "example": "ORIGIO® Sperm Wash",
+      "note": "Preserve exact capitalization and symbols"
+    },
+    
+    "special_characters": {
+      "multiplication": "× (U+00D7) not x",
+      "non_breaking_space": " (U+00A0) for keeping values together",
+      "degree": "° (U+00B0)",
+      "plus_minus": "± (U+00B1)"
+    },
+    
+    "date_formats": {
+      "cover_page": "DD Month YYYY",
+      "example": "07 October 2024",
+      "month": "Full name, no abbreviation",
+      "day": "No leading zero for single digits (7 not 07) or with leading zero per template"
+    },
+    
+    "date_ranges": {
+      "format": "DD Month YYYY to DD Month YYYY",
+      "example": "01 January 2024 to 31 January 2025",
+      "connector": " to ",
+      "note": "space-to-space, not dash"
+    },
+    
+    "approval_dates": {
+      "format": "DD. MMM.YYYY",
+      "example": "05. Sep.2016",
+      "month": "Three-letter abbreviation with period",
+      "day": "Two digits with period"
+    }
+  },
+  
+  "page_breaks_and_sections": {
+    "page_break_locations": [
+      "Before Table of Contents",
+      "Before each Section A through M"
+    ],
+    
+    "page_break_method": {
+      "word_api": "document.add_page_break()",
+      "paragraph_property": "paragraph.paragraph_format.page_break_before = True",
+      "avoid": "Multiple blank paragraphs to force page break"
+    },
+    
+    "continuous_sections": [
+      "Cover Page (no break within)",
+      "Table of Contents (single page or flows as needed)",
+      "Each main section flows continuously unless tables require space"
+    ]
+  },
+  
+  "table_of_contents_formatting": {
+    "title": {
+      "text": "Table of Contents",
+      "font": "Arial 12pt Bold",
+      "alignment": "Center",
+      "space_after": "12 pt"
+    },
+    
+    "entries": {
+      "font": "Arial 11pt Bold",
+      "alignment": "Left",
+      "format": "Section Title<TAB>Page Number",
+      "tab_stop": "Right-aligned tab at 6.5 inches",
+      "leader": "None (no dots)",
+      "example": "Section A: Executive Summary\t4"
+    },
+    
+    "spacing": {
+      "between_entries": "0 pt (single spacing)",
+      "after_last_entry": "12 pt"
+    }
+  },
+  
+  "chart_and_figure_placeholders": {
+    "figure_caption_format": {
+      "font": "Arial 10pt Bold",
+      "alignment": "Left",
+      "space_before": "12 pt",
+      "space_after": "6 pt",
+      "format": "Figure {N}. {Description}",
+      "example": "Figure 1. Yearly sales graph for ORIGIO® Sperm Wash from 01 January 2024 to 31 January 2025"
+    },
+    
+    "figure_description_text": {
+      "font": "Arial 11pt Regular",
+      "alignment": "Left",
+      "space_after": "12 pt",
+      "format": "Narrative description of chart content and analysis",
+      "example": "The sales figures recorded are 47,533, 49,637, 50,472, and 54,279..."
+    },
+    
+    "chart_spacing": {
+      "before_figure_caption": "12 pt",
+      "after_figure_description": "12 pt",
+      "between_figures": "24 pt (two 12pt spacings)"
+    },
+    
+    "chart_insertion_note": "Charts are described textually; actual chart images inserted separately if needed"
+  },
+  
+  "consistency_rules": {
+    "product_name_usage": {
+      "rule": "Use exact same spelling, capitalization, and symbols everywhere",
+      "example": "ORIGIO® Sperm Wash (not Origio Sperm Wash or ORIGIO Sperm Wash)",
+      "verification": "Search document for all instances of product_1_name slot"
+    },
+    
+    "section_header_consistency": {
+      "format": "Section {LETTER}: {Title}",
+      "example": "Section A: Executive Summary",
+      "letter_case": "Uppercase single letter A-M",
+      "colon": "Always present after letter",
+      "title_case": "Title Case for Section Names"
+    },
+    
+    "label_colon_consistency": {
+      "rule": "Labels for field values always end with colon and space",
+      "example": "Company Name: CooperSurgical, Inc.",
+      "not": "Company Name CooperSurgical, Inc.",
+      "bold": "Labels are bold, values are regular weight"
+    },
+    
+    "checkbox_spacing": {
+      "before": "Space or no space before checkbox character",
+      "after": "Always one space after checkbox before text",
+      "between": "Space between multiple checkboxes",
+      "example": "☒ Yes ☐ No ☐ N/A"
+    }
+  },
+  
+  "multi_paragraph_field_formatting": {
+    "when_used": [
+      "Device descriptions (4 paragraphs per product)",
+      "Market history (3 paragraphs per product)",
+      "Indications (2 paragraphs per product)",
+      "Benefit-risk summary (multi-paragraph)"
+    ],
+    
+    "spacing_between_paragraphs": {
+      "space_after": "6 pt per paragraph",
+      "blank_lines": "0 (achieved through spacing_after)",
+      "method": "Use paragraph.paragraph_format.space_after = Pt(6)"
+    },
+    
+    "first_paragraph": {
+      "space_before": "0 pt (follows label or heading)",
+      "first_line_indent": "0 inch"
+    },
+    
+    "subsequent_paragraphs": {
+      "space_before": "0 pt",
+      "space_after": "6 pt",
+      "first_line_indent": "0 inch"
+    }
+  },
+  
+  "common_formatting_mistakes": {
+    "mistake_1_spaces_for_alignment": {
+      "wrong": "Using 17 space characters to indent address",
+      "right": "Use paragraph.paragraph_format.left_indent = Inches(1.2)",
+      "why": "Spaces break with font changes and are not precise"
+    },
+    
+    "mistake_2_manual_line_breaks": {
+      "wrong": "Using Enter key multiple times for spacing",
+      "right": "Use paragraph.paragraph_format.space_after = Pt(12)",
+      "why": "Manual breaks are inconsistent and hard to maintain"
+    },
+    
+    "mistake_3_inconsistent_fonts": {
+      "wrong": "Mixing Arial with Calibri or Times New Roman",
+      "right": "Arial everywhere except table cells (Arial)",
+      "why": "Professional consistency and regulatory compliance"
+    },
+    
+    "mistake_4_wrong_bold_pattern": {
+      "wrong": "Making entire field bold: **Company Name: CooperSurgical**",
+      "right": "**Company Name:** CooperSurgical, Inc.",
+      "why": "Only labels are bold, values are regular"
+    },
+    
+    "mistake_5_missing_section_breaks": {
+      "wrong": "Using blank paragraphs to start new section",
+      "right": "Use document.add_page_break() before each section",
+      "why": "Ensures sections always start on new page"
+    },
+    
+    "mistake_6_table_style_inconsistency": {
+      "wrong": "Using different table styles (Grid, Modern, etc.)",
+      "right": "Use 'Table Grid' for all tables",
+      "why": "Consistent appearance across document"
+    },
+    
+    "mistake_7_percentage_format": {
+      "wrong": "32.4% or 32% or .324",
+      "right": "32.399% (three decimal places)",
+      "why": "Precision required for compliance"
+    },
+    
+    "mistake_8_checkbox_as_field": {
+      "wrong": "Using Word form field checkbox",
+      "right": "Use Unicode characters ☒ and ☐",
+      "why": "Form fields complicate document editing"
+    }
+  },
+  
+  "validation_checklist": {
+    "page_setup": [
+      "☐ Margins: 1\" all sides",
+      "☐ Page size: Letter 8.5×11",
+      "☐ Orientation: Portrait"
+    ],
+    
+    "typography": [
+      "☐ All body text: Arial 11pt",
+      "☐ Section headings: Arial 12pt Bold Underline",
+      "☐ Subsection headings: Arial 11pt Bold Underline",
+      "☐ Table headers: Arial 9pt Bold",
+      "☐ Table cells: Arial 8pt Regular"
+    ],
+    
+    "spacing": [
+      "☐ Sections start on new page",
+      "☐ 12pt after section headings",
+      "☐ 6pt after subsection headings",
+      "☐ 6pt between paragraphs (via space_after)",
+      "☐ No manual blank lines (Enter keys)"
+    ],
+    
+    "indentation": [
+      "☐ Cover page addresses properly indented",
+      "☐ Checkbox lists indented 0.5\"",
+      "☐ Nested fields indented appropriately",
+      "☐ No space characters used for alignment"
+    ],
+    
+    "tables": [
+      "☐ All tables use 'Table Grid' style",
+      "☐ Headers: Arial 9pt Bold",
+      "☐ Cells: Arial 8pt Regular",
+      "☐ Borders visible on all cells",
+      "☐ Percentages formatted X.XXX%"
+    ],
+    
+    "special_elements": [
+      "☐ Checkboxes use Unicode ☒/☐",
+      "☐ Product symbols preserved (®, ™)",
+      "☐ Dates formatted correctly",
+      "☐ Special characters correct (×, °, ±)"
+    ],
+    
+    "consistency": [
+      "☐ Product names identical everywhere",
+      "☐ Section headers formatted consistently",
+      "☐ Labels bold, values regular",
+      "☐ All slot markers removed"
+    ]
+  },
+  
+  "programmatic_implementation": {
+    "python_docx_best_practices": {
+      "set_font": {
+        "code": "run.font.name = 'Arial'",
+        "always": "Set on every run object"
+      },
+      
+      "set_font_size": {
+        "code": "run.font.size = Pt(11)",
+        "import": "from docx.shared import Pt"
+      },
+      
+      "set_bold": {
+        "code": "run.bold = True",
+        "labels_only": "Only for field labels and headings"
+      },
+      
+      "set_underline": {
+        "code": "run.underline = True",
+        "headings_only": "Only for section/subsection headings"
+      },
+      
+      "set_alignment": {
+        "code": "paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER",
+        "import": "from docx.enum.text import WD_PARAGRAPH_ALIGNMENT"
+      },
+      
+      "set_indentation": {
+        "code": "paragraph.paragraph_format.left_indent = Inches(0.5)",
+        "import": "from docx.shared import Inches"
+      },
+      
+      "set_spacing": {
+        "code": "paragraph.paragraph_format.space_after = Pt(6)",
+        "default": "6pt for normal paragraphs, 12pt after headings"
+      },
+      
+      "page_break": {
+        "code": "document.add_page_break()",
+        "when": "Before TOC and each section A-M"
+      },
+      
+      "create_table": {
+        "code": "table = document.add_table(rows=4, cols=3)",
+        "style": "table.style = 'Table Grid'"
+      },
+      
+      "table_cell_format": {
+        "code": "cell.paragraphs[0].runs[0].font.size = Pt(8)",
+        "note": "Access through paragraphs and runs"
+      }
+    },
+    
+    "slot_replacement_preserve_format": {
+      "inline_replacement": {
+        "description": "When label and value are in same paragraph",
+        "code_pattern": [
+          "p = doc.add_paragraph()",
+          "r1 = p.add_run('Company Name: ')",
+          "r1.bold = True",
+          "r1.font.name = 'Arial'",
+          "r2 = p.add_run('{{slot:manufacturer_company_name}}')",
+          "r2.font.name = 'Arial'"
+        ],
+        "replacement": "Replace {{slot:manufacturer_company_name}} with actual value, preserving run formatting"
+      },
+      
+      "paragraph_replacement": {
+        "description": "When entire paragraph is a slot",
+        "code_pattern": [
+          "p = doc.add_paragraph()",
+          "r = p.add_run('{{slot:device_description}}')",
+          "r.font.name = 'Arial'",
+          "r.font.size = Pt(11)"
+        ],
+        "replacement": "Replace slot text, formatting already set on run"
+      }
+    }
+  },
+  
+  "quality_assurance": {
+    "visual_comparison": {
+      "method": "Side-by-side comparison with template",
+      "tools": "Print to PDF, compare visually",
+      "check": [
+        "Overall page layout matches",
+        "Section breaks in correct locations",
+        "Tables look identical",
+        "Indentation matches exactly",
+        "Font sizes appear correct",
+        "Spacing looks right"
+      ]
+    },
+    
+    "automated_checks": {
+      "font_audit": "Scan all runs to verify Arial",
+      "size_audit": "Check all font sizes match specification",
+      "spacing_audit": "Verify space_after values correct",
+      "indent_audit": "Check left_indent values",
+      "style_audit": "Confirm all tables use Table Grid"
+    },
+    
+    "manual_review_points": [
+      "Cover page looks professional",
+      "TOC properly formatted",
+      "Each section starts new page",
+      "Tables aligned and formatted correctly",
+      "No orphaned headings (heading at bottom of page)",
+      "Consistent spacing throughout",
+      "No extra blank pages",
+      "Page numbers correct (if used)"
+    ]
+  }
+}

@@ -14,7 +14,5 @@ __pycache__/
 *.sqlite
 *.sqlite3
 
-# Environment variables (contains secrets!)
 .env
-.env.*
-!.env.example
+outputpsur.docx

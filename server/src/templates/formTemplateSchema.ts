@@ -190,12 +190,35 @@ export const FormSectionsZ = z.object({
   M_findings_and_conclusions: SectionMZ.optional(),
 }).passthrough();
 
-// Full form-based template schema
+// Full form-based template schema (hierarchical structure)
 export const FormTemplateZ = z.object({
   form: FormMetadataZ,
   psur_cover_page: CoverPageZ.optional(),
   table_of_contents: z.array(TOCEntryZ).optional(),
   sections: FormSectionsZ,
+});
+
+// Granular section item (flat array structure)
+export const GranularSectionItemZ = z.object({
+  section_id: z.string(),
+  title: z.string(),
+  type: z.string().optional(),
+  content: z.string().optional(),
+  evidence_types: z.array(z.string()).optional(),
+  formatting: z.any().optional(),
+}).passthrough();
+
+// Granular form metadata (sections as array inside form object)
+export const GranularFormMetadataZ = z.object({
+  form_id: z.string().min(1),
+  form_title: z.string().min(1),
+  revision: z.string().optional(),
+  sections: z.array(GranularSectionItemZ),
+});
+
+// Granular form-based template schema (sections as flat array)
+export const GranularFormTemplateZ = z.object({
+  form: GranularFormMetadataZ,
 });
 
 // Type exports
@@ -204,8 +227,10 @@ export type CoverPage = z.infer<typeof CoverPageZ>;
 export type TOCEntry = z.infer<typeof TOCEntryZ>;
 export type FormSections = z.infer<typeof FormSectionsZ>;
 export type FormTemplate = z.infer<typeof FormTemplateZ>;
+export type GranularSectionItem = z.infer<typeof GranularSectionItemZ>;
+export type GranularFormTemplate = z.infer<typeof GranularFormTemplateZ>;
 
-// Validation helper
+// Validation helper for hierarchical form template
 export function validateFormTemplate(data: unknown): { success: true; data: FormTemplate } | { success: false; errors: z.ZodError } {
   const result = FormTemplateZ.safeParse(data);
   if (result.success) {
@@ -214,11 +239,50 @@ export function validateFormTemplate(data: unknown): { success: true; data: Form
   return { success: false, errors: result.error };
 }
 
+// Validation helper for granular form template
+export function validateGranularFormTemplate(data: unknown): { success: true; data: GranularFormTemplate } | { success: false; errors: z.ZodError } {
+  const result = GranularFormTemplateZ.safeParse(data);
+  if (result.success) {
+    return { success: true, data: result.data };
+  }
+  return { success: false, errors: result.error };
+}
+
+// Check if template is granular format (sections as array inside form)
+export function isGranularFormTemplate(data: unknown): boolean {
+  if (!data || typeof data !== 'object') return false;
+  const obj = data as Record<string, unknown>;
+  
+  if ('form' in obj && typeof obj.form === 'object' && obj.form !== null) {
+    const form = obj.form as Record<string, unknown>;
+    return 'form_id' in form && 'sections' in form && Array.isArray(form.sections);
+  }
+  
+  return false;
+}
+
 // Detect if a template is form-based
+// Supports two structures:
+// 1. { form: {...}, sections: {...} } - original structure
+// 2. { form: { form_id, sections: [...] } } - granular template structure
 export function isFormBasedTemplate(data: unknown): boolean {
   if (!data || typeof data !== 'object') return false;
   const obj = data as Record<string, unknown>;
-  return 'form' in obj && 'sections' in obj;
+  
+  // Check for original structure: form and sections at top level
+  if ('form' in obj && 'sections' in obj) {
+    return true;
+  }
+  
+  // Check for granular structure: form with nested sections array
+  if ('form' in obj && typeof obj.form === 'object' && obj.form !== null) {
+    const form = obj.form as Record<string, unknown>;
+    if ('form_id' in form && 'sections' in form && Array.isArray(form.sections)) {
+      return true;
+    }
+  }
+  
+  return false;
 }
 
 // Format errors for display

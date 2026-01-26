@@ -25,6 +25,7 @@ import {
   psurSlotObligations,
   slotDefinitions,
   slotObligationLinks,
+  templates,
   type GrkbObligation,
   type InsertDecisionTraceEntry,
 } from "@shared/schema";
@@ -204,7 +205,10 @@ export interface MDCGComplianceResult {
   annex1Coverage: number;
   annex2Coverage: number;
   annex3Coverage: number;
+  annex4Compliant: boolean;
   missingMandatorySections: string[];
+  missingMandatoryTables: string[];
+  deviceRequirements?: AnnexIVRequirements;
   passed: boolean;
 }
 
@@ -226,15 +230,165 @@ export interface TemplateManagementResult {
   slotCount: number;
   groundingResult: GRKBGroundingResult;
   agentUpdates: AgentInstructionUpdate[];
+  complianceAudit?: ComplianceAuditResult;
   traceId: string;
   errors: string[];
   warnings: string[];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// GRKB GROUNDING ENGINE
+// SCHEMA TRANSFORMATION: Input → Workflow Format
+// 
+// SOTA approach: Transform at ingestion, store in canonical format.
+// The database always stores workflow-compatible templates.
 // ═══════════════════════════════════════════════════════════════════════════════
 
+interface WorkflowSlotDefinition {
+  slot_id: string;
+  title: string;
+  section_path: string;
+  slot_kind: "ADMIN" | "NARRATIVE" | "TABLE" | "METRIC";
+  required: boolean;
+  evidence_requirements: {
+    required_types: string[];
+    min_atoms: number;
+    allow_empty_with_justification: boolean;
+  };
+  output_requirements: {
+    renderer: "md" | "docx";
+    render_as?: "cover_page" | "table_of_contents" | "narrative" | "table";
+  };
+}
+
+interface WorkflowTemplate {
+  template_id: string;
+  name: string;
+  version: string;
+  jurisdiction_scope: ("EU_MDR" | "UK_MDR")[];
+  normative_basis?: string[];
+  mandatory_obligation_ids: string[];
+  defaults: {
+    require_traceability: boolean;
+    require_method_statement: boolean;
+    require_claimed_obligations: boolean;
+    min_method_chars: number;
+    min_evidence_atoms: number;
+  };
+  slots: WorkflowSlotDefinition[];
+  mapping: Record<string, string[]>;
+}
+
+/**
+ * Transform input template to workflow-compatible schema format.
+ */
+function transformTemplateToWorkflowSchema(
+  templateJson: any,
+  slots: SlotDefinitionInput[],
+  obligationMapping: Record<string, string[]>
+): WorkflowTemplate {
+  // Filter jurisdiction to only valid values
+  const inputJurisdictions = templateJson.jurisdiction_scope || [];
+  const validJurisdictions = inputJurisdictions
+    .filter((j: string): j is "EU_MDR" | "UK_MDR" => j === "EU_MDR" || j === "UK_MDR");
+  
+  // Collect all obligation IDs from mapping
+  const allObligationIds = new Set<string>();
+  for (const oblIds of Object.values(obligationMapping)) {
+    for (const id of oblIds) {
+      allObligationIds.add(id);
+    }
+  }
+  
+  // Transform slots to workflow format
+  const transformedSlots: WorkflowSlotDefinition[] = slots.map((slot, idx) => ({
+    slot_id: slot.slot_id,
+    title: slot.slot_name || slot.slot_id,
+    section_path: deriveSectionPathFromSlot(slot, idx),
+    slot_kind: mapDataTypeToSlotKindTMS(slot.data_type),
+    required: slot.required !== false,
+    evidence_requirements: {
+      required_types: slot.evidence_requirements || [],
+      min_atoms: 0,
+      allow_empty_with_justification: false,
+    },
+    output_requirements: {
+      renderer: "md" as const,
+      render_as: mapDataTypeToRenderAsTMS(slot.data_type),
+    },
+  }));
+  
+  return {
+    template_id: templateJson.template_id,
+    name: templateJson.name || templateJson.template_id,
+    version: templateJson.version || "1.0",
+    jurisdiction_scope: validJurisdictions.length > 0 ? validJurisdictions : ["EU_MDR"],
+    mandatory_obligation_ids: Array.from(allObligationIds),
+    defaults: {
+      require_traceability: true,
+      require_method_statement: true,
+      require_claimed_obligations: true,
+      min_method_chars: 10,
+      min_evidence_atoms: 0,
+    },
+    slots: transformedSlots,
+    mapping: obligationMapping,
+  };
+}
+
+function mapDataTypeToSlotKindTMS(dataType: string): "ADMIN" | "NARRATIVE" | "TABLE" | "METRIC" {
+  const type = (dataType || "").toLowerCase();
+  if (type === "table" || type.includes("table")) return "TABLE";
+  if (type === "metric" || type === "number" || type === "numeric") return "METRIC";
+  if (type === "admin" || type === "toc" || type === "auto_generated" || type.includes("cover")) return "ADMIN";
+  return "NARRATIVE";
+}
+
+function mapDataTypeToRenderAsTMS(dataType: string): "cover_page" | "table_of_contents" | "narrative" | "table" | undefined {
+  const type = (dataType || "").toLowerCase();
+  if (type === "table" || type.includes("table")) return "table";
+  if (type.includes("cover")) return "cover_page";
+  if (type === "toc" || type.includes("table_of_contents") || type === "auto_generated") return "table_of_contents";
+  return "narrative";
+}
+
+function deriveSectionPathFromSlot(slot: SlotDefinitionInput, idx: number): string {
+  // Use existing section info if available
+  const slotAny = slot as any;
+  if (slotAny.section_path) return slotAny.section_path;
+  if (slotAny.section_number) return `Section ${slotAny.section_number}`;
+  
+  // Derive from slot_id
+  const id = slot.slot_id.toLowerCase();
+  const sectionPatterns: Record<string, string> = {
+    "toc": "Table of Contents", "cover": "Cover Page",
+    "executive": "A > Executive Summary", "device": "B > Device Description",
+    "sales": "C > Sales and Distribution", "serious": "D > Serious Incidents",
+    "incident": "D > Incidents", "feedback": "E > Customer Feedback",
+    "complaint": "F > Complaints", "trend": "G > Trend Analysis",
+    "fsca": "H > Field Safety Corrective Actions", "capa": "I > CAPA",
+    "literature": "J > Scientific Literature", "database": "K > External Databases",
+    "pmcf": "L > Post-Market Clinical Follow-Up", "conclusion": "M > Conclusions",
+    "benefit": "M > Benefit-Risk",
+  };
+  
+  for (const [pattern, sectionPath] of Object.entries(sectionPatterns)) {
+    if (id.includes(pattern)) return sectionPath;
+  }
+  
+  return slot.slot_name || `Section ${idx + 1}`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LEGACY GRKB GROUNDING ENGINE (DEPRECATED)
+// Use grkbGroundingService.ts for SOTA semantic matching
+// This class is kept for backward compatibility only
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * @deprecated Use createSOTAGroundingEngine from grkbGroundingService.ts instead.
+ * This legacy engine uses keyword-based matching which is less accurate than
+ * the SOTA semantic embedding approach.
+ */
 export class GRKBGroundingEngine {
   private traceId: string;
   private sequenceNum: number = 0;
@@ -512,7 +666,9 @@ export class GRKBGroundingEngine {
       annex1Coverage: totalSlots > 0 ? Math.min(100, (annex1Slots / totalSlots) * 100) : 0,
       annex2Coverage: totalSlots > 0 ? Math.min(100, (annex2Slots / totalSlots) * 100) : 0,
       annex3Coverage: totalSlots > 0 ? Math.min(100, (annex3Slots / totalSlots) * 100) : 0,
+      annex4Compliant: true, // Legacy engine doesn't do full Annex IV validation
       missingMandatorySections: missingMandatory,
+      missingMandatoryTables: [],
       passed: missingMandatory.length === 0,
     };
   }
@@ -731,35 +887,55 @@ export class AgentInstructionUpdater {
   }
 
   private generateFormattingInstructions(guide: FormattingGuide): string {
+    // Handle incomplete formatting guide gracefully
+    if (!guide) return "";
+    
     const lines: string[] = [
       `## DOCUMENT FORMATTING GUIDE`,
       "",
-      `Target Format: ${guide.metadata.target_format}`,
-      "",
-      "### Page Setup",
-      `- Size: ${guide.page_setup.size}`,
-      `- Orientation: ${guide.page_setup.orientation}`,
-      `- Margins: Top ${guide.page_setup.margins.top}, Bottom ${guide.page_setup.margins.bottom}, Left ${guide.page_setup.margins.left}, Right ${guide.page_setup.margins.right}`,
-      "",
-      "### Typography",
     ];
-
-    for (const [style, spec] of Object.entries(guide.typography)) {
-      lines.push(`- ${style}: ${spec.font_name} ${spec.font_size}pt${spec.bold ? " Bold" : ""}${spec.italic ? " Italic" : ""}`);
+    
+    if (guide.metadata?.target_format) {
+      lines.push(`Target Format: ${guide.metadata.target_format}`);
+      lines.push("");
+    }
+    
+    if (guide.page_setup) {
+      lines.push("### Page Setup");
+      if (guide.page_setup.size) lines.push(`- Size: ${guide.page_setup.size}`);
+      if (guide.page_setup.orientation) lines.push(`- Orientation: ${guide.page_setup.orientation}`);
+      if (guide.page_setup.margins) {
+        lines.push(`- Margins: Top ${guide.page_setup.margins.top || 'N/A'}, Bottom ${guide.page_setup.margins.bottom || 'N/A'}, Left ${guide.page_setup.margins.left || 'N/A'}, Right ${guide.page_setup.margins.right || 'N/A'}`);
+      }
+      lines.push("");
+    }
+    
+    if (guide.typography && Object.keys(guide.typography).length > 0) {
+      lines.push("### Typography");
+      for (const [style, spec] of Object.entries(guide.typography)) {
+        if (spec) {
+          lines.push(`- ${style}: ${spec.font_name || 'Default'} ${spec.font_size || 12}pt${spec.bold ? " Bold" : ""}${spec.italic ? " Italic" : ""}`);
+        }
+      }
+      lines.push("");
     }
 
     if (guide.table_formatting) {
-      lines.push("");
       lines.push("### Table Formatting");
-      lines.push(`- Header: ${guide.table_formatting.header_row.background} background, ${guide.table_formatting.header_row.font_bold ? "Bold" : "Normal"}`);
-      lines.push(`- Borders: ${guide.table_formatting.borders.style} ${guide.table_formatting.borders.width} ${guide.table_formatting.borders.color}`);
+      if (guide.table_formatting.header_row) {
+        lines.push(`- Header: ${guide.table_formatting.header_row.background || 'Default'} background, ${guide.table_formatting.header_row.font_bold ? "Bold" : "Normal"}`);
+      }
+      if (guide.table_formatting.borders) {
+        lines.push(`- Borders: ${guide.table_formatting.borders.style || 'solid'} ${guide.table_formatting.borders.width || '1px'} ${guide.table_formatting.borders.color || 'black'}`);
+      }
+      lines.push("");
     }
 
     if (guide.checkbox_formatting) {
-      lines.push("");
       lines.push("### Checkbox Formatting");
-      lines.push(`- Checked: ${guide.checkbox_formatting.checked_symbol}`);
-      lines.push(`- Unchecked: ${guide.checkbox_formatting.unchecked_symbol}`);
+      lines.push(`- Checked: ${guide.checkbox_formatting.checked_symbol || '[X]'}`);
+      lines.push(`- Unchecked: ${guide.checkbox_formatting.unchecked_symbol || '[ ]'}`);
+      lines.push("");
     }
 
     return lines.join("\n");
@@ -1072,21 +1248,41 @@ export class SlotParser {
 // MAIN SERVICE
 // ═══════════════════════════════════════════════════════════════════════════════
 
+import { 
+  createSOTAGroundingEngine, 
+  validateTemplateGrkbCoverage,
+  createMDCGEnhancedGroundingEngine,
+  type SlotInput as SOTASlotInput,
+  type GroundingValidationResult,
+  type MDCGEnhancedGroundingResult,
+  type DeviceClassification
+} from "./grkbGroundingService";
+
+import {
+  createMDCGValidationService,
+  type AnnexIVRequirements,
+} from "./mdcgValidationService";
+
+import {
+  createAnnexIComplianceAuditor,
+  type ComplianceAuditResult,
+} from "./annexIComplianceAuditor";
+
 export class TemplateManagementService {
-  private groundingEngine: GRKBGroundingEngine;
   private instructionUpdater: AgentInstructionUpdater;
   private slotParser: SlotParser;
   private traceId: string;
 
   constructor() {
     this.traceId = uuidv4();
-    this.groundingEngine = new GRKBGroundingEngine(this.traceId);
     this.instructionUpdater = new AgentInstructionUpdater(this.traceId);
     this.slotParser = new SlotParser();
   }
 
   /**
    * Process a new template with optional guides
+   * Uses SOTA semantic grounding engine for obligation mapping
+   * Enhanced with MDCG 2022-21 Annex II, III, and IV validation
    */
   async processTemplate(
     templateJson: any,
@@ -1095,17 +1291,36 @@ export class TemplateManagementService {
       formattingGuide?: FormattingGuide;
       jurisdictions?: string[];
       updateAgentInstructions?: boolean;
+      useSOTAGrounding?: boolean;
+      strictMode?: boolean;
+      /** Device classification for MDCG-enhanced validation */
+      deviceClassification?: DeviceClassification;
+      /** Enable full MDCG 2022-21 Annex II, III, IV validation */
+      useMDCGValidation?: boolean;
     } = {}
   ): Promise<TemplateManagementResult> {
     const errors: string[] = [];
     const warnings: string[] = [];
     const jurisdictions = options.jurisdictions || ["EU_MDR", "UK_MDR"];
+    const useSOTAGrounding = options.useSOTAGrounding !== false; // Default to SOTA
+    const strictMode = options.strictMode !== false; // Default to strict
+    const useMDCGValidation = options.useMDCGValidation !== false; // Default to MDCG validation
+    
+    // Default device classification if not provided
+    const deviceClassification: DeviceClassification = options.deviceClassification || {
+      deviceClass: "Class IIb",
+      isImplantable: false,
+      isLegacy: false,
+    };
 
-    // Determine template type and ID
+    // Determine template type, ID, and name
     const isFormBased = this.isFormBasedTemplate(templateJson);
     const templateId = isFormBased
       ? templateJson.form?.form_id || `form_${Date.now()}`
       : templateJson.template_id || `template_${Date.now()}`;
+    const templateName = isFormBased
+      ? templateJson.form?.form_title || "Custom PSUR Form"
+      : templateJson.name || templateId;
 
     console.log(`[TemplateManagementService] Processing ${isFormBased ? "form-based" : "slot-based"} template: ${templateId}`);
 
@@ -1123,6 +1338,8 @@ export class TemplateManagementService {
         hasSlotMappingGuide: !!options.slotMappingGuide,
         hasFormattingGuide: !!options.formattingGuide,
         jurisdictions,
+        useSOTAGrounding,
+        strictMode,
       },
       templateId,
     });
@@ -1146,23 +1363,156 @@ export class TemplateManagementService {
       errors.push("No slots could be extracted from template");
     }
 
-    // Ground template to GRKB
-    const groundingResult = await this.groundingEngine.groundTemplate(
-      templateId,
-      slots,
-      jurisdictions
-    );
+    // Use SOTA grounding engine for semantic obligation matching
+    let groundingResult: GRKBGroundingResult;
+    let sotaResult: GroundingValidationResult | null = null;
+    let mdcgEnhancedResult: MDCGEnhancedGroundingResult | null = null;
+    
+    if (useSOTAGrounding && slots.length > 0) {
+      console.log(`[TemplateManagementService] Using SOTA semantic grounding engine`);
+      
+      // Convert slots to SOTA format
+      const sotaSlots: SOTASlotInput[] = slots.map(s => ({
+        slot_id: s.slot_id,
+        slot_name: s.slot_name,
+        description: s.description,
+        evidence_requirements: s.evidence_requirements,
+        regulatory_reference: s.regulatory_reference,
+        required: s.required,
+        data_type: s.data_type,
+      }));
+      
+      // Use MDCG-enhanced grounding if enabled for EU MDR
+      if (useMDCGValidation && jurisdictions.includes("EU_MDR")) {
+        console.log(`[TemplateManagementService] Using MDCG 2022-21 enhanced grounding (Annex II, III, IV)`);
+        
+        const mdcgEngine = createMDCGEnhancedGroundingEngine(this.traceId);
+        mdcgEnhancedResult = await mdcgEngine.groundTemplateWithMDCG(
+          templateId,
+          sotaSlots,
+          jurisdictions,
+          {
+            deviceClassification,
+            useLLMAnalysis: true,
+            confidenceThreshold: 0.6,
+            strictMode,
+            validateAnnexCompliance: true,
+          }
+        );
+        
+        sotaResult = mdcgEnhancedResult;
+        
+        console.log(`[TemplateManagementService] MDCG compliance: Annex II=${mdcgEnhancedResult.mdcgCompliance.annexIIScore}%, Annex III=${mdcgEnhancedResult.mdcgCompliance.annexIIIScore}%`);
+      } else {
+        const sotaEngine = createSOTAGroundingEngine(this.traceId);
+        sotaResult = await sotaEngine.groundTemplate(templateId, sotaSlots, jurisdictions, {
+          useLLMAnalysis: true,
+          confidenceThreshold: 0.6,
+          strictMode,
+        });
+      }
+      
+      // Convert SOTA result to legacy format for compatibility
+      const obligationMapping: Record<string, string[]> = {};
+      for (const slotResult of sotaResult.slotResults) {
+        if (slotResult.isGrounded) {
+          obligationMapping[slotResult.slotId] = slotResult.matches
+            .filter(m => m.confidence >= 0.6)
+            .map(m => m.obligationId);
+        }
+      }
+      
+      const ungroundedSlots = sotaResult.slotResults
+        .filter(r => !r.isGrounded)
+        .map(r => r.slotId);
+      
+      // Build MDCG compliance result with Annex II, III, IV data
+      const mdcgCompliance: MDCGComplianceResult = mdcgEnhancedResult ? {
+        annex1Coverage: sotaResult.complianceScore,
+        annex2Coverage: mdcgEnhancedResult.mdcgCompliance.annexIIScore,
+        annex3Coverage: mdcgEnhancedResult.mdcgCompliance.annexIIIScore,
+        annex4Compliant: mdcgEnhancedResult.mdcgCompliance.annexIVCompliant,
+        missingMandatorySections: [],
+        missingMandatoryTables: mdcgEnhancedResult.deviceRequirements.mandatoryTables.filter(
+          t => !mdcgEnhancedResult!.mdcgCompliance.mandatoryTables.includes(t)
+        ),
+        deviceRequirements: mdcgEnhancedResult.deviceRequirements,
+        passed: sotaResult.status !== "BLOCKED" && mdcgEnhancedResult.mdcgCompliance.annexIVCompliant,
+      } : {
+        annex1Coverage: sotaResult.complianceScore,
+        annex2Coverage: 0,
+        annex3Coverage: 0,
+        annex4Compliant: true,
+        missingMandatorySections: [],
+        missingMandatoryTables: [],
+        passed: sotaResult.status !== "BLOCKED",
+      };
+      
+      groundingResult = {
+        success: sotaResult.status !== "BLOCKED",
+        templateId,
+        jurisdictions,
+        totalSlots: slots.length,
+        groundedSlots: sotaResult.slotResults.filter(r => r.isGrounded).length,
+        ungroundedSlots,
+        obligationMapping,
+        complianceGaps: ungroundedSlots.map(slotId => ({
+          slotId,
+          slotName: slots.find(s => s.slot_id === slotId)?.slot_name || slotId,
+          missingRequirements: ["No matching GRKB obligation found with sufficient confidence"],
+          severity: "high" as const,
+          recommendation: `Review slot definition or manually assign obligations`,
+        })),
+        mdcgCompliance,
+        traceId: this.traceId,
+      };
+      
+      // Add SOTA-specific warnings/errors
+      if (sotaResult.status === "BLOCKED") {
+        errors.push(...sotaResult.blockingErrors);
+      }
+      warnings.push(...sotaResult.warnings);
+      
+      if (sotaResult.uncoveredObligations.length > 0) {
+        warnings.push(`${sotaResult.uncoveredObligations.length} GRKB obligations not covered by template slots`);
+      }
+      
+      // Add MDCG-specific warnings
+      if (mdcgEnhancedResult) {
+        if (mdcgEnhancedResult.mdcgCompliance.annexIIScore < 80) {
+          warnings.push(`MDCG 2022-21 Annex II table coverage is ${mdcgEnhancedResult.mdcgCompliance.annexIIScore}% (recommended: 80%+)`);
+        }
+        if (!mdcgEnhancedResult.mdcgCompliance.annexIVCompliant) {
+          warnings.push(`Device requirements (${deviceClassification.deviceClass}) may not be fully met - review mandatory tables`);
+        }
+        if (mdcgEnhancedResult.deviceRequirements.eudamedSubmission) {
+          warnings.push(`EUDAMED submission will be required for ${deviceClassification.deviceClass} ${deviceClassification.isImplantable ? "implantable" : ""} device`);
+        }
+      }
+      
+      console.log(`[TemplateManagementService] Grounding complete: ${sotaResult.complianceScore}% coverage, status=${sotaResult.status}`);
+    } else {
+      // Fallback to legacy grounding (backward compatibility)
+      console.log(`[TemplateManagementService] Using legacy keyword-based grounding`);
+      const legacyEngine = new GRKBGroundingEngine(this.traceId);
+      groundingResult = await legacyEngine.groundTemplate(templateId, slots, jurisdictions);
+      
+      if (!groundingResult.success) {
+        warnings.push(`Template grounding incomplete: ${groundingResult.ungroundedSlots.length} slots without GRKB mapping`);
+      }
 
-    if (!groundingResult.success) {
-      warnings.push(`Template grounding incomplete: ${groundingResult.ungroundedSlots.length} slots without GRKB mapping`);
+      if (!groundingResult.mdcgCompliance.passed) {
+        warnings.push(`MDCG 2022-21 compliance gaps: ${groundingResult.mdcgCompliance.missingMandatorySections.join(", ")}`);
+      }
     }
 
-    if (!groundingResult.mdcgCompliance.passed) {
-      warnings.push(`MDCG 2022-21 compliance gaps: ${groundingResult.mdcgCompliance.missingMandatorySections.join(", ")}`);
+    // Save slot definitions to database (SOTA engine already saves mappings)
+    if (!useSOTAGrounding) {
+      await this.saveSlotDefinitions(templateId, slots, groundingResult.obligationMapping, jurisdictions);
+    } else {
+      // Just save the slot definitions, mappings are saved by SOTA engine
+      await this.saveSlotDefinitionsOnly(templateId, slots);
     }
-
-    // Save slot definitions to database
-    await this.saveSlotDefinitions(templateId, slots, groundingResult.obligationMapping, jurisdictions);
 
     // Trace: Slots saved
     await this.trace({
@@ -1207,8 +1557,74 @@ export class TemplateManagementService {
       });
     }
 
+    // Run Annex I compliance audit (non-blocking)
+    let complianceAudit: ComplianceAuditResult | undefined;
+    try {
+      // Only audit if template is slot-based and for EU_MDR jurisdiction
+      if (!isFormBased && jurisdictions.includes("EU_MDR")) {
+        console.log(`[TemplateManagementService] Running Annex I compliance audit`);
+        
+        // Transform to workflow schema first
+        const workflowTemplate = transformTemplateToWorkflowSchema(
+          templateJson, 
+          slots, 
+          groundingResult.obligationMapping
+        );
+        
+        const auditor = createAnnexIComplianceAuditor();
+        complianceAudit = await auditor.auditTemplate(workflowTemplate);
+        
+        console.log(
+          `[TemplateManagementService] Compliance audit complete: ${complianceAudit.overallComplianceScore}% compliance, ${complianceAudit.warnings.length} warnings`
+        );
+        
+        // Add audit warnings to main warnings list
+        for (const warning of complianceAudit.warnings) {
+          if (warning.level === "CRITICAL") {
+            warnings.push(`[CRITICAL] ${warning.message} - ${warning.remediation}`);
+          } else if (warning.level === "WARNING") {
+            warnings.push(`[WARNING] ${warning.message}`);
+          }
+        }
+        
+        // Trace: Compliance audit complete
+        await this.trace({
+          eventType: "COMPLIANCE_AUDIT_COMPLETE",
+          actor: "AnnexIComplianceAuditor",
+          entityType: "template",
+          entityId: templateId,
+          decision: complianceAudit.overallComplianceScore >= 80 ? "PASS" : "WARNING",
+          humanSummary: `Annex I compliance audit: ${complianceAudit.overallComplianceScore}% score with ${complianceAudit.warnings.length} warnings`,
+          outputData: {
+            score: complianceAudit.overallComplianceScore,
+            warningCount: complianceAudit.warnings.length,
+            criticalWarnings: complianceAudit.warnings.filter(w => w.level === "CRITICAL").length,
+          },
+          templateId,
+        });
+      }
+    } catch (auditError: any) {
+      console.error(`[TemplateManagementService] Compliance audit failed (non-blocking):`, auditError);
+      warnings.push(`Compliance audit failed: ${auditError.message}`);
+    }
+
     // Save template to disk
-    const savedTo = await this.saveTemplate(templateId, templateJson, isFormBased);
+    const templateVersion = isFormBased 
+      ? (templateJson.form?.revision || "1.0")
+      : (templateJson.version || "1.0");
+    const templateJurisdictions = options.jurisdictions || ["EU_MDR", "UK_MDR"];
+    
+    const savedTo = await this.saveTemplate(
+      templateId, 
+      templateName, 
+      templateVersion,
+      templateJurisdictions,
+      templateJson, 
+      isFormBased,
+      slots,
+      groundingResult.obligationMapping,
+      complianceAudit
+    );
 
     // Trace: Template processing complete
     await this.trace({
@@ -1238,6 +1654,7 @@ export class TemplateManagementService {
       slotCount: slots.length,
       groundingResult,
       agentUpdates,
+      complianceAudit,
       traceId: this.traceId,
       errors,
       warnings,
@@ -1299,11 +1716,101 @@ export class TemplateManagementService {
     }
   }
 
+  /**
+   * Save slot definitions only (without obligation links).
+   * Used when SOTA grounding engine handles mappings separately.
+   */
+  private async saveSlotDefinitionsOnly(
+    templateId: string,
+    slots: SlotDefinitionInput[]
+  ): Promise<void> {
+    for (let i = 0; i < slots.length; i++) {
+      const slot = slots[i];
+
+      // Upsert slot definition
+      await db
+        .insert(slotDefinitions)
+        .values({
+          slotId: slot.slot_id,
+          title: slot.slot_name,
+          description: slot.description || "",
+          templateId,
+          jurisdictions: ["EU_MDR", "UK_MDR"],
+          requiredEvidenceTypes: slot.evidence_requirements || [],
+          hardRequireEvidence: slot.required,
+          minAtoms: 1,
+          sortOrder: i,
+        })
+        .onConflictDoUpdate({
+          target: [slotDefinitions.slotId, slotDefinitions.templateId],
+          set: {
+            title: slot.slot_name,
+            description: slot.description || "",
+            requiredEvidenceTypes: slot.evidence_requirements || [],
+            hardRequireEvidence: slot.required,
+            sortOrder: i,
+          },
+        });
+    }
+    console.log(`[TemplateManagementService] Saved ${slots.length} slot definitions (SOTA mode)`);
+  }
+
   private async saveTemplate(
     templateId: string,
+    name: string,
+    version: string,
+    jurisdictions: string[],
     template: any,
-    isFormBased: boolean
+    isFormBased: boolean,
+    slots?: SlotDefinitionInput[],
+    obligationMapping?: Record<string, string[]>,
+    complianceAudit?: ComplianceAuditResult
   ): Promise<string> {
+    // SOTA: Transform slot-based templates to workflow-compatible format before saving
+    // This ensures the database always stores templates in canonical format that
+    // the workflow can directly consume without runtime conversion
+    let templateToSave = template;
+    
+    if (!isFormBased && slots && obligationMapping) {
+      templateToSave = transformTemplateToWorkflowSchema(template, slots, obligationMapping);
+      console.log(`[TemplateManagementService] Transformed template to workflow-compatible format`);
+    }
+    
+    // Filter jurisdictions to valid values
+    const validJurisdictions = jurisdictions.filter(
+      (j): j is "EU_MDR" | "UK_MDR" => j === "EU_MDR" || j === "UK_MDR"
+    );
+    
+    // Save to database (primary storage)
+    try {
+      await db.insert(templates).values({
+        templateId,
+        name,
+        version,
+        jurisdictions: validJurisdictions.length > 0 ? validJurisdictions : ["EU_MDR"],
+        templateType: isFormBased ? 'form-based' : 'slot-based',
+        templateJson: templateToSave, // Save workflow-compatible format
+        complianceAudit: complianceAudit ? (complianceAudit as any) : null,
+      }).onConflictDoUpdate({
+        target: templates.templateId,
+        set: {
+          name,
+          version,
+          jurisdictions: validJurisdictions.length > 0 ? validJurisdictions : ["EU_MDR"],
+          templateType: isFormBased ? 'form-based' : 'slot-based',
+          templateJson: templateToSave, // Save workflow-compatible format
+          complianceAudit: complianceAudit ? (complianceAudit as any) : null,
+          updatedAt: new Date(),
+        },
+      });
+
+      console.log(`[TemplateManagementService] Saved workflow-compatible template to database: ${templateId}`);
+    } catch (dbError: any) {
+      console.error(`[TemplateManagementService] Failed to save to database:`, dbError);
+      throw new Error(`Failed to save template to database: ${dbError.message}`);
+    }
+
+    // Also save to filesystem for backward compatibility (save transformed version)
     const templatesDir = path.resolve(process.cwd(), "server", "templates");
     if (!fs.existsSync(templatesDir)) {
       fs.mkdirSync(templatesDir, { recursive: true });
@@ -1311,9 +1818,14 @@ export class TemplateManagementService {
 
     const safeFileName = templateId.replace(/[^a-zA-Z0-9_-]/g, "_");
     const filePath = path.join(templatesDir, `${safeFileName}.json`);
-    fs.writeFileSync(filePath, JSON.stringify(template, null, 2), "utf-8");
+    
+    try {
+      fs.writeFileSync(filePath, JSON.stringify(templateToSave, null, 2), "utf-8");
+      console.log(`[TemplateManagementService] Also saved template to filesystem: ${filePath}`);
+    } catch (fsError) {
+      console.warn(`[TemplateManagementService] Failed to save to filesystem (non-critical):`, fsError);
+    }
 
-    console.log(`[TemplateManagementService] Saved template to ${filePath}`);
     return filePath;
   }
 

@@ -15,6 +15,7 @@ import {
 } from "../../templateStore";
 import { NarrativeWriterAgent, NarrativeInput } from "../../agents/runtime/narrativeWriterAgent";
 import { TraceContext, startTrace, resumeTrace } from "../../services/decisionTraceService";
+import * as neo4jService from "../../services/neo4jGrkbService";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -49,6 +50,16 @@ export interface ProposeContext {
   periodStart?: string;
   periodEnd?: string;
   enableAIGeneration?: boolean;
+  // Graph context for semantic reasoning
+  jurisdictions?: string[];
+  useGraphContext?: boolean;
+}
+
+// Graph context enrichment for slots
+export interface SlotGraphContext {
+  relatedObligations: neo4jService.SlotObligationMatch[];
+  obligationGraph?: neo4jService.ObligationGraph;
+  regulatoryContext?: string[];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -75,7 +86,7 @@ export async function proposeSlotsStep(ctx: ProposeContext): Promise<SlotProposa
   // ═══════════════════════════════════════════════════════════════════════════
   // STRATEGY 0: Check if this is a form-based template (CooperSurgical style)
   // ═══════════════════════════════════════════════════════════════════════════
-  if (isTemplateFormBased(templateId)) {
+  if (await isTemplateFormBased(templateId)) {
     ctx.log?.(`[Step 4/8] Form-based template detected, using form section proposals`);
     return proposeSlotsFromFormTemplate(ctx);
   }
@@ -109,7 +120,7 @@ async function proposeSlotsFromDatabase(
   ctx: ProposeContext,
   canonicalSlots: DBSlotDefinition[]
 ): Promise<SlotProposalOutput[]> {
-  const { templateId, evidenceAtoms } = ctx;
+  const { templateId, evidenceAtoms, jurisdictions = ["EU_MDR", "UK_MDR"], useGraphContext = true } = ctx;
   
   // Load obligation links for this template
   const links = await db
@@ -119,16 +130,86 @@ async function proposeSlotsFromDatabase(
 
   ctx.log?.(`[Step 4/8] Loaded ${links.length} slot↔obligation links from database`);
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // NEO4J GRAPH CONTEXT ENRICHMENT
+  // ═══════════════════════════════════════════════════════════════════════════
+  const graphContextMap = new Map<string, SlotGraphContext>();
+  
+  if (useGraphContext) {
+    const neo4jHealthy = await neo4jService.neo4jHealthCheck();
+    if (neo4jHealthy) {
+      ctx.log?.(`[Step 4/8] Enriching slots with Neo4j graph context`);
+      
+      for (const slot of canonicalSlots) {
+        try {
+          // Find semantically related obligations via graph traversal
+          const relatedObligations = await neo4jService.findObligationsByEvidenceGraph(
+            slot.slotId,
+            jurisdictions
+          );
+          
+          // Get obligation dependency graph for the primary obligation
+          const slotLinks = links.filter((l: typeof links[number]) => l.slotId === slot.slotId);
+          let obligationGraph: neo4jService.ObligationGraph | undefined;
+          
+          if (slotLinks.length > 0) {
+            obligationGraph = await neo4jService.getObligationDependencyGraph(
+              slotLinks[0].obligationId,
+              2  // depth
+            );
+          }
+          
+          // Extract regulatory context (citations) from related obligations
+          const regulatoryContext = relatedObligations
+            .map(o => o.reasoning)
+            .filter(Boolean);
+          
+          graphContextMap.set(slot.slotId, {
+            relatedObligations,
+            obligationGraph,
+            regulatoryContext,
+          });
+          
+          if (relatedObligations.length > 0) {
+            ctx.log?.(`[Step 4/8] Graph: ${slot.slotId} has ${relatedObligations.length} related obligations via evidence traversal`);
+          }
+        } catch (error) {
+          ctx.log?.(`[Step 4/8] Graph context failed for ${slot.slotId}: ${error}`);
+        }
+      }
+    } else {
+      ctx.log?.(`[Step 4/8] Neo4j not available, skipping graph context enrichment`);
+    }
+  }
+
   const proposals: SlotProposalOutput[] = [];
 
   for (const slot of canonicalSlots) {
     // Get obligation links for this slot
     const slotLinks = links.filter((l: typeof links[number]) => l.slotId === slot.slotId);
-    const claimedObligationIds = slotLinks.map((l: typeof links[number]) => l.obligationId);
+    let claimedObligationIds = slotLinks.map((l: typeof links[number]) => l.obligationId);
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // GRAPH-ENHANCED OBLIGATION DISCOVERY
+    // If slot has no explicit links, use graph traversal to find related obligations
+    // ═══════════════════════════════════════════════════════════════════════════
     if (claimedObligationIds.length === 0) {
-      ctx.log?.(`[Step 4/8] WARNING: Slot ${slot.slotId} has no obligation links`);
-      // Don't throw - allow proposal with empty obligations
+      const graphContext = graphContextMap.get(slot.slotId);
+      if (graphContext && graphContext.relatedObligations.length > 0) {
+        // Use graph-discovered obligations (with confidence > 50)
+        const graphObligations = graphContext.relatedObligations
+          .filter(o => o.confidence > 50)
+          .map(o => o.obligationId);
+        
+        if (graphObligations.length > 0) {
+          ctx.log?.(`[Step 4/8] Graph-discovered ${graphObligations.length} obligations for ${slot.slotId}`);
+          claimedObligationIds = graphObligations;
+        } else {
+          ctx.log?.(`[Step 4/8] WARNING: Slot ${slot.slotId} has no obligation links (graph or DB)`);
+        }
+      } else {
+        ctx.log?.(`[Step 4/8] WARNING: Slot ${slot.slotId} has no obligation links`);
+      }
     }
 
     // Get required evidence types
@@ -149,6 +230,12 @@ async function proposeSlotsFromDatabase(
       slot.minAtoms ?? 1
     );
 
+    // Attach graph context to proposal for downstream agents
+    const graphContext = graphContextMap.get(slot.slotId);
+    if (graphContext) {
+      (proposal as any).graphContext = graphContext;
+    }
+
     proposals.push(proposal);
   }
 
@@ -157,8 +244,9 @@ async function proposeSlotsFromDatabase(
   const readyCount = proposals.filter(p => p.status === "READY").length;
   const gapCount = proposals.filter(p => p.status === "TRACE_GAP").length;
   const noEvidenceCount = proposals.filter(p => p.status === "NO_EVIDENCE_REQUIRED").length;
+  const graphEnrichedCount = proposals.filter(p => (p as any).graphContext).length;
   
-  ctx.log?.(`[Step 4/8] Generated ${proposals.length} proposals: ${readyCount} READY, ${gapCount} TRACE_GAP, ${noEvidenceCount} NO_EVIDENCE_REQUIRED`);
+  ctx.log?.(`[Step 4/8] Generated ${proposals.length} proposals: ${readyCount} READY, ${gapCount} TRACE_GAP, ${noEvidenceCount} NO_EVIDENCE_REQUIRED, ${graphEnrichedCount} graph-enriched`);
 
   return proposals;
 }

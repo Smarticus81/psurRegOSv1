@@ -1277,6 +1277,36 @@ export const CANONICAL_EVIDENCE_TYPES = {
 export type CanonicalEvidenceType = typeof CANONICAL_EVIDENCE_TYPES[keyof typeof CANONICAL_EVIDENCE_TYPES];
 
 // ============== SLOT DEFINITIONS (Canonical Slot Catalog) ==============
+// ============== TEMPLATES ==============
+// Stores complete template JSON in database for deployment persistence
+export const templates = pgTable(
+  "templates",
+  {
+    id: serial("id").primaryKey(),
+    templateId: text("template_id").notNull().unique(),
+    name: text("name").notNull(),
+    version: text("version").notNull(),
+    jurisdictions: jsonb("jurisdictions").notNull().$type<string[]>(),
+    templateType: text("template_type").notNull(), // 'slot-based' | 'form-based'
+    templateJson: jsonb("template_json").notNull(), // Full template structure
+    complianceAudit: jsonb("compliance_audit"), // Annex I compliance audit result
+    createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+    updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  },
+  (t) => ({
+    templateIdIdx: index("templates_template_id_idx").on(t.templateId),
+  })
+);
+
+export const insertTemplateSchema = createInsertSchema(templates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type Template = typeof templates.$inferSelect;
+export type InsertTemplate = z.infer<typeof insertTemplateSchema>;
+
 // DB is the canonical source of truth for slot contracts
 // Template JSON describes layout/structure; Slot Catalog defines evidence + obligation contracts
 export const slotDefinitions = pgTable(
@@ -1328,7 +1358,7 @@ export type SlotDefinition = typeof slotDefinitions.$inferSelect;
 export type InsertSlotDefinition = z.infer<typeof insertSlotDefinitionSchema>;
 
 // ============== SLOT OBLIGATION LINKS ==============
-// Maps slots to their required regulatory obligations
+// Maps slots to their required regulatory obligations with SOTA grounding metadata
 export const slotObligationLinks = pgTable(
   "slot_obligation_links",
   {
@@ -1341,6 +1371,15 @@ export const slotObligationLinks = pgTable(
 
     // Whether this link is mandatory for coverage
     mandatory: boolean("mandatory").notNull().default(true),
+    
+    // SOTA grounding metadata
+    confidence: integer("confidence").default(0), // 0-100 confidence score
+    matchMethod: text("match_method"), // semantic, evidence_type, regulatory_ref, llm_analysis, manual
+    reasoning: text("reasoning"), // Explanation of why this match was made
+    isManualOverride: boolean("is_manual_override").default(false),
+    updatedBy: text("updated_by"),
+    createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`),
   },
   (t) => ({
     slotObligationUnique: uniqueIndex("slot_obligation_links_uq").on(

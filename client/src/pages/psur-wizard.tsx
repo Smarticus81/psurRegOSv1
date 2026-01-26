@@ -4,6 +4,8 @@ import { CompilationRuntimeViewer } from "@/components/compilation-runtime-viewe
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useQuery } from "@tanstack/react-query";
 import { FileText, Settings, Info, LayoutDashboard, Search, CheckCircle2, AlertCircle, Trash2, ArrowRight, Loader2, ChevronDown, ChevronUp, Sparkles } from "lucide-react";
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -44,6 +46,27 @@ type RunWorkflowResponse = {
     steps: WorkflowStep[];
 };
 type TraceSummary = { totalEvents: number; acceptedSlots: number; rejectedSlots: number; chainValid: boolean };
+type TemplateListItem = {
+    templateId: string;
+    name: string;
+    version: string;
+    jurisdictions: string[];
+    templateType: 'slot-based' | 'form-based';
+    isCustom?: boolean;
+};
+
+type TemplateListResponse = {
+    success: boolean;
+    count: number;
+    templates: TemplateListItem[];
+    defaultTemplate: {
+        templateId: string;
+        name: string;
+        description: string;
+    };
+};
+
+const DEFAULT_TEMPLATE_ID = "MDCG_2022_21_ANNEX_I";
 type Device = {
     id: number;
     deviceName: string;
@@ -1689,6 +1712,21 @@ export default function PsurWizard() {
     const [requiredTypes, setRequiredTypes] = useState<string[]>([]);
     const [loadingDraft, setLoadingDraft] = useState(false);
 
+    // Fetch available templates from database (custom templates only)
+    const { data: templatesData } = useQuery<TemplateListResponse>({
+        queryKey: ["/api/templates/list"],
+        queryFn: async () => {
+            const res = await fetch("/api/templates/list");
+            return res.json();
+        },
+    });
+    const customTemplates = templatesData?.templates || [];
+    const defaultTemplateInfo = templatesData?.defaultTemplate;
+    
+    // availableTemplates now only contains custom templates
+    // The default MDCG template is shown separately
+    const availableTemplates = customTemplates;
+
     // Workflow
     const [runBusy, setRunBusy] = useState(false);
     const [runResult, setRunResult] = useState<RunWorkflowResponse | null>(null);
@@ -2379,21 +2417,79 @@ export default function PsurWizard() {
                                             </div>
 
                                             {templateType === "standard" ? (
-                                                <div className="p-3 rounded-md bg-secondary/20 border border-border flex items-center gap-3 animate-in fade-in slide-in-from-top-1">
-                                                    <div className="w-8 h-8 rounded bg-white flex items-center justify-center border border-border">
-                                                        <span className="font-bold text-xs text-primary">EU</span>
-                                                    </div>
-                                                    <div>
-                                                        <div className="font-bold text-sm text-foreground">MDCG 2022-21 Annex I</div>
-                                                        <div className="text-[10px] text-muted-foreground">Standardized PSUR Template</div>
-                                                    </div>
+                                                <div className="space-y-2 animate-in fade-in slide-in-from-top-1">
+                                                    <Select value={templateId} onValueChange={setTemplateId}>
+                                                        <SelectTrigger className="w-full bg-secondary/20 border-border">
+                                                            <SelectValue placeholder="Select a template..." />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {/* Default MDCG Template - Always First */}
+                                                            <SelectItem value={DEFAULT_TEMPLATE_ID}>
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-100 text-emerald-700">
+                                                                        BASE
+                                                                    </span>
+                                                                    <span className="font-medium">MDCG 2022-21 Annex I</span>
+                                                                    <span className="text-muted-foreground text-xs">(Official EU Standard)</span>
+                                                                </div>
+                                                            </SelectItem>
+                                                            
+                                                            {/* Custom Templates */}
+                                                            {availableTemplates.length > 0 && (
+                                                                <>
+                                                                    <div className="px-2 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider border-t border-border mt-1">
+                                                                        Custom Templates
+                                                                    </div>
+                                                                    {availableTemplates.map((t) => (
+                                                                        <SelectItem key={t.templateId} value={t.templateId}>
+                                                                            <div className="flex items-center gap-2">
+                                                                                <span className={cn(
+                                                                                    "px-1.5 py-0.5 rounded text-[9px] font-bold",
+                                                                                    t.templateType === 'form-based' 
+                                                                                        ? "bg-purple-100 text-purple-700" 
+                                                                                        : "bg-blue-100 text-blue-700"
+                                                                                )}>
+                                                                                    {t.templateType === 'form-based' ? 'FORM' : 'SLOT'}
+                                                                                </span>
+                                                                                <span className="font-medium">{t.name}</span>
+                                                                                <span className="text-muted-foreground text-xs">v{t.version}</span>
+                                                                            </div>
+                                                                        </SelectItem>
+                                                                    ))}
+                                                                </>
+                                                            )}
+                                                        </SelectContent>
+                                                    </Select>
+                                                    
+                                                    {/* Template Info Display */}
+                                                    {templateId === DEFAULT_TEMPLATE_ID ? (
+                                                        <div className="p-2 rounded-md bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/50 flex items-center gap-2">
+                                                            <div className="w-6 h-6 rounded bg-emerald-500 flex items-center justify-center">
+                                                                <span className="font-bold text-[9px] text-white">EU</span>
+                                                            </div>
+                                                            <div className="text-[10px] text-emerald-700 dark:text-emerald-300">
+                                                                Official EU MDR template - 100% regulatory coverage
+                                                            </div>
+                                                        </div>
+                                                    ) : templateId && availableTemplates.find(t => t.templateId === templateId) && (
+                                                        <div className="p-2 rounded-md bg-secondary/10 border border-border/50 flex items-center gap-2">
+                                                            <div className="w-6 h-6 rounded bg-white flex items-center justify-center border border-border">
+                                                                <span className="font-bold text-[9px] text-primary">
+                                                                    {availableTemplates.find(t => t.templateId === templateId)?.jurisdictions[0]?.split('_')[0] || 'EU'}
+                                                                </span>
+                                                            </div>
+                                                            <div className="text-[10px] text-muted-foreground">
+                                                                {availableTemplates.find(t => t.templateId === templateId)?.jurisdictions.join(', ')}
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             ) : (
                                                 <div className="space-y-3 animate-in fade-in slide-in-from-top-1">
                                                     <div className="border-2 border-dashed border-border rounded-lg p-6 hover:bg-secondary/20 transition-colors text-center cursor-pointer relative group">
                                                         <input
                                                             type="file"
-                                                            accept=".docx"
+                                                            accept=".json"
                                                             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                                                             onChange={async (e) => {
                                                                 const file = e.target.files?.[0];
@@ -2411,10 +2507,10 @@ export default function PsurWizard() {
                                                                         if (res.ok && data.success) {
                                                                             setTemplateValidation({ valid: true, missingTags: [] });
                                                                             setTemplateId(data.templateId);
-                                                                            toast({ title: "Template Validated", description: `Loaded template: ${data.name}`, variant: "default" });
+                                                                            toast({ title: "Template Uploaded", description: `Template saved: ${data.name} (${data.templateId})`, variant: "default" });
                                                                         } else {
                                                                             setTemplateValidation({ valid: false, missingTags: data.details || [data.error || "Invalid template"] });
-                                                                            toast({ title: "Validation Failed", description: data.error || "Refer to missing tags", variant: "destructive" });
+                                                                            toast({ title: "Validation Failed", description: data.error || "Template validation failed", variant: "destructive" });
                                                                         }
                                                                     } catch (err) {
                                                                         console.error(err);
@@ -2430,10 +2526,10 @@ export default function PsurWizard() {
                                                             </div>
                                                             <div className="space-y-1">
                                                                 <p className="text-sm font-semibold text-foreground">
-                                                                    {customTemplate ? customTemplate.name : "Upload Corporate Template"}
+                                                                    {customTemplate ? customTemplate.name : "Upload Custom Template"}
                                                                 </p>
                                                                 <p className="text-xs text-muted-foreground">
-                                                                    {customTemplate ? "Click to change" : "Drag & drop or click to browse (.docx)"}
+                                                                    {customTemplate ? "Click to change" : "Drag & drop or click to browse (.json)"}
                                                                 </p>
                                                             </div>
                                                         </div>
@@ -2443,15 +2539,15 @@ export default function PsurWizard() {
                                                         <div className={cn("p-3 rounded-md border flex items-center gap-3", templateValidation.valid ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-700" : "bg-amber-500/10 border-amber-500/20 text-amber-700")}>
                                                             {templateValidation.valid ? <CheckCircle2 className="w-4 h-4" /> : <Loader2 className="w-4 h-4 animate-spin" />}
                                                             <div className="text-xs font-medium">
-                                                                {templateValidation.valid ? "Template validated successfully. All tags found." : "Validating template structure..."}
+                                                                {templateValidation.valid ? "Template validated and saved to database." : "Validating template structure..."}
                                                             </div>
                                                         </div>
                                                     )}
 
                                                     <div className="flex justify-between items-center px-1">
-                                                        <a href="#" className="text-[10px] text-primary hover:underline flex items-center gap-1">
+                                                        <a href="/template-pipeline" className="text-[10px] text-primary hover:underline flex items-center gap-1">
                                                             <ArrowRight className="w-3 h-3" />
-                                                            Download Tag Reference
+                                                            Advanced Template Pipeline
                                                         </a>
                                                     </div>
                                                 </div>

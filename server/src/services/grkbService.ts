@@ -262,3 +262,132 @@ export async function createGrkbObligationsBatch(entries: InsertGrkbObligation[]
 export async function deleteAllGrkbObligations(): Promise<void> {
   await db.delete(grkbObligations);
 }
+
+/**
+ * Enhanced qualification that validates template coverage against ALL mandatory obligations.
+ * This is the strict validation gate that ensures no mandatory obligations are missed.
+ * 
+ * BLOCKED if:
+ * - Any jurisdiction has zero obligations in GRKB
+ * - Any mandatory obligation is not covered by template slots (when strictCoverage is true)
+ */
+export async function qualifyTemplateWithStrictCoverage(
+  templateId: string,
+  jurisdictions: string[],
+  artifactType: string,
+  templateMapping: Record<string, string[]>,
+  options: {
+    strictCoverage?: boolean;
+    minimumCoveragePercent?: number;
+  } = {}
+): Promise<QualificationReport & {
+  coverageDetails: {
+    covered: string[];
+    uncovered: string[];
+    coveragePercent: number;
+  };
+}> {
+  const { strictCoverage = true, minimumCoveragePercent = 80 } = options;
+  const validatedAt = new Date().toISOString();
+  
+  // Fetch all mandatory obligations
+  const obligations = await getObligations(jurisdictions, artifactType, templateId);
+  const constraints = await getConstraints(jurisdictions, artifactType, templateId);
+  
+  // Get all claimed obligation IDs from template mapping
+  const claimedObligationIds = new Set(
+    Object.values(templateMapping).flat()
+  );
+  
+  // Check which mandatory obligations are covered
+  const covered: string[] = [];
+  const uncovered: string[] = [];
+  
+  for (const obl of obligations) {
+    if (claimedObligationIds.has(obl.obligationId)) {
+      covered.push(obl.obligationId);
+    } else {
+      uncovered.push(obl.obligationId);
+    }
+  }
+  
+  const coveragePercent = obligations.length > 0
+    ? Math.round((covered.length / obligations.length) * 100)
+    : 100;
+  
+  // Build blocking errors
+  const blockingErrors: string[] = [];
+  const missingObligations: { jurisdiction: string; count: number; message: string }[] = [];
+  
+  // Check per-jurisdiction obligation counts
+  for (const jur of jurisdictions) {
+    const jurObligations = obligations.filter(o => o.jurisdiction === jur);
+    if (jurObligations.length === 0) {
+      const msg = `BLOCKED: No mandatory obligations found for jurisdiction '${jur}' with artifact type '${artifactType}'`;
+      missingObligations.push({ jurisdiction: jur, count: 0, message: msg });
+      blockingErrors.push(msg);
+    }
+  }
+  
+  // Strict coverage check
+  if (strictCoverage && uncovered.length > 0) {
+    const uncoveredByJur: Record<string, string[]> = {};
+    for (const oblId of uncovered) {
+      const obl = obligations.find(o => o.obligationId === oblId);
+      if (obl) {
+        if (!uncoveredByJur[obl.jurisdiction]) {
+          uncoveredByJur[obl.jurisdiction] = [];
+        }
+        uncoveredByJur[obl.jurisdiction].push(`${obl.obligationId}: ${obl.title}`);
+      }
+    }
+    
+    for (const [jur, oblIds] of Object.entries(uncoveredByJur)) {
+      const msg = `COVERAGE_GAP: ${oblIds.length} mandatory obligations not covered in ${jur}`;
+      missingObligations.push({ jurisdiction: jur, count: oblIds.length, message: msg });
+      blockingErrors.push(msg);
+      // Add first 3 uncovered obligations to error message
+      for (const oblId of oblIds.slice(0, 3)) {
+        blockingErrors.push(`  - ${oblId}`);
+      }
+      if (oblIds.length > 3) {
+        blockingErrors.push(`  ... and ${oblIds.length - 3} more`);
+      }
+    }
+  }
+  
+  // Check minimum coverage threshold
+  if (coveragePercent < minimumCoveragePercent) {
+    blockingErrors.push(
+      `COVERAGE_THRESHOLD: Template covers only ${coveragePercent}% of mandatory obligations (minimum: ${minimumCoveragePercent}%)`
+    );
+  }
+  
+  const status = blockingErrors.length > 0 ? "BLOCKED" : "VERIFIED";
+  
+  console.log(`[GRKB] Strict coverage validation: ${covered.length}/${obligations.length} obligations covered (${coveragePercent}%)`);
+  if (status === "BLOCKED") {
+    console.log(`[GRKB] QUALIFICATION BLOCKED: ${blockingErrors.length} issues found`);
+  } else {
+    console.log(`[GRKB] QUALIFICATION VERIFIED: Full coverage achieved`);
+  }
+  
+  return {
+    status,
+    templateId,
+    jurisdictions,
+    slotCount: Object.keys(templateMapping).length,
+    mappingCount: claimedObligationIds.size,
+    mandatoryObligationsTotal: obligations.length,
+    mandatoryObligationsFound: covered.length,
+    missingObligations,
+    constraints: constraints.length,
+    validatedAt,
+    blockingErrors,
+    coverageDetails: {
+      covered,
+      uncovered,
+      coveragePercent,
+    },
+  };
+}

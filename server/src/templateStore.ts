@@ -13,6 +13,9 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { db } from "../db";
+import { templates } from "@shared/schema";
+import { eq } from "drizzle-orm";
 import {
   TemplateZ,
   validateTemplate as zodValidateTemplate,
@@ -95,7 +98,18 @@ export function getTemplateDirsDebugInfo() {
 // LIST TEMPLATES
 // -----------------------------------------------------------------------------
 
-export function listTemplates(): string[] {
+export async function listTemplates(): Promise<string[]> {
+  try {
+    // Try to get from database first
+    const dbTemplates = await db.select({ templateId: templates.templateId }).from(templates);
+    if (dbTemplates.length > 0) {
+      return dbTemplates.map(t => t.templateId);
+    }
+  } catch (error) {
+    console.warn("[TemplateStore] Failed to query database, falling back to filesystem:", error);
+  }
+
+  // Fallback to filesystem
   const dir = getTemplatesDir();
   if (!fs.existsSync(dir)) return [];
   return fs
@@ -104,11 +118,70 @@ export function listTemplates(): string[] {
     .map((f) => f.replace(".json", ""));
 }
 
-export function listTemplatesWithMetadata(): { templateId: string; name: string; version: string; jurisdictions: string[]; templateType: 'slot-based' | 'form-based' }[] {
-  const templates: { templateId: string; name: string; version: string; jurisdictions: string[]; templateType: 'slot-based' | 'form-based' }[] = [];
+// ═══════════════════════════════════════════════════════════════════════════════
+// BASE TEMPLATES (not shown in custom template list)
+// These are the official MDCG 2022-21 standards that form the foundation layer
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export const BASE_TEMPLATE_IDS = [
+  "MDCG_2022_21_ANNEX_I",
+  "MDCG_2022_21_ANNEX_II", 
+  "MDCG_2022_21_ANNEX_III",
+] as const;
+
+export const DEFAULT_TEMPLATE_ID = "MDCG_2022_21_ANNEX_I";
+
+export function isBaseTemplate(templateId: string): boolean {
+  return BASE_TEMPLATE_IDS.includes(templateId as any);
+}
+
+export async function getDefaultTemplate(): Promise<Template | null> {
+  try {
+    return await loadTemplate(DEFAULT_TEMPLATE_ID);
+  } catch (error) {
+    console.error("[TemplateStore] Failed to load default template:", error);
+    return null;
+  }
+}
+
+/**
+ * List custom templates only (excludes MDCG base templates)
+ * For showing in template selection dropdowns
+ */
+export async function listTemplatesWithMetadata(): Promise<{ templateId: string; name: string; version: string; jurisdictions: string[]; templateType: 'slot-based' | 'form-based'; isCustom: boolean; updatedAt?: string }[]> {
+  const allTemplates = await listAllTemplatesWithMetadata();
+  // Filter out base templates - only return custom ones
+  return allTemplates.filter(t => !isBaseTemplate(t.templateId));
+}
+
+/**
+ * List ALL templates including base MDCG templates
+ * For internal use and admin views
+ */
+export async function listAllTemplatesWithMetadata(): Promise<{ templateId: string; name: string; version: string; jurisdictions: string[]; templateType: 'slot-based' | 'form-based'; isCustom: boolean; updatedAt?: string }[]> {
+  try {
+    // Try to get from database first
+    const dbTemplates = await db.select().from(templates);
+    if (dbTemplates.length > 0) {
+      return dbTemplates.map(t => ({
+        templateId: t.templateId,
+        name: t.name,
+        version: t.version,
+        jurisdictions: t.jurisdictions,
+        templateType: t.templateType as 'slot-based' | 'form-based',
+        isCustom: !isBaseTemplate(t.templateId),
+        updatedAt: t.updatedAt?.toISOString(),
+      }));
+    }
+  } catch (error) {
+    console.warn("[TemplateStore] Failed to query database, falling back to filesystem:", error);
+  }
+
+  // Fallback to filesystem
+  const templatesList: { templateId: string; name: string; version: string; jurisdictions: string[]; templateType: 'slot-based' | 'form-based'; isCustom: boolean; updatedAt?: string }[] = [];
   const dir = getTemplatesDir();
   
-  if (!fs.existsSync(dir)) return templates;
+  if (!fs.existsSync(dir)) return templatesList;
   
   const files = fs.readdirSync(dir).filter((f) => f.endsWith(".json"));
   
@@ -120,20 +193,23 @@ export function listTemplatesWithMetadata(): { templateId: string; name: string;
       
       // Detect form-based vs slot-based templates
       if (isFormBasedTemplate(parsed)) {
-        templates.push({
-          templateId: parsed.form?.form_id || file.replace(".json", ""),
+        const templateId = parsed.form?.form_id || file.replace(".json", "");
+        templatesList.push({
+          templateId,
           name: parsed.form?.form_title || "Custom Form Template",
           version: parsed.form?.revision || "1.0",
           jurisdictions: ["EU_MDR"],
           templateType: 'form-based',
+          isCustom: !isBaseTemplate(templateId),
         });
       } else {
-        templates.push({
+        templatesList.push({
           templateId: parsed.template_id,
           name: parsed.name,
           version: parsed.version,
           jurisdictions: parsed.jurisdiction_scope || [],
           templateType: 'slot-based',
+          isCustom: !isBaseTemplate(parsed.template_id),
         });
       }
     } catch (e) {
@@ -141,7 +217,7 @@ export function listTemplatesWithMetadata(): { templateId: string; name: string;
     }
   }
   
-  return templates;
+  return templatesList;
 }
 
 // -----------------------------------------------------------------------------
@@ -202,21 +278,52 @@ export function validateTemplate(template: unknown): TemplateValidationResult {
 // LOAD TEMPLATE
 // -----------------------------------------------------------------------------
 
-export function loadTemplate(templateIdRaw: string): Template {
+export async function loadTemplate(templateIdRaw: string): Promise<Template> {
   const templateId = (templateIdRaw || "").trim();
   if (!templateId) throw httpError(400, "templateId is required");
 
   const canonicalId = TEMPLATE_ALIASES[templateId] || templateId;
+
+  console.log(`[TemplateStore] Loading template: ${templateId} -> ${canonicalId}`);
+
+  // Try database first
+  try {
+    const [dbTemplate] = await db
+      .select()
+      .from(templates)
+      .where(eq(templates.templateId, canonicalId))
+      .limit(1);
+
+    if (dbTemplate) {
+      console.log(`[TemplateStore] Template loaded from database: ${canonicalId}`);
+      
+      // Validate the stored JSON
+      const validation = zodValidateTemplate(dbTemplate.templateJson);
+      
+      if (!validation.success) {
+        const errors = formatTemplateErrors(validation.errors);
+        console.error(`[TemplateStore] Template validation errors:`, errors);
+        throw httpError(500, `Template '${canonicalId}' validation failed:\n${errors.join("\n")}`);
+      }
+
+      return validation.data;
+    }
+  } catch (error: any) {
+    if (error.status) throw error; // Re-throw HTTP errors
+    console.warn(`[TemplateStore] Database query failed, falling back to filesystem:`, error.message);
+  }
+
+  // Fallback to filesystem
   const dir = getTemplatesDir();
   const filePath = path.join(dir, `${canonicalId}.json`);
 
-  console.log(`[TemplateStore] Loading template: ${templateId} -> ${canonicalId}`);
   console.log(`[TemplateStore] Path: ${filePath}`);
 
   if (!fs.existsSync(filePath)) {
+    const availableTemplates = await listTemplates();
     throw httpError(
       400,
-      `Template '${templateId}' not found. Expected file: ${filePath}. Available: ${listTemplates().join(", ")}`
+      `Template '${templateId}' not found. Expected file: ${filePath}. Available: ${availableTemplates.join(", ")}`
     );
   }
 
@@ -248,20 +355,49 @@ export function loadTemplate(templateIdRaw: string): Template {
  * Load a form-based template (CooperSurgical style).
  * These templates don't have slots/mapping - they use direct section definitions.
  */
-export function loadFormTemplate(templateIdRaw: string): FormTemplate {
+export async function loadFormTemplate(templateIdRaw: string): Promise<FormTemplate> {
   const templateId = (templateIdRaw || "").trim();
   if (!templateId) throw httpError(400, "templateId is required");
 
   const canonicalId = TEMPLATE_ALIASES[templateId] || templateId;
-  const dir = getTemplatesDir();
-  const filePath = path.join(dir, `${canonicalId}.json`);
 
   console.log(`[TemplateStore] Loading form template: ${templateId} -> ${canonicalId}`);
 
+  // Try database first
+  try {
+    const [dbTemplate] = await db
+      .select()
+      .from(templates)
+      .where(eq(templates.templateId, canonicalId))
+      .limit(1);
+
+    if (dbTemplate && dbTemplate.templateType === 'form-based') {
+      console.log(`[TemplateStore] Form template loaded from database: ${canonicalId}`);
+      
+      const validation = validateFormTemplate(dbTemplate.templateJson);
+      
+      if (!validation.success) {
+        const errors = formatFormTemplateErrors(validation.errors);
+        console.error(`[TemplateStore] Form template validation errors:`, errors);
+        throw httpError(500, `Form template '${canonicalId}' validation failed:\n${errors.join("\n")}`);
+      }
+
+      return validation.data;
+    }
+  } catch (error: any) {
+    if (error.status) throw error;
+    console.warn(`[TemplateStore] Database query failed, falling back to filesystem:`, error.message);
+  }
+
+  // Fallback to filesystem
+  const dir = getTemplatesDir();
+  const filePath = path.join(dir, `${canonicalId}.json`);
+
   if (!fs.existsSync(filePath)) {
+    const availableTemplates = await listTemplates();
     throw httpError(
       400,
-      `Template '${templateId}' not found. Expected file: ${filePath}. Available: ${listTemplates().join(", ")}`
+      `Template '${templateId}' not found. Expected file: ${filePath}. Available: ${availableTemplates.join(", ")}`
     );
   }
 
@@ -291,11 +427,28 @@ export function loadFormTemplate(templateIdRaw: string): FormTemplate {
 /**
  * Detect if a template ID refers to a form-based template.
  */
-export function isTemplateFormBased(templateIdRaw: string): boolean {
+export async function isTemplateFormBased(templateIdRaw: string): Promise<boolean> {
   const templateId = (templateIdRaw || "").trim();
   if (!templateId) return false;
 
   const canonicalId = TEMPLATE_ALIASES[templateId] || templateId;
+
+  // Check database first
+  try {
+    const [dbTemplate] = await db
+      .select({ templateType: templates.templateType })
+      .from(templates)
+      .where(eq(templates.templateId, canonicalId))
+      .limit(1);
+
+    if (dbTemplate) {
+      return dbTemplate.templateType === 'form-based';
+    }
+  } catch (error) {
+    console.warn(`[TemplateStore] Database check failed, falling back to filesystem:`, error);
+  }
+
+  // Fallback to filesystem
   const dir = getTemplatesDir();
   const filePath = path.join(dir, `${canonicalId}.json`);
 
@@ -316,14 +469,14 @@ export function isTemplateFormBased(templateIdRaw: string): boolean {
 
 const templateCache = new Map<string, Template>();
 
-export function getTemplateById(templateId: string): Template {
+export async function getTemplateById(templateId: string): Promise<Template> {
   const canonicalId = TEMPLATE_ALIASES[templateId] || templateId;
   
   if (templateCache.has(canonicalId)) {
     return templateCache.get(canonicalId)!;
   }
   
-  const template = loadTemplate(templateId);
+  const template = await loadTemplate(templateId);
   templateCache.set(canonicalId, template);
   return template;
 }
@@ -337,7 +490,7 @@ export function clearTemplateCache(): void {
 // -----------------------------------------------------------------------------
 
 export function getSlots(template: Template): SlotDefinition[] {
-  return template.slots;
+  return template.slots || [];
 }
 
 export function getSlotById(template: Template, slotId: string): SlotDefinition | undefined {

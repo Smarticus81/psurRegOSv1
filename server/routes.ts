@@ -454,37 +454,18 @@ import {
   insertCoverageReportSchema,
   insertAuditBundleSchema,
   orchestratorRunRequestSchema,
-  CANONICAL_EVIDENCE_TYPES
+  CANONICAL_EVIDENCE_TYPES,
+  slotObligationLinks,
+  templates,
 } from "@shared/schema";
-import {
-  ensureOrchestratorInitialized,
-  getOrchestratorStatus,
-  listObligations,
-  listConstraints,
-  qualifyTemplate,
-  compileCombinedDsl,
-} from "./orchestrator";
-import { buildCoverageSlotQueue } from "./queue-builder";
-import { parseEvidenceFile, createEvidenceAtomBatch } from "./evidence-parser";
+import { db } from "./db";
+import { eq } from "drizzle-orm";
 import { parseFileBuffer, detectColumnMappings, applyColumnMapping } from "./file-parser";
-import {
-  computeFileSha256,
-  computeContentHash,
-  generateAtomId,
-  validateEvidenceAtomPayload,
-  buildEvidenceAtom,
-  hasSchemaFor,
-  validateSlotProposal,
-  validateSlotProposalForAdjudication,
-  validateWithAjv,
-  type ProvenanceInput,
-  type SlotProposalInput
-} from "./schema-validator";
 import {
   normalizeComplaintRecordRow,
   normalizeSalesVolumeRow,
 } from "./evidence/normalize";
-import { EVIDENCE_DEFINITIONS } from "@shared/schema";
+import { EVIDENCE_DEFINITIONS, grkbObligations } from "@shared/schema";
 import { loadTemplate, loadFormTemplate, isTemplateFormBased, listTemplates, getTemplateDirsDebugInfo, getAllRequiredEvidenceTypes } from "./src/templateStore";
 import { type EvidenceAtomData } from "./src/orchestrator/render/psurTableGenerator";
 import {
@@ -1934,6 +1915,409 @@ Execute according to your persona instructions.`
     }
   });
 
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // HIERARCHICAL TEMPLATE MAPPING (PREFERRED)
+  // 
+  // Architecture:
+  //   EU MDR / UK MDR (GRKB) → MDCG 2022-21 (Standard) → Custom Templates
+  //
+  // Custom templates are validated against MDCG 2022-21, NOT directly against GRKB.
+  // This ensures proper alignment with the official standard.
+  // ═══════════════════════════════════════════════════════════════════════════════
+  const { 
+    mapCustomTemplateToMdcg,
+    applyManualSlotAlignment
+  } = await import("./src/services/hierarchicalMapping");
+  const { 
+    processTemplatePipeline, 
+    applyManualMapping, 
+    getTemplateCoverage 
+  } = await import("./src/services/templatePipeline");
+  const neo4jService = await import("./src/services/neo4jGrkbService");
+
+  // HIERARCHICAL: Map custom template against MDCG 2022-21 standard
+  app.post("/api/pipeline/hierarchical", async (req, res) => {
+    try {
+      const { template, referenceStandard, useLLM, confidenceThreshold, syncToNeo4j } = req.body;
+
+      if (!template || !template.template_id || !template.slots) {
+        return res.status(400).json({
+          error: "Invalid template format",
+          expected: {
+            template_id: "string",
+            name: "string", 
+            version: "string",
+            jurisdiction_scope: ["EU_MDR"],
+            slots: [{ slot_id: "string", slot_name: "string", required: true, data_type: "string" }],
+          }
+        });
+      }
+
+      console.log(`[Pipeline] Hierarchical mapping: ${template.template_id}`);
+
+      const result = await mapCustomTemplateToMdcg(template, {
+        referenceTemplateId: referenceStandard || "MDCG_2022_21_ANNEX_I",
+        useLLM: useLLM !== false,
+        confidenceThreshold: confidenceThreshold || 60,
+        syncToNeo4j: syncToNeo4j !== false,
+      });
+
+      const statusCode = result.status === "MISALIGNED" ? 422 : 200;
+      res.status(statusCode).json(result);
+    } catch (error: any) {
+      console.error("[Pipeline] Hierarchical mapping error:", error);
+      res.status(500).json({ error: error.message || "Hierarchical mapping failed" });
+    }
+  });
+
+  // HIERARCHICAL: Apply manual slot alignment to MDCG
+  app.put("/api/pipeline/hierarchical/:templateId/align/:customSlotId", async (req, res) => {
+    try {
+      const { templateId, customSlotId } = req.params;
+      const { mdcgSlotId, reason } = req.body;
+
+      if (!mdcgSlotId) {
+        return res.status(400).json({ error: "mdcgSlotId is required" });
+      }
+
+      await applyManualSlotAlignment(templateId, customSlotId, mdcgSlotId, reason || "Manual alignment");
+      res.json({ success: true, customSlotId, mdcgSlotId });
+    } catch (error: any) {
+      console.error("[Pipeline] Manual alignment error:", error);
+      res.status(500).json({ error: error.message || "Manual alignment failed" });
+    }
+  });
+
+  // LEGACY: Process template directly against GRKB (use /hierarchical instead)
+  app.post("/api/pipeline/process", async (req, res) => {
+    try {
+      const { template, jurisdictions, strictMode, confidenceThreshold, useLLMAnalysis, syncToNeo4j } = req.body;
+
+      if (!template || !template.template_id || !template.slots) {
+        return res.status(400).json({
+          error: "Invalid template format",
+          expected: {
+            template_id: "string",
+            name: "string",
+            version: "string",
+            jurisdiction_scope: ["EU_MDR", "UK_MDR"],
+            slots: [{ slot_id: "string", slot_name: "string", required: true, data_type: "string" }],
+            mapping: { slot_id: ["obligation_id"] }  // Optional predefined mappings
+          }
+        });
+      }
+
+      const result = await processTemplatePipeline(template, {
+        jurisdictions,
+        strictMode,
+        confidenceThreshold,
+        useLLMAnalysis,
+        syncToNeo4j,
+      });
+
+      const statusCode = result.status === "BLOCKED" ? 422 : 200;
+      res.status(statusCode).json(result);
+    } catch (error: any) {
+      console.error("[Pipeline] Process error:", error);
+      res.status(500).json({ error: error.message || "Pipeline failed" });
+    }
+  });
+
+  // Get template coverage
+  app.get("/api/pipeline/:templateId/coverage", async (req, res) => {
+    try {
+      const templateId = req.params.templateId;
+      const jurisdictions = req.query.jurisdictions 
+        ? (req.query.jurisdictions as string).split(",")
+        : ["EU_MDR", "UK_MDR"];
+
+      const coverage = await getTemplateCoverage(templateId, jurisdictions);
+      res.json(coverage);
+    } catch (error: any) {
+      console.error("[Pipeline] Coverage error:", error);
+      res.status(500).json({ error: error.message || "Failed to get coverage" });
+    }
+  });
+
+  // Apply manual mapping override
+  app.put("/api/pipeline/:templateId/mapping/:slotId", async (req, res) => {
+    try {
+      const { templateId, slotId } = req.params;
+      const { obligationIds, reason, updatedBy } = req.body;
+
+      if (!obligationIds || !Array.isArray(obligationIds)) {
+        return res.status(400).json({ error: "obligationIds array required" });
+      }
+
+      await applyManualMapping(templateId, slotId, obligationIds, reason || "Manual override", updatedBy);
+      res.json({ success: true, slotId, obligationIds });
+    } catch (error: any) {
+      console.error("[Pipeline] Manual mapping error:", error);
+      res.status(500).json({ error: error.message || "Failed to apply mapping" });
+    }
+  });
+
+  // Neo4j health check
+  app.get("/api/neo4j/health", async (req, res) => {
+    const healthy = await neo4jService.neo4jHealthCheck();
+    res.json({ healthy, message: healthy ? "Neo4j connected" : "Neo4j not available" });
+  });
+
+  // Setup Neo4j schema
+  app.post("/api/neo4j/setup", async (req, res) => {
+    const success = await neo4jService.setupGrkbSchema();
+    res.json({ success });
+  });
+
+  // Get Neo4j obligation graph
+  app.get("/api/neo4j/graph/:obligationId", async (req, res) => {
+    try {
+      const maxDepth = req.query.maxDepth ? parseInt(req.query.maxDepth as string) : 3;
+      const graph = await neo4jService.getObligationDependencyGraph(req.params.obligationId, maxDepth);
+      res.json(graph);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Sync GRKB obligations from PostgreSQL to Neo4j
+  app.post("/api/neo4j/sync-grkb", async (req, res) => {
+    try {
+      const obligations = await db.select().from(grkbObligations);
+      const synced = await neo4jService.syncObligationsToNeo4j(
+        obligations.map(o => ({
+          obligationId: o.obligationId,
+          title: o.title,
+          text: o.text,
+          jurisdiction: o.jurisdiction,
+          mandatory: o.mandatory,
+          sourceCitation: o.sourceCitation || "",
+          requiredEvidenceTypes: (o.requiredEvidenceTypes as string[]) || [],
+        }))
+      );
+      res.json({ success: true, synced, total: obligations.length });
+    } catch (error: any) {
+      console.error("[Neo4j] Sync GRKB error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get Neo4j stats
+  app.get("/api/neo4j/stats", async (req, res) => {
+    const session = neo4jService.getDriver()?.session();
+    if (!session) {
+      return res.json({ connected: false, stats: null });
+    }
+    try {
+      const result = await session.run(`
+        MATCH (n)
+        WITH labels(n) AS lbls, count(*) AS cnt
+        UNWIND lbls AS label
+        RETURN label, sum(cnt) AS count
+        ORDER BY count DESC
+      `);
+      const nodeCounts: Record<string, number> = {};
+      for (const r of result.records) {
+        nodeCounts[r.get("label")] = r.get("count").toNumber();
+      }
+      
+      const edgeResult = await session.run(`
+        MATCH ()-[r]->()
+        RETURN type(r) AS type, count(*) AS count
+        ORDER BY count DESC
+      `);
+      const edgeCounts: Record<string, number> = {};
+      for (const r of edgeResult.records) {
+        edgeCounts[r.get("type")] = r.get("count").toNumber();
+      }
+      
+      res.json({
+        connected: true,
+        stats: {
+          nodes: nodeCounts,
+          edges: edgeCounts,
+          totalNodes: Object.values(nodeCounts).reduce((a, b) => a + b, 0),
+          totalEdges: Object.values(edgeCounts).reduce((a, b) => a + b, 0),
+        }
+      });
+    } catch (error: any) {
+      console.error("[Neo4j] Stats error:", error);
+      res.status(500).json({ error: error.message });
+    } finally {
+      await session.close();
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // LEGACY SOTA GRKB GROUNDING ROUTES (kept for backward compatibility)
+  // ═══════════════════════════════════════════════════════════════════════════════
+  const { 
+    createSOTAGroundingEngine, 
+    validateTemplateGrkbCoverage, 
+    getTemplateGroundingStatus 
+  } = await import("./src/services/grkbGroundingService");
+
+  // Run SOTA grounding for a template
+  app.post("/api/grkb/grounding/:templateId/run", async (req, res) => {
+    try {
+      const templateId = req.params.templateId;
+      const { 
+        jurisdictions = ["EU_MDR", "UK_MDR"],
+        useLLMAnalysis = true,
+        confidenceThreshold = 0.6,
+        strictMode = true,
+        slots,
+      } = req.body;
+
+      if (!slots || !Array.isArray(slots) || slots.length === 0) {
+        return res.status(400).json({ 
+          error: "slots array is required",
+          example: {
+            slots: [
+              { slot_id: "cover", slot_name: "Cover Page", evidence_requirements: ["device_registry_record"] }
+            ]
+          }
+        });
+      }
+
+      const engine = createSOTAGroundingEngine();
+      const result = await engine.groundTemplate(templateId, slots, jurisdictions, {
+        useLLMAnalysis,
+        confidenceThreshold,
+        strictMode,
+      });
+
+      res.json(result);
+    } catch (error: any) {
+      console.error("[GRKB-Grounding] Run error:", error);
+      res.status(500).json({ error: error.message || "Failed to run grounding" });
+    }
+  });
+
+  // Validate template coverage against GRKB
+  app.get("/api/grkb/grounding/:templateId/validate", async (req, res) => {
+    try {
+      const templateId = req.params.templateId;
+      const jurisdictions = req.query.jurisdictions 
+        ? (req.query.jurisdictions as string).split(",")
+        : ["EU_MDR", "UK_MDR"];
+
+      const result = await validateTemplateGrkbCoverage(templateId, jurisdictions);
+      
+      // Return appropriate HTTP status based on validation result
+      const statusCode = result.status === "BLOCKED" ? 422 : 200;
+      res.status(statusCode).json(result);
+    } catch (error: any) {
+      console.error("[GRKB-Grounding] Validation error:", error);
+      res.status(500).json({ error: error.message || "Failed to validate coverage" });
+    }
+  });
+
+  // Get grounding status for a template
+  app.get("/api/grkb/grounding/:templateId/status", async (req, res) => {
+    try {
+      const templateId = req.params.templateId;
+      const status = await getTemplateGroundingStatus(templateId);
+      res.json(status);
+    } catch (error: any) {
+      console.error("[GRKB-Grounding] Status error:", error);
+      res.status(500).json({ error: error.message || "Failed to get status" });
+    }
+  });
+
+  // Get all mappings for a template with details
+  app.get("/api/grkb/grounding/:templateId/mappings", async (req, res) => {
+    try {
+      const templateId = req.params.templateId;
+      
+      const mappings = await db
+        .select()
+        .from(slotObligationLinks)
+        .where(eq(slotObligationLinks.templateId, templateId));
+
+      // Group by slot
+      const bySlot: Record<string, any[]> = {};
+      for (const m of mappings) {
+        if (!bySlot[m.slotId]) {
+          bySlot[m.slotId] = [];
+        }
+        bySlot[m.slotId].push({
+          obligationId: m.obligationId,
+          confidence: m.confidence,
+          matchMethod: m.matchMethod,
+          reasoning: m.reasoning,
+          isManualOverride: m.isManualOverride,
+        });
+      }
+
+      res.json({
+        templateId,
+        totalMappings: mappings.length,
+        slotCount: Object.keys(bySlot).length,
+        mappingsBySlot: bySlot,
+      });
+    } catch (error: any) {
+      console.error("[GRKB-Grounding] Mappings error:", error);
+      res.status(500).json({ error: error.message || "Failed to get mappings" });
+    }
+  });
+
+  // Apply manual mapping override
+  app.put("/api/grkb/grounding/:templateId/mappings/:slotId", async (req, res) => {
+    try {
+      const { templateId, slotId } = req.params;
+      const { obligationIds, reason, updatedBy = "user" } = req.body;
+
+      if (!obligationIds || !Array.isArray(obligationIds)) {
+        return res.status(400).json({ error: "obligationIds array required" });
+      }
+
+      const engine = createSOTAGroundingEngine();
+      await engine.applyManualMappings(templateId, [{
+        slotId,
+        obligationIds,
+        reason: reason || "Manual override",
+        updatedBy,
+      }]);
+
+      res.json({ 
+        success: true, 
+        templateId, 
+        slotId, 
+        obligationIds,
+        message: "Manual mapping applied successfully" 
+      });
+    } catch (error: any) {
+      console.error("[GRKB-Grounding] Manual mapping error:", error);
+      res.status(500).json({ error: error.message || "Failed to apply manual mapping" });
+    }
+  });
+
+  // Get all uncovered obligations for a template
+  app.get("/api/grkb/grounding/:templateId/uncovered", async (req, res) => {
+    try {
+      const templateId = req.params.templateId;
+      const jurisdictions = req.query.jurisdictions 
+        ? (req.query.jurisdictions as string).split(",")
+        : ["EU_MDR", "UK_MDR"];
+
+      const result = await validateTemplateGrkbCoverage(templateId, jurisdictions);
+      
+      res.json({
+        templateId,
+        jurisdictions,
+        totalObligations: result.coveredObligations.length + result.uncoveredObligations.length,
+        covered: result.coveredObligations.length,
+        uncovered: result.uncoveredObligations.length,
+        complianceScore: result.complianceScore,
+        uncoveredObligations: result.uncoveredObligations,
+      });
+    } catch (error: any) {
+      console.error("[GRKB-Grounding] Uncovered error:", error);
+      res.status(500).json({ error: error.message || "Failed to get uncovered obligations" });
+    }
+  });
+
   app.get("/api/audit-events", async (req, res) => {
     try {
       const entityType = req.query.entityType as string | undefined;
@@ -1942,68 +2326,6 @@ Execute according to your persona instructions.`
       res.json(events);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch audit events" });
-    }
-  });
-
-  app.get("/api/orchestrator/status", async (req, res) => {
-    try {
-      // Report status from the Python compliance kernel (psur_orchestrator)
-      const result = await getOrchestratorStatus();
-      if (!result.success || !result.data) {
-        return res.status(500).json({ error: result.error || "Failed to get orchestrator status" });
-      }
-
-      res.json(result.data);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to get orchestrator status" });
-    }
-  });
-
-  app.post("/api/orchestrator/initialize", async (req, res) => {
-    try {
-      const success = await ensureOrchestratorInitialized();
-      res.json({ success, message: success ? "Compliance kernel initialized" : "Failed to initialize" });
-    } catch (error) {
-      res.status(500).json({ error: "Failed to initialize orchestrator" });
-    }
-  });
-
-  app.get("/api/orchestrator/obligations", async (req, res) => {
-    try {
-      const result = await listObligations();
-      if (result.success) {
-        res.json(result.data);
-      } else {
-        res.status(500).json({ error: result.error });
-      }
-    } catch (error) {
-      res.status(500).json({ error: "Failed to list obligations" });
-    }
-  });
-
-  app.get("/api/orchestrator/constraints", async (req, res) => {
-    try {
-      const result = await listConstraints();
-      if (result.success) {
-        res.json(result.data);
-      } else {
-        res.status(500).json({ error: result.error });
-      }
-    } catch (error) {
-      res.status(500).json({ error: "Failed to list constraints" });
-    }
-  });
-
-  app.post("/api/orchestrator/compile", async (req, res) => {
-    try {
-      const result = await compileCombinedDsl();
-      if (result.success) {
-        res.json(result.data);
-      } else {
-        res.status(500).json({ error: result.error });
-      }
-    } catch (error) {
-      res.status(500).json({ error: "Failed to compile DSL" });
     }
   });
 
@@ -2125,6 +2447,86 @@ Execute according to your persona instructions.`
     } catch (error: any) {
       console.error("[POST /api/orchestrator/cases/:psurCaseId/cancel] Error:", error);
       res.status(500).json({ error: error.message || "Failed to cancel workflow" });
+    }
+  });
+
+  /**
+   * Resume a workflow from where it left off
+   * POST /api/orchestrator/cases/:psurCaseId/resume
+   * 
+   * Optional body:
+   * - fromStep: number (1-8) - force resume from a specific step
+   * - enableAIGeneration: boolean - whether to enable AI generation
+   */
+  app.post("/api/orchestrator/cases/:psurCaseId/resume", async (req, res) => {
+    try {
+      const psurCaseId = parseInt(req.params.psurCaseId);
+      if (isNaN(psurCaseId)) {
+        return res.status(400).json({ error: "Invalid psurCaseId" });
+      }
+
+      // Get the PSUR case to get template and other info
+      const psurCase = await storage.getPSURCase(psurCaseId);
+      if (!psurCase) {
+        return res.status(404).json({ error: "PSUR case not found" });
+      }
+
+      // Check if already running
+      const { isWorkflowRunning } = await import("./src/orchestrator/workflowRunner");
+      if (isWorkflowRunning(psurCaseId)) {
+        return res.status(409).json({ 
+          error: "Workflow is already running",
+          status: "ALREADY_RUNNING" 
+        });
+      }
+
+      // Get the current workflow state to determine where to resume
+      const { getWorkflowResultForCase } = await import("./src/orchestrator/workflowRunner");
+      const workflowState = await getWorkflowResultForCase(psurCaseId);
+
+      // Determine which steps to run (resume from first incomplete step)
+      let fromStep = req.body?.fromStep;
+      if (!fromStep && workflowState?.steps) {
+        // Find first incomplete step
+        const firstIncomplete = workflowState.steps.find(s => 
+          s.status === "NOT_STARTED" || s.status === "FAILED" || s.status === "RUNNING"
+        );
+        fromStep = firstIncomplete?.step || 1;
+      }
+      fromStep = fromStep || 1;
+
+      // Build list of steps to run (from fromStep to 8)
+      const stepsToRun = Array.from({ length: 8 - fromStep + 1 }, (_, i) => fromStep + i);
+
+      console.log(`[Resume] PSUR Case ${psurCaseId}: Resuming from step ${fromStep}, running steps: ${stepsToRun.join(",")}`);
+
+      // Start the workflow
+      const started = startOrchestratorWorkflow({
+        psurCaseId,
+        templateId: psurCase.templateId,
+        jurisdictions: psurCase.jurisdictions as string[],
+        deviceCode: psurCase.deviceInfo?.deviceCode || "",
+        deviceId: psurCase.leadingDeviceId || undefined,
+        periodStart: psurCase.startPeriod?.toISOString().split("T")[0] || "",
+        periodEnd: psurCase.endPeriod?.toISOString().split("T")[0] || "",
+        runSteps: stepsToRun,
+        enableAIGeneration: req.body?.enableAIGeneration ?? true,
+      });
+
+      res.status(202).json({
+        ...started,
+        resumedFromStep: fromStep,
+        stepsToRun,
+      });
+    } catch (error: any) {
+      console.error("[POST /api/orchestrator/cases/:psurCaseId/resume] Error:", error);
+      if (isDatabaseConnectionError(error)) {
+        return res.status(503).json({
+          error: "Database unavailable",
+          code: "DATABASE_UNAVAILABLE",
+        });
+      }
+      res.status(500).json({ error: error.message || "Failed to resume workflow" });
     }
   });
 
@@ -2712,6 +3114,29 @@ Execute according to your persona instructions.`
       const parsed = insertPsurCaseSchema.safeParse(body);
       if (!parsed.success) {
         return res.status(400).json({ error: parsed.error.errors });
+      }
+
+      // Validate: Check if the template exists before creating the case
+      const templateId = parsed.data.templateId;
+      if (templateId) {
+        const [dbTemplate] = await db
+          .select()
+          .from(templates)
+          .where(eq(templates.templateId, templateId))
+          .limit(1);
+        
+        if (!dbTemplate) {
+          // Check filesystem as fallback for base templates
+          const templatePath = path.resolve(process.cwd(), "server", "templates", `${templateId}.json`);
+          if (!fs.existsSync(templatePath)) {
+            console.log(`[POST /api/psur-cases] Template not found: ${templateId}`);
+            return res.status(400).json({
+              error: `Template '${templateId}' does not exist`,
+              message: "Please upload the template first via the Template Pipeline or select an existing template.",
+              availableTemplates: "Use GET /api/templates/all to see available templates.",
+            });
+          }
+        }
       }
 
       // Validate: Check if a case already exists for this device and period
@@ -6345,8 +6770,6 @@ Execute according to your persona instructions.`
       res.status(500).json({ error: "Failed to generate audit narrative", details: error.message });
     }
   });
-
-  ensureOrchestratorInitialized().catch(console.error);
 
   return httpServer;
 }

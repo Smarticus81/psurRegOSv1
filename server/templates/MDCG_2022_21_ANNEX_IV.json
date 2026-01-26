@@ -1,0 +1,294 @@
+{
+  "template_id": "MDCG_2022_21_ANNEX_IV",
+  "name": "MDCG 2022-21 Annex IV - PSUR Requirements for MDR and Legacy Devices",
+  "version": "1.0.0",
+  "jurisdiction_scope": ["EU_MDR"],
+  "normative_basis": [
+    "EU.MDR.2017/745.ART86",
+    "EU.MDR.2017/745.ART120",
+    "MDCG.2022-21.ANNEX_IV"
+  ],
+  "description": "PSUR submission frequency and requirements matrix based on device classification under EU MDR and legacy devices",
+  "requirements_matrix": [
+    {
+      "device_type": "MDR Class III or IIb Implantable",
+      "device_class": "Class III",
+      "is_implantable": true,
+      "frequency": "Annual",
+      "frequency_months": 12,
+      "eudamed_submission": true,
+      "first_psur_due": "1 year after certification",
+      "first_psur_due_months": 12,
+      "applicable_templates": ["MDCG_2022_21_ANNEX_I", "MDCG_2022_21_ANNEX_II"],
+      "mandatory_tables": [
+        "table_1_volume_of_sales",
+        "table_2_population_size",
+        "table_3_population_characteristics",
+        "table_4_serious_incidents_by_device_problem",
+        "table_5_serious_incidents_by_investigation_finding",
+        "table_6_health_impact_by_investigation_conclusion",
+        "table_7_fsas",
+        "table_8_capa"
+      ],
+      "time_buckets": ["N", "N-12", "N2-12", "N3-12"],
+      "trend_analysis_required": true,
+      "pmcf_integration_required": true,
+      "validation_rules": {
+        "frequency_check": "Verify PSUR is submitted annually",
+        "eudamed_check": "Confirm EUDAMED upload requirement",
+        "time_bucket_check": "Verify 4-year trending data is present"
+      }
+    },
+    {
+      "device_type": "MDR Class IIb Implantable",
+      "device_class": "Class IIb",
+      "is_implantable": true,
+      "frequency": "Annual",
+      "frequency_months": 12,
+      "eudamed_submission": true,
+      "first_psur_due": "1 year after certification",
+      "first_psur_due_months": 12,
+      "applicable_templates": ["MDCG_2022_21_ANNEX_I", "MDCG_2022_21_ANNEX_II"],
+      "mandatory_tables": [
+        "table_1_volume_of_sales",
+        "table_2_population_size",
+        "table_3_population_characteristics",
+        "table_4_serious_incidents_by_device_problem",
+        "table_5_serious_incidents_by_investigation_finding",
+        "table_6_health_impact_by_investigation_conclusion",
+        "table_7_fsas",
+        "table_8_capa"
+      ],
+      "time_buckets": ["N", "N-12", "N2-12", "N3-12"],
+      "trend_analysis_required": true,
+      "pmcf_integration_required": true,
+      "validation_rules": {
+        "frequency_check": "Verify PSUR is submitted annually",
+        "eudamed_check": "Confirm EUDAMED upload requirement",
+        "time_bucket_check": "Verify 4-year trending data is present"
+      }
+    },
+    {
+      "device_type": "MDR Class IIa Implantable",
+      "device_class": "Class IIa",
+      "is_implantable": true,
+      "frequency": "Every 2 years",
+      "frequency_months": 24,
+      "eudamed_submission": true,
+      "first_psur_due": "2 years after certification",
+      "first_psur_due_months": 24,
+      "applicable_templates": ["MDCG_2022_21_ANNEX_I", "MDCG_2022_21_ANNEX_II"],
+      "mandatory_tables": [
+        "table_1_volume_of_sales",
+        "table_2_population_size",
+        "table_4_serious_incidents_by_device_problem",
+        "table_5_serious_incidents_by_investigation_finding",
+        "table_7_fsas",
+        "table_8_capa"
+      ],
+      "time_buckets": ["N", "N-24"],
+      "trend_analysis_required": true,
+      "pmcf_integration_required": true,
+      "validation_rules": {
+        "frequency_check": "Verify PSUR is submitted every 2 years",
+        "eudamed_check": "Confirm EUDAMED upload requirement",
+        "time_bucket_check": "Verify 2-period trending data is present"
+      }
+    },
+    {
+      "device_type": "MDR Class IIb Non-Implantable",
+      "device_class": "Class IIb",
+      "is_implantable": false,
+      "frequency": "Annual",
+      "frequency_months": 12,
+      "eudamed_submission": false,
+      "first_psur_due": "1 year after certification",
+      "first_psur_due_months": 12,
+      "applicable_templates": ["MDCG_2022_21_ANNEX_I", "MDCG_2022_21_ANNEX_II"],
+      "mandatory_tables": [
+        "table_1_volume_of_sales",
+        "table_2_population_size",
+        "table_4_serious_incidents_by_device_problem",
+        "table_5_serious_incidents_by_investigation_finding",
+        "table_7_fsas",
+        "table_8_capa"
+      ],
+      "time_buckets": ["N", "N-12", "N2-12", "N3-12"],
+      "trend_analysis_required": true,
+      "pmcf_integration_required": true,
+      "notified_body_submission": true,
+      "validation_rules": {
+        "frequency_check": "Verify PSUR is submitted annually",
+        "nb_submission_check": "Confirm submission to Notified Body",
+        "time_bucket_check": "Verify 4-year trending data is present"
+      }
+    },
+    {
+      "device_type": "MDR Class IIa Non-Implantable",
+      "device_class": "Class IIa",
+      "is_implantable": false,
+      "frequency": "Every 2 years",
+      "frequency_months": 24,
+      "eudamed_submission": false,
+      "first_psur_due": "2 years after certification",
+      "first_psur_due_months": 24,
+      "applicable_templates": ["MDCG_2022_21_ANNEX_I"],
+      "mandatory_tables": [
+        "table_1_volume_of_sales",
+        "table_2_population_size",
+        "table_4_serious_incidents_by_device_problem",
+        "table_7_fsas"
+      ],
+      "time_buckets": ["N", "N-24"],
+      "trend_analysis_required": true,
+      "pmcf_integration_required": false,
+      "keep_available": true,
+      "validation_rules": {
+        "frequency_check": "Verify PSUR is prepared every 2 years",
+        "availability_check": "Confirm PSUR is kept available for competent authorities"
+      }
+    },
+    {
+      "device_type": "Custom-Made Devices Class IIb/III",
+      "device_class": "Custom",
+      "is_implantable": null,
+      "frequency": "Per MDR risk class",
+      "frequency_months": 12,
+      "eudamed_submission": false,
+      "first_psur_due": "1 year after first Statement of Conformity (SoC)",
+      "first_psur_due_months": 12,
+      "applicable_templates": ["MDCG_2022_21_ANNEX_I"],
+      "mandatory_tables": [
+        "table_1_volume_of_sales",
+        "table_4_serious_incidents_by_device_problem",
+        "table_7_fsas"
+      ],
+      "time_buckets": ["N", "N-12", "N2-12", "N3-12"],
+      "special_requirements": [
+        "PSUR must be prepared but not submitted to EUDAMED",
+        "Competent authority can request PSUR at any time",
+        "Must document patient/user population characteristics"
+      ],
+      "validation_rules": {
+        "custom_device_check": "Verify custom-made device requirements are met",
+        "soc_check": "Confirm first SoC date for PSUR timing"
+      }
+    },
+    {
+      "device_type": "Custom-Made Devices Class IIa",
+      "device_class": "Custom",
+      "is_implantable": null,
+      "frequency": "Per MDR risk class",
+      "frequency_months": 24,
+      "eudamed_submission": false,
+      "first_psur_due": "2 years after first Statement of Conformity (SoC)",
+      "first_psur_due_months": 24,
+      "applicable_templates": ["MDCG_2022_21_ANNEX_I"],
+      "mandatory_tables": [
+        "table_1_volume_of_sales",
+        "table_4_serious_incidents_by_device_problem",
+        "table_7_fsas"
+      ],
+      "time_buckets": ["N", "N-24"],
+      "special_requirements": [
+        "Biennial PSUR preparation",
+        "Must be kept available for audit"
+      ],
+      "validation_rules": {
+        "custom_device_check": "Verify custom-made device requirements are met"
+      }
+    },
+    {
+      "device_type": "Legacy Device (MDD/AIMDD) Class III",
+      "device_class": "Legacy Class III",
+      "is_implantable": null,
+      "frequency": "Annual",
+      "frequency_months": 12,
+      "eudamed_submission": false,
+      "first_psur_due": "Based on MDD certification date",
+      "applicable_templates": ["MDCG_2022_21_ANNEX_I"],
+      "mandatory_tables": [
+        "table_1_volume_of_sales",
+        "table_4_serious_incidents_by_device_problem",
+        "table_7_fsas",
+        "table_8_capa"
+      ],
+      "time_buckets": ["N", "N-12", "N2-12", "N3-12"],
+      "special_requirements": [
+        "Must continue until MDR certification or market withdrawal",
+        "Notified Body may request PSUR at any time",
+        "Transitional provisions apply per MDR Article 120"
+      ],
+      "validation_rules": {
+        "legacy_check": "Verify MDD/AIMDD certificate validity",
+        "transition_check": "Confirm MDR transition timeline"
+      }
+    }
+  ],
+  "frequency_determination": {
+    "description": "Logic for determining PSUR frequency based on device characteristics",
+    "decision_tree": [
+      {
+        "condition": "Device is Class III OR (Class IIb AND implantable)",
+        "result": "Annual PSUR, EUDAMED submission required"
+      },
+      {
+        "condition": "Device is Class IIa implantable",
+        "result": "Biennial PSUR, EUDAMED submission required"
+      },
+      {
+        "condition": "Device is Class IIb non-implantable",
+        "result": "Annual PSUR, keep available for NB/CA"
+      },
+      {
+        "condition": "Device is Class IIa non-implantable",
+        "result": "Biennial PSUR, keep available for CA"
+      },
+      {
+        "condition": "Device is custom-made",
+        "result": "Per risk class equivalent, no EUDAMED"
+      }
+    ],
+    "llm_prompt": "Based on the device classification ({device_class}), implantable status ({is_implantable}), and any special characteristics, determine the correct PSUR frequency and submission requirements per MDCG 2022-21 Annex IV."
+  },
+  "eudamed_submission_rules": {
+    "required_for": ["Class III", "Class IIb implantable", "Class IIa implantable"],
+    "not_required_for": ["Class IIb non-implantable", "Class IIa non-implantable", "Custom-made"],
+    "submission_window": "Within 30 days of PSUR finalization",
+    "validation_prompt": "Verify if EUDAMED submission is required based on device classification and check submission timing compliance."
+  },
+  "notified_body_requirements": {
+    "psur_review_required": ["Class III", "Class IIb implantable"],
+    "psur_available_on_request": ["Class IIa", "Class IIb non-implantable"],
+    "notification_requirements": [
+      "Class III and IIb implantable: NB receives PSUR for review",
+      "Class IIa and IIb non-implantable: PSUR available within 24 hours if requested"
+    ],
+    "validation_prompt": "Confirm Notified Body submission/availability requirements are met based on device class."
+  },
+  "llm_validation_prompts": {
+    "frequency_validation": "Verify that the PSUR is submitted at the correct frequency for the device classification: {device_class}, implantable: {is_implantable}.",
+    "template_selection": "Confirm that the correct MDCG 2022-21 template(s) are used based on device classification.",
+    "mandatory_table_check": "Verify all mandatory Annex II tables are present for the device class.",
+    "time_bucket_validation": "Check that temporal data uses the correct time buckets (4-year for Class III/IIb annual, 2-year for Class IIa biennial).",
+    "submission_requirement_check": "Validate EUDAMED submission and/or Notified Body notification requirements based on device classification.",
+    "first_psur_timing": "Verify first PSUR due date calculation based on certification or SoC date."
+  },
+  "validation_functions": {
+    "get_psur_requirements": {
+      "description": "Determine PSUR requirements based on device characteristics",
+      "inputs": ["device_class", "is_implantable", "is_custom_made", "is_legacy"],
+      "outputs": ["frequency", "eudamed_required", "mandatory_tables", "time_buckets", "nb_requirements"]
+    },
+    "validate_psur_timing": {
+      "description": "Validate if PSUR is submitted within required timeframe",
+      "inputs": ["certification_date", "psur_submission_date", "device_class", "psur_number"],
+      "outputs": ["is_compliant", "days_late", "recommended_action"]
+    },
+    "check_mandatory_content": {
+      "description": "Verify all mandatory content is present based on device requirements",
+      "inputs": ["device_class", "psur_content", "is_implantable"],
+      "outputs": ["missing_tables", "missing_sections", "compliance_score"]
+    }
+  }
+}

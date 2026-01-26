@@ -1,222 +1,266 @@
 {
-    "template_id": "MDCG_2022_21_ANNEX_III",
-    "name": "MDCG 2022-21 Annex III — PSUR for Legacy Devices (MDD/AIMDD)",
-    "version": "1.0.0",
-    "jurisdiction_scope": [
-        "EU_MDR"
-    ],
-    "normative_basis": [
-        "EU.MDR.2017/745.ART120",
-        "MDCG.2022-21.ANNEX_III"
-    ],
-    "mandatory_obligation_ids": [
-        "ANNEX_III_1_PRODUCT_DESC",
-        "ANNEX_III_2_SALES_EXPOSURE",
-        "ANNEX_III_3_COMPLAINTS",
-        "ANNEX_III_4_VIGILANCE",
-        "ANNEX_III_5_FSCA",
-        "ANNEX_III_6_PMCF",
-        "ANNEX_III_7_BENEFIT_RISK",
-        "ANNEX_III_8_CONCLUSIONS"
-    ],
-    "defaults": {
-        "require_traceability": true,
-        "require_method_statement": true,
-        "require_claimed_obligations": true,
-        "min_method_chars": 10,
-        "min_evidence_atoms": 1
+  "template_id": "MDCG_2022_21_ANNEX_III",
+  "name": "MDCG 2022-21 Annex III - Presentation and Assessment of Collected Data",
+  "version": "1.0.0",
+  "jurisdiction_scope": ["EU_MDR"],
+  "normative_basis": [
+    "EU.MDR.2017/745.ART86",
+    "MDCG.2022-21.ANNEX_III"
+  ],
+  "description": "Rules for presenting and assessing PMS data in the PSUR as mandated by MDCG 2022-21",
+  "presentation_rules": {
+    "dataset_separation": {
+      "rule": "Each dataset must be analyzed individually before cross-dataset analysis",
+      "description": "Complaints, incidents, literature, registry data, etc. must first be presented separately",
+      "validation_prompt": "Verify that each data source (complaints, incidents, PMCF, literature, registries) is presented in its own section before any combined analysis."
     },
-    "slots": [
+    "device_granularity": {
+      "levels": ["Basic UDI-DI", "Device Model", "Device Family"],
+      "rule": "Data should be presented at the Basic UDI-DI level where possible, with aggregation at device model/family level justified",
+      "validation_prompt": "Check if data is presented at the Basic UDI-DI level. If aggregated, verify justification for grouping devices."
+    },
+    "regional_split": {
+      "regions": ["EEA", "TR", "XI", "Worldwide"],
+      "rule": "Data must be split by EEA+TR+XI and Worldwide as a minimum",
+      "combined_region": "EEA+TR+XI",
+      "validation_prompt": "Verify that all quantitative data is split between EEA+TR+XI and Worldwide regions."
+    },
+    "temporal_comparison_required": true,
+    "time_buckets": {
+      "class_III_and_IIb": {
+        "annual_psur": ["N", "N-12", "N2-12", "N3-12"],
+        "description": "4-year rolling comparison for annual PSURs"
+      },
+      "class_IIa": {
+        "biennial_psur": ["N", "N-24"],
+        "description": "2-period comparison for biennial PSURs"
+      }
+    },
+    "terminology_requirements": {
+      "mandatory_terminologies": [
         {
-            "slot_id": "MDCG.ANNEXIII.COVER",
-            "title": "PSUR Cover Page (Legacy)",
-            "section_path": "Cover",
-            "slot_kind": "ADMIN",
-            "required": true,
-            "evidence_requirements": {
-                "required_types": [
-                    "device_registry_record",
-                    "manufacturer_profile"
-                ],
-                "min_atoms": 1,
-                "allow_empty_with_justification": false
-            },
-            "output_requirements": {
-                "renderer": "md",
-                "render_as": "cover_page"
-            }
+          "name": "IMDRF Annex A",
+          "purpose": "Device Problem Codes",
+          "tables": ["table_4_serious_incidents_by_device_problem"]
         },
         {
-            "slot_id": "MDCG.ANNEXIII.1_DESC",
-            "title": "1. Product description and intended purpose",
-            "section_path": "1. Description",
-            "slot_kind": "NARRATIVE",
-            "required": true,
-            "evidence_requirements": {
-                "required_types": [
-                    "device_registry_record",
-                    "ifu_extract"
-                ],
-                "min_atoms": 1,
-                "allow_empty_with_justification": false
-            },
-            "output_requirements": {
-                "renderer": "md",
-                "render_as": "narrative"
-            }
+          "name": "IMDRF Annex C",
+          "purpose": "Investigation Finding Codes",
+          "tables": ["table_5_serious_incidents_by_investigation_finding"]
         },
         {
-            "slot_id": "MDCG.ANNEXIII.2_SALES",
-            "title": "2. Sales volume and population exposure",
-            "section_path": "2. Sales & Exposure",
-            "slot_kind": "NARRATIVE",
-            "required": true,
-            "evidence_requirements": {
-                "required_types": [
-                    "sales_volume"
-                ],
-                "min_atoms": 1,
-                "allow_empty_with_justification": false
-            },
-            "output_requirements": {
-                "renderer": "md",
-                "render_as": "narrative"
-            }
+          "name": "IMDRF Annex D",
+          "purpose": "Health Impact Codes",
+          "tables": ["table_6_health_impact_by_investigation_conclusion"]
         },
         {
-            "slot_id": "MDCG.ANNEXIII.3_COMPLAINTS",
-            "title": "3. Complaints",
-            "section_path": "3. Complaints",
-            "slot_kind": "NARRATIVE",
-            "required": true,
-            "evidence_requirements": {
-                "required_types": [
-                    "complaint_summary",
-                    "complaint_record"
-                ],
-                "min_atoms": 1,
-                "allow_empty_with_justification": true
-            },
-            "output_requirements": {
-                "renderer": "md",
-                "render_as": "narrative"
-            }
-        },
-        {
-            "slot_id": "MDCG.ANNEXIII.4_VIGILANCE",
-            "title": "4. Vigilance reporting",
-            "section_path": "4. Vigilance",
-            "slot_kind": "NARRATIVE",
-            "required": true,
-            "evidence_requirements": {
-                "required_types": [
-                    "serious_incident_record",
-                    "vigilance_report"
-                ],
-                "min_atoms": 0,
-                "allow_empty_with_justification": true
-            },
-            "output_requirements": {
-                "renderer": "md",
-                "render_as": "narrative"
-            }
-        },
-        {
-            "slot_id": "MDCG.ANNEXIII.5_FSCA",
-            "title": "5. Field Safety Corrective Actions (FSCA)",
-            "section_path": "5. FSCA",
-            "slot_kind": "NARRATIVE",
-            "required": true,
-            "evidence_requirements": {
-                "required_types": [
-                    "fsca_record"
-                ],
-                "min_atoms": 0,
-                "allow_empty_with_justification": true
-            },
-            "output_requirements": {
-                "renderer": "md",
-                "render_as": "narrative"
-            }
-        },
-        {
-            "slot_id": "MDCG.ANNEXIII.6_PMCF",
-            "title": "6. Summary of findings from PMCF",
-            "section_path": "6. PMCF",
-            "slot_kind": "NARRATIVE",
-            "required": true,
-            "evidence_requirements": {
-                "required_types": [
-                    "pmcf_result"
-                ],
-                "min_atoms": 0,
-                "allow_empty_with_justification": true
-            },
-            "output_requirements": {
-                "renderer": "md",
-                "render_as": "narrative"
-            }
-        },
-        {
-            "slot_id": "MDCG.ANNEXIII.7_BENEFIT_RISK",
-            "title": "7. Benefit-risk analysis",
-            "section_path": "7. Benefit-Risk",
-            "slot_kind": "NARRATIVE",
-            "required": true,
-            "evidence_requirements": {
-                "required_types": [
-                    "risk_analysis",
-                    "benefit_risk_assessment"
-                ],
-                "min_atoms": 1,
-                "allow_empty_with_justification": false
-            },
-            "output_requirements": {
-                "renderer": "md",
-                "render_as": "narrative"
-            }
-        },
-        {
-            "slot_id": "MDCG.ANNEXIII.8_CONCLUSIONS",
-            "title": "8. Conclusions",
-            "section_path": "8. Conclusions",
-            "slot_kind": "NARRATIVE",
-            "required": true,
-            "evidence_requirements": {
-                "required_types": [],
-                "min_atoms": 0,
-                "allow_empty_with_justification": true
-            },
-            "output_requirements": {
-                "renderer": "md",
-                "render_as": "narrative"
-            }
+          "name": "IMDRF Annex F",
+          "purpose": "Investigation Conclusion Codes",
+          "tables": ["table_6_health_impact_by_investigation_conclusion"]
         }
-    ],
-    "mapping": {
-        "MDCG.ANNEXIII.1_DESC": [
-            "ANNEX_III_1_PRODUCT_DESC"
-        ],
-        "MDCG.ANNEXIII.2_SALES": [
-            "ANNEX_III_2_SALES_EXPOSURE"
-        ],
-        "MDCG.ANNEXIII.3_COMPLAINTS": [
-            "ANNEX_III_3_COMPLAINTS"
-        ],
-        "MDCG.ANNEXIII.4_VIGILANCE": [
-            "ANNEX_III_4_VIGILANCE"
-        ],
-        "MDCG.ANNEXIII.5_FSCA": [
-            "ANNEX_III_5_FSCA"
-        ],
-        "MDCG.ANNEXIII.6_PMCF": [
-            "ANNEX_III_6_PMCF"
-        ],
-        "MDCG.ANNEXIII.7_BENEFIT_RISK": [
-            "ANNEX_III_7_BENEFIT_RISK"
-        ],
-        "MDCG.ANNEXIII.8_CONCLUSIONS": [
-            "ANNEX_III_8_CONCLUSIONS"
-        ]
+      ],
+      "preferred_level": 2,
+      "validation_prompt": "Verify that IMDRF Level 2 codes are used for all incident categorization. Check that Annexes A, C, D, and F codes are correctly applied."
     }
+  },
+  "assessment_rules": {
+    "cross_dataset_analysis": {
+      "required": true,
+      "description": "Analysis must look across all data sources to identify patterns and correlations",
+      "analysis_types": [
+        "Correlation between complaint themes and incident types",
+        "Literature findings vs. real-world experience comparison",
+        "Registry data benchmarking against own device data",
+        "PMCF results correlation with safety data"
+      ],
+      "validation_prompt": "Check if the PSUR includes cross-dataset analysis comparing findings across complaints, incidents, literature, registries, and PMCF data."
+    },
+    "population_specific_evaluation": {
+      "required": true,
+      "description": "Analysis must consider specific patient/user populations if data suggests differential outcomes",
+      "factors": [
+        "Age groups",
+        "Gender",
+        "Comorbidities",
+        "Indication/use pattern",
+        "Geographic variations"
+      ],
+      "validation_prompt": "Verify if population subgroup analysis is performed where data suggests differential outcomes across patient populations."
+    },
+    "state_of_art_comparison": {
+      "required": true,
+      "description": "Device safety and performance must be compared against current state of the art",
+      "comparison_types": [
+        "Published clinical standards",
+        "Similar device performance",
+        "Clinical guidelines",
+        "Benchmark registries"
+      ],
+      "validation_prompt": "Check if the PSUR includes comparison of device performance against state-of-the-art standards and similar devices."
+    },
+    "risk_threshold_analysis": {
+      "required": true,
+      "description": "Analysis must identify when incident rates exceed predefined risk thresholds",
+      "threshold_types": [
+        "Absolute incidence thresholds",
+        "Rate increase triggers (e.g., >50% increase)",
+        "Statistical significance levels",
+        "Clinical significance thresholds"
+      ],
+      "validation_prompt": "Verify that the PSUR includes analysis against predefined risk thresholds and identifies any threshold exceedances."
+    },
+    "emerging_signal_detection": {
+      "required": true,
+      "description": "The PSUR must include systematic signal detection methodology",
+      "methods": [
+        "Disproportionality analysis",
+        "Trend analysis over time",
+        "New event type identification",
+        "Geographic cluster detection",
+        "Lot/batch-specific signal detection"
+      ],
+      "validation_prompt": "Check if systematic signal detection methods are applied and documented, including trend analysis and disproportionality assessment."
+    },
+    "combination_device_analysis": {
+      "required_if_applicable": true,
+      "description": "For combination products, interactions between device and drug/biological must be analyzed",
+      "analysis_areas": [
+        "Device-drug interaction events",
+        "Component-specific incident attribution",
+        "Cross-reference to drug safety reporting"
+      ],
+      "validation_prompt": "For combination products, verify that device-medicinal component interactions are analyzed."
+    },
+    "comparative_device_analysis": {
+      "required_if_applicable": true,
+      "description": "If similar devices exist, comparative safety analysis should be included",
+      "comparison_sources": [
+        "Registry comparator data",
+        "Published literature on similar devices",
+        "Regulatory database queries (MAUDE, MHRA, etc.)"
+      ],
+      "validation_prompt": "Check if comparative analysis against similar devices is performed using registries, literature, or regulatory databases."
+    }
+  },
+  "quality_requirements": {
+    "data_quality_assessment": {
+      "required": true,
+      "factors": [
+        "Completeness of incident reports",
+        "Coding accuracy assessment",
+        "Under-reporting estimation",
+        "Data lag considerations"
+      ],
+      "validation_prompt": "Verify that data quality is assessed and limitations are explicitly discussed."
+    },
+    "methodology_statement": {
+      "required": true,
+      "elements": [
+        "Data sources and collection methods",
+        "Inclusion/exclusion criteria",
+        "Coding conventions used",
+        "Statistical methods applied",
+        "Time periods covered"
+      ],
+      "validation_prompt": "Check that methodology is explicitly stated including data sources, criteria, and statistical approaches."
+    }
+  },
+  "conclusion_requirements": {
+    "benefit_risk_statement": {
+      "required": true,
+      "elements": [
+        "Summary of benefits demonstrated",
+        "Summary of identified risks",
+        "Overall benefit-risk conclusion",
+        "Comparison to previous PSUR conclusion"
+      ],
+      "validation_prompt": "Verify that a clear benefit-risk conclusion is stated with supporting rationale."
+    },
+    "action_items": {
+      "required": true,
+      "categories": [
+        "FSCA decisions",
+        "CAPA implementations",
+        "IFU/labeling updates",
+        "Clinical evaluation updates",
+        "Risk management file updates",
+        "PMCF protocol adjustments"
+      ],
+      "validation_prompt": "Check that required actions (CAPAs, FSCAs, document updates) are clearly identified with timelines."
+    }
+  },
+  "llm_assessment_prompts": {
+    "overall_presentation_quality": "Evaluate if the PSUR data presentation follows MDCG 2022-21 Annex III requirements for dataset separation, regional splits, temporal comparisons, and IMDRF terminology usage.",
+    "assessment_completeness": "Verify that the PSUR includes all required assessment elements: cross-dataset analysis, population evaluation, state-of-art comparison, risk thresholds, and signal detection.",
+    "conclusion_adequacy": "Assess if the conclusions are adequately supported by the presented data and analysis, with clear benefit-risk determination and action items.",
+    "methodology_transparency": "Check if the methodology is sufficiently transparent to allow reproducibility and audit.",
+    "regulatory_compliance_score": "Provide an overall MDCG 2022-21 Annex III compliance score (0-100) with specific gaps identified."
+  },
+  "validation_checklist": [
+    {
+      "id": "ANNEXIII.01",
+      "requirement": "Dataset separation - each data source presented individually",
+      "mandatory": true
+    },
+    {
+      "id": "ANNEXIII.02",
+      "requirement": "Basic UDI-DI level data or justified aggregation",
+      "mandatory": true
+    },
+    {
+      "id": "ANNEXIII.03",
+      "requirement": "EEA+TR+XI and Worldwide regional split",
+      "mandatory": true
+    },
+    {
+      "id": "ANNEXIII.04",
+      "requirement": "Temporal comparison with appropriate time buckets",
+      "mandatory": true
+    },
+    {
+      "id": "ANNEXIII.05",
+      "requirement": "IMDRF Level 2 terminology used",
+      "mandatory": true
+    },
+    {
+      "id": "ANNEXIII.06",
+      "requirement": "Cross-dataset analysis performed",
+      "mandatory": true
+    },
+    {
+      "id": "ANNEXIII.07",
+      "requirement": "State-of-art comparison included",
+      "mandatory": true
+    },
+    {
+      "id": "ANNEXIII.08",
+      "requirement": "Risk threshold analysis performed",
+      "mandatory": true
+    },
+    {
+      "id": "ANNEXIII.09",
+      "requirement": "Signal detection methodology applied",
+      "mandatory": true
+    },
+    {
+      "id": "ANNEXIII.10",
+      "requirement": "Data quality assessment documented",
+      "mandatory": true
+    },
+    {
+      "id": "ANNEXIII.11",
+      "requirement": "Methodology statement complete",
+      "mandatory": true
+    },
+    {
+      "id": "ANNEXIII.12",
+      "requirement": "Benefit-risk conclusion stated",
+      "mandatory": true
+    },
+    {
+      "id": "ANNEXIII.13",
+      "requirement": "Action items identified with timelines",
+      "mandatory": true
+    }
+  ]
 }

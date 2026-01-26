@@ -6,13 +6,16 @@
  * 
  * Uses 3-layer prompt architecture:
  * - Layer 1: Agent Persona (WHO)
- * - Layer 2: System Prompt (WHAT) - loaded from DB or defaults
+ * - Layer 2: System Prompt (WHAT) - loaded from DATABASE ONLY
  * - Layer 3: Template Field Instructions (HOW)
+ * 
+ * SINGLE SOURCE OF TRUTH: All prompts come from the database.
+ * Visit System Instructions page to manage prompts.
  */
 
 import { BaseAgent, AgentConfig, AgentContext, createAgentConfig } from "../../baseAgent";
 import { createTraceBuilder } from "../../../services/compileTraceRepository";
-import { composeSystemMessage, getDefaultSystemPrompt } from "../../promptLayers";
+import { composeSystemMessage } from "../../promptLayers";
 import { getPromptTemplate } from "../../llmService";
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -98,11 +101,20 @@ export abstract class BaseNarrativeAgent extends BaseAgent<NarrativeInput, Narra
 
   /**
    * Get the composed system message using 3-layer architecture
+   * 
+   * SINGLE SOURCE OF TRUTH: Prompt must exist in the database.
+   * Visit System Instructions page to manage prompts.
    */
   protected async getComposedSystemMessage(): Promise<string> {
-    // Try to get from DB first (user-editable), fall back to defaults
-    const dbPrompt = await getPromptTemplate(this.promptKey);
-    const systemPrompt = dbPrompt || getDefaultSystemPrompt(this.sectionType);
+    // Get prompt from database - this is the ONLY source
+    const systemPrompt = await getPromptTemplate(this.promptKey);
+    
+    if (!systemPrompt) {
+      throw new Error(
+        `[${this.config.agentType}] Prompt '${this.promptKey}' not found in database. ` +
+        `Visit System Instructions page to seed prompts, or ensure the prompt exists.`
+      );
+    }
     
     // Compose with persona and field instructions
     return composeSystemMessage(this.config.agentType, systemPrompt, this.sectionType);

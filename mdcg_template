@@ -1,0 +1,2909 @@
+{
+  "template_id": "PSUR_COMPREHENSIVE_EU_MDR_MDCG_2022_21",
+  "name": "Comprehensive PSUR Template - EU MDR 2017/745 with MDCG 2022-21 Annex I",
+  "version": "3.0",
+  "created_date": "2025-01-25",
+  "updated_date": "2025-01-25",
+  "jurisdiction_scope": [
+    "EU_MDR",
+    "UK_MDR",
+    "UKCA"
+  ],
+  "device_class_applicability": [
+    "CLASS_I",
+    "CLASS_IIA",
+    "CLASS_IIB",
+    "CLASS_III"
+  ],
+  "regulatory_basis": {
+    "primary": "EU MDR 2017/745 Article 86",
+    "template_standard": "MDCG 2022-21 Template for PSURs (Annex I)",
+    "supporting": [
+      "ISO 13485:2016 Section 8.2.1",
+      "MEDDEV 2.12/1 Rev 8 Guidelines on Post-Market Surveillance",
+      "IMDRF Adverse Event Terminology and Coding"
+    ]
+  },
+  "template_metadata": {
+    "author": "Regulatory AI System",
+    "purpose": "Systematic periodic safety update reporting for medical devices under EU MDR with MDCG 2022-21 standardized structure",
+    "update_frequency": "Annual or biennial per device risk classification",
+    "estimated_completion_time_hours": 45,
+    "quality_review_required": true,
+    "notified_body_submission_required": true,
+    "mdcg_annex_i_compliant": true
+  },
+  "slots": [
+    {
+      "slot_id": "mdcg_toc",
+      "slot_name": "Table of Contents",
+      "section_number": "TOC",
+      "mdcg_reference": "MDCG.ANNEXI.TOC",
+      "description": "Automatically generated table of contents with section numbers, titles, and page numbers",
+      "evidence_requirements": [
+        "document_structure"
+      ],
+      "regulatory_reference": "MDCG 2022-21 Annex I - Standard structure",
+      "required": true,
+      "data_type": "auto_generated",
+      "completion_priority": 15,
+      "estimated_time_minutes": 10,
+      "agent_assignment": "document_formatter",
+      "generation_rules": {
+        "format": "Numbered list with page references",
+        "depth": "Two levels (section and subsection)",
+        "style": "Section titles bold, subsections regular",
+        "page_numbering": "Automatic from document processor"
+      },
+      "standard_structure": [
+        "Cover Page",
+        "Table of Contents",
+        "A. Executive Summary",
+        "  A.1 Previous PSUR Actions Status",
+        "  A.2 Notified Body Review Status",
+        "  A.3 Data Collection Period Changes",
+        "  A.4 Benefit-Risk Assessment Conclusion",
+        "B. Device Description and Intended Purpose",
+        "C. Sales and Distribution Data",
+        "  Table 1. Annual Number of Devices Sold by Region",
+        "D. Information on Serious Incidents",
+        "  Table 2. Serious Incidents by Medical Device Problem (IMDRF Annex A)",
+        "  Table 3. Serious Incidents by Investigation Conclusion (IMDRF Annex C)",
+        "  Table 4. Health Effects by Investigation Conclusion (IMDRF Annex D)",
+        "  Table 5. Serious Incidents by Region and Severity",
+        "E. Customer Feedback",
+        "  Table 6. Customer Feedback by Source and Type",
+        "F. Product Complaint Types, Counts, and Rates",
+        "  Table 7. Complaint Analysis by Type",
+        "  Table 8. Complaints by Region and Seriousness",
+        "G. Information from Trend Reporting",
+        "  Table G.1. Monthly Complaint Rate Trending with SPC Limits",
+        "  Table G.2. Event Category Disproportionality Analysis (PRR)",
+        "  Table G.3. Current vs. Baseline Period Statistical Comparison",
+        "  Table G.4. Threshold Breach Assessment and Actions",
+        "H. Information from Field Safety Corrective Actions",
+        "  Table H.1. FSCA Summary Table",
+        "I. Corrective and Preventive Actions",
+        "  Table I.1. CAPA Summary Table",
+        "J. Scientific Literature Review",
+        "K. Review of External Databases and Registries",
+        "  Table 10. External Database Adverse Events Summary",
+        "L. Post-Market Clinical Follow-Up",
+        "  Table 11. PMCF Activities and Findings",
+        "M. Conclusions",
+        "  M(a). Benefit-Risk Determination",
+        "  M(b). Achievement of Intended Benefits",
+        "  M(c). Data Limitations",
+        "  M(d). New or Emerging Risks and Benefits",
+        "  M(e). Actions Taken or Recommended",
+        "  M(f). Overall Performance and Safety Conclusion",
+        "Appendices (if applicable)"
+      ],
+      "quality_checks": [
+        "All section numbers match document",
+        "Page numbers accurate",
+        "All required sections present",
+        "Table titles match actual tables"
+      ],
+      "output_format": "Auto-generated formatted list",
+      "human_review_required": false
+    },
+    {
+      "slot_id": "cover_page",
+      "slot_name": "Cover Page",
+      "section_number": "Cover",
+      "description": "Administrative information identifying the device, manufacturer, reporting period, and submission metadata",
+      "evidence_requirements": [
+        "device_registry_record",
+        "certificate_of_conformity",
+        "manufacturer_registration",
+        "notified_body_designation",
+        "basic_udi_di"
+      ],
+      "regulatory_reference": "EU MDR Article 86(1), MDCG 2022-21 Section 1",
+      "required": true,
+      "data_type": "structured_metadata",
+      "completion_priority": 1,
+      "estimated_time_minutes": 30,
+      "sub_fields": [
+        {
+          "field_id": "device_name",
+          "field_name": "Device Name and Variants",
+          "data_type": "text",
+          "validation": "required, max_length:200",
+          "example": "Fischer Cone Biopsy Excisor (all catalog numbers)"
+        },
+        {
+          "field_id": "basic_udi_di",
+          "field_name": "Basic UDI-DI",
+          "data_type": "text",
+          "validation": "required, format:udi_di",
+          "example": "0886982104321XYZ"
+        },
+        {
+          "field_id": "device_classification",
+          "field_name": "Device Classification",
+          "data_type": "enum",
+          "allowed_values": [
+            "CLASS_I",
+            "CLASS_IIA",
+            "CLASS_IIB",
+            "CLASS_III"
+          ],
+          "validation": "required"
+        },
+        {
+          "field_id": "manufacturer_name",
+          "field_name": "Manufacturer Name",
+          "data_type": "text",
+          "validation": "required"
+        },
+        {
+          "field_id": "manufacturer_address",
+          "field_name": "Manufacturer Address",
+          "data_type": "address",
+          "validation": "required"
+        },
+        {
+          "field_id": "srn_number",
+          "field_name": "Single Registration Number (SRN)",
+          "data_type": "text",
+          "validation": "optional, format:srn"
+        },
+        {
+          "field_id": "notified_body",
+          "field_name": "Notified Body",
+          "data_type": "structured",
+          "validation": "required",
+          "sub_fields": [
+            "name",
+            "number",
+            "certificate_number",
+            "certificate_expiry"
+          ]
+        },
+        {
+          "field_id": "reporting_period",
+          "field_name": "Data Collection Period",
+          "data_type": "date_range",
+          "validation": "required, format:DD_MONTH_YYYY",
+          "example": "01 January 2024 to 31 December 2025"
+        },
+        {
+          "field_id": "psur_reference",
+          "field_name": "PSUR Reference Number",
+          "data_type": "text",
+          "validation": "required",
+          "example": "PSUR094 Rev A"
+        },
+        {
+          "field_id": "submission_date",
+          "field_name": "Submission Date",
+          "data_type": "date",
+          "validation": "required"
+        },
+        {
+          "field_id": "uk_responsible_person",
+          "field_name": "UK Responsible Person (if UKCA)",
+          "data_type": "structured",
+          "validation": "conditional:uk_market",
+          "sub_fields": [
+            "name",
+            "address",
+            "registration_number"
+          ]
+        }
+      ],
+      "quality_checks": [
+        "All device identifiers match EUDAMED registration",
+        "Certificate number valid and not expired",
+        "Reporting period aligns with PMS Plan requirements"
+      ],
+      "agent_assignment": null,
+      "human_review_required": true
+    },
+    {
+      "slot_id": "section_a_executive_summary",
+      "slot_name": "Section A - Executive Summary",
+      "section_number": "A",
+      "description": "High-level summary of PSUR findings, benefit-risk determination, and key actions. Most critical section for regulatory review.",
+      "evidence_requirements": [
+        "sales_data_summary",
+        "complaint_summary",
+        "serious_incident_summary",
+        "trending_conclusions",
+        "benefit_risk_assessment"
+      ],
+      "regulatory_reference": "EU MDR Article 86(3), MDCG 2022-21 Section A",
+      "required": true,
+      "data_type": "narrative",
+      "completion_priority": 10,
+      "estimated_time_minutes": 120,
+      "agent_assignment": "executive_summary_agent",
+      "agent_skill_file": "/mnt/skills/public/regulatory/psur_executive_summary.md",
+      "sub_sections": [
+        {
+          "subsection_id": "a1_previous_psur_actions",
+          "subsection_name": "Previous PSUR Actions Status",
+          "description": "Summary of actions from previous PSUR and completion status",
+          "required": true,
+          "checkbox_fields": [
+            "completed",
+            "in_progress",
+            "not_started",
+            "not_applicable"
+          ],
+          "narrative_length": "1-3 sentences"
+        },
+        {
+          "subsection_id": "a2_notified_body_review",
+          "subsection_name": "Notified Body Review Status",
+          "description": "Status of Notified Body review of previous PSUR and any actions taken",
+          "required": true,
+          "checkbox_fields": [
+            "yes",
+            "no",
+            "n_a"
+          ],
+          "narrative_length": "1-2 sentences"
+        },
+        {
+          "subsection_id": "a3_period_changes",
+          "subsection_name": "Data Collection Period Changes",
+          "description": "Whether data collection period was changed from planned period and justification",
+          "required": true,
+          "checkbox_fields": [
+            "yes",
+            "no"
+          ],
+          "narrative_length": "1-3 sentences (if changed); 1 sentence (if not changed)"
+        },
+        {
+          "subsection_id": "a4_benefit_risk",
+          "subsection_name": "Benefit-Risk Assessment Conclusion",
+          "description": "Definitive conclusion on whether benefit-risk profile has been adversely impacted, with supporting data from all PMS sources",
+          "required": true,
+          "checkbox_fields": [
+            "unchanged",
+            "adversely_impacted"
+          ],
+          "narrative_length": "2-4 paragraphs (200-400 words)",
+          "critical_elements": [
+            "Units distributed during period",
+            "Complaint count and rate with RACT comparison",
+            "Serious incident summary with attribution",
+            "Key findings from literature, databases, PMCF",
+            "Explicit conclusion statement"
+          ]
+        }
+      ],
+      "quality_checks": [
+        "Checkbox selections made for all subsections",
+        "Benefit-risk conclusion clearly stated (UNCHANGED or ADVERSELY IMPACTED)",
+        "Specific quantitative data included (units, rates, counts)",
+        "All PMS data sources referenced",
+        "No citation markers in narrative"
+      ],
+      "output_format": "Clean narrative prose with checkbox selections, no inline citations",
+      "human_review_required": true,
+      "regulatory_criticality": "HIGHEST"
+    },
+    {
+      "slot_id": "section_b_device_description",
+      "slot_name": "Section B - Device Description and Intended Purpose",
+      "section_number": "B",
+      "description": "Comprehensive device technical description, classification, regulatory status, intended purpose, indications, and grouping justification (if applicable)",
+      "evidence_requirements": [
+        "technical_documentation",
+        "certificate_of_conformity",
+        "instructions_for_use",
+        "risk_management_file_summary",
+        "clinical_evaluation_report_summary",
+        "device_grouping_rationale"
+      ],
+      "regulatory_reference": "EU MDR Annex III Section 1, Article 86 requirements for device identification",
+      "required": true,
+      "data_type": "narrative_with_tables",
+      "completion_priority": 2,
+      "estimated_time_minutes": 90,
+      "agent_assignment": "device_description_agent",
+      "sub_sections": [
+        {
+          "subsection_id": "b1_device_identification",
+          "subsection_name": "Device Identification",
+          "description": "Complete device identification including all variants, catalog numbers, UDI-DI",
+          "required": true,
+          "fields": [
+            "device_name_all_variants",
+            "catalog_numbers_all",
+            "basic_udi_di",
+            "gmdn_code",
+            "nomenclature_codes"
+          ]
+        },
+        {
+          "subsection_id": "b2_classification",
+          "subsection_name": "Device Classification and Regulatory Status",
+          "description": "EU MDR classification, rule applied, other jurisdiction classifications, certificate status",
+          "required": true,
+          "fields": [
+            "eu_classification_rule",
+            "uk_classification_rule",
+            "us_premarket_status",
+            "certificate_number",
+            "certificate_expiry",
+            "certificate_status"
+          ],
+          "multi_product_support": true
+        },
+        {
+          "subsection_id": "b3_technical_description",
+          "subsection_name": "Technical Description",
+          "description": "Multi-paragraph technical description covering physical characteristics, materials, sterility, packaging",
+          "required": true,
+          "narrative_length": "3-5 paragraphs per product",
+          "paragraph_structure": [
+            "Physical description and principle of operation",
+            "Materials and biocompatibility",
+            "Sterility and packaging",
+            "Accessories and ancillary products"
+          ],
+          "multi_product_support": true
+        },
+        {
+          "subsection_id": "b4_intended_purpose",
+          "subsection_name": "Intended Purpose and Indications",
+          "description": "Statement of intended purpose, clinical indications, contraindications, target population",
+          "required": true,
+          "fields": [
+            "intended_purpose_statement",
+            "indications_for_use",
+            "contraindications",
+            "target_patient_population",
+            "warnings_precautions_summary"
+          ],
+          "multi_product_support": true
+        },
+        {
+          "subsection_id": "b5_regulatory_history",
+          "subsection_name": "Regulatory History and Approvals",
+          "description": "Chronological approval history across jurisdictions",
+          "required": true,
+          "fields": [
+            "first_ce_marking_date",
+            "current_certificate_date",
+            "fda_approval_date_type",
+            "other_jurisdictions_approvals"
+          ],
+          "multi_product_support": true
+        },
+        {
+          "subsection_id": "b6_grouping_justification",
+          "subsection_name": "Grouping Justification (if multi-product PSUR)",
+          "description": "Justification per Article 86 for grouping multiple products in single PSUR",
+          "required": "conditional:multi_product",
+          "fields": [
+            "grouping_rationale_article_86",
+            "same_cer_checkbox",
+            "same_notified_body_checkbox",
+            "leading_device_identification",
+            "leading_device_rationale",
+            "grouping_changes_since_previous"
+          ],
+          "quality_checks": [
+            "All Article 86 grouping criteria addressed",
+            "Leading device clearly identified and justified",
+            "Same CER and same NB confirmed with checkboxes"
+          ]
+        }
+      ],
+      "quality_checks": [
+        "All device variants and catalog numbers listed",
+        "Classification rules correctly cited",
+        "Intended purpose matches approved labeling",
+        "Multi-product grouping justified if applicable",
+        "Technical description sufficient for device understanding"
+      ],
+      "output_format": "Narrative with embedded checkboxes for grouping section",
+      "human_review_required": true
+    },
+    {
+      "slot_id": "section_c_sales_distribution",
+      "slot_name": "Section C - Sales and Distribution Data",
+      "section_number": "C",
+      "mdcg_reference": "MDCG.ANNEXI.SALES_TABLE",
+      "description": "Comprehensive sales volumes by region over multiple periods, including market introduction history and distribution estimates (population exposure)",
+      "evidence_requirements": [
+        "sales_data_by_region",
+        "sales_data_historical_periods",
+        "market_introduction_dates",
+        "distribution_channel_data",
+        "patient_exposure_estimates"
+      ],
+      "regulatory_reference": "EU MDR Article 86 - Population exposure data required for rate calculations; MDCG 2022-21 Annex I Sales Table",
+      "required": true,
+      "data_type": "narrative_with_tables",
+      "completion_priority": 3,
+      "estimated_time_minutes": 60,
+      "agent_assignment": "sales_distribution_agent",
+      "sub_sections": [
+        {
+          "subsection_id": "c1_market_history",
+          "subsection_name": "Market Introduction and History",
+          "description": "Narrative describing when device first marketed, geographic expansion, significant milestones",
+          "required": true,
+          "narrative_length": "2-3 paragraphs per product",
+          "multi_product_support": true,
+          "paragraph_structure": [
+            "Initial market introduction (year, region)",
+            "Device characteristics and evolution",
+            "CE marking and regulatory history"
+          ]
+        },
+        {
+          "subsection_id": "c2_sales_tables",
+          "subsection_name": "Table 1: Exposure Table — Units Placed on Market by Region",
+          "mdcg_reference": "MDCG.ANNEXI.SALES_TABLE",
+          "description": "Tabular sales data by region for current and preceding periods with exposure estimates",
+          "required": true,
+          "table_type": "sales_by_region",
+          "multi_product_support": true,
+          "table_structure": {
+            "table_id": "table_1_sales_exposure",
+            "table_name": "Table 1. Annual Number of Devices Sold by Region (Population Exposure)",
+            "columns": [
+              {
+                "column_id": "region",
+                "column_name": "Region",
+                "data_type": "text",
+                "alignment": "left",
+                "description": "Geographic region or country"
+              },
+              {
+                "column_id": "preceding_period_1",
+                "column_name": "Period 1 (YYYY-YYYY)",
+                "data_type": "integer",
+                "alignment": "right",
+                "description": "Units distributed in first preceding period"
+              },
+              {
+                "column_id": "preceding_period_2",
+                "column_name": "Period 2 (YYYY-YYYY)",
+                "data_type": "integer",
+                "alignment": "right",
+                "description": "Units distributed in second preceding period"
+              },
+              {
+                "column_id": "preceding_period_3",
+                "column_name": "Period 3 (YYYY-YYYY)",
+                "data_type": "integer",
+                "alignment": "right",
+                "description": "Units distributed in third preceding period (optional)"
+              },
+              {
+                "column_id": "current_period",
+                "column_name": "Current Period (YYYY-YYYY)",
+                "data_type": "integer",
+                "alignment": "right",
+                "description": "Units distributed in current surveillance period"
+              },
+              {
+                "column_id": "percent_global",
+                "column_name": "% Global",
+                "data_type": "percentage",
+                "alignment": "right",
+                "format": "X.XXX%",
+                "description": "Percentage of worldwide distribution (current period)"
+              },
+              {
+                "column_id": "exposure_estimate",
+                "column_name": "Estimated Exposure*",
+                "data_type": "text",
+                "alignment": "left",
+                "description": "Optional: Patient/procedure count estimate",
+                "required": false
+              }
+            ],
+            "standard_regions": [
+              "Australia",
+              "Brazil",
+              "Canada",
+              "China",
+              "EEA+TR+XI",
+              "Israel",
+              "Japan",
+              "Russian_Federation",
+              "Serbia",
+              "UK",
+              "United_States",
+              "Rest_of_World",
+              "Worldwide"
+            ],
+            "formatting": {
+              "numbers": "comma_separated_or_no_separator",
+              "percentages": "X.XXX% (3 decimals)",
+              "alignment": "region_left_numbers_right",
+              "total_row": "bold_worldwide",
+              "exposure_footnote": "* Estimated patient/procedure exposure if different from units distributed (e.g., multi-use devices)"
+            }
+          }
+        },
+        {
+          "subsection_id": "c3_sales_charts",
+          "subsection_name": "Sales Chart Descriptions",
+          "description": "Narrative descriptions of yearly and monthly sales trends with data analysis",
+          "required": true,
+          "multi_product_support": true,
+          "chart_types": [
+            {
+              "chart_id": "yearly_sales",
+              "description_format": "State all data points, identify trend (upward/downward/stable), calculate and state average",
+              "length": "2-3 sentences"
+            },
+            {
+              "chart_id": "monthly_sales",
+              "description_format": "State all monthly values, identify highest and lowest, calculate average, describe fluctuation pattern",
+              "length": "2-3 sentences"
+            }
+          ]
+        }
+      ],
+      "quality_checks": [
+        "Worldwide totals match sum of all regions",
+        "Percentages sum to 100.000%",
+        "All periods have consistent regional breakdown",
+        "Multi-product tables have separate entries per product",
+        "Chart descriptions include actual data values and trends",
+        "Exposure estimates provided if different from units (e.g., multi-use devices)"
+      ],
+      "output_format": "Narrative with embedded Table 1 (sales/exposure), no inline citations",
+      "human_review_required": false
+    },
+    {
+      "slot_id": "section_d_serious_incidents",
+      "slot_name": "Section D - Information on Serious Incidents",
+      "section_number": "D",
+      "mdcg_reference": "MDCG.ANNEXI.SERIOUS_INCIDENTS_TABLE_IMDRF",
+      "description": "Comprehensive documentation of all serious incidents including IMDRF coding, patient outcomes, investigation conclusions, and regulatory reporting status",
+      "evidence_requirements": [
+        "serious_incident_reports",
+        "imdrf_coding_data",
+        "investigation_reports",
+        "regulatory_notification_records",
+        "patient_outcome_data"
+      ],
+      "regulatory_reference": "EU MDR Articles 87, 88; MDCG 2020-10/11; IMDRF Adverse Event Terminology; MDCG 2022-21 Annex I SI Tables",
+      "required": true,
+      "data_type": "narrative_with_tables",
+      "completion_priority": 4,
+      "estimated_time_minutes": 90,
+      "agent_assignment": "safety_narrative_agent",
+      "agent_skill_file": "/mnt/skills/public/regulatory/psur_safety_analysis.md",
+      "sub_sections": [
+        {
+          "subsection_id": "d1_si_summary",
+          "subsection_name": "Serious Incident Summary",
+          "description": "Opening statement on total serious incidents, breakdown by outcome, comparison to previous period",
+          "required": true,
+          "narrative_length": "2-4 paragraphs",
+          "required_elements": [
+            "Total SI count",
+            "Deaths count",
+            "Serious injuries count",
+            "Other serious deterioration count",
+            "Comparison to previous period"
+          ]
+        },
+        {
+          "subsection_id": "d2_imdrf_classification",
+          "subsection_name": "IMDRF Classification Tables",
+          "mdcg_reference": "MDCG.ANNEXI.SERIOUS_INCIDENTS_TABLE_IMDRF",
+          "description": "Structured tables classifying SIs by IMDRF Annexes A, C, D",
+          "required": "conditional:si_count_greater_than_zero",
+          "table_types": [
+            {
+              "table_id": "table_2_imdrf_annex_a",
+              "table_name": "Table 2. Serious Incidents by Medical Device Problem (IMDRF Annex A)",
+              "mdcg_standard": true,
+              "columns": [
+                {
+                  "column_id": "problem_code",
+                  "column_name": "IMDRF Problem Code",
+                  "data_type": "text",
+                  "alignment": "left"
+                },
+                {
+                  "column_id": "problem_description",
+                  "column_name": "Problem Description",
+                  "data_type": "text",
+                  "alignment": "left"
+                },
+                {
+                  "column_id": "count",
+                  "column_name": "Count",
+                  "data_type": "integer",
+                  "alignment": "right"
+                },
+                {
+                  "column_id": "percentage",
+                  "column_name": "Percentage",
+                  "data_type": "percentage",
+                  "alignment": "right",
+                  "format": "XX.X%"
+                }
+              ],
+              "sort": "descending_by_count",
+              "total_row": true
+            },
+            {
+              "table_id": "table_3_imdrf_annex_c",
+              "table_name": "Table 3. Serious Incidents by Investigation Conclusion (IMDRF Annex C)",
+              "mdcg_standard": true,
+              "columns": [
+                {
+                  "column_id": "investigation_finding",
+                  "column_name": "Investigation Finding/Conclusion",
+                  "data_type": "text",
+                  "alignment": "left"
+                },
+                {
+                  "column_id": "count",
+                  "column_name": "Count",
+                  "data_type": "integer",
+                  "alignment": "right"
+                },
+                {
+                  "column_id": "percentage",
+                  "column_name": "Percentage",
+                  "data_type": "percentage",
+                  "alignment": "right",
+                  "format": "XX.X%"
+                }
+              ],
+              "predefined_categories": [
+                "Device-related",
+                "Procedure-related",
+                "Patient factor",
+                "Indeterminate",
+                "Under investigation"
+              ],
+              "total_row": true
+            },
+            {
+              "table_id": "table_4_imdrf_annex_d",
+              "table_name": "Table 4. Health Effects by Investigation Conclusion (IMDRF Annex D)",
+              "mdcg_standard": true,
+              "table_type": "matrix",
+              "columns": [
+                {
+                  "column_id": "health_impact",
+                  "column_name": "Health Impact (IMDRF Annex D)",
+                  "data_type": "text",
+                  "alignment": "left"
+                },
+                {
+                  "column_id": "device_related",
+                  "column_name": "Device-Related",
+                  "data_type": "integer",
+                  "alignment": "right"
+                },
+                {
+                  "column_id": "procedure_related",
+                  "column_name": "Procedure-Related",
+                  "data_type": "integer",
+                  "alignment": "right"
+                },
+                {
+                  "column_id": "patient_factor",
+                  "column_name": "Patient Factor",
+                  "data_type": "integer",
+                  "alignment": "right"
+                },
+                {
+                  "column_id": "indeterminate",
+                  "column_name": "Indeterminate",
+                  "data_type": "integer",
+                  "alignment": "right"
+                },
+                {
+                  "column_id": "total",
+                  "column_name": "TOTAL",
+                  "data_type": "integer",
+                  "alignment": "right"
+                }
+              ],
+              "predefined_rows": [
+                "Death",
+                "Permanent impairment",
+                "Temporary injury requiring intervention",
+                "No patient harm"
+              ],
+              "total_row": true,
+              "total_column": true
+            },
+            {
+              "table_id": "table_5_si_region_severity",
+              "table_name": "Table 5. Serious Incidents by Region and Severity",
+              "mdcg_standard": false,
+              "description": "Optional table showing geographic distribution of SIs by severity",
+              "required": false,
+              "columns": [
+                {
+                  "column_id": "region",
+                  "column_name": "Region",
+                  "data_type": "text",
+                  "alignment": "left"
+                },
+                {
+                  "column_id": "death",
+                  "column_name": "Death",
+                  "data_type": "integer",
+                  "alignment": "right"
+                },
+                {
+                  "column_id": "serious_injury",
+                  "column_name": "Serious Injury",
+                  "data_type": "integer",
+                  "alignment": "right"
+                },
+                {
+                  "column_id": "other_serious",
+                  "column_name": "Other Serious",
+                  "data_type": "integer",
+                  "alignment": "right"
+                },
+                {
+                  "column_id": "total",
+                  "column_name": "Total",
+                  "data_type": "integer",
+                  "alignment": "right"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "subsection_id": "d3_patient_outcomes",
+          "subsection_name": "Patient Outcomes and Clinical Analysis",
+          "description": "Detailed clinical description of patient outcomes, medical interventions required, attribution analysis",
+          "required": true,
+          "narrative_length": "2-4 paragraphs",
+          "required_elements": [
+            "Clinical outcomes description",
+            "Medical interventions required",
+            "Attribution analysis (device vs procedure vs patient)",
+            "Comorbidities and contributing factors"
+          ]
+        },
+        {
+          "subsection_id": "d4_regulatory_reporting",
+          "subsection_name": "Regulatory Reporting Status",
+          "description": "Confirmation of regulatory notifications to competent authorities per Article 87",
+          "required": true,
+          "narrative_length": "1-2 paragraphs",
+          "required_elements": [
+            "Number of SIs reported",
+            "Authorities notified (list)",
+            "Reporting timelines compliance",
+            "FSN/FSCA status if applicable"
+          ]
+        },
+        {
+          "subsection_id": "d5_comparison_risk_management",
+          "subsection_name": "Comparison to Previous Period and Risk Management",
+          "description": "Statistical comparison to previous period and integration with Risk Management File",
+          "required": true,
+          "narrative_length": "2-3 paragraphs",
+          "required_elements": [
+            "Previous period SI count and rate",
+            "Statistical significance of change",
+            "RMF risk IDs addressed",
+            "New risks identified or risk reassessment"
+          ]
+        }
+      ],
+      "quality_checks": [
+        "All SIs accounted for in tables",
+        "IMDRF codes verified against official terminology",
+        "Attribution percentages sum to 100%",
+        "Regulatory reporting timelines confirmed",
+        "Cross-references to FSCAs (Section H) if applicable",
+        "MDCG standard tables (2, 3, 4) formatted per Annex I specifications"
+      ],
+      "output_format": "Narrative with embedded MDCG standard tables, no inline citations",
+      "human_review_required": true,
+      "regulatory_criticality": "HIGHEST"
+    },
+    {
+      "slot_id": "section_e_customer_feedback",
+      "slot_name": "Section E - Customer Feedback",
+      "section_number": "E",
+      "description": "Non-complaint customer feedback including surveys, advisory communications, unsolicited feedback, and user satisfaction data",
+      "evidence_requirements": [
+        "customer_surveys",
+        "advisory_notices",
+        "user_communications",
+        "field_representative_reports"
+      ],
+      "regulatory_reference": "EU MDR Article 83 - Post-market surveillance data collection",
+      "required": true,
+      "data_type": "narrative_with_optional_tables",
+      "completion_priority": 5,
+      "estimated_time_minutes": 45,
+      "agent_assignment": "safety_narrative_agent",
+      "sub_sections": [
+        {
+          "subsection_id": "e1_feedback_sources",
+          "subsection_name": "Customer Feedback Mechanisms",
+          "description": "Description of feedback collection methods employed during period",
+          "required": true,
+          "narrative_length": "1-2 paragraphs",
+          "feedback_types": [
+            "User satisfaction surveys",
+            "Advisory communications",
+            "Field representative reports",
+            "Customer service inquiries",
+            "Professional society feedback",
+            "Key opinion leader consultations"
+          ]
+        },
+        {
+          "subsection_id": "e2_feedback_analysis",
+          "subsection_name": "Thematic Analysis and Actions",
+          "description": "Qualitative and quantitative analysis of feedback themes with actions taken",
+          "required": true,
+          "narrative_length": "2-4 paragraphs",
+          "optional_table": {
+            "table_id": "table_6_customer_feedback",
+            "table_name": "Table 6. Customer Feedback by Source and Type",
+            "columns": [
+              {
+                "column_id": "feedback_source",
+                "column_name": "Feedback Source",
+                "data_type": "text",
+                "alignment": "left"
+              },
+              {
+                "column_id": "positive",
+                "column_name": "Positive",
+                "data_type": "integer",
+                "alignment": "right"
+              },
+              {
+                "column_id": "neutral",
+                "column_name": "Neutral",
+                "data_type": "integer",
+                "alignment": "right"
+              },
+              {
+                "column_id": "negative",
+                "column_name": "Negative",
+                "data_type": "integer",
+                "alignment": "right"
+              },
+              {
+                "column_id": "total",
+                "column_name": "Total",
+                "data_type": "integer",
+                "alignment": "right"
+              }
+            ]
+          }
+        }
+      ],
+      "quality_checks": [
+        "Feedback distinct from complaints (Section F)",
+        "Actions taken documented if issues identified",
+        "No safety signals missed (should be in Section D if serious)"
+      ],
+      "output_format": "Narrative with optional table if structured data available",
+      "human_review_required": false
+    },
+    {
+      "slot_id": "section_f_complaints",
+      "slot_name": "Section F - Product Complaint Types, Counts, and Rates",
+      "section_number": "F",
+      "mdcg_reference": "MDCG.ANNEXI.COMPLAINTS_BY_REGION_SEVERITY_TABLE",
+      "description": "Comprehensive complaint analysis including categorization, rate calculations, severity classification, root cause analysis, RACT threshold comparison, and regional/severity breakdown",
+      "evidence_requirements": [
+        "complaint_database_extract",
+        "complaint_investigation_reports",
+        "root_cause_analysis_data",
+        "ract_thresholds_from_rmf",
+        "sales_data_for_rate_calculation"
+      ],
+      "regulatory_reference": "EU MDR Article 83; ISO 13485:2016 Section 8.2.1; MDCG 2020-11; MDCG 2022-21 Annex I Complaints Table",
+      "required": true,
+      "data_type": "narrative_with_tables",
+      "completion_priority": 6,
+      "estimated_time_minutes": 120,
+      "agent_assignment": "safety_narrative_agent",
+      "agent_skill_file": "/mnt/skills/public/regulatory/psur_safety_analysis.md",
+      "sub_sections": [
+        {
+          "subsection_id": "f1_complaint_summary",
+          "subsection_name": "Overall Complaint Summary",
+          "description": "Opening statement with total complaints, overall rate, RACT comparison",
+          "required": true,
+          "narrative_length": "2-3 paragraphs",
+          "required_elements": [
+            "Total complaints",
+            "Units distributed",
+            "Overall complaint rate (%)",
+            "Complaint rate calculation methodology shown",
+            "RACT threshold comparison",
+            "Threshold breach status"
+          ],
+          "critical_formatting": "Complaint rates ALWAYS as percentages (X.XXX%), NEVER per 1,000 units"
+        },
+        {
+          "subsection_id": "f2_severity_classification",
+          "subsection_name": "Complaint Categorization by Severity",
+          "description": "Breakdown of serious vs. non-serious complaints",
+          "required": true,
+          "narrative_length": "1-2 paragraphs",
+          "categories": [
+            "Serious (resulted in or could have resulted in serious incident)",
+            "Non-serious (performance/quality without patient harm)"
+          ],
+          "cross_reference": "Section D for serious complaints leading to SIs"
+        },
+        {
+          "subsection_id": "f3_complaint_type_analysis",
+          "subsection_name": "Table 7: Complaint Analysis by Type",
+          "description": "Detailed breakdown by complaint category with rates and root cause findings",
+          "required": true,
+          "narrative_length": "3-5 paragraphs",
+          "table_required": {
+            "table_id": "table_7_complaint_analysis",
+            "table_name": "Table 7. Complaint Analysis by Type",
+            "columns": [
+              {
+                "column_id": "complaint_category",
+                "column_name": "Complaint Category",
+                "data_type": "text",
+                "alignment": "left"
+              },
+              {
+                "column_id": "count",
+                "column_name": "Count",
+                "data_type": "integer",
+                "alignment": "right"
+              },
+              {
+                "column_id": "percent_of_total",
+                "column_name": "% of Total",
+                "data_type": "percentage",
+                "alignment": "right",
+                "format": "XX.X%"
+              },
+              {
+                "column_id": "rate_percent",
+                "column_name": "Rate (%)",
+                "data_type": "percentage",
+                "alignment": "right",
+                "format": "X.XXX%"
+              },
+              {
+                "column_id": "serious",
+                "column_name": "Serious",
+                "data_type": "integer",
+                "alignment": "right"
+              },
+              {
+                "column_id": "non_serious",
+                "column_name": "Non-Serious",
+                "data_type": "integer",
+                "alignment": "right"
+              }
+            ],
+            "sort": "descending_by_count",
+            "total_row": true,
+            "formatting": {
+              "percent_of_total": "XX.X% (1 decimal)",
+              "rate_percent": "X.XXX% (3 decimals)",
+              "total_row": "bold"
+            }
+          }
+        },
+        {
+          "subsection_id": "f4_complaints_region_severity",
+          "subsection_name": "Table 8: Complaints by Region and Seriousness",
+          "mdcg_reference": "MDCG.ANNEXI.COMPLAINTS_BY_REGION_SEVERITY_TABLE",
+          "description": "MDCG standard table showing complaints distributed by geographic region and severity classification",
+          "required": true,
+          "table_required": {
+            "table_id": "table_8_complaints_region_severity",
+            "table_name": "Table 8. Complaints by Region and Seriousness",
+            "mdcg_standard": true,
+            "columns": [
+              {
+                "column_id": "region",
+                "column_name": "Region",
+                "data_type": "text",
+                "alignment": "left"
+              },
+              {
+                "column_id": "serious",
+                "column_name": "Serious",
+                "data_type": "integer",
+                "alignment": "right",
+                "description": "Complaints that resulted in or could have resulted in SI"
+              },
+              {
+                "column_id": "non_serious",
+                "column_name": "Non-Serious",
+                "data_type": "integer",
+                "alignment": "right",
+                "description": "Performance/quality complaints without patient harm"
+              },
+              {
+                "column_id": "total",
+                "column_name": "Total",
+                "data_type": "integer",
+                "alignment": "right"
+              },
+              {
+                "column_id": "rate_percent",
+                "column_name": "Rate (%)",
+                "data_type": "percentage",
+                "alignment": "right",
+                "format": "X.XXX%",
+                "description": "(Total Complaints / Units Distributed in Region) × 100"
+              }
+            ],
+            "standard_regions": [
+              "EEA+TR+XI",
+              "UK",
+              "United States",
+              "Canada",
+              "Australia",
+              "Japan",
+              "China",
+              "Rest of World",
+              "Worldwide"
+            ],
+            "total_row": true,
+            "formatting": {
+              "total_row": "bold_worldwide",
+              "rate_calculation": "Show for each region based on regional sales from Table 1"
+            }
+          }
+        },
+        {
+          "subsection_id": "f5_root_cause_analysis",
+          "subsection_name": "Root Cause Analysis Summary",
+          "description": "Attribution of complaints to device defect, user factors, patient factors, or indeterminate",
+          "required": true,
+          "narrative_length": "2-3 paragraphs",
+          "attribution_categories": [
+            "Confirmed device defect",
+            "User/procedural factor",
+            "Patient/biological factor",
+            "Indeterminate",
+            "Investigation pending"
+          ],
+          "special_considerations": {
+            "culture_media_ivf_devices": "Embryo development is multifactorial; distinguish confirmed product defects (pH out of spec, contamination) from biological variability"
+          }
+        },
+        {
+          "subsection_id": "f6_comparison_previous",
+          "subsection_name": "Comparison to Previous Period",
+          "description": "Statistical comparison of complaint rates between current and previous period",
+          "required": true,
+          "narrative_length": "1-2 paragraphs",
+          "required_elements": [
+            "Previous period rate",
+            "Current period rate",
+            "Absolute and relative change",
+            "Statistical significance (p-value)"
+          ]
+        }
+      ],
+      "quality_checks": [
+        "Complaint rate calculation shown explicitly",
+        "Rates presented as percentages NOT per 1,000 units",
+        "RACT threshold comparison documented",
+        "Attribution percentages logical (device + user + patient + indet = 100%)",
+        "Cross-reference to CAPAs (Section I) for device defects",
+        "Multi-product PSURs have separate rates per product",
+        "MDCG standard Table 8 (region/severity) formatted per Annex I",
+        "Regional rates in Table 8 calculated from regional sales in Table 1"
+      ],
+      "output_format": "Narrative with embedded Tables 7 and 8 (MDCG standard), no inline citations",
+      "human_review_required": true,
+      "regulatory_criticality": "HIGH"
+    },
+    {
+      "slot_id": "section_g_trending",
+      "slot_name": "Section G - Information from Trend Reporting",
+      "section_number": "G",
+      "mdcg_reference": "MDCG.ANNEXI.TREND_TABLE",
+      "description": "Statistical process control trending analysis, signal detection results, PRR/ROR calculations, threshold breach documentation, and Article 88 compliance assessment",
+      "evidence_requirements": [
+        "monthly_complaint_data",
+        "monthly_sales_data",
+        "baseline_period_data",
+        "statistical_analysis_results",
+        "trend_report_filings"
+      ],
+      "regulatory_reference": "EU MDR Article 88; MDCG 2020-11; Statistical Process Control; MDCG 2022-21 Annex I Trend Table",
+      "required": true,
+      "data_type": "narrative_with_tables",
+      "completion_priority": 7,
+      "estimated_time_minutes": 150,
+      "agent_assignment": "trend_analysis_agent",
+      "agent_skill_file": "/mnt/skills/public/regulatory/psur_trend_analysis.md",
+      "sub_sections": [
+        {
+          "subsection_id": "g1_methodology",
+          "subsection_name": "Trending Methodology",
+          "description": "Complete documentation of statistical methods, control limits, baseline establishment, signal criteria",
+          "required": true,
+          "narrative_length": "3-5 paragraphs",
+          "required_elements": [
+            "Metrics monitored (overall rate, specific categories)",
+            "Monitoring frequency (monthly, quarterly)",
+            "Statistical method (SPC p-chart, u-chart, EWMA, CUSUM)",
+            "Control limit calculation (formula shown)",
+            "Baseline period definition and justification",
+            "Signal detection criteria"
+          ]
+        },
+        {
+          "subsection_id": "g2_baseline_establishment",
+          "subsection_name": "Baseline Rate Establishment",
+          "description": "Documentation of baseline calculation with confidence intervals",
+          "required": true,
+          "narrative_length": "2-3 paragraphs",
+          "required_elements": [
+            "Baseline period dates",
+            "Baseline complaints and units",
+            "Baseline rate with 95% CI",
+            "Justification for baseline period selection",
+            "UCL/CL/LCL calculation"
+          ]
+        },
+        {
+          "subsection_id": "g3_current_period_results",
+          "subsection_name": "Current Period Trending Results",
+          "description": "Monthly trending data with control chart interpretation",
+          "required": true,
+          "narrative_length": "2-4 paragraphs",
+          "table_required": {
+            "table_id": "table_g1_monthly_trending",
+            "table_name": "Table G.1. Monthly Complaint Rate Trending Analysis with SPC Limits",
+            "columns": [
+              {
+                "column_id": "month",
+                "column_name": "Month",
+                "data_type": "text",
+                "alignment": "left"
+              },
+              {
+                "column_id": "units",
+                "column_name": "Units",
+                "data_type": "integer",
+                "alignment": "right"
+              },
+              {
+                "column_id": "complaints",
+                "column_name": "Complaints",
+                "data_type": "integer",
+                "alignment": "right"
+              },
+              {
+                "column_id": "rate_percent",
+                "column_name": "Rate (%)",
+                "data_type": "percentage",
+                "alignment": "right",
+                "format": "X.XXX%"
+              },
+              {
+                "column_id": "ucl_percent",
+                "column_name": "UCL (%)",
+                "data_type": "percentage",
+                "alignment": "right",
+                "format": "X.XXX%"
+              },
+              {
+                "column_id": "cl_percent",
+                "column_name": "CL (%)",
+                "data_type": "percentage",
+                "alignment": "right",
+                "format": "X.XXX%"
+              },
+              {
+                "column_id": "lcl_percent",
+                "column_name": "LCL (%)",
+                "data_type": "percentage",
+                "alignment": "right",
+                "format": "X.XXX%"
+              },
+              {
+                "column_id": "within_limits",
+                "column_name": "Within Limits",
+                "data_type": "text",
+                "alignment": "center"
+              },
+              {
+                "column_id": "signal",
+                "column_name": "Signal",
+                "data_type": "text",
+                "alignment": "center",
+                "values": [
+                  "✓",
+                  "⚠",
+                  "✗"
+                ]
+              }
+            ],
+            "formatting": {
+              "rates": "X.XXX% (3 decimals)",
+              "highlight_ucl_breach": "bold rows where rate > UCL",
+              "signal_flags": "✓ (normal) / ⚠ (warning) / ✗ (signal)"
+            }
+          }
+        },
+        {
+          "subsection_id": "g4_event_type_trending",
+          "subsection_name": "Event Category Disproportionality Analysis (PRR)",
+          "description": "PRR/ROR analysis for specific complaint categories to detect signals",
+          "required": true,
+          "narrative_length": "2-3 paragraphs",
+          "table_required": {
+            "table_id": "table_g2_prr_analysis",
+            "table_name": "Table G.2. Complaint Category Disproportionality Analysis Using PRR",
+            "columns": [
+              {
+                "column_id": "event_category",
+                "column_name": "Event Category",
+                "data_type": "text",
+                "alignment": "left"
+              },
+              {
+                "column_id": "current_a",
+                "column_name": "Current (a)",
+                "data_type": "integer",
+                "alignment": "right"
+              },
+              {
+                "column_id": "other_b",
+                "column_name": "Other (b)",
+                "data_type": "integer",
+                "alignment": "right"
+              },
+              {
+                "column_id": "baseline_c",
+                "column_name": "Baseline (c)",
+                "data_type": "integer",
+                "alignment": "right"
+              },
+              {
+                "column_id": "other_d",
+                "column_name": "Other (d)",
+                "data_type": "integer",
+                "alignment": "right"
+              },
+              {
+                "column_id": "prr",
+                "column_name": "PRR",
+                "data_type": "decimal",
+                "alignment": "right",
+                "format": "X.XX"
+              },
+              {
+                "column_id": "ci_95",
+                "column_name": "95% CI",
+                "data_type": "text",
+                "alignment": "right"
+              },
+              {
+                "column_id": "p_value",
+                "column_name": "p-value",
+                "data_type": "decimal",
+                "alignment": "right",
+                "format": "0.XXX"
+              },
+              {
+                "column_id": "signal",
+                "column_name": "Signal",
+                "data_type": "text",
+                "alignment": "center"
+              }
+            ],
+            "signal_criteria": "PRR ≥ 2.0 AND lower CI > 1.0 AND p < 0.05 AND a ≥ 3"
+          }
+        },
+        {
+          "subsection_id": "g5_statistical_comparison",
+          "subsection_name": "Current vs. Baseline Statistical Comparison",
+          "description": "Direct statistical test results comparing periods",
+          "required": true,
+          "table_required": {
+            "table_id": "table_g3_period_comparison",
+            "table_name": "Table G.3. Statistical Comparison of Current Period vs. Baseline Period",
+            "columns": [
+              {
+                "column_id": "metric",
+                "column_name": "Metric",
+                "data_type": "text",
+                "alignment": "left"
+              },
+              {
+                "column_id": "baseline_period",
+                "column_name": "Baseline Period",
+                "data_type": "text",
+                "alignment": "right"
+              },
+              {
+                "column_id": "current_period",
+                "column_name": "Current Period",
+                "data_type": "text",
+                "alignment": "right"
+              },
+              {
+                "column_id": "absolute_change",
+                "column_name": "Absolute Δ",
+                "data_type": "text",
+                "alignment": "right"
+              },
+              {
+                "column_id": "relative_change_percent",
+                "column_name": "Relative Δ (%)",
+                "data_type": "text",
+                "alignment": "right"
+              },
+              {
+                "column_id": "statistical_test",
+                "column_name": "Statistical Test",
+                "data_type": "text",
+                "alignment": "left"
+              },
+              {
+                "column_id": "p_value",
+                "column_name": "p-value",
+                "data_type": "decimal",
+                "alignment": "right",
+                "format": "0.XXX"
+              },
+              {
+                "column_id": "significant",
+                "column_name": "Significant",
+                "data_type": "text",
+                "alignment": "center"
+              }
+            ]
+          }
+        },
+        {
+          "subsection_id": "g6_ract_comparison",
+          "subsection_name": "Table G.4: Threshold Breach Assessment",
+          "mdcg_reference": "MDCG.ANNEXI.TREND_TABLE",
+          "description": "MDCG standard trend table comparing observed metrics to thresholds with conclusions",
+          "required": true,
+          "narrative_length": "1-2 paragraphs",
+          "table_required": {
+            "table_id": "table_g4_threshold_breach",
+            "table_name": "Table G.4. Trend Table — Metric, Baseline, Current, Threshold, Conclusion",
+            "mdcg_standard": true,
+            "columns": [
+              {
+                "column_id": "metric",
+                "column_name": "Metric",
+                "data_type": "text",
+                "alignment": "left",
+                "description": "Monitored safety/performance metric"
+              },
+              {
+                "column_id": "baseline",
+                "column_name": "Baseline",
+                "data_type": "text",
+                "alignment": "right",
+                "description": "Historical baseline value (with period)"
+              },
+              {
+                "column_id": "current",
+                "column_name": "Current",
+                "data_type": "text",
+                "alignment": "right",
+                "description": "Current period observed value"
+              },
+              {
+                "column_id": "threshold",
+                "column_name": "Threshold",
+                "data_type": "text",
+                "alignment": "right",
+                "description": "Pre-defined acceptable limit (RACT/UCL/Article 88)"
+              },
+              {
+                "column_id": "threshold_type",
+                "column_name": "Type",
+                "data_type": "text",
+                "alignment": "left",
+                "description": "RACT/UCL/Article 88/Benchmark"
+              },
+              {
+                "column_id": "breach",
+                "column_name": "Breach",
+                "data_type": "text",
+                "alignment": "center",
+                "values": [
+                  "Yes",
+                  "No"
+                ]
+              },
+              {
+                "column_id": "conclusion",
+                "column_name": "Conclusion/Action",
+                "data_type": "text",
+                "alignment": "left",
+                "description": "Trend assessment and action taken"
+              }
+            ],
+            "example_metrics": [
+              "Overall Complaint Rate (%)",
+              "Serious Incident Rate (%)",
+              "Breakage Complaint Rate (%)",
+              "UCL Breach Count (monthly)",
+              "Article 88 Trend Signal"
+            ]
+          }
+        },
+        {
+          "subsection_id": "g7_signal_conclusions",
+          "subsection_name": "Signal Detection Conclusions and Article 88 Status",
+          "description": "Definitive statement on trends detected, signals identified, Article 88 reporting status",
+          "required": true,
+          "narrative_length": "2-4 paragraphs",
+          "required_elements": [
+            "Clear statement: trends detected OR no trends detected",
+            "Supporting statistical evidence",
+            "Article 88 criteria assessment",
+            "Trend reports filed (references) OR explicit statement none required",
+            "Actions taken if signals detected (link to CAPA Section I)"
+          ]
+        }
+      ],
+      "quality_checks": [
+        "Control limit calculations shown with formulas",
+        "Baseline justified (typically 12-24 months)",
+        "PRR/ROR calculations verified",
+        "Signal criteria consistently applied",
+        "Article 88 status explicitly addressed",
+        "Statistical methods appropriate for data type",
+        "MDCG standard Table G.4 (trend table) formatted per Annex I",
+        "All thresholds (RACT, UCL, Article 88) documented in Table G.4"
+      ],
+      "output_format": "Narrative with multiple embedded tables including MDCG standard Table G.4, no inline citations",
+      "human_review_required": true,
+      "regulatory_criticality": "HIGH"
+    },
+    {
+      "slot_id": "section_h_fsca",
+      "slot_name": "Section H - Information from Field Safety Corrective Actions (FSCA)",
+      "section_number": "H",
+      "mdcg_reference": "MDCG.ANNEXI.FSCA_TABLE",
+      "description": "Complete documentation of all FSCAs including recalls, field modifications, safety notices, effectiveness verification, and closure status with MDCG standard summary table",
+      "evidence_requirements": [
+        "fsca_documentation",
+        "field_safety_notices",
+        "effectiveness_verification_data",
+        "regulatory_notification_records",
+        "retrieval_tracking_data"
+      ],
+      "regulatory_reference": "EU MDR Articles 83, 89; MDCG 2019-6; MDCG 2022-21 Annex I FSCA Table",
+      "required": true,
+      "data_type": "narrative_with_tables",
+      "completion_priority": 8,
+      "estimated_time_minutes": 120,
+      "agent_assignment": "fsca_narrative_agent",
+      "agent_skill_file": "/mnt/skills/public/regulatory/psur_fsca_documentation.md",
+      "sub_sections": [
+        {
+          "subsection_id": "h1_fsca_summary",
+          "subsection_name": "FSCA Summary",
+          "description": "Overview of all FSCAs during period with categorization and status",
+          "required": true,
+          "narrative_length": "2-3 paragraphs (if FSCAs) or 1 paragraph (if none)",
+          "fsca_types": [
+            "Product Recall",
+            "FSN Only",
+            "Field Modification",
+            "Software Update"
+          ]
+        },
+        {
+          "subsection_id": "h2_fsca_table",
+          "subsection_name": "Table H.1: FSCA Summary Table",
+          "mdcg_reference": "MDCG.ANNEXI.FSCA_TABLE",
+          "description": "MDCG standard table documenting all FSCAs with identifiers, reasons, dates, regions, and status",
+          "required": "conditional:fsca_count_greater_than_zero",
+          "table_required": {
+            "table_id": "table_h1_fsca_summary",
+            "table_name": "Table H.1. Field Safety Corrective Actions Summary",
+            "mdcg_standard": true,
+            "columns": [
+              {
+                "column_id": "fsca_identifier",
+                "column_name": "FSCA Identifier",
+                "data_type": "text",
+                "alignment": "left",
+                "description": "Unique FSCA reference number"
+              },
+              {
+                "column_id": "type",
+                "column_name": "Type",
+                "data_type": "text",
+                "alignment": "left",
+                "values": [
+                  "Recall",
+                  "FSN Only",
+                  "Field Modification",
+                  "Software Update"
+                ]
+              },
+              {
+                "column_id": "reason",
+                "column_name": "Reason/Safety Issue",
+                "data_type": "text",
+                "alignment": "left",
+                "description": "Brief description of safety issue"
+              },
+              {
+                "column_id": "initiation_date",
+                "column_name": "Initiation Date",
+                "data_type": "date",
+                "alignment": "left",
+                "format": "DD MMM YYYY"
+              },
+              {
+                "column_id": "affected_regions",
+                "column_name": "Affected Regions",
+                "data_type": "text",
+                "alignment": "left",
+                "description": "Geographic scope (EU, US, Global, etc.)"
+              },
+              {
+                "column_id": "affected_units",
+                "column_name": "Affected Units",
+                "data_type": "integer",
+                "alignment": "right"
+              },
+              {
+                "column_id": "effectiveness_percent",
+                "column_name": "Effectiveness (%)",
+                "data_type": "percentage",
+                "alignment": "right",
+                "format": "XX.X%",
+                "description": "Retrieval/correction rate"
+              },
+              {
+                "column_id": "status",
+                "column_name": "Status",
+                "data_type": "text",
+                "alignment": "left",
+                "values": [
+                  "Ongoing",
+                  "Completed",
+                  "Closed"
+                ]
+              },
+              {
+                "column_id": "closure_date",
+                "column_name": "Closure Date",
+                "data_type": "date",
+                "alignment": "left",
+                "format": "DD MMM YYYY"
+              }
+            ],
+            "formatting": {
+              "date_format": "DD MMM YYYY",
+              "effectiveness_calculation": "(Units Retrieved or Corrected / Units Distributed) × 100"
+            }
+          }
+        },
+        {
+          "subsection_id": "h3_individual_fsca",
+          "subsection_name": "Individual FSCA Documentation",
+          "description": "Complete structured narrative for each FSCA",
+          "required": "conditional:fsca_count_greater_than_zero",
+          "narrative_length": "4-8 paragraphs per FSCA",
+          "required_elements_per_fsca": [
+            "FSCA reference and type",
+            "Safety issue and rationale",
+            "Affected devices (lots, quantities, regions)",
+            "Regulatory notifications with dates",
+            "FSN details (reference, distribution date, recipients)",
+            "User actions required",
+            "Effectiveness verification methodology and results",
+            "Closure status and justification OR ongoing status with timeline",
+            "Integration with SI/CAPA/RMF"
+          ]
+        },
+        {
+          "subsection_id": "h4_effectiveness_verification",
+          "subsection_name": "Effectiveness Verification",
+          "description": "Detailed methodology and results for each FSCA effectiveness check",
+          "required": "conditional:fsca_count_greater_than_zero",
+          "effectiveness_metrics": [
+            "Retrieval rate (% of distributed units returned)",
+            "Modification completion rate",
+            "FSN distribution confirmation rate",
+            "Residual devices in field with risk assessment"
+          ]
+        },
+        {
+          "subsection_id": "h5_fsca_conclusions",
+          "subsection_name": "Overall FSCA Conclusions",
+          "description": "Synthesis of FSCA program effectiveness and patient protection",
+          "required": true,
+          "narrative_length": "2-4 paragraphs"
+        }
+      ],
+      "quality_checks": [
+        "All FSCAs during period documented",
+        "Effectiveness rates calculated correctly",
+        "Residual risk assessed for incomplete retrievals",
+        "Regulatory reporting timelines confirmed",
+        "Cross-reference to Section D (SIs) and Section I (CAPAs)",
+        "Closure justification evidence-based",
+        "MDCG standard Table H.1 formatted per Annex I specifications",
+        "All FSCAs in narrative also present in Table H.1"
+      ],
+      "output_format": "Narrative with MDCG standard Table H.1, no inline citations",
+      "human_review_required": true,
+      "regulatory_criticality": "HIGHEST"
+    },
+    {
+      "slot_id": "section_i_capa",
+      "slot_name": "Section I - Corrective and Preventive Actions",
+      "section_number": "I",
+      "mdcg_reference": "MDCG.ANNEXI.CAPA_TABLE",
+      "description": "Systematic documentation of all CAPAs triggered by PMS findings including root cause analysis, actions implemented, effectiveness verification, and MDCG standard summary table",
+      "evidence_requirements": [
+        "capa_database_extract",
+        "root_cause_analysis_reports",
+        "effectiveness_verification_records",
+        "documentation_update_logs",
+        "rmf_update_records"
+      ],
+      "regulatory_reference": "ISO 13485:2016 Section 8.5; EU MDR Annex III; FDA 21 CFR 820.100; MDCG 2022-21 Annex I CAPA Table",
+      "required": true,
+      "data_type": "narrative_with_tables",
+      "completion_priority": 9,
+      "estimated_time_minutes": 180,
+      "agent_assignment": "capa_documentation_agent",
+      "agent_skill_file": "/mnt/skills/public/regulatory/psur_capa_documentation.md",
+      "sub_sections": [
+        {
+          "subsection_id": "i1_capa_summary",
+          "subsection_name": "CAPA Program Summary",
+          "description": "Overview of all CAPAs initiated with categorization and metrics",
+          "required": true,
+          "narrative_length": "2-4 paragraphs (if CAPAs) or 1-2 paragraphs (if none)",
+          "summary_metrics": [
+            "Total CAPAs initiated",
+            "Categorization by type (corrective/preventive/combined)",
+            "Categorization by trigger (complaints, SIs, trends, audits)",
+            "Categorization by category (manufacturing, design, supplier, training)",
+            "Status distribution (closed, in progress, open)",
+            "Average time to closure",
+            "On-time completion rate",
+            "Recurrence rate"
+          ]
+        },
+        {
+          "subsection_id": "i2_capa_table",
+          "subsection_name": "Table I.1: CAPA Summary Table",
+          "mdcg_reference": "MDCG.ANNEXI.CAPA_TABLE",
+          "description": "MDCG standard table documenting all CAPAs with identifiers, triggers, root causes, actions, effectiveness, and status",
+          "required": "conditional:capa_count_greater_than_zero",
+          "table_required": {
+            "table_id": "table_i1_capa_summary",
+            "table_name": "Table I.1. Corrective and Preventive Actions Summary",
+            "mdcg_standard": true,
+            "columns": [
+              {
+                "column_id": "capa_identifier",
+                "column_name": "CAPA Identifier",
+                "data_type": "text",
+                "alignment": "left",
+                "description": "Unique CAPA reference number"
+              },
+              {
+                "column_id": "trigger",
+                "column_name": "Trigger/Source",
+                "data_type": "text",
+                "alignment": "left",
+                "description": "PMS finding that initiated CAPA (complaint, SI, trend, etc.)"
+              },
+              {
+                "column_id": "root_cause",
+                "column_name": "Root Cause Summary",
+                "data_type": "text",
+                "alignment": "left",
+                "description": "Brief statement of determined root cause"
+              },
+              {
+                "column_id": "corrective_action",
+                "column_name": "Corrective Action(s)",
+                "data_type": "text",
+                "alignment": "left",
+                "description": "Actions to address immediate issue"
+              },
+              {
+                "column_id": "preventive_action",
+                "column_name": "Preventive Action(s)",
+                "data_type": "text",
+                "alignment": "left",
+                "description": "Actions to prevent recurrence"
+              },
+              {
+                "column_id": "effectiveness",
+                "column_name": "Effectiveness Verified",
+                "data_type": "text",
+                "alignment": "center",
+                "values": [
+                  "Yes",
+                  "No",
+                  "Pending"
+                ]
+              },
+              {
+                "column_id": "status",
+                "column_name": "Status",
+                "data_type": "text",
+                "alignment": "left",
+                "values": [
+                  "Open",
+                  "In Progress",
+                  "Closed"
+                ]
+              },
+              {
+                "column_id": "completion_date",
+                "column_name": "Completion Date",
+                "data_type": "date",
+                "alignment": "left",
+                "format": "DD MMM YYYY"
+              }
+            ],
+            "formatting": {
+              "date_format": "DD MMM YYYY",
+              "text_wrapping": "Allow multi-line text in action columns for readability"
+            }
+          }
+        },
+        {
+          "subsection_id": "i3_individual_capa",
+          "subsection_name": "Individual CAPA Documentation",
+          "description": "Complete structured narrative for each significant CAPA",
+          "required": "conditional:capa_count_greater_than_zero",
+          "narrative_length": "8-12 paragraphs per CAPA",
+          "required_elements_per_capa": [
+            "CAPA reference, type, category, priority, dates, owner",
+            "Triggering event (link to specific PMS finding)",
+            "Problem statement (5W2H)",
+            "Root cause analysis (methodology, investigation, findings)",
+            "Risk assessment (pre/post CAPA)",
+            "Corrective actions (containment and root cause correction)",
+            "Preventive actions (prevent recurrence)",
+            "Documentation updates (RMF, procedures, training, specs)",
+            "Implementation status and timeline",
+            "Effectiveness verification (methodology, criteria, results)",
+            "Integration with PMS (links to Sections D, F, G, H)"
+          ],
+          "root_cause_methodologies": [
+            "5-Why Analysis",
+            "Ishikawa (Fishbone) Diagram",
+            "8D Problem Solving",
+            "FMEA",
+            "Apollo RCA"
+          ]
+        },
+        {
+          "subsection_id": "i4_capa_program_assessment",
+          "subsection_name": "CAPA Program Performance Assessment",
+          "description": "Overall evaluation of CAPA program effectiveness and quality system maturity",
+          "required": true,
+          "narrative_length": "3-5 paragraphs",
+          "includes_trending_table": true,
+          "quality_system_maturity_indicators": [
+            "CAPA volume trend (increasing/stable/decreasing)",
+            "Closure time trends",
+            "Recurrence rate (same issue requiring new CAPA)",
+            "Preventive action rate",
+            "Horizontal deployment effectiveness"
+          ]
+        }
+      ],
+      "quality_checks": [
+        "All CAPAs from PMS findings documented",
+        "Root cause verified not assumed",
+        "Effectiveness verification completed before closure",
+        "Links to triggering PMS findings clear",
+        "RMF updates documented",
+        "Regulatory compliance confirmed (ISO 13485, EU MDR, FDA)",
+        "MDCG standard Table I.1 formatted per Annex I specifications",
+        "All CAPAs in narrative also present in Table I.1"
+      ],
+      "output_format": "Narrative with MDCG standard Table I.1, no inline citations",
+      "human_review_required": true,
+      "regulatory_criticality": "HIGH"
+    },
+    {
+      "slot_id": "section_j_literature",
+      "slot_name": "Section J - Scientific Literature Review",
+      "section_number": "J",
+      "description": "Systematic literature search results, relevant publications identified, safety signals from literature, and state-of-the-art assessment",
+      "evidence_requirements": [
+        "literature_search_results",
+        "publication_abstracts",
+        "full_text_articles_reviewed",
+        "safety_signal_assessments",
+        "sota_evaluation"
+      ],
+      "regulatory_reference": "EU MDR Annex XIV Part A; MEDDEV 2.7/1 Rev 4; PRISMA methodology",
+      "required": true,
+      "data_type": "narrative",
+      "completion_priority": 11,
+      "estimated_time_minutes": 90,
+      "agent_assignment": "clinical_narrative_agent",
+      "agent_skill_file": "/mnt/skills/public/regulatory/psur_clinical_evidence.md",
+      "sub_sections": [
+        {
+          "subsection_id": "j1_search_methodology",
+          "subsection_name": "Literature Search Methodology",
+          "description": "Complete documentation of systematic search strategy ensuring reproducibility",
+          "required": true,
+          "narrative_length": "3-4 paragraphs",
+          "required_elements": [
+            "Databases searched (PubMed, Embase, Cochrane, etc.)",
+            "Search period covered",
+            "Search strings/terms used",
+            "MeSH terms/Emtree terms",
+            "Inclusion criteria",
+            "Exclusion criteria",
+            "Language and publication type filters"
+          ]
+        },
+        {
+          "subsection_id": "j2_search_results",
+          "subsection_name": "Search Results and Screening",
+          "description": "PRISMA-style quantitative flow of search results",
+          "required": true,
+          "narrative_length": "2-3 paragraphs",
+          "required_elements": [
+            "Total citations retrieved",
+            "Duplicates removed",
+            "Citations screened (title/abstract)",
+            "Full-text articles assessed",
+            "Relevant publications included",
+            "Reasons for exclusion at each stage"
+          ]
+        },
+        {
+          "subsection_id": "j3_relevant_publications",
+          "subsection_name": "Relevant Publications Summary",
+          "description": "Structured summary of included publications with key findings",
+          "required": true,
+          "narrative_length": "Variable based on publication count",
+          "format_options": [
+            "If 0 publications: 2-3 paragraphs explaining absence and alternative evidence",
+            "If 1-5 publications: Structured summary per publication (author, year, title, journal, study design, key findings)",
+            "If 6+ publications: Categorized thematic summary with representative citations"
+          ]
+        },
+        {
+          "subsection_id": "j4_safety_performance_findings",
+          "subsection_name": "Clinical Findings Analysis",
+          "description": "Analysis of safety signals, performance data, and state-of-the-art assessment from literature",
+          "required": true,
+          "narrative_length": "3-5 paragraphs",
+          "required_elements": [
+            "Safety profile from literature",
+            "Performance and clinical outcomes",
+            "State-of-the-art evaluation",
+            "Consistency with manufacturer's data"
+          ]
+        },
+        {
+          "subsection_id": "j5_literature_conclusions",
+          "subsection_name": "Conclusions from Literature Review",
+          "description": "Synthesis statement on literature findings and CER update status",
+          "required": true,
+          "narrative_length": "2-3 paragraphs",
+          "required_elements": [
+            "Safety conclusion from literature",
+            "Performance conclusion",
+            "State-of-the-art status",
+            "Impact on benefit-risk",
+            "CER update status"
+          ]
+        }
+      ],
+      "quality_checks": [
+        "Search methodology reproducible",
+        "Inclusion/exclusion criteria clearly defined",
+        "Publication counts reconcile (retrieved - duplicates - excluded = included)",
+        "Safety signals identified or explicitly stated none found",
+        "State-of-the-art assessment completed",
+        "CER update implications addressed"
+      ],
+      "output_format": "Narrative only, no inline citations",
+      "human_review_required": false
+    },
+    {
+      "slot_id": "section_k_external_databases",
+      "slot_name": "Section K - Review of External Databases and Registries",
+      "section_number": "K",
+      "description": "Systematic search of external regulatory databases (FDA MAUDE, EUDAMED, Health Canada, MHRA, etc.) with comparison to manufacturer's internal data",
+      "evidence_requirements": [
+        "database_search_results",
+        "maude_reports",
+        "eudamed_data",
+        "health_canada_data",
+        "mhra_data",
+        "adverse_event_assessments"
+      ],
+      "regulatory_reference": "EU MDR Article 83 - Post-market surveillance data sources",
+      "required": true,
+      "data_type": "narrative_with_tables",
+      "completion_priority": 12,
+      "estimated_time_minutes": 60,
+      "agent_assignment": "clinical_narrative_agent",
+      "sub_sections": [
+        {
+          "subsection_id": "k1_databases_methodology",
+          "subsection_name": "Databases Searched and Methodology",
+          "description": "Enumeration of all databases searched with search strategy",
+          "required": true,
+          "narrative_length": "2-3 paragraphs",
+          "standard_databases": [
+            "FDA MAUDE",
+            "EUDAMED",
+            "Health Canada",
+            "MHRA",
+            "BfArM",
+            "ANSM",
+            "Other national databases"
+          ],
+          "required_elements": [
+            "Database list with scope/coverage",
+            "Search dates",
+            "Search terms/criteria",
+            "Time period covered"
+          ]
+        },
+        {
+          "subsection_id": "k2_search_results",
+          "subsection_name": "Search Results Summary",
+          "description": "Quantitative results from each database",
+          "required": true,
+          "table_required": {
+            "table_id": "table_10_external_databases",
+            "table_name": "Table 10. External Database Adverse Events Summary",
+            "columns": [
+              {
+                "column_id": "database",
+                "column_name": "Database",
+                "data_type": "text",
+                "alignment": "left"
+              },
+              {
+                "column_id": "total_matches",
+                "column_name": "Total Matches",
+                "data_type": "integer",
+                "alignment": "right"
+              },
+              {
+                "column_id": "relevant_reports",
+                "column_name": "Relevant Reports",
+                "data_type": "integer",
+                "alignment": "right"
+              },
+              {
+                "column_id": "event_categories",
+                "column_name": "Event Categories Identified",
+                "data_type": "text",
+                "alignment": "left"
+              }
+            ]
+          }
+        },
+        {
+          "subsection_id": "k3_findings_analysis",
+          "subsection_name": "Analysis of External Database Findings",
+          "description": "Thematic analysis and comparison to manufacturer's internal data",
+          "required": true,
+          "narrative_length": "2-4 paragraphs",
+          "required_elements": [
+            "Event category breakdown",
+            "Severity assessment",
+            "Novel signals (not in manufacturer's data)",
+            "Duplicate reports (also in manufacturer's system)",
+            "Consistency assessment"
+          ]
+        },
+        {
+          "subsection_id": "k4_database_conclusions",
+          "subsection_name": "Conclusions from External Database Review",
+          "description": "Synthesis on signal detection and data consistency",
+          "required": true,
+          "narrative_length": "2-3 paragraphs",
+          "required_elements": [
+            "New signals identified (yes/no with details)",
+            "Data consistency with internal surveillance",
+            "Gaps in manufacturer's complaint capture (if identified)",
+            "Overall conclusions on external verification"
+          ]
+        }
+      ],
+      "quality_checks": [
+        "All major databases searched (MAUDE, EUDAMED minimum)",
+        "Duplicate vs. novel reports distinguished",
+        "Consistency with internal data assessed",
+        "Novel signals investigated and documented",
+        "Table 10 totals reconcile"
+      ],
+      "output_format": "Narrative with embedded Table 10, no inline citations",
+      "human_review_required": false
+    },
+    {
+      "slot_id": "section_l_pmcf",
+      "slot_name": "Section L - Post-Market Clinical Follow-Up (PMCF)",
+      "section_number": "L",
+      "mdcg_reference": "MDCG.ANNEXI.PMCF_SUMMARY and MDCG.ANNEXI.PMCF_TABLE",
+      "description": "PMCF plan summary, activities conducted, enrollment status, key findings, integration into CER/RMF, or justification if PMCF not required (Article 86.1 main findings and updates required)",
+      "evidence_requirements": [
+        "pmcf_plan",
+        "pmcf_study_protocol",
+        "enrollment_data",
+        "pmcf_interim_results",
+        "pmcf_final_report",
+        "pmcf_not_required_justification",
+        "cer_rmf_update_status"
+      ],
+      "regulatory_reference": "EU MDR Annex XIV Part B; MDCG 2020-6; MEDDEV 2.7/1 Rev 4; MDCG 2022-21 Annex I PMCF Summary and Table",
+      "required": true,
+      "data_type": "narrative_with_tables",
+      "completion_priority": 13,
+      "estimated_time_minutes": 90,
+      "agent_assignment": "clinical_narrative_agent",
+      "sub_sections": [
+        {
+          "subsection_id": "l1_pmcf_status",
+          "subsection_name": "PMCF Status and Rationale",
+          "mdcg_reference": "MDCG.ANNEXI.PMCF_SUMMARY",
+          "description": "Clear statement on PMCF requirement status with justification and Article 86.1 main findings",
+          "required": true,
+          "narrative_length": "Variable based on scenario",
+          "scenarios": [
+            {
+              "scenario": "pmcf_not_required",
+              "narrative_length": "4-6 paragraphs",
+              "required_elements": [
+                "Device classification and risk profile",
+                "Well-established technology rationale",
+                "Adequate passive surveillance justification per MDCG 2020-6",
+                "Proportionality assessment",
+                "Ongoing assessment commitment"
+              ]
+            },
+            {
+              "scenario": "pmcf_active_study",
+              "narrative_length": "6-10 paragraphs",
+              "required_elements": [
+                "PMCF Plan summary and rationale",
+                "Study design and methods",
+                "Enrollment status",
+                "Data collection progress",
+                "Interim results (if available)",
+                "Integration into CER/RMF (Article 86.1)",
+                "Next steps and timeline"
+              ]
+            },
+            {
+              "scenario": "pmcf_planned_not_initiated",
+              "narrative_length": "2-3 paragraphs",
+              "required_elements": [
+                "PMCF Plan approval date",
+                "Planned initiation timeline",
+                "Interim data collection activities",
+                "Status update"
+              ]
+            }
+          ]
+        },
+        {
+          "subsection_id": "l2_pmcf_design",
+          "subsection_name": "PMCF Study Design and Methods",
+          "description": "Detailed study design for active PMCF",
+          "required": "conditional:pmcf_active",
+          "narrative_length": "3-4 paragraphs",
+          "required_elements": [
+            "Study type (observational, registry, RCT, etc.)",
+            "Population and sample size",
+            "Primary and secondary endpoints",
+            "Data collection methods",
+            "Study sites and geographic scope"
+          ]
+        },
+        {
+          "subsection_id": "l3_pmcf_table",
+          "subsection_name": "Table 11: PMCF Activities and Findings",
+          "mdcg_reference": "MDCG.ANNEXI.PMCF_TABLE",
+          "description": "MDCG standard table documenting PMCF activities, key findings, impact on safety/performance, and updates required to CER/RMF",
+          "required": "conditional:pmcf_active_with_data",
+          "table_required": {
+            "table_id": "table_11_pmcf_activities",
+            "table_name": "Table 11. Post-Market Clinical Follow-Up — Activities, Findings, Impact, Updates Required",
+            "mdcg_standard": true,
+            "columns": [
+              {
+                "column_id": "pmcf_activity",
+                "column_name": "PMCF Activity",
+                "data_type": "text",
+                "alignment": "left",
+                "description": "Description of PMCF activity or study"
+              },
+              {
+                "column_id": "key_findings",
+                "column_name": "Key Findings",
+                "data_type": "text",
+                "alignment": "left",
+                "description": "Summary of main findings from PMCF activity"
+              },
+              {
+                "column_id": "impact_safety_performance",
+                "column_name": "Impact on Safety/Performance",
+                "data_type": "text",
+                "alignment": "left",
+                "description": "How findings affect device safety and performance assessment"
+              },
+              {
+                "column_id": "updates_required",
+                "column_name": "Updates Required (CER/RMF/IFU)",
+                "data_type": "text",
+                "alignment": "left",
+                "description": "Documentation updates needed based on findings"
+              }
+            ],
+            "formatting": {
+              "text_wrapping": "Allow multi-line text for comprehensive information",
+              "example_activities": [
+                "Post-market registry enrollment",
+                "Interim safety analysis",
+                "12-month follow-up data collection",
+                "Literature review integration",
+                "Final study report"
+              ]
+            }
+          }
+        },
+        {
+          "subsection_id": "l4_pmcf_impact",
+          "subsection_name": "Integration into CER/RMF (Article 86.1 Updates)",
+          "mdcg_reference": "MDCG.ANNEXI.PMCF_SUMMARY",
+          "description": "How PMCF findings integrate into Clinical Evaluation Report and Risk Management File per Article 86.1 requirements",
+          "required": "conditional:pmcf_active_with_data",
+          "narrative_length": "2-3 paragraphs",
+          "required_elements": [
+            "CER updates based on PMCF findings",
+            "RMF risk reassessments",
+            "Benefit-risk impact",
+            "IFU/labeling implications if any"
+          ]
+        }
+      ],
+      "quality_checks": [
+        "PMCF status clearly stated (required/not required/ongoing/planned)",
+        "If not required: justification per MDCG 2020-6 provided",
+        "If active: enrollment and progress documented",
+        "If results available: findings integrated into conclusions",
+        "Article 86.1 updates to CER/RMF explicitly documented",
+        "MDCG standard Table 11 formatted per Annex I specifications if data available"
+      ],
+      "output_format": "Narrative with MDCG standard Table 11 if structured activity data, no inline citations",
+      "human_review_required": false
+    },
+    {
+      "slot_id": "section_m_conclusions",
+      "slot_name": "Section M - Conclusions",
+      "section_number": "M",
+      "mdcg_reference": "MDCG.ANNEXI.BENEFIT_RISK_CONCLUSION and MDCG.ANNEXI.ACTIONS_TAKEN",
+      "description": "Comprehensive synthesis of all PMS findings with definitive benefit-risk determination (Article 86.1), acceptability changes vs. prior PSUR, data limitations assessment, actions summary, and compliance affirmation",
+      "evidence_requirements": [
+        "all_previous_sections_synthesis",
+        "benefit_risk_assessment",
+        "data_limitation_assessment",
+        "actions_summary",
+        "compliance_checklist"
+      ],
+      "regulatory_reference": "EU MDR Article 86(3); Article 86.1 Benefit-Risk; MDCG 2022-21 Section M and Annex I Conclusions/Actions",
+      "required": true,
+      "data_type": "narrative",
+      "completion_priority": 14,
+      "estimated_time_minutes": 150,
+      "agent_assignment": "conclusions_actions_agent",
+      "agent_skill_file": "/mnt/skills/public/regulatory/psur_conclusions.md",
+      "sub_sections": [
+        {
+          "subsection_id": "m_a_benefit_risk",
+          "subsection_name": "M(a) - Benefit-Risk Determination (Article 86.1)",
+          "mdcg_reference": "MDCG.ANNEXI.BENEFIT_RISK_CONCLUSION",
+          "description": "Definitive conclusion on benefit-risk status with comprehensive supporting evidence from all PMS sections and acceptability changes vs. prior PSUR",
+          "required": true,
+          "narrative_length": "3-5 paragraphs",
+          "checkbox_required": true,
+          "checkbox_options": [
+            "has NOT been adversely impacted and remains UNCHANGED",
+            "has been adversely impacted"
+          ],
+          "required_elements": [
+            "Checkbox selection",
+            "Units distributed and patient exposure",
+            "Safety profile summary (SIs, complaints, rates)",
+            "Performance profile summary (PMCF, literature)",
+            "Trending analysis summary",
+            "FSCA summary if applicable",
+            "Benefit achievement confirmation",
+            "Risk profile status",
+            "Acceptability changes vs. prior PSUR (explicitly state if different from previous determination)",
+            "Definitive conclusion statement"
+          ]
+        },
+        {
+          "subsection_id": "m_b_benefits_achieved",
+          "subsection_name": "M(b) - Achievement of Intended Benefits",
+          "description": "Evidence-based confirmation that device achieves intended clinical benefits",
+          "required": true,
+          "narrative_length": "3-4 paragraphs",
+          "required_elements": [
+            "Intended benefits stated (from IFU/CER)",
+            "Evidence of benefit achievement (PMCF, literature, feedback, low performance complaints)",
+            "Any limitations on benefit achievement",
+            "Conclusion on benefit delivery"
+          ]
+        },
+        {
+          "subsection_id": "m_c_data_limitations",
+          "subsection_name": "M(c) - Data Limitations",
+          "description": "Honest, transparent assessment of data gaps and their impact on conclusions",
+          "required": true,
+          "narrative_length": "2-4 paragraphs",
+          "limitation_categories": [
+            "Sales and distribution data",
+            "Complaint and vigilance data",
+            "Serious incident data",
+            "Clinical performance data",
+            "Literature and scientific data",
+            "External database data",
+            "PMCF data",
+            "Population exposure data"
+          ],
+          "required_elements": [
+            "Specific limitations identified",
+            "Why limitations exist (factual justification)",
+            "Mitigation/alternative evidence",
+            "Impact assessment on conclusions",
+            "Acceptability for regulatory decision"
+          ]
+        },
+        {
+          "subsection_id": "m_d_new_risks_benefits",
+          "subsection_name": "M(d) - New or Emerging Risks and Benefits",
+          "description": "Documentation of any new risks or benefits identified during surveillance period",
+          "required": true,
+          "narrative_length": "2-5 paragraphs",
+          "scenarios": [
+            {
+              "scenario": "no_new_risks_or_benefits",
+              "narrative_length": "2 paragraphs",
+              "required_elements": [
+                "Explicit statement no new risks identified",
+                "Confirmation RMF remains current",
+                "Statement no new benefits identified"
+              ]
+            },
+            {
+              "scenario": "new_risks_identified",
+              "narrative_length": "4-5 paragraphs per risk",
+              "required_elements": [
+                "Risk discovery description",
+                "Risk characterization (hazard, probability, severity)",
+                "Risk evaluation",
+                "Risk control measures implemented",
+                "Residual risk assessment",
+                "RMF update reference",
+                "Impact on benefit-risk"
+              ]
+            }
+          ]
+        },
+        {
+          "subsection_id": "m_e_actions_summary",
+          "subsection_name": "M(e) - Actions Taken or Recommended",
+          "mdcg_reference": "MDCG.ANNEXI.ACTIONS_TAKEN",
+          "description": "Comprehensive summary of all preventive/corrective actions, labeling/IFU changes, RMF/CER updates from entire PSUR",
+          "required": true,
+          "narrative_length": "4-8 paragraphs",
+          "required_elements": [
+            "CAPAs summary (from Section I)",
+            "FSCAs summary (from Section H)",
+            "Documentation updates (RMF, CER, PMS Plan, IFU)",
+            "Labeling/IFU changes specifically called out",
+            "Manufacturing process improvements",
+            "Supplier controls",
+            "Regulatory notifications",
+            "Actions planned for next period",
+            "Next PSUR date commitment"
+          ]
+        },
+        {
+          "subsection_id": "m_f_overall_conclusion",
+          "subsection_name": "M(f) - Overall Performance and Safety Conclusion",
+          "description": "Definitive final conclusion affirming safety, performance, benefit-risk, compliance, and continued market authorization",
+          "required": true,
+          "narrative_length": "4-6 paragraphs",
+          "required_elements": [
+            "Safety conclusion (quantitative support)",
+            "Performance conclusion",
+            "Benefit-risk profile confirmation",
+            "QMS and PMS adequacy confirmation",
+            "Regulatory compliance affirmation (Articles 83, 87, 88)",
+            "Continued market authorization statement",
+            "Ongoing surveillance commitment",
+            "Final compliance statement"
+          ],
+          "regulatory_criticality": "HIGHEST"
+        }
+      ],
+      "quality_checks": [
+        "All six subsections (M(a) through M(f)) present",
+        "Benefit-risk checkbox selected in M(a)",
+        "Acceptability changes vs. prior PSUR explicitly addressed in M(a)",
+        "Quantitative data supporting conclusions",
+        "All PMS sections synthesized",
+        "Actions from Sections I and H summarized in M(e)",
+        "Labeling/IFU changes specifically documented in M(e)",
+        "RMF/CER updates listed in M(e)",
+        "Documentation updates listed",
+        "Compliance affirmation explicit",
+        "No ambiguity on continued market authorization"
+      ],
+      "output_format": "Narrative with checkboxes in M(a), no inline citations",
+      "human_review_required": true,
+      "regulatory_criticality": "HIGHEST"
+    }
+  ],
+  "optional_appendices": [
+    {
+      "appendix_id": "appendix_a_abbreviations",
+      "appendix_name": "Appendix A - List of Abbreviations",
+      "description": "Alphabetical list of all abbreviations used in PSUR",
+      "required": false,
+      "recommended": true
+    },
+    {
+      "appendix_id": "appendix_b_references",
+      "appendix_name": "Appendix B - References",
+      "description": "List of regulatory references, standards, and cited documents",
+      "required": false,
+      "recommended": true
+    },
+    {
+      "appendix_id": "appendix_c_attachments",
+      "appendix_name": "Appendix C - Attachments",
+      "description": "Supporting documentation (trend reports, FSCA reports, etc.)",
+      "required": false
+    }
+  ],
+  "mdcg_annex_i_compliance": {
+    "standard_sections_covered": [
+      "MDCG.ANNEXI.TOC - Table of Contents",
+      "MDCG.ANNEXI.SALES_TABLE - Exposure table by region (Table 1)",
+      "MDCG.ANNEXI.SERIOUS_INCIDENTS_TABLE_IMDRF - IMDRF coding tables (Tables 2, 3, 4)",
+      "MDCG.ANNEXI.COMPLAINTS_BY_REGION_SEVERITY_TABLE - Complaints by region/severity (Table 8)",
+      "MDCG.ANNEXI.TREND_TABLE - Trend threshold breach table (Table G.4)",
+      "MDCG.ANNEXI.FSCA_TABLE - FSCA summary table (Table H.1)",
+      "MDCG.ANNEXI.CAPA_TABLE - CAPA summary table (Table I.1)",
+      "MDCG.ANNEXI.PMCF_SUMMARY - PMCF activities/findings narrative (Section L)",
+      "MDCG.ANNEXI.PMCF_TABLE - PMCF activities/impact table (Table 11)",
+      "MDCG.ANNEXI.BENEFIT_RISK_CONCLUSION - Benefit-risk determination (Section M(a))",
+      "MDCG.ANNEXI.ACTIONS_TAKEN - Actions summary (Section M(e))"
+    ],
+    "mapping": {
+      "MDCG.ANNEXI.TOC": "mdcg_toc",
+      "MDCG.ANNEXI.SALES_TABLE": "section_c_sales_distribution.c2_sales_tables",
+      "MDCG.ANNEXI.SERIOUS_INCIDENTS_TABLE_IMDRF": "section_d_serious_incidents.d2_imdrf_classification",
+      "MDCG.ANNEXI.COMPLAINTS_BY_REGION_SEVERITY_TABLE": "section_f_complaints.f4_complaints_region_severity",
+      "MDCG.ANNEXI.TREND_TABLE": "section_g_trending.g6_ract_comparison",
+      "MDCG.ANNEXI.FSCA_TABLE": "section_h_fsca.h2_fsca_table",
+      "MDCG.ANNEXI.CAPA_TABLE": "section_i_capa.i2_capa_table",
+      "MDCG.ANNEXI.PMCF_SUMMARY": "section_l_pmcf.l1_pmcf_status",
+      "MDCG.ANNEXI.PMCF_TABLE": "section_l_pmcf.l3_pmcf_table",
+      "MDCG.ANNEXI.BENEFIT_RISK_CONCLUSION": "section_m_conclusions.m_a_benefit_risk",
+      "MDCG.ANNEXI.ACTIONS_TAKEN": "section_m_conclusions.m_e_actions_summary"
+    },
+    "verification_checklist": [
+      "Table of Contents auto-generated with all sections",
+      "Table 1 includes exposure estimates (population exposure column)",
+      "Tables 2, 3, 4 use exact IMDRF terminology and coding",
+      "Table 8 shows complaints by region with serious/non-serious breakdown",
+      "Table G.4 documents all thresholds (RACT/UCL/Article 88) with breach status",
+      "Table H.1 documents all FSCAs with effectiveness percentages",
+      "Table I.1 documents all CAPAs with root causes and effectiveness",
+      "Section L addresses PMCF per Article 86.1 requirements",
+      "Table 11 shows PMCF impact on safety/performance and CER/RMF updates",
+      "Section M(a) includes acceptability changes vs. prior PSUR",
+      "Section M(e) explicitly lists labeling/IFU changes and RMF/CER updates"
+    ]
+  },
+  "workflow": {
+    "recommended_sequence": [
+      "cover_page",
+      "section_b_device_description",
+      "section_c_sales_distribution",
+      "section_d_serious_incidents",
+      "section_f_complaints",
+      "section_g_trending",
+      "section_e_customer_feedback",
+      "section_h_fsca",
+      "section_i_capa",
+      "section_j_literature",
+      "section_k_external_databases",
+      "section_l_pmcf",
+      "section_m_conclusions",
+      "section_a_executive_summary",
+      "mdcg_toc"
+    ],
+    "parallel_processing_groups": [
+      {
+        "group_id": "safety_data",
+        "slots": [
+          "section_d_serious_incidents",
+          "section_f_complaints",
+          "section_g_trending"
+        ],
+        "can_process_simultaneously": true
+      },
+      {
+        "group_id": "clinical_data",
+        "slots": [
+          "section_j_literature",
+          "section_k_external_databases",
+          "section_l_pmcf"
+        ],
+        "can_process_simultaneously": true
+      },
+      {
+        "group_id": "mdcg_tables",
+        "slots": [
+          "section_c_sales_distribution.c2_sales_tables",
+          "section_d_serious_incidents.d2_imdrf_classification",
+          "section_f_complaints.f4_complaints_region_severity",
+          "section_g_trending.g6_ract_comparison",
+          "section_h_fsca.h2_fsca_table",
+          "section_i_capa.i2_capa_table",
+          "section_l_pmcf.l3_pmcf_table"
+        ],
+        "description": "MDCG standard tables can be generated once data is available",
+        "can_process_simultaneously": true
+      }
+    ],
+    "dependencies": [
+      {
+        "slot": "mdcg_toc",
+        "depends_on": [
+          "all_sections"
+        ],
+        "reason": "Table of Contents must be generated last after all sections complete"
+      },
+      {
+        "slot": "section_a_executive_summary",
+        "depends_on": [
+          "section_d_serious_incidents",
+          "section_f_complaints",
+          "section_g_trending",
+          "section_h_fsca",
+          "section_m_conclusions"
+        ],
+        "reason": "Executive summary synthesizes all findings; must be completed near last"
+      },
+      {
+        "slot": "section_m_conclusions",
+        "depends_on": [
+          "all_sections_d_through_l"
+        ],
+        "reason": "Conclusions synthesize all PMS data"
+      },
+      {
+        "slot": "section_g_trending",
+        "depends_on": [
+          "section_c_sales_distribution",
+          "section_f_complaints"
+        ],
+        "reason": "Trending requires sales data for rate calculations"
+      },
+      {
+        "slot": "section_f_complaints.f4_complaints_region_severity",
+        "depends_on": [
+          "section_c_sales_distribution.c2_sales_tables"
+        ],
+        "reason": "Table 8 regional complaint rates require regional sales data from Table 1"
+      }
+    ]
+  },
+  "validation_rules": {
+    "cross_section_consistency": [
+      {
+        "rule_id": "si_count_consistency",
+        "description": "SI count in Section A must match Section D",
+        "sections": [
+          "section_a_executive_summary",
+          "section_d_serious_incidents"
+        ],
+        "validation": "section_a.si_count == section_d.si_count"
+      },
+      {
+        "rule_id": "complaint_rate_consistency",
+        "description": "Complaint rate in Section A must match Section F",
+        "sections": [
+          "section_a_executive_summary",
+          "section_f_complaints"
+        ],
+        "validation": "section_a.complaint_rate == section_f.overall_complaint_rate"
+      },
+      {
+        "rule_id": "benefit_risk_consistency",
+        "description": "Benefit-risk conclusion in Section A must match Section M(a)",
+        "sections": [
+          "section_a_executive_summary",
+          "section_m_conclusions"
+        ],
+        "validation": "section_a.benefit_risk_checkbox == section_m.m_a_benefit_risk_checkbox"
+      },
+      {
+        "rule_id": "units_distributed_consistency",
+        "description": "Units distributed should be consistent across Sections C, F, G",
+        "sections": [
+          "section_c_sales_distribution",
+          "section_f_complaints",
+          "section_g_trending"
+        ],
+        "validation": "section_c.total_units == section_f.denominator == section_g.denominator"
+      },
+      {
+        "rule_id": "regional_sales_complaints_consistency",
+        "description": "Regional complaint rates in Table 8 must use regional sales from Table 1",
+        "sections": [
+          "section_c_sales_distribution.c2_sales_tables",
+          "section_f_complaints.f4_complaints_region_severity"
+        ],
+        "validation": "table_8.regional_rates calculated from table_1.regional_units"
+      },
+      {
+        "rule_id": "fsca_count_consistency",
+        "description": "FSCA count in narrative must match Table H.1 row count",
+        "sections": [
+          "section_h_fsca.h1_fsca_summary",
+          "section_h_fsca.h2_fsca_table"
+        ],
+        "validation": "narrative.fsca_count == table_h1.row_count"
+      },
+      {
+        "rule_id": "capa_count_consistency",
+        "description": "CAPA count in narrative must match Table I.1 row count",
+        "sections": [
+          "section_i_capa.i1_capa_summary",
+          "section_i_capa.i2_capa_table"
+        ],
+        "validation": "narrative.capa_count == table_i1.row_count"
+      },
+      {
+        "rule_id": "actions_summary_completeness",
+        "description": "Section M(e) actions summary must include all FSCAs and CAPAs from Sections H and I",
+        "sections": [
+          "section_h_fsca",
+          "section_i_capa",
+          "section_m_conclusions.m_e_actions_summary"
+        ],
+        "validation": "m_e.fsca_references include all h.fsca_references AND m_e.capa_references include all i.capa_references"
+      }
+    ],
+    "mdcg_table_compliance": [
+      {
+        "rule_id": "table_1_exposure_column",
+        "description": "Table 1 must include exposure estimate column per MDCG Annex I",
+        "table": "table_1_sales_exposure",
+        "validation": "columns include 'exposure_estimate' OR narrative explains why not applicable"
+      },
+      {
+        "rule_id": "imdrf_tables_present",
+        "description": "If SIs > 0, Tables 2, 3, 4 (IMDRF) must be present",
+        "tables": [
+          "table_2_imdrf_annex_a",
+          "table_3_imdrf_annex_c",
+          "table_4_imdrf_annex_d"
+        ],
+        "validation": "IF section_d.si_count > 0 THEN tables 2,3,4 present"
+      },
+      {
+        "rule_id": "table_8_region_severity",
+        "description": "Table 8 must have serious/non-serious columns per MDCG Annex I",
+        "table": "table_8_complaints_region_severity",
+        "validation": "columns include 'serious' AND 'non_serious'"
+      },
+      {
+        "rule_id": "table_g4_threshold_types",
+        "description": "Table G.4 must document all threshold types (RACT, UCL, Article 88)",
+        "table": "table_g4_threshold_breach",
+        "validation": "threshold_type column includes RACT AND UCL AND Article_88 where applicable"
+      },
+      {
+        "rule_id": "table_h1_effectiveness",
+        "description": "Table H.1 must include effectiveness percentage for all FSCAs",
+        "table": "table_h1_fsca_summary",
+        "validation": "columns include 'effectiveness_percent' with values for all rows"
+      },
+      {
+        "rule_id": "table_i1_effectiveness",
+        "description": "Table I.1 must include effectiveness verification status for all CAPAs",
+        "table": "table_i1_capa_summary",
+        "validation": "columns include 'effectiveness' with values (Yes/No/Pending) for all rows"
+      },
+      {
+        "rule_id": "table_11_impact_updates",
+        "description": "Table 11 must document impact on safety/performance and CER/RMF updates per MDCG Annex I",
+        "table": "table_11_pmcf_activities",
+        "validation": "columns include 'impact_safety_performance' AND 'updates_required'"
+      }
+    ],
+    "data_quality_checks": [
+      {
+        "check_id": "no_citation_markers",
+        "description": "No [ATOM-xxx] citation markers in any narrative text",
+        "applies_to": "all_narrative_sections",
+        "validation_regex": "\\[ATOM-\\d+\\]"
+      },
+      {
+        "check_id": "complaint_rate_format",
+        "description": "Complaint rates must be percentages (X.XXX%), not per 1,000 units",
+        "applies_to": [
+          "section_f_complaints",
+          "section_g_trending"
+        ],
+        "validation": "contains('%') and not contains('per 1,000' or 'per 1000')"
+      },
+      {
+        "check_id": "checkbox_selections",
+        "description": "All required checkboxes must have selections",
+        "applies_to": [
+          "section_a_executive_summary",
+          "section_b_device_description",
+          "section_m_conclusions"
+        ],
+        "validation": "checkboxes_not_null"
+      },
+      {
+        "check_id": "imdrf_codes_valid",
+        "description": "IMDRF codes in Tables 2, 3, 4 must match official IMDRF terminology",
+        "applies_to": [
+          "table_2_imdrf_annex_a",
+          "table_3_imdrf_annex_c",
+          "table_4_imdrf_annex_d"
+        ],
+        "validation": "codes match IMDRF_official_list"
+      },
+      {
+        "check_id": "percentage_totals",
+        "description": "Percentage columns must sum to 100% (or 100.000%)",
+        "applies_to": [
+          "all_tables_with_percentage_columns"
+        ],
+        "validation": "sum(percentage_column) == 100.0 within rounding tolerance"
+      },
+      {
+        "check_id": "date_format_consistency",
+        "description": "All dates must use DD MMM YYYY format consistently",
+        "applies_to": [
+          "all_tables_with_date_columns"
+        ],
+        "validation": "date_format matches 'DD MMM YYYY'"
+      },
+      {
+        "check_id": "m_a_acceptability_changes",
+        "description": "Section M(a) must explicitly address acceptability changes vs. prior PSUR",
+        "applies_to": [
+          "section_m_conclusions.m_a_benefit_risk"
+        ],
+        "validation": "narrative contains comparison to previous PSUR benefit-risk determination"
+      },
+      {
+        "check_id": "m_e_labeling_ifu_changes",
+        "description": "Section M(e) must explicitly list any labeling/IFU changes",
+        "applies_to": [
+          "section_m_conclusions.m_e_actions_summary"
+        ],
+        "validation": "narrative explicitly addresses labeling/IFU updates (even if none)"
+      },
+      {
+        "check_id": "l1_article_86_1_updates",
+        "description": "Section L must address Article 86.1 updates to CER/RMF from PMCF",
+        "applies_to": [
+          "section_l_pmcf.l1_pmcf_status",
+          "section_l_pmcf.l4_pmcf_impact"
+        ],
+        "validation": "narrative explicitly addresses CER and RMF updates based on PMCF findings"
+      }
+    ]
+  },
+  "compliance_checklist": {
+    "eu_mdr_article_86": [
+      "Device identification complete (Article 86.1)",
+      "Data collection period documented",
+      "Sales/distribution data with exposure estimates (Article 86.1)",
+      "Serious incidents documented with IMDRF coding",
+      "Complaints analyzed by type and region/severity",
+      "Trending analysis completed with Article 88 compliance",
+      "FSCAs documented if applicable with effectiveness",
+      "CAPAs from PMS findings documented with root cause",
+      "Literature review conducted systematically",
+      "External databases searched",
+      "PMCF status addressed with Article 86.1 updates to CER/RMF",
+      "Benefit-risk assessment completed (Article 86.1)",
+      "Acceptability changes vs. prior PSUR addressed (Article 86.1)",
+      "Data limitations acknowledged",
+      "Actions taken/planned documented (preventive/corrective, labeling, RMF/CER)",
+      "Conclusions definitive and evidence-based"
+    ],
+    "mdcg_2022_21_template": [
+      "All sections A through M present",
+      "Section A executive summary comprehensive",
+      "Multi-product grouping justified if applicable",
+      "IMDRF coding applied to SIs if applicable (Tables 2, 3, 4)",
+      "Article 88 trending compliance documented",
+      "FSCA effectiveness verified (Table H.1)",
+      "CAPA effectiveness verified (Table I.1)",
+      "PMCF rationale provided with Article 86.1 CER/RMF updates",
+      "Overall conclusions clear and defensible"
+    ],
+    "mdcg_2022_21_annex_i": [
+      "Table of Contents (MDCG.ANNEXI.TOC) auto-generated",
+      "Table 1: Sales/Exposure by region (MDCG.ANNEXI.SALES_TABLE)",
+      "Tables 2, 3, 4: IMDRF SI tables (MDCG.ANNEXI.SERIOUS_INCIDENTS_TABLE_IMDRF)",
+      "Table 8: Complaints by region/severity (MDCG.ANNEXI.COMPLAINTS_BY_REGION_SEVERITY_TABLE)",
+      "Table G.4: Trend threshold breach (MDCG.ANNEXI.TREND_TABLE)",
+      "Table H.1: FSCA summary (MDCG.ANNEXI.FSCA_TABLE)",
+      "Table I.1: CAPA summary (MDCG.ANNEXI.CAPA_TABLE)",
+      "Section L: PMCF activities/findings (MDCG.ANNEXI.PMCF_SUMMARY)",
+      "Table 11: PMCF impact/updates (MDCG.ANNEXI.PMCF_TABLE)",
+      "Section M(a): Benefit-risk with acceptability changes (MDCG.ANNEXI.BENEFIT_RISK_CONCLUSION)",
+      "Section M(e): Actions including labeling/RMF/CER (MDCG.ANNEXI.ACTIONS_TAKEN)"
+    ]
+  },
+  "output_specifications": {
+    "document_format": "Microsoft Word (.docx) or PDF",
+    "font": "Arial 11pt body text, Arial 12pt section headings",
+    "line_spacing": "Single space within paragraphs, 6pt space after paragraphs",
+    "page_margins": "1.0 inch all sides",
+    "page_numbering": "Bottom center, starting from Section A",
+    "header_footer": "Header: PSUR reference and device name; Footer: Page number",
+    "table_style": "Table Grid, Arial 8-9pt",
+    "section_breaks": "Page break before each section A-M",
+    "citation_style": "No inline citations; evidence tracking in metadata only",
+    "mdcg_table_formatting": {
+      "standard_tables_highlighted": "MDCG standard tables (Tables 1, 2-4, 8, G.4, H.1, I.1, 11) use consistent formatting",
+      "column_alignment": "Text left, numbers right, flags center per MDCG examples",
+      "date_format": "DD MMM YYYY consistently",
+      "percentage_precision": "X.XXX% for rates, XX.X% for distributions",
+      "bold_totals": "Total/Worldwide rows in bold"
+    }
+  },
+  "quality_assurance": {
+    "automated_checks": [
+      "Citation marker detection",
+      "Cross-section consistency validation",
+      "Required field completeness",
+      "Checkbox selection verification",
+      "Formatting compliance",
+      "Calculation verification (rates, percentages)",
+      "MDCG table structure validation",
+      "IMDRF code validation",
+      "Regional sales/complaints alignment",
+      "FSCA/CAPA count reconciliation",
+      "Article 86.1 requirements verification"
+    ],
+    "human_review_required": [
+      "section_a_executive_summary",
+      "section_b_device_description",
+      "section_d_serious_incidents",
+      "section_f_complaints",
+      "section_g_trending",
+      "section_h_fsca",
+      "section_i_capa",
+      "section_m_conclusions"
+    ],
+    "regulatory_criticality_highest": [
+      "section_a_executive_summary",
+      "section_d_serious_incidents",
+      "section_h_fsca",
+      "section_m_conclusions"
+    ],
+    "mdcg_compliance_review": [
+      "All MDCG Annex I standard sections present",
+      "All MDCG standard tables formatted correctly",
+      "Article 86.1 requirements addressed (exposure, benefit-risk, acceptability changes, CER/RMF updates)",
+      "Actions summary comprehensive (preventive/corrective, labeling, documentation)"
+    ]
+  },
+  "metadata_tracking": {
+    "evidence_atoms_required": true,
+    "confidence_scores_required": true,
+    "reasoning_documentation_required": true,
+    "data_gap_identification_required": true,
+    "source_traceability_required": true,
+    "mdcg_table_provenance": {
+      "track_data_sources_per_table": true,
+      "document_calculation_methods": true,
+      "verify_mdcg_standard_compliance": true
+    }
+  },
+  "version_control": {
+    "template_version": "3.0",
+    "change_log": [
+      {
+        "version": "3.0",
+        "date": "2025-01-25",
+        "changes": [
+          "Added MDCG 2022-21 Annex I standard sections and tables",
+          "Added Table of Contents (MDCG.ANNEXI.TOC)",
+          "Added Table 1 exposure estimates column (MDCG.ANNEXI.SALES_TABLE)",
+          "Added Table 8 complaints by region/severity (MDCG.ANNEXI.COMPLAINTS_BY_REGION_SEVERITY_TABLE)",
+          "Added Table G.4 trend threshold breach (MDCG.ANNEXI.TREND_TABLE)",
+          "Added Table H.1 FSCA summary (MDCG.ANNEXI.FSCA_TABLE)",
+          "Added Table I.1 CAPA summary (MDCG.ANNEXI.CAPA_TABLE)",
+          "Enhanced Section L PMCF with Article 86.1 requirements (MDCG.ANNEXI.PMCF_SUMMARY)",
+          "Added Table 11 PMCF activities/impact (MDCG.ANNEXI.PMCF_TABLE)",
+          "Enhanced Section M(a) with acceptability changes (MDCG.ANNEXI.BENEFIT_RISK_CONCLUSION)",
+          "Enhanced Section M(e) with labeling/RMF/CER updates (MDCG.ANNEXI.ACTIONS_TAKEN)",
+          "Added MDCG compliance validation rules",
+          "Added cross-references between narrative sections and MDCG standard tables"
+        ]
+      },
+      {
+        "version": "2.0",
+        "date": "2025-01-25",
+        "changes": [
+          "Initial comprehensive template with all sections A-M",
+          "Detailed sub-section structures",
+          "Agent assignments and skill files",
+          "Quality checks and validation rules"
+        ]
+      }
+    ]
+  }
+}

@@ -3,9 +3,12 @@ import * as path from "node:path";
 import { TemplateZ, validateTemplate, formatTemplateErrors, type Template } from "./templateSchema";
 import { 
   validateFormTemplate, 
+  validateGranularFormTemplate,
   isFormBasedTemplate, 
+  isGranularFormTemplate,
   formatFormTemplateErrors,
-  type FormTemplate 
+  type FormTemplate,
+  type GranularFormTemplate
 } from "./formTemplateSchema";
 
 export interface LintError {
@@ -21,6 +24,61 @@ export interface LintResult {
   valid: boolean;
   errors: LintError[];
   warnings: LintError[];
+}
+
+/**
+ * Lint template JSON data directly (without reading from file).
+ * Supports both slot-based (GRKB) templates and form-based (CooperSurgical) templates.
+ * 
+ * @param rawData - The template JSON data
+ * @param sourceIdentifier - Optional identifier for error reporting
+ * @param knownTemplateType - If provided, skip auto-detection and use this type (useful when loading from DB)
+ */
+export async function lintTemplateFromJson(
+  rawData: unknown, 
+  sourceIdentifier?: string,
+  knownTemplateType?: "slot-based" | "form-based"
+): Promise<LintResult> {
+  const errors: LintError[] = [];
+  const warnings: LintError[] = [];
+  let templateType: "slot-based" | "form-based" = "slot-based";
+  
+  // Get ID from either format
+  let templateId = (rawData as any)?.template_id 
+    || (rawData as any)?.form?.form_id 
+    || sourceIdentifier
+    || "unknown";
+
+  // Determine template type: use known type if provided, otherwise auto-detect
+  const isFormBased = knownTemplateType 
+    ? knownTemplateType === "form-based"
+    : isFormBasedTemplate(rawData);
+
+  if (isFormBased) {
+    templateType = "form-based";
+    return lintFormBasedTemplateData(rawData, templateId, sourceIdentifier || "database");
+  }
+
+  // Slot-based template validation
+  const validation = validateTemplate(rawData);
+  if (!validation.success) {
+    const schemaErrors = formatTemplateErrors(validation.errors);
+    for (const err of schemaErrors) {
+      errors.push({
+        level: "error",
+        code: "SCHEMA_ERROR",
+        message: err,
+        path: sourceIdentifier || "json",
+      });
+    }
+    return { templateId, templateType, valid: false, errors, warnings };
+  }
+
+  const template = validation.data;
+  templateId = template.template_id;
+
+  // Continue with slot-based validation rules
+  return lintSlotBasedTemplateData(template, templateId, sourceIdentifier || "json");
 }
 
 /**
@@ -55,7 +113,7 @@ export async function lintTemplate(templatePath: string): Promise<LintResult> {
   // 2. Detect template type and validate against appropriate schema
   if (isFormBasedTemplate(rawData)) {
     templateType = "form-based";
-    return lintFormBasedTemplate(rawData, templateId, templatePath);
+    return lintFormBasedTemplateData(rawData, templateId, templatePath);
   }
 
   // Slot-based template validation
@@ -75,6 +133,22 @@ export async function lintTemplate(templatePath: string): Promise<LintResult> {
 
   const template = validation.data;
   templateId = template.template_id;
+
+  // Delegate to shared slot-based validation
+  return lintSlotBasedTemplateData(template, templateId, templatePath);
+}
+
+/**
+ * Lint a slot-based template (GRKB style) from parsed data
+ */
+function lintSlotBasedTemplateData(
+  template: Template,
+  templateId: string,
+  sourcePath: string
+): LintResult {
+  const errors: LintError[] = [];
+  const warnings: LintError[] = [];
+  const templateType: "slot-based" = "slot-based";
 
   // 3. Check every slot_id has a mapping entry
   const slotIds = new Set(template.slots.map(s => s.slot_id));
@@ -166,18 +240,24 @@ export async function lintTemplate(templatePath: string): Promise<LintResult> {
 }
 
 /**
- * Lint a form-based template (CooperSurgical-style)
+ * Lint a form-based template (CooperSurgical-style) from parsed data.
+ * Supports both hierarchical format and granular format (sections as flat array).
  */
-function lintFormBasedTemplate(
+function lintFormBasedTemplateData(
   rawData: unknown,
   templateId: string,
-  templatePath: string
+  sourcePath: string
 ): LintResult {
   const errors: LintError[] = [];
   const warnings: LintError[] = [];
   const templateType: "form-based" = "form-based";
 
-  // Validate against form template schema
+  // Check if it's a granular format (sections as array inside form object)
+  if (isGranularFormTemplate(rawData)) {
+    return lintGranularFormTemplateData(rawData, templateId, sourcePath);
+  }
+
+  // Validate against hierarchical form template schema
   const validation = validateFormTemplate(rawData);
   if (!validation.success) {
     const schemaErrors = formatFormTemplateErrors(validation.errors);
@@ -186,7 +266,7 @@ function lintFormBasedTemplate(
         level: "error",
         code: "SCHEMA_ERROR",
         message: err,
-        path: templatePath,
+        path: sourcePath,
       });
     }
     return { templateId, templateType, valid: false, errors, warnings };
@@ -251,6 +331,103 @@ function lintFormBasedTemplate(
         code: "MISSING_CRITICAL_SECTION",
         message: `Form template missing recommended section: ${critical}`,
         path: `sections.${critical}`,
+      });
+    }
+  }
+
+  return {
+    templateId,
+    templateType,
+    valid: errors.length === 0,
+    errors,
+    warnings,
+  };
+}
+
+/**
+ * Lint a granular form-based template (sections as flat array inside form object)
+ */
+function lintGranularFormTemplateData(
+  rawData: unknown,
+  templateId: string,
+  sourcePath: string
+): LintResult {
+  const errors: LintError[] = [];
+  const warnings: LintError[] = [];
+  const templateType: "form-based" = "form-based";
+
+  // Validate against granular form template schema
+  const validation = validateGranularFormTemplate(rawData);
+  if (!validation.success) {
+    const schemaErrors = formatFormTemplateErrors(validation.errors);
+    for (const err of schemaErrors) {
+      errors.push({
+        level: "error",
+        code: "SCHEMA_ERROR",
+        message: err,
+        path: sourcePath,
+      });
+    }
+    return { templateId, templateType, valid: false, errors, warnings };
+  }
+
+  const template = validation.data;
+  templateId = template.form.form_id;
+
+  // Granular form-specific lint rules
+
+  // 1. Check form metadata completeness
+  if (!template.form.revision) {
+    warnings.push({
+      level: "warning",
+      code: "MISSING_REVISION",
+      message: "Form template has no revision number specified",
+      path: "form.revision",
+    });
+  }
+
+  // 2. Check sections array is not empty
+  if (template.form.sections.length === 0) {
+    errors.push({
+      level: "error",
+      code: "EMPTY_SECTIONS",
+      message: "Form template has no sections defined",
+      path: "form.sections",
+    });
+  }
+
+  // 3. Check each section has required fields
+  for (let i = 0; i < template.form.sections.length; i++) {
+    const section = template.form.sections[i];
+    if (!section.section_id) {
+      errors.push({
+        level: "error",
+        code: "MISSING_SECTION_ID",
+        message: `Section at index ${i} is missing section_id`,
+        path: `form.sections[${i}]`,
+      });
+    }
+    if (!section.title) {
+      warnings.push({
+        level: "warning",
+        code: "MISSING_SECTION_TITLE",
+        message: `Section '${section.section_id || i}' is missing title`,
+        path: `form.sections[${i}]`,
+      });
+    }
+  }
+
+  // 4. Check for duplicate section IDs
+  const sectionIds = template.form.sections.map(s => s.section_id);
+  const duplicates = sectionIds.filter((id, index) => sectionIds.indexOf(id) !== index);
+  if (duplicates.length > 0) {
+    const uniqueDuplicates = [...new Set(duplicates)];
+    for (const dup of uniqueDuplicates) {
+      warnings.push({
+        level: "warning",
+        code: "DUPLICATE_SECTION_ID",
+        message: `Duplicate section_id found: ${dup}`,
+        path: "form.sections",
       });
     }
   }

@@ -342,7 +342,7 @@ export class CompileOrchestrator {
       // ═══════════════════════════════════════════════════════════════════════
       // DETECT TEMPLATE TYPE AND LOAD APPROPRIATELY
       // ═══════════════════════════════════════════════════════════════════════
-      const isFormBased = isTemplateFormBased(input.templateId);
+      const isFormBased = await isTemplateFormBased(input.templateId);
       
       if (isFormBased) {
         console.log(`[${this.orchestratorId}] Detected FORM-BASED template: ${input.templateId}`);
@@ -353,7 +353,7 @@ export class CompileOrchestrator {
       console.log(`[${this.orchestratorId}] Processing SLOT-BASED template: ${input.templateId}`);
       
       // Load template
-      const template = loadTemplate(input.templateId);
+      const template = await loadTemplate(input.templateId);
       const templateSlots = getEffectiveSlots(template);
 
       // Initialize live content for incremental preview
@@ -839,7 +839,7 @@ IMPORTANT: Do NOT include [ATOM-xxx] citations in the text. Write clean prose.`;
 
     try {
       // Load form template
-      const formTemplate = loadFormTemplate(input.templateId);
+      const formTemplate = await loadFormTemplate(input.templateId);
       const sectionIds = Object.keys(FORM_SECTION_AGENT_MAPPING);
 
       console.log(`[${this.orchestratorId}] Form template loaded: ${formTemplate.form.form_id}`);

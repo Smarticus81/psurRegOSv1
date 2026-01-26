@@ -1,156 +1,438 @@
 {
-    "template_id": "MDCG_2022_21_ANNEX_II",
-    "name": "MDCG 2022-21 Annex II — PSUR Web Form Data (EUDAMED)",
-    "version": "1.0.0",
-    "jurisdiction_scope": [
-        "EU_MDR"
-    ],
-    "normative_basis": [
-        "EU.MDR.2017/745.ART86",
-        "MDCG.2022-21.ANNEX_II"
-    ],
-    "mandatory_obligation_ids": [
-        "ANNEX_II_1_MFG_INFO",
-        "ANNEX_II_2_DEVICE_INFO",
-        "ANNEX_II_3_PERIOD",
-        "ANNEX_II_4_SALES_METRICS",
-        "ANNEX_II_5_INCIDENTS_METRICS",
-        "ANNEX_II_6_CONCLUSION"
-    ],
-    "defaults": {
-        "require_traceability": true,
-        "require_method_statement": false,
-        "require_claimed_obligations": true,
-        "min_method_chars": 0,
-        "min_evidence_atoms": 1
-    },
-    "slots": [
-        {
-            "slot_id": "MDCG.ANNEXII.MFG_INFO",
-            "title": "Manufacturer Information",
-            "section_path": "Form Data",
-            "slot_kind": "ADMIN",
-            "required": true,
-            "evidence_requirements": {
-                "required_types": [
-                    "manufacturer_profile"
-                ],
-                "min_atoms": 1,
-                "allow_empty_with_justification": false
-            },
-            "output_requirements": {
-                "renderer": "json",
-                "render_as": "form_field"
-            }
+  "template_id": "MDCG_2022_21_ANNEX_II",
+  "name": "MDCG 2022-21 Annex II - Templates for Data Presentation in PSUR",
+  "version": "1.0.0",
+  "jurisdiction_scope": ["EU_MDR"],
+  "normative_basis": [
+    "EU.MDR.2017/745.ART86",
+    "MDCG.2022-21.ANNEX_II"
+  ],
+  "description": "Standard templates for presenting quantitative data in the PSUR as mandated by MDCG 2022-21",
+  "mandatory_tables": [
+    "table_1_volume_of_sales",
+    "table_2_population_size",
+    "table_3_population_characteristics",
+    "table_4_serious_incidents_by_device_problem",
+    "table_5_serious_incidents_by_investigation_finding",
+    "table_6_health_impact_by_investigation_conclusion",
+    "table_7_fsas",
+    "table_8_capa"
+  ],
+  "tables": {
+    "table_1_volume_of_sales": {
+      "table_id": "MDCG.ANNEXII.TABLE_1",
+      "title": "Volume of Sales by Region Over Time",
+      "description": "Volume of sales by region over time periods N, N-12, N2-12, N3-12",
+      "regulatory_reference": "MDCG 2022-21 Annex II Table 1",
+      "mandatory_for_classes": ["Class III", "Class IIb", "Class IIa"],
+      "fields": {
+        "basic_udi_di_or_device_name": {
+          "type": "string",
+          "required": true,
+          "description": "Basic UDI-DI or device trade name"
         },
-        {
-            "slot_id": "MDCG.ANNEXII.DEVICE_INFO",
-            "title": "Device Information (UDI-DI)",
-            "section_path": "Form Data",
-            "slot_kind": "ADMIN",
-            "required": true,
-            "evidence_requirements": {
-                "required_types": [
-                    "device_registry_record"
-                ],
-                "min_atoms": 1,
-                "allow_empty_with_justification": false
-            },
-            "output_requirements": {
-                "renderer": "json",
-                "render_as": "form_field"
-            }
+        "region": {
+          "type": "enum",
+          "values": ["EEA+TR+XI", "Worldwide"],
+          "required": true,
+          "description": "Geographic region (EEA includes Turkey and Northern Ireland, or Worldwide)"
         },
-        {
-            "slot_id": "MDCG.ANNEXII.PERIOD",
-            "title": "Reporting Period",
-            "section_path": "Form Data",
-            "slot_kind": "ADMIN",
-            "required": true,
-            "evidence_requirements": {
-                "required_types": [],
-                "min_atoms": 0,
-                "allow_empty_with_justification": false
-            },
-            "output_requirements": {
-                "renderer": "json",
-                "render_as": "form_field"
-            }
+        "time_periods": {
+          "N": {
+            "type": "number",
+            "description": "Current reporting period"
+          },
+          "N_minus_12_months": {
+            "type": "number",
+            "description": "Previous 12-month period"
+          },
+          "N2_minus_12_months": {
+            "type": "number",
+            "description": "Period 24-36 months prior"
+          },
+          "N3_minus_12_months": {
+            "type": "number",
+            "description": "Period 36-48 months prior"
+          }
         },
-        {
-            "slot_id": "MDCG.ANNEXII.SALES_METRICS",
-            "title": "Sales Volume (Global/EU)",
-            "section_path": "Form Data",
-            "slot_kind": "TABLE",
-            "required": true,
-            "evidence_requirements": {
-                "required_types": [
-                    "sales_volume"
-                ],
-                "min_atoms": 1,
-                "allow_empty_with_justification": false
-            },
-            "output_requirements": {
-                "renderer": "json",
-                "render_as": "form_field"
-            }
-        },
-        {
-            "slot_id": "MDCG.ANNEXII.INCIDENTS_METRICS",
-            "title": "Incidents Summary",
-            "section_path": "Form Data",
-            "slot_kind": "TABLE",
-            "required": true,
-            "evidence_requirements": {
-                "required_types": [
-                    "serious_incident_summary",
-                    "complaint_summary"
-                ],
-                "min_atoms": 1,
-                "allow_empty_with_justification": false
-            },
-            "output_requirements": {
-                "renderer": "json",
-                "render_as": "form_field"
-            }
-        },
-        {
-            "slot_id": "MDCG.ANNEXII.CONCLUSION",
-            "title": "Conclusion Statement",
-            "section_path": "Form Data",
-            "slot_kind": "NARRATIVE",
-            "required": true,
-            "evidence_requirements": {
-                "required_types": [
-                    "benefit_risk_assessment"
-                ],
-                "min_atoms": 1,
-                "allow_empty_with_justification": false
-            },
-            "output_requirements": {
-                "renderer": "text",
-                "render_as": "form_field"
-            }
+        "counting_method": {
+          "type": "string",
+          "required": true,
+          "description": "Method used to count sales (e.g., units shipped, invoiced, implanted)"
         }
-    ],
-    "mapping": {
-        "MDCG.ANNEXII.MFG_INFO": [
-            "ANNEX_II_1_MFG_INFO"
-        ],
-        "MDCG.ANNEXII.DEVICE_INFO": [
-            "ANNEX_II_2_DEVICE_INFO"
-        ],
-        "MDCG.ANNEXII.PERIOD": [
-            "ANNEX_II_3_PERIOD"
-        ],
-        "MDCG.ANNEXII.SALES_METRICS": [
-            "ANNEX_II_4_SALES_METRICS"
-        ],
-        "MDCG.ANNEXII.INCIDENTS_METRICS": [
-            "ANNEX_II_5_INCIDENTS_METRICS"
-        ],
-        "MDCG.ANNEXII.CONCLUSION": [
-            "ANNEX_II_6_CONCLUSION"
-        ]
+      },
+      "validation_rules": [
+        {
+          "rule": "N >= 0",
+          "error_message": "Sales volume cannot be negative",
+          "severity": "error"
+        },
+        {
+          "rule": "counting_method_stated",
+          "error_message": "Counting method must be explicitly stated",
+          "severity": "error"
+        }
+      ],
+      "evidence_requirements": {
+        "required_types": ["sales_volume", "sales_by_region"],
+        "min_atoms": 1
+      }
+    },
+    "table_2_population_size": {
+      "table_id": "MDCG.ANNEXII.TABLE_2",
+      "title": "Estimated Size of Population Using the Device",
+      "description": "Estimated population exposure over time",
+      "regulatory_reference": "MDCG 2022-21 Annex II Table 2",
+      "mandatory_for_classes": ["Class III", "Class IIb", "Class IIa"],
+      "fields": {
+        "region": {
+          "type": "enum",
+          "values": ["EEA+TR+XI", "Worldwide"],
+          "required": true
+        },
+        "time_periods": {
+          "N": {
+            "type": "number",
+            "description": "Estimated population in current period"
+          },
+          "N_minus_12_months": {
+            "type": "number",
+            "description": "Estimated population in previous period"
+          },
+          "N2_minus_12_months": {
+            "type": "number",
+            "description": "Estimated population 24-36 months prior"
+          },
+          "N3_minus_12_months": {
+            "type": "number",
+            "description": "Estimated population 36-48 months prior"
+          }
+        },
+        "estimation_methodology": {
+          "type": "string",
+          "required": true,
+          "description": "Description of how population was estimated"
+        }
+      },
+      "validation_rules": [
+        {
+          "rule": "population >= 0",
+          "error_message": "Population estimate cannot be negative",
+          "severity": "error"
+        },
+        {
+          "rule": "methodology_stated",
+          "error_message": "Estimation methodology must be described",
+          "severity": "error"
+        }
+      ],
+      "evidence_requirements": {
+        "required_types": ["usage_estimate", "population_estimate"],
+        "min_atoms": 1
+      }
+    },
+    "table_3_population_characteristics": {
+      "table_id": "MDCG.ANNEXII.TABLE_3",
+      "title": "Characteristics of the Population Using the Device",
+      "description": "Demographics and clinical characteristics of device users",
+      "regulatory_reference": "MDCG 2022-21 Annex II Table 3",
+      "mandatory_for_classes": ["Class III", "Class IIb"],
+      "fields": {
+        "characteristic_name": {
+          "type": "string",
+          "required": true,
+          "description": "Name of the characteristic (e.g., age distribution, indication)"
+        },
+        "region": {
+          "type": "enum",
+          "values": ["EEA+TR+XI", "Worldwide"],
+          "required": true
+        },
+        "time_periods": {
+          "N": {
+            "type": "string",
+            "description": "Value or distribution in current period"
+          },
+          "N_minus_12_months": {
+            "type": "string",
+            "description": "Value or distribution in previous period"
+          },
+          "N2_minus_12_months": {
+            "type": "string",
+            "description": "Value or distribution 24-36 months prior"
+          },
+          "N3_minus_12_months": {
+            "type": "string",
+            "description": "Value or distribution 36-48 months prior"
+          }
+        }
+      },
+      "evidence_requirements": {
+        "required_types": ["population_estimate", "clinical_evaluation_extract"],
+        "min_atoms": 0,
+        "allow_empty_with_justification": true
+      }
+    },
+    "table_4_serious_incidents_by_device_problem": {
+      "table_id": "MDCG.ANNEXII.TABLE_4",
+      "title": "Serious Incidents by Device Problem (IMDRF Annex A)",
+      "description": "Categorization of serious incidents using IMDRF Adverse Event Terminology Annex A codes",
+      "regulatory_reference": "MDCG 2022-21 Annex II Table 4",
+      "mandatory_for_classes": ["Class III", "Class IIb", "Class IIa"],
+      "terminology_standard": "IMDRF Annex A - Device Problem Codes",
+      "preferred_level": 2,
+      "fields": {
+        "imdrf_code": {
+          "type": "string",
+          "required": true,
+          "description": "IMDRF Annex A code (Level 2 preferred)"
+        },
+        "imdrf_term": {
+          "type": "string",
+          "required": true,
+          "description": "IMDRF term description"
+        },
+        "region": {
+          "type": "enum",
+          "values": ["EEA+TR+XI", "Worldwide"],
+          "required": true
+        },
+        "counts_and_rates": {
+          "N": {
+            "count": { "type": "number", "description": "Number of incidents in current period" },
+            "rate_percent": { "type": "number", "description": "Rate as percentage of population/sales" }
+          },
+          "N2": {
+            "count": { "type": "number" },
+            "rate_percent": { "type": "number" }
+          },
+          "N3": {
+            "count": { "type": "number" },
+            "rate_percent": { "type": "number" }
+          },
+          "N4": {
+            "count": { "type": "number" },
+            "rate_percent": { "type": "number" }
+          }
+        }
+      },
+      "validation_rules": [
+        {
+          "rule": "imdrf_code_valid",
+          "error_message": "IMDRF code must be a valid Annex A code",
+          "severity": "warning"
+        },
+        {
+          "rule": "rate_calculation_consistent",
+          "error_message": "Rate must be calculated consistently using stated denominator",
+          "severity": "error"
+        }
+      ],
+      "evidence_requirements": {
+        "required_types": ["serious_incident_record", "serious_incident_summary", "serious_incident_records_imdrf"],
+        "min_atoms": 1
+      }
+    },
+    "table_5_serious_incidents_by_investigation_finding": {
+      "table_id": "MDCG.ANNEXII.TABLE_5",
+      "title": "Serious Incidents by Investigation Finding (IMDRF Annex C)",
+      "description": "Categorization of incident investigation findings using IMDRF Annex C codes",
+      "regulatory_reference": "MDCG 2022-21 Annex II Table 5",
+      "mandatory_for_classes": ["Class III", "Class IIb", "Class IIa"],
+      "terminology_standard": "IMDRF Annex C - Investigation Finding Codes",
+      "preferred_level": 2,
+      "fields": {
+        "imdrf_code": {
+          "type": "string",
+          "required": true,
+          "description": "IMDRF Annex C investigation finding code"
+        },
+        "imdrf_term": {
+          "type": "string",
+          "required": true,
+          "description": "IMDRF term description"
+        },
+        "region": {
+          "type": "enum",
+          "values": ["EEA+TR+XI", "Worldwide"],
+          "required": true
+        },
+        "counts_and_rates": {
+          "structure": "same_as_table_4"
+        }
+      },
+      "evidence_requirements": {
+        "required_types": ["serious_incident_record", "vigilance_report"],
+        "min_atoms": 1
+      }
+    },
+    "table_6_health_impact_by_investigation_conclusion": {
+      "table_id": "MDCG.ANNEXII.TABLE_6",
+      "title": "Health Impact of Serious Incidents by Investigation Conclusion",
+      "description": "Cross-tabulation of health impacts with investigation conclusions over 4 years",
+      "regulatory_reference": "MDCG 2022-21 Annex II Table 6",
+      "mandatory_for_classes": ["Class III", "Class IIb"],
+      "terminology_standards": ["IMDRF Annex D - Health Impact", "IMDRF Annex F - Investigation Conclusion"],
+      "fields": {
+        "health_impact_code": {
+          "type": "string",
+          "required": true,
+          "description": "IMDRF Annex D health impact code"
+        },
+        "health_impact_term": {
+          "type": "string",
+          "required": true,
+          "description": "Health impact term (e.g., Death, Life-threatening)"
+        },
+        "investigation_conclusions": {
+          "type": "array",
+          "items": {
+            "code": { "type": "string", "description": "IMDRF Annex F conclusion code" },
+            "term": { "type": "string", "description": "Conclusion term" },
+            "percentage": { "type": "number", "description": "Percentage of incidents with this conclusion" }
+          }
+        },
+        "region": {
+          "type": "enum",
+          "values": ["EEA+TR+XI", "Worldwide"],
+          "required": true
+        }
+      },
+      "evidence_requirements": {
+        "required_types": ["serious_incident_record", "serious_incident_summary"],
+        "min_atoms": 1
+      }
+    },
+    "table_7_fsas": {
+      "table_id": "MDCG.ANNEXII.TABLE_7",
+      "title": "Field Safety Corrective Actions",
+      "description": "Summary of all FSCAs during the reporting period",
+      "regulatory_reference": "MDCG 2022-21 Annex II Table 7",
+      "mandatory_for_classes": ["Class III", "Class IIb", "Class IIa", "Class I"],
+      "fields": {
+        "type_of_action": {
+          "type": "string",
+          "required": true,
+          "description": "Type of FSCA (e.g., recall, modification, customer notification)"
+        },
+        "issuing_date": {
+          "type": "date",
+          "required": true,
+          "description": "Date the FSCA was issued"
+        },
+        "scope": {
+          "type": "string",
+          "required": true,
+          "description": "Scope of the action (batch numbers, serial ranges, etc.)"
+        },
+        "status": {
+          "type": "string",
+          "required": true,
+          "description": "Current status (open, closed, ongoing)"
+        },
+        "manufacturer_reference": {
+          "type": "string",
+          "required": true,
+          "description": "Manufacturer's internal reference number"
+        },
+        "rationale": {
+          "type": "string",
+          "required": true,
+          "description": "Reason for the FSCA"
+        },
+        "impacted_regions": {
+          "type": "string",
+          "required": true,
+          "description": "Regions/countries affected by the FSCA"
+        }
+      },
+      "validation_rules": [
+        {
+          "rule": "all_fsca_included",
+          "error_message": "All FSCAs during the reporting period must be included",
+          "severity": "error"
+        }
+      ],
+      "evidence_requirements": {
+        "required_types": ["fsca_record", "fsca_summary"],
+        "min_atoms": 0,
+        "allow_empty_with_justification": true
+      }
+    },
+    "table_8_capa": {
+      "table_id": "MDCG.ANNEXII.TABLE_8",
+      "title": "Preventive and Corrective Actions",
+      "description": "Summary of all CAPAs related to the device during the reporting period",
+      "regulatory_reference": "MDCG 2022-21 Annex II Table 8",
+      "mandatory_for_classes": ["Class III", "Class IIb", "Class IIa"],
+      "fields": {
+        "type_of_action": {
+          "type": "string",
+          "required": true,
+          "description": "Whether corrective or preventive action"
+        },
+        "initiation_date": {
+          "type": "date",
+          "required": true,
+          "description": "Date the CAPA was initiated"
+        },
+        "scope": {
+          "type": "string",
+          "required": true,
+          "description": "Scope of the action"
+        },
+        "status": {
+          "type": "string",
+          "required": true,
+          "description": "Current status (open, closed, verification pending)"
+        },
+        "manufacturer_reference": {
+          "type": "string",
+          "required": true,
+          "description": "Manufacturer's CAPA reference number"
+        },
+        "description": {
+          "type": "string",
+          "required": true,
+          "description": "Description of the issue addressed"
+        },
+        "root_cause": {
+          "type": "string",
+          "required": true,
+          "description": "Identified root cause"
+        },
+        "effectiveness_if_closed": {
+          "type": "string",
+          "description": "Effectiveness verification results for closed CAPAs"
+        }
+      },
+      "evidence_requirements": {
+        "required_types": ["capa_record", "capa_summary", "ncr_record"],
+        "min_atoms": 0,
+        "allow_empty_with_justification": true
+      }
     }
+  },
+  "regional_split_requirements": {
+    "required_regions": ["EEA+TR+XI", "Worldwide"],
+    "eea_includes": ["EU27", "Turkey", "Northern Ireland"],
+    "rationale": "MDCG 2022-21 requires EEA+TR+XI and Worldwide breakdown for all data"
+  },
+  "temporal_requirements": {
+    "class_III_and_IIb": {
+      "time_buckets": ["N", "N-12", "N2-12", "N3-12"],
+      "description": "4-year trending for Class III and implantable Class IIb devices"
+    },
+    "class_IIa": {
+      "time_buckets": ["N", "N-24"],
+      "description": "2-period comparison for Class IIa devices (biennial PSUR)"
+    }
+  },
+  "llm_validation_prompts": {
+    "table_completeness": "Verify that all mandatory tables for the device class are present and contain data. Check if Tables 1-8 are appropriately filled based on device classification.",
+    "imdrf_coding": "Validate that IMDRF codes used in Tables 4, 5, and 6 are valid Level 2 codes from the respective Annexes (A, C, D, F).",
+    "rate_calculation": "Verify that incident rates are calculated consistently using the stated denominator (sales volume or population) across all tables.",
+    "temporal_consistency": "Check that temporal data follows the correct time bucket structure for the device class (4-year for III/IIb, 2-year for IIa).",
+    "regional_completeness": "Ensure both EEA+TR+XI and Worldwide data are provided where required."
+  }
 }

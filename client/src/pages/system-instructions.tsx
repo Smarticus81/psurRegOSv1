@@ -78,6 +78,12 @@ const CATEGORY_DEFINITIONS: CategoryDefinition[] = [
         standalone: ["DEFAULT_NARRATIVE_TASK", "BENEFIT_RISK_CONCLUSION", "GAP_JUSTIFICATION"],
         agents: [
             {
+                name: "Base Narrative",
+                prompts: [
+                    { key: "BaseNarrativeAgent", label: "Agent Persona", type: "PERSONA" },
+                ]
+            },
+            {
                 name: "Executive Summary",
                 prompts: [
                     { key: "EXEC_SUMMARY_SYSTEM", label: "System Prompt", type: "SYSTEM" },
@@ -88,7 +94,7 @@ const CATEGORY_DEFINITIONS: CategoryDefinition[] = [
             {
                 name: "Safety Narrative",
                 prompts: [
-                    { key: "SAFETY_NARRATIVE_SYSTEM", label: "System Prompt", type: "SYSTEM" },
+                    { key: "SAFETY_SYSTEM", label: "System Prompt", type: "SYSTEM" },
                     { key: "SAFETY_TASK", label: "Task Template", type: "TASK" },
                     { key: "SafetyNarrativeAgent", label: "Agent Persona", type: "PERSONA" },
                 ]
@@ -96,8 +102,8 @@ const CATEGORY_DEFINITIONS: CategoryDefinition[] = [
             {
                 name: "Clinical Evaluation",
                 prompts: [
-                    { key: "CLINICAL_NARRATIVE_SYSTEM", label: "System Prompt", type: "SYSTEM" },
-                    { key: "CLINICAL_NARRATIVE_TASK", label: "Task Template", type: "TASK" },
+                    { key: "CLINICAL_SYSTEM", label: "System Prompt", type: "SYSTEM" },
+                    { key: "CLINICAL_TASK", label: "Task Template", type: "TASK" },
                     { key: "ClinicalNarrativeAgent", label: "Agent Persona", type: "PERSONA" },
                 ]
             },
@@ -110,10 +116,10 @@ const CATEGORY_DEFINITIONS: CategoryDefinition[] = [
                 ]
             },
             {
-                name: "Trend Analysis",
+                name: "Trend Analysis Narrative",
                 prompts: [
-                    { key: "TREND_NARRATIVE_SYSTEM", label: "System Prompt", type: "SYSTEM" },
-                    { key: "TREND_NARRATIVE_TASK", label: "Task Template", type: "TASK" },
+                    { key: "TREND_SYSTEM", label: "System Prompt", type: "SYSTEM" },
+                    { key: "TREND_TASK", label: "Task Template", type: "TASK" },
                     { key: "TrendNarrativeAgent", label: "Agent Persona", type: "PERSONA" },
                 ]
             },
@@ -136,16 +142,16 @@ const CATEGORY_DEFINITIONS: CategoryDefinition[] = [
             {
                 name: "FSCA / Recalls",
                 prompts: [
-                    { key: "FSCA_NARRATIVE_SYSTEM", label: "System Prompt", type: "SYSTEM" },
-                    { key: "FSCA_NARRATIVE_TASK", label: "Task Template", type: "TASK" },
+                    { key: "FSCA_SYSTEM", label: "System Prompt", type: "SYSTEM" },
+                    { key: "FSCA_TASK", label: "Task Template", type: "TASK" },
                     { key: "FSCANarrativeAgent", label: "Agent Persona", type: "PERSONA" },
                 ]
             },
             {
-                name: "CAPA",
+                name: "CAPA Narrative",
                 prompts: [
-                    { key: "CAPA_NARRATIVE_SYSTEM", label: "System Prompt", type: "SYSTEM" },
-                    { key: "CAPA_NARRATIVE_TASK", label: "Task Template", type: "TASK" },
+                    { key: "CAPA_SYSTEM", label: "System Prompt", type: "SYSTEM" },
+                    { key: "CAPA_TASK", label: "Task Template", type: "TASK" },
                     { key: "CAPANarrativeAgent", label: "Agent Persona", type: "PERSONA" },
                 ]
             },
@@ -165,15 +171,23 @@ const CATEGORY_DEFINITIONS: CategoryDefinition[] = [
         standalone: ["DEFAULT_TABLE_TASK", "TABLE_FORMATTING"],
         agents: [
             {
+                name: "Base Table",
+                prompts: [
+                    { key: "BaseTableAgent", label: "Agent Persona", type: "PERSONA" },
+                ]
+            },
+            {
                 name: "Annex I - Serious Incidents",
                 prompts: [
                     { key: "SERIOUS_INCIDENTS_TABLE_TASK", label: "Table Template", type: "TASK" },
+                    { key: "SeriousIncidentsTableAgent", label: "Agent Persona", type: "PERSONA" },
                 ]
             },
             {
                 name: "Annex II - Complaints",
                 prompts: [
                     { key: "COMPLAINTS_TABLE_TASK", label: "Table Template", type: "TASK" },
+                    { key: "ComplaintsTableAgent", label: "Agent Persona", type: "PERSONA" },
                 ]
             },
             {
@@ -187,6 +201,7 @@ const CATEGORY_DEFINITIONS: CategoryDefinition[] = [
                 name: "Annex IV - Sales & Exposure",
                 prompts: [
                     { key: "SALES_TABLE_TASK", label: "Table Template", type: "TASK" },
+                    { key: "SalesExposureTableAgent", label: "Agent Persona", type: "PERSONA" },
                 ]
             },
             {
@@ -220,6 +235,12 @@ const CATEGORY_DEFINITIONS: CategoryDefinition[] = [
         icon: BarChart,
         standalone: [],
         agents: [
+            {
+                name: "Base Chart",
+                prompts: [
+                    { key: "BaseChartAgent", label: "Agent Persona", type: "PERSONA" },
+                ]
+            },
             {
                 name: "Chart Generation Core",
                 prompts: [

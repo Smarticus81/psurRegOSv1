@@ -1,30 +1,45 @@
 import { z } from "zod";
 
+/**
+ * TEMPLATE VALIDATION SCHEMA
+ * 
+ * This schema defines MINIMUM REQUIRED FIELDS for templates.
+ * All schemas use .passthrough() to allow custom fields and extensions.
+ * 
+ * Validation will PASS if:
+ * - All required minimum fields are present and valid
+ * - Extra fields are present (they are allowed and preserved)
+ * 
+ * Validation will FAIL only if:
+ * - A required minimum field is missing
+ * - A required field has an invalid type or value
+ */
+
 // Column definition for table schemas
 export const TableColumnZ = z.object({
   name: z.string().min(1),
   type: z.enum(["string", "number", "boolean"]),
-});
+}).passthrough(); // Allow custom column metadata
 
 // Table schema for TABLE slot kinds
 export const TableSchemaZ = z.object({
   columns: z.array(TableColumnZ).min(1),
   primary_key: z.array(z.string()).optional(),
-});
+}).passthrough(); // Allow custom table metadata
 
 // Output requirements define how a slot is rendered
 export const OutputRequirementsZ = z.object({
   renderer: z.enum(["md", "docx"]),
   render_as: z.enum(["cover_page", "table_of_contents", "narrative", "table"]).optional(),
   table_schema: TableSchemaZ.optional(),
-});
+}).passthrough(); // Allow custom rendering options like mdcg_standard, include_checkboxes, etc.
 
 // Evidence requirements define what evidence is needed for a slot
 export const EvidenceRequirementsZ = z.object({
   required_types: z.array(z.string()),
   min_atoms: z.number().int().min(0).default(0),
   allow_empty_with_justification: z.boolean().default(false),
-});
+}).passthrough(); // Allow custom fields for user-defined extensions
 
 // Slot definition - a single section/field in the PSUR template
 export const SlotDefinitionZ = z.object({
@@ -35,7 +50,7 @@ export const SlotDefinitionZ = z.object({
   required: z.boolean(),
   evidence_requirements: EvidenceRequirementsZ,
   output_requirements: OutputRequirementsZ,
-});
+}).passthrough(); // Allow custom fields like agent_assignment, quality_checks, regulatory_obligations, etc.
 
 // Template defaults
 export const TemplateDefaultsZ = z.object({
@@ -44,20 +59,20 @@ export const TemplateDefaultsZ = z.object({
   require_claimed_obligations: z.boolean(),
   min_method_chars: z.number().int().min(0),
   min_evidence_atoms: z.number().int().min(0),
-});
+}).passthrough(); // Allow custom defaults like mdcg_annex_i_compliant, no_citation_markers_in_output, etc.
 
 // Full template schema
 export const TemplateZ = z.object({
   template_id: z.string().min(1),
   name: z.string().min(1),
   version: z.string().min(1),
-  jurisdiction_scope: z.array(z.enum(["EU_MDR", "UK_MDR"])).min(1),
+  jurisdiction_scope: z.array(z.string()).min(1), // Changed from strict enum to allow custom jurisdictions like UKCA
   normative_basis: z.array(z.string()).optional(),
   mandatory_obligation_ids: z.array(z.string()),
   defaults: TemplateDefaultsZ,
   slots: z.array(SlotDefinitionZ).min(1),
   mapping: z.record(z.string(), z.array(z.string())),
-});
+}).passthrough(); // Allow custom top-level fields like regulatory_basis, template_metadata, mdcg_annex_i_compliance_matrix, etc.
 
 // Type exports
 export type TableColumn = z.infer<typeof TableColumnZ>;

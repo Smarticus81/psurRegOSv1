@@ -11,11 +11,14 @@ import PsurWizard from "@/pages/psur-wizard";
 import Admin from "@/pages/admin";
 import Instructions from "@/pages/instructions";
 import GrkbView from "@/pages/grkb-view";
+import GrkbMapping from "@/pages/grkb-mapping";
 import AgentSystem from "@/pages/agent-system";
 import SystemInstructions from "@/pages/system-instructions";
 import ContentTraces from "@/pages/content-traces";
 import TemplateManagement from "@/pages/template-management";
-import { LayoutDashboard, Settings, Info, Globe, Cpu, Brain, ShieldCheck, BarChart3, FileText } from "lucide-react";
+import TemplatePipeline from "@/pages/template-pipeline";
+import AgentActivity from "@/pages/agent-activity";
+import { LayoutDashboard, Settings, Info, Globe, Cpu, Brain, ShieldCheck, BarChart3, FileText, Activity, Link2, Zap } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 function Navigation() {
@@ -23,10 +26,12 @@ function Navigation() {
 
   const navItems = [
     { href: "/psur", icon: LayoutDashboard, label: "Wizard" },
+    { href: "/pipeline", icon: Zap, label: "Pipeline" },
+    { href: "/agent-activity", icon: Activity, label: "Agents" },
     { href: "/content-traces", icon: BarChart3, label: "Content" },
     { href: "/system-instructions", icon: Brain, label: "Prompts" },
     { href: "/grkb", icon: Globe, label: "GRKB" },
-    { href: "/template-management", icon: FileText, label: "Templates" },
+    { href: "/grkb-mapping", icon: Link2, label: "Mappings" },
     { href: "/instructions", icon: Info, label: "Docs" },
     { href: "/admin", icon: Settings, label: "Admin" },
   ];
@@ -110,8 +115,11 @@ function Router() {
           }}
         </Route>
         <Route path="/psur" component={PsurWizard} />
+        <Route path="/agent-activity" component={AgentActivity} />
         <Route path="/content-traces" component={ContentTraces} />
         <Route path="/grkb" component={GrkbView} />
+        <Route path="/grkb-mapping" component={GrkbMapping} />
+        <Route path="/pipeline" component={TemplatePipeline} />
         <Route path="/agent-system" component={AgentSystem} />
         <Route path="/system-instructions" component={SystemInstructions} />
         <Route path="/admin" component={Admin} />

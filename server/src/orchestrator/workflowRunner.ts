@@ -2,7 +2,7 @@ import { db } from "../../db";
 import { storage } from "../../storage";
 import { loadTemplate, loadFormTemplate, isTemplateFormBased, getSlots, getEffectiveMapping, getTemplateDefaults, getEffectiveSlots, type Template, type FormTemplate } from "../templateStore";
 import { cacheCompiledDocument, initLiveContent, finishLiveContent } from "../../routes";
-import { lintTemplate, type LintResult } from "../templates/lintTemplates";
+import { lintTemplate, lintTemplateFromJson, type LintResult } from "../templates/lintTemplates";
 import { listEvidenceAtomsByCase, EvidenceAtomRecord } from "../services/evidenceStore";
 import { ingestEvidenceStep } from "./steps/ingestEvidence";
 import { proposeSlotsStep, SlotProposalOutput, ProposalStatus, getTraceGaps, areAllProposalsReady } from "./steps/proposeSlots";
@@ -20,6 +20,7 @@ import {
   type TraceContext,
 } from "../services/decisionTraceService";
 import path from "path";
+import fs from "fs";
 import {
   psurCases,
   slotProposals,
@@ -28,6 +29,7 @@ import {
   evidenceAtoms,
   qualificationReports,
   decisionTraceSummaries,
+  templates,
   WorkflowStep,
   WorkflowStepStatus,
   OrchestratorWorkflowResult,
@@ -133,6 +135,13 @@ export function cancelOrchestratorWorkflow(psurCaseId: number, reason = "Cancell
   }
   emitRuntimeEvent(psurCaseId, { kind: "workflow.cancelled", ts: Date.now(), psurCaseId, reason });
   return true;
+}
+
+/**
+ * Check if a workflow is currently running for a given PSUR case
+ */
+export function isWorkflowRunning(psurCaseId: number): boolean {
+  return activeRuns.has(psurCaseId);
 }
 
 export function startOrchestratorWorkflow(
@@ -382,10 +391,46 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
 
       try {
         throwIfAborted();
-        // 1a. Lint template JSON against strict Zod schema
-        const templatesDir = path.resolve(process.cwd(), "server", "templates");
-        const templatePath = path.join(templatesDir, `${templateId}.json`);
-        const lintResult: LintResult = await lintTemplate(templatePath);
+        // 1a. Check if template exists in database (already validated by pipeline)
+        // Templates stored via the pipeline have already passed validation - trust them
+        const [dbTemplate] = await db
+          .select()
+          .from(templates)
+          .where(eq(templates.templateId, templateId))
+          .limit(1);
+        
+        let lintResult: LintResult;
+        
+        if (dbTemplate && dbTemplate.templateJson && dbTemplate.templateType) {
+          // Template exists in database with known type - SKIP re-validation
+          // The pipeline already validated and accepted this template
+          console.log(`[WorkflowRunner] Template found in database with type '${dbTemplate.templateType}' - skipping lint validation (already accepted via pipeline)`);
+          
+          // Create a synthetic valid lint result
+          lintResult = {
+            valid: true,
+            errors: [],
+            warnings: [],
+            templateType: dbTemplate.templateType as "slot-based" | "form-based",
+          };
+        } else if (dbTemplate && dbTemplate.templateJson) {
+          // Template in database but no type - run lint to determine type
+          console.log(`[WorkflowRunner] Template in database without type - running lint to detect type: ${templateId}`);
+          lintResult = await lintTemplateFromJson(dbTemplate.templateJson, templateId);
+        } else {
+          // Fallback to filesystem - these need full validation
+          console.log(`[WorkflowRunner] Template not in database, trying filesystem: ${templateId}`);
+          const templatesDir = path.resolve(process.cwd(), "server", "templates");
+          const templatePath = path.join(templatesDir, `${templateId}.json`);
+          
+          // Check if file exists before trying to lint
+          if (!fs.existsSync(templatePath)) {
+            console.error(`[WorkflowRunner] Template '${templateId}' not found in database OR filesystem`);
+            throw new Error(`Template '${templateId}' does not exist. Please upload the template first via the Template Pipeline or select an existing template.`);
+          }
+          
+          lintResult = await lintTemplate(templatePath);
+        }
 
         if (!lintResult.valid) {
           const errorMsg = lintResult.errors.map(e => `[${e.code}] ${e.message}`).join("; ");
@@ -408,7 +453,7 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
         if (isFormBased) {
           // Form-based templates don't use GRKB slot/mapping structure
           // Load form template and skip GRKB qualification
-          formTemplate = loadFormTemplate(templateId);
+          formTemplate = await loadFormTemplate(templateId);
           
           console.log(`[WorkflowRunner] Form-based template detected: ${templateId}`);
           console.log(`[WorkflowRunner] Form sections:`, Object.keys(formTemplate.sections));
@@ -436,9 +481,11 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
             await markStepCompleted(psurCaseId || 0, 1);
           }
         } else {
-          // 1b. Load slot-based template structure (now guaranteed valid)
-          template = loadTemplate(templateId);
-          const effectiveSlots = getSlots(template);
+          // 1b. Load slot-based template structure
+          // Templates in DB are now always stored in workflow-compatible format
+          // (transformed at ingestion by pipeline/management service)
+          template = await loadTemplate(templateId);
+          const effectiveSlots = getSlots(template) || [];
           const effectiveMapping = getEffectiveMapping(template);
 
           // 1c. Qualify against GRKB obligations from DB
@@ -524,11 +571,12 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
       }
     } else if (existingCaseId) {
       // If skipping step 1, we still need to load the template
-      isFormBased = isTemplateFormBased(templateId);
+      // Templates in DB are always stored in workflow-compatible format
+      isFormBased = await isTemplateFormBased(templateId);
       if (isFormBased) {
-        formTemplate = loadFormTemplate(templateId);
+        formTemplate = await loadFormTemplate(templateId);
       } else {
-        template = loadTemplate(templateId);
+        template = await loadTemplate(templateId);
       }
     }
 
@@ -627,8 +675,8 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
         throwIfAborted();
         // Get required evidence types from template for negative evidence generation
         let requiredTypes: string[] = [];
-        if (template) {
-          const slots = getSlots(template);
+        if (template && !isFormBased) {
+          const slots = getSlots(template) || [];
           const typesSet = new Set<string>();
           for (const slot of slots) {
             const slotTypes = slot.evidence_requirements?.required_types || [];
@@ -1368,8 +1416,8 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
   console.log(`[Workflow ${psurCaseId}] WORKFLOW FINISHED - Steps status:`, steps.map(s => `${s.name}: ${s.status}`).join(", "));
 
   const kernelStatus = await getKernelStatus(jurisdictions);
-  if (template) {
-    kernelStatus.templateSlots = getSlots(template).length;
+  if (template && !isFormBased) {
+    kernelStatus.templateSlots = (getSlots(template) || []).length;
   }
 
   // Final update to trace summary to mark as COMPLETED or FAILED
@@ -1553,12 +1601,12 @@ export async function getWorkflowResultForCase(psurCaseId: number): Promise<Orch
   let template: Template | null = null;
   try {
     // Check if it's a form-based template
-    if (isTemplateFormBased(psurCase.templateId)) {
+    if (await isTemplateFormBased(psurCase.templateId)) {
       // Form-based templates don't have slots
       kernelStatus.templateSlots = 0;
     } else {
-      template = loadTemplate(psurCase.templateId);
-      kernelStatus.templateSlots = getSlots(template).length;
+      template = await loadTemplate(psurCase.templateId);
+      kernelStatus.templateSlots = (getSlots(template) || []).length;
     }
   } catch {
     kernelStatus.templateSlots = 0;

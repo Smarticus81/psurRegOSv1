@@ -2,11 +2,15 @@
  * 3-Layer Prompt Architecture
  * 
  * Layer 1: AGENT PERSONAS - WHO the agent is (identity, tone, expertise)
- * Layer 2: SYSTEM PROMPTS - WHAT to do (task-specific instructions)
+ * Layer 2: SYSTEM PROMPTS - WHAT to do (from DATABASE via getPromptTemplate)
  * Layer 3: TEMPLATE FIELD INSTRUCTIONS - HOW to handle custom fields (examples, format)
  * 
  * At runtime, prompts are composed as:
  * SYSTEM MESSAGE = Persona + System Prompt + Field Instructions (if any)
+ * 
+ * SINGLE SOURCE OF TRUTH: All system prompts come from the database.
+ * The System Instructions UI edits prompts in the database.
+ * No hardcoded fallbacks - if prompt is missing from DB, it's an error.
  */
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -159,272 +163,16 @@ You are a data visualization expert focused on regulatory-appropriate charts. Yo
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// LAYER 2: SYSTEM PROMPTS - WHAT to do (loaded from DB or defaults)
+// LAYER 2: SYSTEM PROMPTS - WHAT to do (loaded from DATABASE ONLY)
 // ═══════════════════════════════════════════════════════════════════════════════
-
-// These are the default system prompts. They can be overridden via the UI.
-// The prompts define WHAT the agent should do, while the persona defines WHO it is.
-
-export const DEFAULT_SYSTEM_PROMPTS = {
-  // Executive Summary
-  EXEC_SUMMARY_SYSTEM: `## TASK: Generate Executive Summary Section
-
-Generate a comprehensive Executive Summary that synthesizes ALL post-market surveillance data.
-
-### Required Content (EU MDR Article 86)
-1. Overall conclusions on safety and performance
-2. Key PMS findings during the reporting period
-3. Summary of benefit-risk assessment
-4. Any actions taken or recommended
-5. Changes since previous PSUR
-
-### Structure
-1. Opening statement (device, period, scope)
-2. Key safety findings (incidents, complaints, trends)
-3. Performance summary (PMCF, literature)
-4. Benefit-risk conclusion
-5. Recommended actions (if any)
-
-### Output Requirements
-- Write clean prose WITHOUT citation markers in the text
-- Report evidence atom IDs in the JSON metadata only
-- Be precise with statistics and dates`,
-
-  // Trend Analysis
-  TREND_NARRATIVE_SYSTEM: `## TASK: Generate Trend Analysis Section
-
-Generate comprehensive trend analysis that identifies statistically significant changes in safety data.
-
-### Required Content (EU MDR Article 88)
-1. Methodology for trend analysis
-2. Baseline rates and current rates
-3. Thresholds used for signal detection
-4. Statistical methods applied
-5. Conclusions on significant increases
-6. Comparison with state of the art
-
-### Structure
-1. Trend methodology overview
-2. Metrics analyzed (complaint rate, incident rate)
-3. Baseline establishment
-4. Current period results
-5. Statistical comparison
-6. Signal detection conclusion
-7. Actions taken or planned
-
-### Output Requirements
-- Use appropriate statistical language
-- Include specific calculations and thresholds
-- Write clean prose WITHOUT citation markers`,
-
-  // Safety Analysis
-  SAFETY_NARRATIVE_SYSTEM: `## TASK: Generate Safety Analysis Section
-
-Generate comprehensive safety narrative analyzing serious incidents, complaints, and adverse events.
-
-### Required Content (EU MDR Article 86.1, Article 87)
-1. Summary of all serious incidents (with IMDRF coding)
-2. Analysis of complaints by type, severity, and region
-3. Patient outcomes and clinical consequences
-4. Root cause analysis summary
-5. Trend comparison with previous periods
-
-### Structure for Serious Incidents
-1. Total count and classification
-2. IMDRF code breakdown (if available)
-3. Patient outcomes summary
-4. Regional distribution
-5. Root cause summary
-6. Regulatory reporting status
-
-### Structure for Complaints
-1. Total complaints vs previous period
-2. Breakdown by severity/seriousness
-3. Top complaint categories
-4. Rate per 1000 units by region
-5. Investigation outcomes
-
-### Output Requirements
-- Use precise safety terminology
-- Include specific counts and rates
-- Write clean prose WITHOUT citation markers`,
-
-  // Device Scope
-  DEVICE_SCOPE_SYSTEM: `## TASK: Generate Device Scope Section
-
-Generate precise technical description of devices covered by the PSUR.
-
-### Required Content (EU MDR Article 86.1)
-1. Devices covered by the PSUR (by Basic UDI-DI)
-2. Intended purpose and indications for use
-3. Risk classification and applicable rule
-4. Description of device variants/configurations
-5. Changes to scope since previous PSUR
-
-### Structure
-1. Device identification (name, UDI, classification)
-2. Intended purpose statement
-3. Device description and principle of operation
-4. Patient population and clinical context
-5. Accessories and components (if applicable)
-
-### Output Requirements
-- Be precise about specifications
-- Include UDI-DI and catalog numbers
-- Write clean prose WITHOUT citation markers`,
-
-  // PMS Activity
-  PMS_ACTIVITY_SYSTEM: `## TASK: Generate PMS Activity Section
-
-Generate comprehensive description of Post-Market Surveillance activities.
-
-### Required Content (EU MDR Article 83, Article 86)
-1. Overview of PMS system and plan
-2. Data sources used (internal and external)
-3. Collection methods and frequency
-4. Analysis methodology
-5. Integration with quality management system
-
-### Structure
-1. PMS plan summary
-2. Proactive vs. reactive surveillance
-3. Data collection methods
-4. Analysis and trending approach
-5. Sales/exposure data summary
-
-### Output Requirements
-- Be specific about data sources
-- Include metrics on data completeness
-- Write clean prose WITHOUT citation markers`,
-
-  // FSCA
-  FSCA_NARRATIVE_SYSTEM: `## TASK: Generate FSCA Section
-
-Generate comprehensive FSCA narrative documenting all field safety actions.
-
-### Required Content (EU MDR Article 83, Article 89)
-1. All FSCAs initiated during the period
-2. Reason for each FSCA
-3. Affected devices/lots/regions
-4. Actions taken (recall, modification, notice)
-5. Effectiveness of actions
-6. Regulatory notifications made
-
-### Structure
-1. Summary of FSCAs during period
-2. For each FSCA: reference, type, reason, affected devices, actions, effectiveness, status
-3. Ongoing FSCAs from previous periods
-4. Conclusions on field safety
-
-### Output Requirements
-- Include FSCA reference numbers
-- Document quantities and regions
-- Write clean prose WITHOUT citation markers`,
-
-  // CAPA
-  CAPA_NARRATIVE_SYSTEM: `## TASK: Generate CAPA Section
-
-Generate comprehensive CAPA narrative documenting corrective and preventive actions.
-
-### Required Content (EU MDR Annex III)
-1. CAPAs triggered by PMS findings
-2. Root cause analysis summary
-3. Corrective actions implemented
-4. Preventive actions planned/implemented
-5. Effectiveness verification results
-6. Link to original PMS findings
-
-### Structure
-1. Summary of CAPA activity
-2. For each significant CAPA: reference, type, trigger, root cause, actions, verification, status
-3. Trend in CAPA activity
-4. Conclusions on effectiveness
-
-### Output Requirements
-- Include CAPA reference numbers
-- Document clear linkage to triggers
-- Write clean prose WITHOUT citation markers`,
-
-  // Clinical
-  CLINICAL_NARRATIVE_SYSTEM: `## TASK: Generate Clinical Evidence Section
-
-Generate comprehensive clinical narrative for literature and PMCF activities.
-
-### Required Content (EU MDR Annex III, Article 61)
-1. Literature search methodology
-2. Relevant publications identified
-3. PMCF plan and activities
-4. PMCF results and conclusions
-5. External database searches
-6. Conclusions on clinical safety and performance
-
-### Structure for Literature
-1. Search methodology (databases, strings, period)
-2. Results summary (hits, screened, included)
-3. Relevant findings by category
-4. Safety signals identified
-5. Conclusions
-
-### Structure for PMCF
-1. PMCF plan summary
-2. Activities performed
-3. Key results
-4. Conclusions and next steps
-
-### Output Requirements
-- Include search methodology details
-- Cite publications properly
-- Write clean prose WITHOUT citation markers`,
-
-  // Benefit-Risk
-  BENEFIT_RISK_SYSTEM: `## TASK: Generate Benefit-Risk Assessment Section
-
-Generate comprehensive benefit-risk narrative with evidence-based conclusions.
-
-### Required Content (EU MDR Article 2, Article 61, Article 86)
-1. Summary of known benefits
-2. Summary of known risks
-3. Emerging risks from current period
-4. Comparison with state of the art
-5. Overall benefit-risk conclusion
-6. Acceptability determination
-
-### Structure
-1. Benefits summary (intended purpose, clinical evidence, patient outcomes)
-2. Risks summary (known risks, emerging risks, risk rates)
-3. Benefit-risk comparison
-4. Conclusion (determination, acceptability, conditions)
-
-### Output Requirements
-- Be balanced and objective
-- Support conclusions with data
-- Write clean prose WITHOUT citation markers`,
-
-  // Conclusion
-  CONCLUSION_SYSTEM: `## TASK: Generate PSUR Conclusions Section
-
-Generate comprehensive conclusions summarizing all PSUR findings.
-
-### Required Content (EU MDR Article 86)
-1. Summary of overall safety conclusions
-2. Summary of performance conclusions
-3. Actions taken during the period
-4. Actions planned for next period
-5. Updates to documentation
-6. Confirmation of continued compliance
-
-### Structure
-1. Safety conclusions
-2. Performance conclusions
-3. Actions taken
-4. Actions planned
-5. Compliance statement
-
-### Output Requirements
-- Be definitive with conclusions
-- Include specific timelines for actions
-- Write clean prose WITHOUT citation markers`,
-};
+//
+// SINGLE SOURCE OF TRUTH: All system prompts come from the database.
+// Use getPromptTemplate() from llmService.ts to retrieve prompts.
+// The System Instructions UI (/system-instructions) manages all prompts.
+// 
+// Initial seeding: GET /api/system-instructions seeds prompts from 
+// DEFAULT_PROMPT_TEMPLATES (in llmService.ts) on first access.
+// ═══════════════════════════════════════════════════════════════════════════════
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // LAYER 3: TEMPLATE FIELD INSTRUCTIONS - HOW to handle custom template fields
@@ -664,51 +412,6 @@ ${fieldInstructionsText}
 - If evidence is insufficient, explicitly state what is missing`;
 }
 
-/**
- * Get the default system prompt for a section type
- */
-export function getDefaultSystemPrompt(sectionType: string): string {
-  const typeUpper = sectionType.toUpperCase();
-  
-  // Map section types to prompts
-  if (typeUpper.includes("EXEC") || typeUpper.includes("SUMMARY")) {
-    return DEFAULT_SYSTEM_PROMPTS.EXEC_SUMMARY_SYSTEM;
-  }
-  if (typeUpper.includes("TREND")) {
-    return DEFAULT_SYSTEM_PROMPTS.TREND_NARRATIVE_SYSTEM;
-  }
-  if (typeUpper.includes("SAFETY") || typeUpper.includes("INCIDENT") || typeUpper.includes("COMPLAINT")) {
-    return DEFAULT_SYSTEM_PROMPTS.SAFETY_NARRATIVE_SYSTEM;
-  }
-  if (typeUpper.includes("DEVICE") || typeUpper.includes("SCOPE")) {
-    return DEFAULT_SYSTEM_PROMPTS.DEVICE_SCOPE_SYSTEM;
-  }
-  if (typeUpper.includes("PMS") || typeUpper.includes("SURVEILLANCE") || typeUpper.includes("ACTIVITY")) {
-    return DEFAULT_SYSTEM_PROMPTS.PMS_ACTIVITY_SYSTEM;
-  }
-  if (typeUpper.includes("FSCA") || typeUpper.includes("RECALL") || typeUpper.includes("FIELD_SAFETY")) {
-    return DEFAULT_SYSTEM_PROMPTS.FSCA_NARRATIVE_SYSTEM;
-  }
-  if (typeUpper.includes("CAPA") || typeUpper.includes("CORRECTIVE")) {
-    return DEFAULT_SYSTEM_PROMPTS.CAPA_NARRATIVE_SYSTEM;
-  }
-  if (typeUpper.includes("CLINICAL") || typeUpper.includes("LITERATURE") || typeUpper.includes("PMCF")) {
-    return DEFAULT_SYSTEM_PROMPTS.CLINICAL_NARRATIVE_SYSTEM;
-  }
-  if (typeUpper.includes("BENEFIT") || typeUpper.includes("RISK")) {
-    return DEFAULT_SYSTEM_PROMPTS.BENEFIT_RISK_SYSTEM;
-  }
-  if (typeUpper.includes("CONCLUSION")) {
-    return DEFAULT_SYSTEM_PROMPTS.CONCLUSION_SYSTEM;
-  }
-  
-  // Generic fallback
-  return `## TASK: Generate ${sectionType} Section
-
-Generate appropriate content for this PSUR section based on the provided evidence.
-
-### Output Requirements
-- Write clean prose WITHOUT citation markers
-- Report evidence usage in JSON metadata
-- Be precise and factual`;
-}
+// NOTE: getDefaultSystemPrompt() has been REMOVED.
+// All prompts must come from the database via getPromptTemplate().
+// If a prompt is not in the database, it's an error - visit System Instructions to seed prompts.

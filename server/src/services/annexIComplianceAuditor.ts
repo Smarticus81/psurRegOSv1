@@ -6,10 +6,15 @@
  * 
  * This service runs AFTER permissive schema validation and generates a
  * detailed compliance report with warnings and recommendations.
+ * 
+ * HYBRID APPROACH:
+ * 1. Fast regex + mdcg_reference check first
+ * 2. LLM semantic matching fallback for uncertain cases
  */
 
 import { MDCG_ANNEX_I_OBLIGATIONS, type ObligationDefinition, type EvidenceType } from "../psur/mappings/mdcg2022AnnexI";
 import type { Template, SlotDefinition } from "../templates/templateSchema";
+import { complete } from "../agents/llmService";
 
 // ============================================================================
 // COMPLIANCE AUDIT TYPES
@@ -140,8 +145,8 @@ export class AnnexIComplianceAuditor {
     const passedChecks: ComplianceCheck[] = [];
     const recommendations: string[] = [];
 
-    // Layer 1: Section Structure
-    const sectionStructure = this.checkSectionStructure(template);
+    // Layer 1: Section Structure (async - uses LLM fallback)
+    const sectionStructure = await this.checkSectionStructure(template);
     this.collectResults(sectionStructure, "STRUCTURE", passedChecks, warnings, recommendations);
 
     // Layer 2: Obligation Coverage
@@ -201,45 +206,63 @@ export class AnnexIComplianceAuditor {
   }
 
   // ========================================================================
-  // LAYER 1: SECTION STRUCTURE
+  // LAYER 1: SECTION STRUCTURE (Hybrid: Regex + mdcg_reference + LLM fallback)
   // ========================================================================
 
-  private checkSectionStructure(template: Template): SectionStructureResult {
+  private async checkSectionStructure(template: Template): Promise<SectionStructureResult> {
+    // Expected sections with regex patterns AND mdcg_reference patterns
     const expectedSections = [
-      { id: "COVER", pattern: /cover/i, path: "Cover" },
-      { id: "TOC", pattern: /toc|table.*contents/i, path: "FrontMatter" },
-      { id: "EXEC_SUMMARY", pattern: /executive.*summary/i, path: "1 > Executive Summary" },
-      { id: "DEVICE_DESC", pattern: /device.*description|scope/i, path: "2 > Device Description" },
-      { id: "SALES", pattern: /sales|distribution|exposure/i, path: "3 > Sales" },
-      { id: "COMPLAINTS", pattern: /complaint/i, path: "4 > Complaints" },
-      { id: "INCIDENTS", pattern: /incident|vigilance/i, path: "5 > Serious Incidents" },
-      { id: "FSCA", pattern: /fsca|field.*safety/i, path: "6 > FSCAs" },
-      { id: "CAPA", pattern: /capa|corrective/i, path: "7 > CAPAs" },
-      { id: "LITERATURE", pattern: /literature/i, path: "8 > Literature" },
-      { id: "PMCF", pattern: /pmcf|clinical/i, path: "9 > PMCF" },
-      { id: "BENEFIT_RISK", pattern: /benefit.*risk/i, path: "10 > Benefit-Risk" },
-      { id: "CONCLUSIONS", pattern: /conclusion/i, path: "11 > Conclusions" },
+      { id: "COVER", pattern: /cover/i, mdcgRef: /MDCG\.ANNEXI\.COVER/i, path: "Cover" },
+      { id: "TOC", pattern: /toc|table.*contents/i, mdcgRef: /MDCG\.ANNEXI\.TOC/i, path: "FrontMatter" },
+      { id: "EXEC_SUMMARY", pattern: /executive.*summary/i, mdcgRef: /MDCG\.ANNEXI\.EXEC/i, path: "A > Executive Summary" },
+      { id: "DEVICE_SCOPE", pattern: /device.*description|scope|intended.*purpose/i, mdcgRef: /MDCG\.ANNEXI\.DEVICES_SCOPE/i, path: "B > Device Scope" },
+      { id: "SALES", pattern: /sales|distribution|exposure/i, mdcgRef: /MDCG\.ANNEXI\.SALES/i, path: "C > Sales" },
+      { id: "INCIDENTS", pattern: /serious.*incident|vigilance/i, mdcgRef: /MDCG\.ANNEXI\.SERIOUS_INCIDENTS/i, path: "D > Serious Incidents" },
+      { id: "COMPLAINTS", pattern: /complaint/i, mdcgRef: /MDCG\.ANNEXI\.COMPLAINTS/i, path: "F > Complaints" },
+      { id: "TRENDS", pattern: /trend/i, mdcgRef: /MDCG\.ANNEXI\.TREND/i, path: "G > Trends" },
+      { id: "FSCA", pattern: /fsca|field.*safety/i, mdcgRef: /MDCG\.ANNEXI\.FSCA/i, path: "H > FSCAs" },
+      { id: "CAPA", pattern: /capa|corrective/i, mdcgRef: /MDCG\.ANNEXI\.CAPA/i, path: "I > CAPAs" },
+      { id: "LITERATURE", pattern: /literature/i, mdcgRef: /MDCG\.ANNEXI\.LITERATURE/i, path: "J > Literature" },
+      { id: "EXTERNAL_DB", pattern: /external.*database|registry|maude/i, mdcgRef: /MDCG\.ANNEXI\.EXTERNAL/i, path: "K > External Databases" },
+      { id: "PMCF", pattern: /pmcf|post.*market.*clinical/i, mdcgRef: /MDCG\.ANNEXI\.PMCF/i, path: "L > PMCF" },
+      { id: "CONCLUSIONS", pattern: /conclusion|benefit.*risk/i, mdcgRef: /MDCG\.ANNEXI\.(CONCLUSION|BENEFIT_RISK|ACTIONS)/i, path: "M > Conclusions" },
     ];
 
     const missingSections: string[] = [];
     const invalidPaths: string[] = [];
     const recommendations: string[] = [];
+    const potentiallyMissing: Array<{ expected: typeof expectedSections[0], slots: any[] }> = [];
 
     for (const expected of expectedSections) {
-      const found = template.slots.find(
+      // Phase 1: Fast regex check on slot_id, title, section_path
+      let found = template.slots.find(
         (slot) =>
           expected.pattern.test(slot.slot_id) ||
           expected.pattern.test(slot.title) ||
           expected.pattern.test(slot.section_path)
       );
 
+      // Phase 2: Check mdcg_reference field (custom field many templates use)
       if (!found) {
-        missingSections.push(`${expected.id}: ${expected.path}`);
-        if (expected.id === "EXEC_SUMMARY" || expected.id === "CONCLUSIONS") {
-          recommendations.push(
-            `Add mandatory section ${expected.id} at path "${expected.path}" per MDCG 2022-21 Annex I`
-          );
-        }
+        found = template.slots.find((slot) => {
+          const slotAny = slot as any;
+          const mdcgRef = slotAny.mdcg_reference || slotAny.mdcgReference || "";
+          return expected.mdcgRef.test(mdcgRef);
+        });
+      }
+
+      // Phase 3: Check regulatory_obligations array
+      if (!found) {
+        found = template.slots.find((slot) => {
+          const slotAny = slot as any;
+          const regObligs = slotAny.regulatory_obligations || [];
+          return regObligs.some((obl: string) => expected.mdcgRef.test(obl));
+        });
+      }
+
+      if (!found) {
+        // Queue for LLM verification
+        potentiallyMissing.push({ expected, slots: template.slots });
       } else {
         // Check if section_path follows standard format
         if (!found.section_path.includes(">") && found.slot_kind !== "ADMIN") {
@@ -247,6 +270,23 @@ export class AnnexIComplianceAuditor {
             `Slot "${found.slot_id}" should use hierarchical path (e.g., "1 > Executive Summary")`
           );
         }
+      }
+    }
+
+    // Phase 4: LLM fallback for potentially missing sections
+    let llmVerifiedMissing: string[] = [];
+    if (potentiallyMissing.length > 0) {
+      llmVerifiedMissing = await this.llmVerifyMissingSections(potentiallyMissing, template);
+    }
+
+    // Build final missing list
+    for (const missing of llmVerifiedMissing) {
+      missingSections.push(missing);
+      const expected = expectedSections.find(e => e.id === missing.split(":")[0]);
+      if (expected && (expected.id === "EXEC_SUMMARY" || expected.id === "CONCLUSIONS")) {
+        recommendations.push(
+          `Add mandatory section ${expected.id} at path "${expected.path}" per MDCG 2022-21 Annex I`
+        );
       }
     }
 
@@ -260,6 +300,75 @@ export class AnnexIComplianceAuditor {
       invalidPaths,
       recommendations,
     };
+  }
+
+  /**
+   * LLM fallback to verify if sections are truly missing
+   * Only called for sections not found by regex/mdcg_reference
+   */
+  private async llmVerifyMissingSections(
+    potentiallyMissing: Array<{ expected: { id: string; path: string }; slots: any[] }>,
+    template: Template
+  ): Promise<string[]> {
+    const confirmedMissing: string[] = [];
+
+    // Build slot summary for LLM
+    const slotSummary = template.slots.map((s: any) => ({
+      slot_id: s.slot_id,
+      title: s.title,
+      section_path: s.section_path,
+      mdcg_reference: s.mdcg_reference || s.mdcgReference || null,
+      regulatory_obligations: s.regulatory_obligations || [],
+      slot_kind: s.slot_kind,
+    }));
+
+    for (const { expected } of potentiallyMissing) {
+      try {
+        const response = await complete({
+          messages: [
+            {
+              role: "system",
+              content: `You are a regulatory expert analyzing PSUR templates for MDCG 2022-21 Annex I compliance.
+Determine if the required section is covered by any slot in the template.
+Return JSON: {"covered": true/false, "matchingSlotId": "slot_id or null", "confidence": 0-100, "reasoning": "brief explanation"}`,
+            },
+            {
+              role: "user",
+              content: `Required Section: ${expected.id}
+Description: ${expected.path}
+MDCG Reference Pattern: MDCG.ANNEXI.${expected.id}
+
+Template Slots:
+${JSON.stringify(slotSummary, null, 2)}
+
+Is this required section covered by any of the template slots? Consider:
+- The slot's title and section_path
+- The slot's mdcg_reference field
+- The slot's regulatory_obligations array
+- Semantic equivalence (e.g., "Section D" covering "Serious Incidents")`,
+            },
+          ],
+          model: "gpt-4o-mini",
+          temperature: 0.1,
+          response_format: { type: "json_object" },
+        });
+
+        const result = JSON.parse(response.content);
+        
+        if (!result.covered || result.confidence < 70) {
+          confirmedMissing.push(`${expected.id}: ${expected.path}`);
+          console.log(`[ComplianceAuditor] LLM confirmed missing: ${expected.id} (confidence: ${result.confidence})`);
+        } else {
+          console.log(`[ComplianceAuditor] LLM found match for ${expected.id}: ${result.matchingSlotId} (confidence: ${result.confidence})`);
+        }
+      } catch (error) {
+        // If LLM fails, be conservative and mark as missing
+        console.warn(`[ComplianceAuditor] LLM verification failed for ${expected.id}, marking as missing`);
+        confirmedMissing.push(`${expected.id}: ${expected.path}`);
+      }
+    }
+
+    return confirmedMissing;
   }
 
   // ========================================================================
@@ -295,7 +404,7 @@ export class AnnexIComplianceAuditor {
   }
 
   // ========================================================================
-  // LAYER 3: REQUIRED TABLES
+  // LAYER 3: REQUIRED TABLES (Enhanced: checks table_schema, mdcg_reference)
   // ========================================================================
 
   private checkRequiredTables(template: Template): RequiredTablesResult {
@@ -306,14 +415,69 @@ export class AnnexIComplianceAuditor {
       if (!obligation.isMandatory) continue;
 
       for (const tableId of obligation.requiredTables) {
-        // Check if any slot references this table
-        const hasTable = template.slots.some(
-          (slot) =>
-            slot.slot_kind === "TABLE" &&
-            (slot.slot_id.includes(tableId) ||
-              slot.title.includes(tableId) ||
-              (slot.output_requirements as any)?.table_id === tableId)
-        );
+        // Check if any slot references this table (multiple detection methods)
+        const hasTable = template.slots.some((slot) => {
+          const slotAny = slot as any;
+          
+          // Method 1: Direct slot_id/title match
+          if (slot.slot_id.toLowerCase().includes(tableId.toLowerCase()) ||
+              slot.title.toLowerCase().includes(tableId.toLowerCase())) {
+            return true;
+          }
+          
+          // Method 2: Check output_requirements.table_id
+          if (slotAny.output_requirements?.table_id === tableId) {
+            return true;
+          }
+          
+          // Method 3: Check output_requirements.table_schema (string reference)
+          if (slotAny.output_requirements?.table_schema === tableId) {
+            return true;
+          }
+          
+          // Method 4: Check output_requirements.table_schemas array
+          if (Array.isArray(slotAny.output_requirements?.table_schemas)) {
+            if (slotAny.output_requirements.table_schemas.includes(tableId)) {
+              return true;
+            }
+          }
+          
+          // Method 5: Check mdcg_reference for table patterns
+          const mdcgRef = slotAny.mdcg_reference || slotAny.mdcgReference || "";
+          if (mdcgRef.toLowerCase().includes(tableId.toLowerCase().replace("table_", ""))) {
+            return true;
+          }
+          
+          // Method 6: Check regulatory_obligations array
+          const regObligs = slotAny.regulatory_obligations || [];
+          if (regObligs.some((obl: string) => 
+            obl.toLowerCase().includes(tableId.toLowerCase().replace("table_", "")))) {
+            return true;
+          }
+          
+          // Method 7: Check if slot is a TABLE with matching Annex II reference
+          if (slot.slot_kind === "TABLE" && slotAny.output_requirements?.mdcg_annex_ii_compliant) {
+            // Map common table IDs to MDCG patterns
+            const tablePatterns: Record<string, RegExp> = {
+              "TABLE_SALES_BY_REGION_YEAR": /sales|exposure/i,
+              "TABLE_SALES_CUMULATIVE": /sales|cumulative/i,
+              "TABLE_IMDRF_ANNEX_A": /imdrf|serious.*incident|problem.*code/i,
+              "TABLE_IMDRF_ANNEX_C": /imdrf|investigation|conclusion/i,
+              "TABLE_IMDRF_ANNEX_F": /imdrf|health.*effect/i,
+              "TABLE_COMPLAINTS_BY_CATEGORY": /complaint/i,
+              "TABLE_COMPLAINT_RATES": /complaint.*rate/i,
+              "TABLE_FSCA_SUMMARY": /fsca|field.*safety/i,
+              "TABLE_CAPA_STATUS": /capa|corrective/i,
+              "TABLE_PMCF_ACTIVITIES": /pmcf|clinical.*follow/i,
+            };
+            const pattern = tablePatterns[tableId];
+            if (pattern && (pattern.test(slot.title) || pattern.test(slot.slot_id))) {
+              return true;
+            }
+          }
+          
+          return false;
+        });
 
         if (!hasTable) {
           missingTables.push({
@@ -342,7 +506,7 @@ export class AnnexIComplianceAuditor {
   }
 
   // ========================================================================
-  // LAYER 4: EVIDENCE TYPE MAPPING
+  // LAYER 4: EVIDENCE TYPE MAPPING (Handles both array and object formats)
   // ========================================================================
 
   private checkEvidenceTypes(template: Template): EvidenceTypesResult {
@@ -353,11 +517,22 @@ export class AnnexIComplianceAuditor {
     }> = [];
     const recommendations: string[] = [];
 
-    // Build map of slot -> evidence types
+    // Build map of slot -> evidence types (handle both formats)
     const slotEvidenceMap = new Map<string, Set<string>>();
     for (const slot of template.slots) {
-      const types = new Set(slot.evidence_requirements.required_types);
-      slotEvidenceMap.set(slot.slot_id, types);
+      const slotAny = slot as any;
+      let evidenceTypes: string[] = [];
+      
+      // Handle object format: { required_types: [...] }
+      if (slotAny.evidence_requirements?.required_types) {
+        evidenceTypes = slotAny.evidence_requirements.required_types;
+      }
+      // Handle legacy array format: [...]
+      else if (Array.isArray(slotAny.evidence_requirements)) {
+        evidenceTypes = slotAny.evidence_requirements;
+      }
+      
+      slotEvidenceMap.set(slot.slot_id, new Set(evidenceTypes));
     }
 
     // Build map of obligation -> slots (from template.mapping)

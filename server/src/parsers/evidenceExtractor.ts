@@ -165,243 +165,9 @@ export const EVIDENCE_TYPES: EvidenceType[] = [
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// SOTA LLM-POWERED EXTRACTION
+// NOTE: Legacy LLM functions removed - SOTA pipeline is now mandatory
+// See sotaSchemaDiscovery.ts, sotaValidation.ts, sotaExtractor.ts for new implementation
 // ═══════════════════════════════════════════════════════════════════════════════
-
-/**
- * SOTA Schema Inference using Claude Sonnet 4.5
- * Analyzes column headers and sample data to determine semantic mappings
- */
-async function llmInferSchema(
-  headers: string[],
-  sampleRows: Record<string, unknown>[],
-  sourceType: string,
-  targetEvidenceType: string
-): Promise<{
-  mappings: Array<{ sourceColumn: string; targetField: string; confidence: number; reasoning: string }>;
-  evidenceType: string;
-  overallConfidence: number;
-} | null> {
-  const canonicalFields = getCanonicalFieldsForType(targetEvidenceType);
-  
-  // Get sample values for each column (first 3 rows)
-  const columnSamples: Record<string, unknown[]> = {};
-  for (const header of headers) {
-    columnSamples[header] = sampleRows.slice(0, 3).map(row => row[header]).filter(v => v !== undefined && v !== null && v !== "");
-  }
-
-  const prompt = `You are a medical device regulatory data expert. Analyze these spreadsheet columns and map them to canonical PSUR evidence fields.
-
-## Source Type Selected by User: ${sourceType}
-## Target Evidence Type: ${targetEvidenceType}
-
-## Column Headers and Sample Values:
-${headers.map(h => `- "${h}": ${JSON.stringify(columnSamples[h] || [])}`).join("\n")}
-
-## Canonical Target Fields for ${targetEvidenceType}:
-${canonicalFields.map(f => `- ${f.name}: ${f.description}`).join("\n")}
-
-## Instructions:
-1. For each source column, determine which canonical field it maps to based on:
-   - Column name semantics (what does the name mean?)
-   - Sample value patterns (dates, numbers, text, codes?)
-   - Domain knowledge of medical device data
-2. Consider common naming variations (e.g., "qty" = quantity, "prod_code" = deviceCode)
-3. If a column doesn't map to any canonical field, set targetField to null
-4. Be confident - medical device data follows predictable patterns
-
-Respond ONLY with valid JSON:
-{
-  "mappings": [
-    {
-      "sourceColumn": "original column name",
-      "targetField": "canonical_field_name or null",
-      "confidence": 0.0-1.0,
-      "reasoning": "Brief explanation of why this mapping makes sense"
-    }
-  ],
-  "evidenceType": "${targetEvidenceType}",
-  "overallConfidence": 0.0-1.0,
-  "unmappedColumns": ["columns that couldn't be mapped"],
-  "warnings": ["any data quality concerns"]
-}`;
-
-  try {
-    console.log(`[SOTA Extract] Calling Claude for schema inference on ${headers.length} columns`);
-    
-    const response = await complete({
-      messages: [
-        { role: "system", content: "You are a medical device regulatory data expert. Always respond with valid JSON only." },
-        { role: "user", content: prompt }
-      ],
-      config: {
-        provider: "anthropic",
-        model: "claude-sonnet-4-5-20250929", // SOTA reasoning model
-        temperature: 0.1, // Low temperature for consistent mappings
-        maxTokens: 2048,
-      },
-      responseFormat: "json",
-      agentId: "sota-schema-inference",
-      traceContext: { operation: "schema_inference" }
-    });
-
-    // Parse and validate response
-    const content = response.content.trim();
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      console.warn("[SOTA Extract] LLM response not valid JSON");
-      return null;
-    }
-    
-    const result = JSON.parse(jsonMatch[0]);
-    console.log(`[SOTA Extract] Claude mapped ${result.mappings?.length || 0} columns with ${(result.overallConfidence * 100).toFixed(0)}% confidence`);
-    
-    return result;
-  } catch (error: any) {
-    console.warn(`[SOTA Extract] LLM inference failed: ${error?.message || error}`);
-    return null;
-  }
-}
-
-/**
- * Get canonical field definitions for evidence type
- */
-function getCanonicalFieldsForType(evidenceType: string): Array<{ name: string; description: string }> {
-  const fieldDefs: Record<string, Array<{ name: string; description: string }>> = {
-    sales_volume: [
-      { name: "deviceCode", description: "Product/device identifier (SKU, part number, model)" },
-      { name: "region", description: "Geographic region or market" },
-      { name: "country", description: "Country code or name" },
-      { name: "quantity", description: "Number of units sold/shipped" },
-      { name: "periodStart", description: "Start of reporting period (date)" },
-      { name: "periodEnd", description: "End of reporting period (date)" },
-      { name: "revenue", description: "Sales revenue amount" },
-      { name: "distributionChannel", description: "Sales channel (direct, distributor, etc.)" },
-    ],
-    complaint_record: [
-      { name: "complaintId", description: "Unique complaint identifier" },
-      { name: "deviceCode", description: "Product/device identifier" },
-      { name: "complaintDate", description: "Date complaint was received/reported" },
-      { name: "description", description: "Complaint description or narrative" },
-      { name: "severity", description: "Severity level (critical, high, medium, low)" },
-      { name: "region", description: "Geographic region" },
-      { name: "country", description: "Country of complaint origin" },
-      { name: "rootCause", description: "Root cause determination" },
-      { name: "correctiveAction", description: "Actions taken to address complaint" },
-      { name: "patientOutcome", description: "Patient outcome (injury, death, no harm)" },
-      { name: "serious", description: "Whether this is a serious complaint (boolean)" },
-      { name: "status", description: "Current status (open, closed, investigating)" },
-    ],
-    fsca_record: [
-      { name: "fscaId", description: "FSCA identifier or reference number" },
-      { name: "deviceCode", description: "Affected product/device" },
-      { name: "initiationDate", description: "Date FSCA was initiated" },
-      { name: "description", description: "Description of field action" },
-      { name: "actionType", description: "Type of action (recall, advisory, correction)" },
-      { name: "affectedUnits", description: "Number of units affected" },
-      { name: "status", description: "Current status" },
-      { name: "region", description: "Geographic scope" },
-    ],
-    capa_record: [
-      { name: "capaId", description: "CAPA identifier" },
-      { name: "deviceCode", description: "Related product/device" },
-      { name: "openDate", description: "Date CAPA was opened" },
-      { name: "closeDate", description: "Date CAPA was closed" },
-      { name: "description", description: "CAPA description" },
-      { name: "rootCause", description: "Root cause analysis" },
-      { name: "correctiveAction", description: "Corrective actions taken" },
-      { name: "preventiveAction", description: "Preventive actions implemented" },
-      { name: "status", description: "Current status" },
-      { name: "effectiveness", description: "Effectiveness verification result" },
-    ],
-    pmcf_result: [
-      { name: "studyId", description: "Study identifier" },
-      { name: "studyType", description: "Type of PMCF activity" },
-      { name: "startDate", description: "Study start date" },
-      { name: "endDate", description: "Study end date" },
-      { name: "sampleSize", description: "Number of subjects/devices" },
-      { name: "findings", description: "Key findings" },
-      { name: "conclusions", description: "Study conclusions" },
-      { name: "status", description: "Study status" },
-    ],
-    device_registry_record: [
-      { name: "deviceName", description: "Device trade name" },
-      { name: "deviceCode", description: "Internal device code" },
-      { name: "model", description: "Model number/name" },
-      { name: "udiDi", description: "UDI Device Identifier" },
-      { name: "riskClass", description: "Risk classification" },
-      { name: "manufacturer", description: "Manufacturer name" },
-      { name: "intendedPurpose", description: "Intended purpose/use" },
-      { name: "gmdnCode", description: "GMDN code" },
-    ],
-    benefit_risk_assessment: [
-      { name: "assessmentDate", description: "Date of assessment" },
-      { name: "conclusion", description: "Overall B/R conclusion" },
-      { name: "benefits", description: "Identified benefits" },
-      { name: "risks", description: "Identified risks" },
-      { name: "residualRisk", description: "Residual risk assessment" },
-      { name: "acceptability", description: "Risk acceptability determination" },
-    ],
-  };
-  
-  return fieldDefs[evidenceType] || [];
-}
-
-/**
- * Apply LLM-inferred mappings to extract data from rows
- */
-function applyLLMMappings(
-  rows: Record<string, unknown>[],
-  mappings: Array<{ sourceColumn: string; targetField: string; confidence: number; reasoning: string }>,
-  evidenceType: string,
-  tableName: string
-): ExtractedEvidence[] {
-  const evidence: ExtractedEvidence[] = [];
-  
-  // Build mapping lookup
-  const mappingLookup = new Map<string, { targetField: string; confidence: number; reasoning: string }>();
-  for (const m of mappings) {
-    if (m.targetField) {
-      mappingLookup.set(m.sourceColumn.toLowerCase(), { 
-        targetField: m.targetField, 
-        confidence: m.confidence,
-        reasoning: m.reasoning 
-      });
-    }
-  }
-  
-  // Extract each row using LLM mappings
-  for (const row of rows) {
-    const data: Record<string, unknown> = {};
-    let totalConfidence = 0;
-    let mappedFields = 0;
-    
-    for (const [sourceCol, value] of Object.entries(row)) {
-      const mapping = mappingLookup.get(sourceCol.toLowerCase());
-      if (mapping && value !== undefined && value !== null && value !== "") {
-        data[mapping.targetField] = value;
-        totalConfidence += mapping.confidence;
-        mappedFields++;
-      }
-    }
-    
-    if (mappedFields > 0) {
-      const avgConfidence = totalConfidence / mappedFields;
-      evidence.push({
-        evidenceType,
-        confidence: avgConfidence,
-        source: "table",
-        sourceName: tableName,
-        data,
-        rawContent: JSON.stringify(row),
-        extractionMethod: `SOTA Claude inference (${mappedFields} fields mapped)`,
-        warnings: avgConfidence < 0.7 ? ["Some mappings have lower confidence - review recommended"] : [],
-      });
-    }
-  }
-  
-  return evidence;
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN EXTRACTOR
@@ -479,21 +245,26 @@ export async function extractEvidence(
       
     } catch (sotaError: any) {
       console.error(`[Evidence Extractor] SOTA extraction failed, error: ${sotaError?.message}`);
-      // Add error to trace but continue with fallback
-      decisionTrace.push({
+      
+      // NO FALLBACKS - Return error result with full details, don't silently fall back
+      result.suggestions.push(`EXTRACTION FAILED: ${sotaError?.message}`);
+      result.suggestions.push("HUMAN REVIEW REQUIRED: SOTA extraction encountered an error");
+      result.decisionTrace = [{
         traceId: randomUUID(),
         timestamp: new Date().toISOString(),
         stage: "VALIDATION",
         decision: `SOTA extraction failed: ${sotaError?.message}`,
         confidence: 0,
         inputSummary: document.filename,
-        outputSummary: "Falling back to legacy extraction",
-        reasoning: [`Error: ${sotaError?.message}`, "Using legacy extraction as fallback"]
-      });
+        outputSummary: "ERROR - No fallback used per SOTA policy",
+        reasoning: [`Error: ${sotaError?.message}`, "NO FALLBACK - flagging for human review"]
+      }];
+      result.processingTime = Date.now() - startTime;
+      return result;  // Return empty result with error, don't fall back
     }
   }
 
-  // LEGACY EXTRACTION PATH (for CER documents or when SOTA fails)
+  // CER DOCUMENTS ONLY - These have specialized extraction that is still needed
   
   // PHASE 0: Document classification decision trace
   const classificationTraceId = randomUUID();
@@ -606,39 +377,15 @@ export async function extractEvidence(
     }
   }
 
-  // PHASE 2: Standard table extraction (ONLY if CER extraction didn't run or failed)
-  // Skip if CER extraction already succeeded - it handles all evidence types
+  // PHASE 2: Legacy table extraction ONLY for CER documents without tabular data
+  // NOTE: For tabular data, SOTA pipeline is mandatory (handled above)
+  // This path only runs for CER documents or documents without tables
   const cerExtracted = result.cerExtractionResult && result.extractedEvidence.length > 0;
   
-  if (!cerExtracted) {
-    console.log(`[Evidence Extractor] Running standard table extraction (CER not applicable or failed)`);
-    for (const table of document.tables) {
-      const tableTraceId = randomUUID();
-      const tableStart = Date.now();
-      
-      const tableEvidence = await extractFromTableSOTA(table, document.filename, sourceType);
-      result.extractedEvidence.push(...tableEvidence);
-      
-      decisionTrace.push({
-        traceId: tableTraceId,
-        timestamp: new Date().toISOString(),
-        stage: "EVIDENCE_TYPE_DETECTION",
-        decision: `Table "${table.name}": extracted ${tableEvidence.length} records`,
-        confidence: tableEvidence.length > 0 ? Math.max(...tableEvidence.map(e => e.confidence)) : 0.3,
-        inputSummary: `Table "${table.name}" with ${table.headers.length} columns, ${table.rows.length} rows`,
-        outputSummary: tableEvidence.length > 0 
-          ? `Evidence types: ${Array.from(new Set(tableEvidence.map(e => e.evidenceType))).join(", ")}`
-          : "No evidence extracted from this table",
-        reasoning: [
-          `Headers: ${table.headers.slice(0, 5).join(", ")}${table.headers.length > 5 ? "..." : ""}`,
-          `Extraction method: ${tableEvidence[0]?.extractionMethod || "none"}`,
-          `Source type constraint: ${sourceType || "none"}`,
-        ],
-        durationMs: Date.now() - tableStart,
-      });
-    }
-  } else {
-    console.log(`[Evidence Extractor] Skipping standard table extraction - CER already extracted ${result.extractedEvidence.length} items`);
+  if (!cerExtracted && document.tables.length > 0) {
+    // This should only happen if SOTA is explicitly disabled
+    console.warn(`[Evidence Extractor] WARNING: Tabular data but SOTA not used - this path is deprecated`);
+    result.suggestions.push("WARNING: Legacy extraction used - consider enabling SOTA for better accuracy");
   }
 
   // PHASE 3: Section extraction (ONLY if CER extraction didn't run)
@@ -784,219 +531,10 @@ function isCERDocument(document: ParsedDocument): boolean {
   return score >= 3;
 }
 
-/**
- * SOTA Table Extraction - Uses Claude for semantic understanding, falls back to rules
- */
-async function extractFromTableSOTA(
-  table: ParsedTable, 
-  filename: string, 
-  sourceType?: string
-): Promise<ExtractedEvidence[]> {
-  const headers = table.headers;
-  const rows = table.rows;
-  
-  if (headers.length === 0 || rows.length === 0) {
-    return [];
-  }
-  
-  // Determine target evidence type from source type
-  const targetEvidenceType = sourceType 
-    ? SOURCE_TYPE_PRIMARY_EVIDENCE[sourceType.toLowerCase()] || "sales_volume"
-    : "sales_volume";
-  
-  // Try SOTA LLM extraction first
-  try {
-    const llmResult = await llmInferSchema(headers, rows, sourceType || "unknown", targetEvidenceType);
-    
-    if (llmResult && llmResult.mappings && llmResult.mappings.length > 0) {
-      const validMappings = llmResult.mappings.filter(m => m.targetField);
-      
-      if (validMappings.length > 0) {
-        console.log(`[SOTA Extract] Using Claude mappings for ${filename}: ${validMappings.length} fields`);
-        return applyLLMMappings(rows, validMappings, llmResult.evidenceType, table.name);
-      }
-    }
-  } catch (error: any) {
-    console.warn(`[SOTA Extract] LLM extraction failed for ${filename}, using rule-based fallback: ${error?.message}`);
-  }
-  
-  // Fallback to rule-based extraction
-  console.log(`[SOTA Extract] Using rule-based fallback for ${filename}`);
-  return extractFromTable(table, filename, sourceType);
-}
-
 // ═══════════════════════════════════════════════════════════════════════════════
-// TABLE EXTRACTION
+// NOTE: Legacy table extraction functions removed - SOTA pipeline is now mandatory
+// For tabular data, use extractEvidenceSOTA() from sotaExtractor.ts
 // ═══════════════════════════════════════════════════════════════════════════════
-
-// Map source types to their primary evidence types - used for forced mapping
-const SOURCE_TYPE_PRIMARY_EVIDENCE: Record<string, string> = {
-  sales: "sales_volume",
-  complaints: "complaint_record",
-  fsca: "fsca_record",
-  capa: "capa_record",
-  pmcf: "pmcf_result",
-  risk: "benefit_risk_assessment",
-  cer: "cer_extract",
-  admin: "device_registry_record",
-};
-
-function extractFromTable(table: ParsedTable, filename: string, sourceType?: string): ExtractedEvidence[] {
-  const evidence: ExtractedEvidence[] = [];
-  const headers = table.headers.map(h => h.toLowerCase());
-  const headerText = headers.join(" ");
-
-  // If source type is explicitly provided, force the primary evidence type for that source
-  const forcedEvidenceType = sourceType ? SOURCE_TYPE_PRIMARY_EVIDENCE[sourceType.toLowerCase()] : null;
-
-  // Score each evidence type against this table's headers
-  const scores: { type: EvidenceType; score: number }[] = [];
-  
-  for (const evidenceType of EVIDENCE_TYPES) {
-    let score = 0;
-    
-    // MASSIVE bonus if this evidence type matches the user-selected source type
-    if (forcedEvidenceType && evidenceType.type === forcedEvidenceType) {
-      score += 100; // Guarantees this type wins
-    }
-    
-    // Check required fields
-    let hasRequired = true;
-    for (const field of evidenceType.requiredFields) {
-      const fieldLower = field.toLowerCase();
-      if (!headers.some(h => h.includes(fieldLower) || fieldLower.includes(h))) {
-        hasRequired = false;
-      }
-    }
-    
-    // Check indicators in headers
-    for (const indicator of evidenceType.indicators) {
-      if (headerText.includes(indicator.toLowerCase())) {
-        score += 2;
-      }
-    }
-    
-    // Check optional fields (bonus points)
-    for (const field of evidenceType.optionalFields) {
-      if (headers.some(h => h.includes(field.toLowerCase()))) {
-        score += 1;
-      }
-    }
-    
-    // Bonus for matching required fields
-    if (hasRequired && evidenceType.requiredFields.length > 0) {
-      score += 5;
-    }
-    
-    if (score > 0) {
-      scores.push({ type: evidenceType, score });
-    }
-  }
-  
-  // Sort by score and take top match
-  scores.sort((a, b) => b.score - a.score);
-  
-  if (scores.length > 0 && scores[0].score >= 2) {
-    const bestMatch = scores[0];
-    // Adjust confidence - if forced, base it on header matching only (exclude the +100 bonus)
-    const actualScore = forcedEvidenceType && bestMatch.type.type === forcedEvidenceType 
-      ? bestMatch.score - 100 
-      : bestMatch.score;
-    const confidence = Math.min(1, Math.max(0.5, actualScore / 10)); // Minimum 0.5 when source type is explicit
-    
-    // Extract each row as a separate evidence record
-    for (let i = 0; i < table.rows.length; i++) {
-      const row = table.rows[i];
-      
-      // Map headers to normalized field names
-      const data = mapFieldsToEvidence(row, bestMatch.type);
-      
-      const wasForcedBySource = forcedEvidenceType && bestMatch.type.type === forcedEvidenceType;
-      evidence.push({
-        evidenceType: bestMatch.type.type,
-        confidence,
-        source: "table",
-        sourceName: table.name,
-        data,
-        rawContent: JSON.stringify(row),
-        extractionMethod: wasForcedBySource 
-          ? `Source type mapping (${sourceType} -> ${bestMatch.type.type})`
-          : `Table header matching (score: ${bestMatch.score})`,
-        warnings: confidence < 0.5 ? ["Low confidence match - review recommended"] : [],
-      });
-    }
-  }
-  
-  return evidence;
-}
-
-function mapFieldsToEvidence(row: Record<string, unknown>, evidenceType: EvidenceType): Record<string, unknown> {
-  const mapped: Record<string, unknown> = {};
-  
-  // Field name mappings
-  const fieldMappings: Record<string, string[]> = {
-    // Sales fields
-    region: ["region", "country", "geography", "territory", "market"],
-    quantity: ["quantity", "units", "count", "volume", "sold", "amount"],
-    period_start: ["period_start", "start_date", "from", "start", "period start"],
-    period_end: ["period_end", "end_date", "to", "end", "period end"],
-    market_share: ["market_share", "share", "percentage", "market %"],
-    
-    // Complaint fields
-    complaint_type: ["complaint_type", "type", "category", "classification"],
-    date: ["date", "reported_date", "occurrence_date", "event_date"],
-    description: ["description", "details", "narrative", "summary", "comments"],
-    severity: ["severity", "serious", "seriousness", "impact"],
-    status: ["status", "state", "current_status"],
-    
-    // FSCA fields
-    fsca_id: ["fsca_id", "fsca", "id", "reference", "number"],
-    action_type: ["action_type", "type", "action", "corrective_action"],
-    affected_units: ["affected_units", "units_affected", "quantity"],
-    
-    // CAPA fields
-    capa_id: ["capa_id", "capa", "id", "reference"],
-    root_cause: ["root_cause", "cause", "reason"],
-    effectiveness: ["effectiveness", "effective", "verification"],
-    
-    // IMDRF
-    imdrf_code: ["imdrf_code", "imdrf", "code", "event_code"],
-    outcome: ["outcome", "patient_outcome", "result"],
-    
-    // Literature
-    database: ["database", "source", "db"],
-    results_count: ["results_count", "results", "hits", "count"],
-    relevant_count: ["relevant_count", "relevant", "applicable"],
-    conclusion: ["conclusion", "summary", "finding", "assessment"],
-    
-    // PMCF
-    activity_type: ["activity_type", "type", "activity"],
-    enrolled: ["enrolled", "subjects", "patients", "participants"],
-    key_findings: ["key_findings", "findings", "results"],
-    
-    // General
-    content: ["content", "text", "body", "narrative"],
-    value: ["value", "amount", "number"],
-    metric: ["metric", "measure", "indicator", "kpi"],
-  };
-  
-  for (const [key, value] of Object.entries(row)) {
-    const keyLower = key.toLowerCase().replace(/[_\s]+/g, "_");
-    
-    // Try to find a mapping
-    let mappedKey = keyLower;
-    for (const [targetField, aliases] of Object.entries(fieldMappings)) {
-      if (aliases.some(alias => keyLower.includes(alias) || alias.includes(keyLower))) {
-        mappedKey = targetField;
-        break;
-      }
-    }
-    
-    mapped[mappedKey] = value;
-  }
-  
-  return mapped;
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SECTION EXTRACTION

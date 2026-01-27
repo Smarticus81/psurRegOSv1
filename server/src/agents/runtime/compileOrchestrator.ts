@@ -156,9 +156,11 @@ export interface CompileOrchestratorResult {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SLOT TO AGENT MAPPING
+// Supports multiple slot ID formats: MDCG.ANNEXI.*, section_*, and agent_assignment
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const NARRATIVE_AGENT_MAPPING: Record<string, new () => any> = {
+  // MDCG Standard IDs
   "MDCG.ANNEXI.EXEC_SUMMARY": ExecSummaryNarrativeAgent,
   "MDCG.ANNEXI.DEVICES_SCOPE": DeviceScopeNarrativeAgent,
   "MDCG.ANNEXI.DEVICES_CHANGES": DeviceScopeNarrativeAgent,
@@ -171,12 +173,51 @@ const NARRATIVE_AGENT_MAPPING: Record<string, new () => any> = {
   "MDCG.ANNEXI.CAPA_SUMMARY": CAPANarrativeAgent,
   "MDCG.ANNEXI.LITERATURE_REVIEW": ClinicalNarrativeAgent,
   "MDCG.ANNEXI.PMCF_OVERVIEW": ClinicalNarrativeAgent,
+  "MDCG.ANNEXI.PMCF_SUMMARY": ClinicalNarrativeAgent,
   "MDCG.ANNEXI.EXTERNAL_DB_REVIEW": ClinicalNarrativeAgent,
   "MDCG.ANNEXI.BENEFIT_RISK_ASSESSMENT": BenefitRiskNarrativeAgent,
+  "MDCG.ANNEXI.BENEFIT_RISK_CONCLUSION": BenefitRiskNarrativeAgent,
   "MDCG.ANNEXI.CONCLUSIONS_ACTIONS": ConclusionNarrativeAgent,
+  "MDCG.ANNEXI.ACTIONS_TAKEN": ConclusionNarrativeAgent,
+  
+  // Custom Template Slot IDs (section_* pattern)
+  "section_a_executive_summary": ExecSummaryNarrativeAgent,
+  "section_b_device_description": DeviceScopeNarrativeAgent,
+  "section_c_sales_distribution": PMSActivityNarrativeAgent,
+  "section_d_serious_incidents": SafetyNarrativeAgent,
+  "section_e_customer_feedback": SafetyNarrativeAgent,
+  "section_f_complaints": SafetyNarrativeAgent,
+  "section_g_trending": TrendNarrativeAgent,
+  "section_h_fsca": FSCANarrativeAgent,
+  "section_i_capa": CAPANarrativeAgent,
+  "section_j_literature": ClinicalNarrativeAgent,
+  "section_k_external_databases": ClinicalNarrativeAgent,
+  "section_l_pmcf": ClinicalNarrativeAgent,
+  "section_m_conclusions": ConclusionNarrativeAgent,
+  
+  // agent_assignment field values from template
+  "executive_summary_agent": ExecSummaryNarrativeAgent,
+  "device_scope_agent": DeviceScopeNarrativeAgent,
+  "device_description_agent": DeviceScopeNarrativeAgent,
+  "pms_activity_agent": PMSActivityNarrativeAgent,
+  "sales_exposure_agent": PMSActivityNarrativeAgent,
+  "safety_narrative_agent": SafetyNarrativeAgent,
+  "incidents_summary_agent": SafetyNarrativeAgent,
+  "complaints_summary_agent": SafetyNarrativeAgent,
+  "trend_narrative_agent": TrendNarrativeAgent,
+  "fsca_narrative_agent": FSCANarrativeAgent,
+  "capa_narrative_agent": CAPANarrativeAgent,
+  "clinical_narrative_agent": ClinicalNarrativeAgent,
+  "literature_review_agent": ClinicalNarrativeAgent,
+  "external_db_agent": ClinicalNarrativeAgent,
+  "pmcf_narrative_agent": ClinicalNarrativeAgent,
+  "benefit_risk_agent": BenefitRiskNarrativeAgent,
+  "conclusion_agent": ConclusionNarrativeAgent,
+  "conclusions_agent": ConclusionNarrativeAgent,
 };
 
 const TABLE_AGENT_MAPPING: Record<string, new () => any> = {
+  // MDCG Standard IDs
   "MDCG.ANNEXI.SALES_TABLE": SalesExposureTableAgent,
   "MDCG.ANNEXI.SERIOUS_INCIDENTS_TABLE_IMDRF": SeriousIncidentsTableAgent,
   "MDCG.ANNEXI.COMPLAINTS_BY_REGION_SEVERITY_TABLE": ComplaintsTableAgent,
@@ -185,7 +226,113 @@ const TABLE_AGENT_MAPPING: Record<string, new () => any> = {
   "MDCG.ANNEXI.CAPA_TABLE": CAPATableAgent,
   "MDCG.ANNEXI.LITERATURE_TABLE": LiteratureTableAgent,
   "MDCG.ANNEXI.PMCF_TABLE": PMCFTableAgent,
+  
+  // Custom Template Slot IDs that generate tables
+  "section_c_sales_distribution": SalesExposureTableAgent,
+  "section_d_serious_incidents": SeriousIncidentsTableAgent,
+  "section_f_complaints": ComplaintsTableAgent,
+  "section_g_trending": TrendAnalysisTableAgent,
+  "section_h_fsca": FSCATableAgent,
+  "section_i_capa": CAPATableAgent,
+  "section_j_literature": LiteratureTableAgent,
+  "section_l_pmcf": PMCFTableAgent,
+  
+  // agent_assignment field values for tables
+  "sales_table_agent": SalesExposureTableAgent,
+  "incidents_table_agent": SeriousIncidentsTableAgent,
+  "complaints_table_agent": ComplaintsTableAgent,
+  "trend_table_agent": TrendAnalysisTableAgent,
+  "fsca_table_agent": FSCATableAgent,
+  "capa_table_agent": CAPATableAgent,
+  "literature_table_agent": LiteratureTableAgent,
+  "pmcf_table_agent": PMCFTableAgent,
 };
+
+/**
+ * Resolve the appropriate agent class for a slot.
+ * Checks in order: slot_id, mdcg_reference, agent_assignment, section pattern
+ */
+function resolveNarrativeAgent(slot: any): (new () => any) | null {
+  // 1. Direct slot_id match
+  if (NARRATIVE_AGENT_MAPPING[slot.slot_id]) {
+    return NARRATIVE_AGENT_MAPPING[slot.slot_id];
+  }
+  
+  // 2. mdcg_reference match (handle compound references like "X and Y")
+  const mdcgRef = slot.mdcg_reference || (slot as any).mdcg_reference;
+  if (mdcgRef) {
+    const refs = mdcgRef.split(" and ").map((r: string) => r.trim());
+    for (const ref of refs) {
+      if (NARRATIVE_AGENT_MAPPING[ref]) {
+        return NARRATIVE_AGENT_MAPPING[ref];
+      }
+    }
+  }
+  
+  // 3. agent_assignment match
+  const agentAssignment = slot.agent_assignment || (slot as any).agent_assignment;
+  if (agentAssignment && NARRATIVE_AGENT_MAPPING[agentAssignment]) {
+    return NARRATIVE_AGENT_MAPPING[agentAssignment];
+  }
+  
+  // 4. Section pattern matching (section_a → exec summary, etc.)
+  const slotId = slot.slot_id.toLowerCase();
+  if (slotId.includes("executive") || slotId.includes("section_a")) return ExecSummaryNarrativeAgent;
+  if (slotId.includes("device") || slotId.includes("scope") || slotId.includes("section_b")) return DeviceScopeNarrativeAgent;
+  if (slotId.includes("sales") || slotId.includes("pms") || slotId.includes("section_c")) return PMSActivityNarrativeAgent;
+  if (slotId.includes("incident") || slotId.includes("section_d")) return SafetyNarrativeAgent;
+  if (slotId.includes("feedback") || slotId.includes("section_e")) return SafetyNarrativeAgent;
+  if (slotId.includes("complaint") || slotId.includes("section_f")) return SafetyNarrativeAgent;
+  if (slotId.includes("trend") || slotId.includes("section_g")) return TrendNarrativeAgent;
+  if (slotId.includes("fsca") || slotId.includes("recall") || slotId.includes("section_h")) return FSCANarrativeAgent;
+  if (slotId.includes("capa") || slotId.includes("section_i")) return CAPANarrativeAgent;
+  if (slotId.includes("literature") || slotId.includes("section_j")) return ClinicalNarrativeAgent;
+  if (slotId.includes("external") || slotId.includes("database") || slotId.includes("section_k")) return ClinicalNarrativeAgent;
+  if (slotId.includes("pmcf") || slotId.includes("clinical") || slotId.includes("section_l")) return ClinicalNarrativeAgent;
+  if (slotId.includes("conclusion") || slotId.includes("benefit") || slotId.includes("risk") || slotId.includes("section_m")) return BenefitRiskNarrativeAgent;
+  
+  return null;
+}
+
+/**
+ * Resolve the appropriate table agent class for a slot.
+ */
+function resolveTableAgent(slot: any): (new () => any) | null {
+  // 1. Direct slot_id match
+  if (TABLE_AGENT_MAPPING[slot.slot_id]) {
+    return TABLE_AGENT_MAPPING[slot.slot_id];
+  }
+  
+  // 2. mdcg_reference match
+  const mdcgRef = slot.mdcg_reference || (slot as any).mdcg_reference;
+  if (mdcgRef) {
+    const refs = mdcgRef.split(" and ").map((r: string) => r.trim());
+    for (const ref of refs) {
+      if (TABLE_AGENT_MAPPING[ref]) {
+        return TABLE_AGENT_MAPPING[ref];
+      }
+    }
+  }
+  
+  // 3. agent_assignment match (for table-specific assignments)
+  const agentAssignment = slot.agent_assignment || (slot as any).agent_assignment;
+  if (agentAssignment && TABLE_AGENT_MAPPING[agentAssignment]) {
+    return TABLE_AGENT_MAPPING[agentAssignment];
+  }
+  
+  // 4. Section pattern matching for tables
+  const slotId = slot.slot_id.toLowerCase();
+  if (slotId.includes("sales") || slotId.includes("section_c")) return SalesExposureTableAgent;
+  if (slotId.includes("incident") || slotId.includes("section_d")) return SeriousIncidentsTableAgent;
+  if (slotId.includes("complaint") || slotId.includes("section_f")) return ComplaintsTableAgent;
+  if (slotId.includes("trend") || slotId.includes("section_g")) return TrendAnalysisTableAgent;
+  if (slotId.includes("fsca") || slotId.includes("section_h")) return FSCATableAgent;
+  if (slotId.includes("capa") || slotId.includes("section_i")) return CAPATableAgent;
+  if (slotId.includes("literature") || slotId.includes("section_j")) return LiteratureTableAgent;
+  if (slotId.includes("pmcf") || slotId.includes("section_l")) return PMCFTableAgent;
+  
+  return null;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // FORM-BASED SECTION AGENT MAPPING (CooperSurgical-style templates)
@@ -374,17 +521,20 @@ export class CompileOrchestrator {
       console.log(`[${this.orchestratorId}] Phase 1: Generating document sections sequentially...`);
 
       for (const slot of templateSlots) {
-        if (slot.slot_kind !== "NARRATIVE" && slot.slot_kind !== "TABLE") continue;
+        // Determine slot kind from either slot_kind or data_type field
+        const slotKind = this.determineSlotKind(slot);
+        if (slotKind !== "NARRATIVE" && slotKind !== "TABLE") continue;
         throwIfAborted();
 
         // Mark slot as generating in live preview
         updateLiveContent(input.psurCaseId, slot.slot_id, slot.title, "", "generating");
 
         // ─── NARRATIVE GENERATION ─────────────────────────────────────────────
-        if (slot.slot_kind === "NARRATIVE") {
-          const AgentClass = NARRATIVE_AGENT_MAPPING[slot.slot_id];
+        if (slotKind === "NARRATIVE") {
+          const AgentClass = resolveNarrativeAgent(slot);
           if (!AgentClass) {
             // Use generic narrative agent as fallback
+            console.log(`[CompileOrchestrator] No specific agent for slot ${slot.slot_id}, using generic narrative`);
             const section = await this.generateGenericNarrative(
               slot,
               allAtoms,
@@ -401,7 +551,8 @@ export class CompileOrchestrator {
             emitRuntimeEvent(input.psurCaseId, { kind: "agent.created", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "narrative", slotId: slot.slot_id, agent: agentName, runId });
             const agentStart = Date.now();
             const agent = new AgentClass();
-            const slotAtoms = this.filterAtomsForSlot(allAtoms, slot.evidence_requirements?.required_types || []);
+            const requiredTypes = this.getRequiredEvidenceTypes(slot);
+            const slotAtoms = this.filterAtomsForSlot(allAtoms, requiredTypes);
             emitRuntimeEvent(input.psurCaseId, { kind: "agent.started", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "narrative", slotId: slot.slot_id, agent: agentName, runId });
 
             const result = await agent.run({
@@ -409,7 +560,7 @@ export class CompileOrchestrator {
                 slotId: slot.slot_id,
                 title: slot.title,
                 sectionPath: slot.section_path,
-                requirements: slot.evidence_requirements?.required_types?.join(", "),
+                requirements: requiredTypes.join(", "),
                 guidance: slot.output_requirements?.render_as,
               },
               evidenceAtoms: slotAtoms.map(a => ({
@@ -460,9 +611,10 @@ export class CompileOrchestrator {
         }
 
         // ─── TABLE GENERATION ────────────────────────────────────────────────
-        else if (slot.slot_kind === "TABLE") {
-          const AgentClass = TABLE_AGENT_MAPPING[slot.slot_id];
+        else if (slotKind === "TABLE") {
+          const AgentClass = resolveTableAgent(slot);
           if (!AgentClass) {
+            console.log(`[CompileOrchestrator] No specific table agent for slot ${slot.slot_id}, using generic table`);
             const section = await this.generateGenericTable(slot, allAtoms, input);
             sections.push(section);
             updateLiveContent(input.psurCaseId, slot.slot_id, slot.title, section.content, "done");
@@ -475,7 +627,8 @@ export class CompileOrchestrator {
             emitRuntimeEvent(input.psurCaseId, { kind: "agent.created", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "table", slotId: slot.slot_id, agent: agentName, runId });
             const agentStart = Date.now();
             const agent = new AgentClass();
-            const slotAtoms = this.filterAtomsForSlot(allAtoms, slot.evidence_requirements?.required_types || []);
+            const requiredTypes = this.getRequiredEvidenceTypes(slot);
+            const slotAtoms = this.filterAtomsForSlot(allAtoms, requiredTypes);
             emitRuntimeEvent(input.psurCaseId, { kind: "agent.started", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "table", slotId: slot.slot_id, agent: agentName, runId });
 
             const result = await agent.run({
@@ -685,12 +838,178 @@ export class CompileOrchestrator {
   // HELPER METHODS
   // ═══════════════════════════════════════════════════════════════════════════════
 
+  /**
+   * Extract required evidence types from slot, handling both array and object formats.
+   * Template may use evidence_requirements as array or as object with required_types field.
+   */
+  private getRequiredEvidenceTypes(slot: any): string[] {
+    const evReq = slot.evidence_requirements;
+    if (!evReq) return [];
+    
+    // Array format: evidence_requirements: ["type1", "type2"]
+    if (Array.isArray(evReq)) {
+      return evReq;
+    }
+    
+    // Object format: evidence_requirements: { required_types: ["type1", "type2"] }
+    if (evReq.required_types && Array.isArray(evReq.required_types)) {
+      return evReq.required_types;
+    }
+    
+    return [];
+  }
+
+  /**
+   * Determine slot kind from slot_kind, data_type, or output_requirements.
+   * Handles templates that use different field names.
+   */
+  private determineSlotKind(slot: any): "NARRATIVE" | "TABLE" | "ADMIN" | "UNKNOWN" {
+    // 1. Direct slot_kind field
+    if (slot.slot_kind) {
+      const kind = slot.slot_kind.toUpperCase();
+      if (kind === "NARRATIVE" || kind === "TABLE" || kind === "ADMIN") {
+        return kind as "NARRATIVE" | "TABLE" | "ADMIN";
+      }
+    }
+    
+    // 2. Check data_type field (used in custom templates)
+    const dataType = (slot.data_type || "").toLowerCase();
+    if (dataType.includes("table") || dataType === "tabular") {
+      return "TABLE";
+    }
+    if (dataType.includes("narrative") || dataType === "text" || dataType === "prose") {
+      return "NARRATIVE";
+    }
+    if (dataType === "auto_generated" || dataType === "structured_metadata") {
+      return "ADMIN";
+    }
+    
+    // 3. Check output_requirements.render_as
+    const renderAs = (slot.output_requirements?.render_as || "").toLowerCase();
+    if (renderAs.includes("table") || renderAs === "summary_table" || renderAs === "multi_table") {
+      return "TABLE";
+    }
+    if (renderAs.includes("narrative") || renderAs === "prose" || renderAs === "paragraph") {
+      return "NARRATIVE";
+    }
+    
+    // 4. Check if slot has sub_sections with table schemas
+    if (slot.sub_sections) {
+      const hasTableSubsection = slot.sub_sections.some((sub: any) => 
+        sub.table_schema || sub.output_type === "table" || (sub.data_type || "").includes("table")
+      );
+      // If it has tables and narrative, treat as NARRATIVE (tables will be embedded)
+      return "NARRATIVE";
+    }
+    
+    // 5. Check for table-related slot IDs
+    const slotId = (slot.slot_id || "").toLowerCase();
+    if (slotId.includes("_table") || slotId.includes("table_")) {
+      return "TABLE";
+    }
+    
+    // 6. Default to NARRATIVE for non-admin content slots
+    if (slotId.includes("cover") || slotId.includes("toc") || slotId.includes("appendix")) {
+      return "ADMIN";
+    }
+    
+    return "NARRATIVE";
+  }
+
+  /**
+   * Filter atoms for a slot with flexible type matching.
+   * Handles both exact matches and semantic matches (e.g., sales_data_summary → sales_summary)
+   */
   private filterAtomsForSlot(
     allAtoms: any[],
     requiredTypes: string[]
   ): any[] {
     if (requiredTypes.length === 0) return allAtoms;
-    return allAtoms.filter(a => requiredTypes.includes(a.evidenceType));
+    
+    // Build normalized type set for flexible matching
+    const normalizedRequired = new Set<string>();
+    for (const type of requiredTypes) {
+      normalizedRequired.add(type);
+      // Add normalized versions
+      const normalized = this.normalizeEvidenceType(type);
+      normalizedRequired.add(normalized);
+    }
+    
+    return allAtoms.filter(a => {
+      const atomType = a.evidenceType;
+      // Direct match
+      if (normalizedRequired.has(atomType)) return true;
+      // Normalized match
+      if (normalizedRequired.has(this.normalizeEvidenceType(atomType))) return true;
+      // Partial match (e.g., "sales" matches "sales_summary", "sales_volume", etc.)
+      for (const reqType of requiredTypes) {
+        const reqCore = reqType.replace(/_data|_summary|_record|_extract|_report/g, '');
+        const atomCore = atomType.replace(/_data|_summary|_record|_extract|_report/g, '');
+        if (reqCore === atomCore || atomType.includes(reqCore) || reqCore.includes(atomCore.split('_')[0])) {
+          return true;
+        }
+      }
+      return false;
+    });
+  }
+  
+  /**
+   * Normalize template evidence type to canonical format.
+   * Maps descriptive types to canonical types.
+   */
+  private normalizeEvidenceType(type: string): string {
+    const TYPE_MAPPINGS: Record<string, string> = {
+      // Sales/Distribution
+      "sales_data_summary": "sales_summary",
+      "sales_data_by_region": "sales_by_region",
+      "sales_data_historical_periods": "sales_summary",
+      "market_introduction_dates": "sales_summary",
+      "distribution_channel_data": "distribution_summary",
+      "patient_exposure_estimates": "usage_estimate",
+      
+      // Complaints
+      "complaint_data": "complaint_record",
+      "complaint_trends": "complaint_summary",
+      "complaint_rates": "complaint_summary",
+      
+      // Incidents
+      "serious_incident_data": "serious_incident_record",
+      "incident_summary": "serious_incident_summary",
+      
+      // Trend/Signal
+      "trending_conclusions": "trend_analysis",
+      "trend_data": "trend_analysis",
+      "signal_detection": "signal_log",
+      
+      // Device/Regulatory
+      "technical_documentation": "device_registry_record",
+      "certificate_of_conformity": "regulatory_certificate_record",
+      "instructions_for_use": "ifu_extract",
+      "risk_management_file_summary": "rmf_extract",
+      "clinical_evaluation_report_summary": "cer_extract",
+      "device_grouping_rationale": "device_registry_record",
+      "basic_udi_di": "device_registry_record",
+      "manufacturer_registration": "manufacturer_profile",
+      "notified_body_designation": "regulatory_certificate_record",
+      
+      // Clinical
+      "literature_data": "literature_result",
+      "literature_search": "literature_search_strategy",
+      "pmcf_data": "pmcf_result",
+      "pmcf_results": "pmcf_result",
+      "external_database_data": "external_db_summary",
+      
+      // FSCA/CAPA
+      "fsca_data": "fsca_record",
+      "recall_data": "recall_record",
+      "capa_data": "capa_record",
+      
+      // Benefit-Risk
+      "benefit_risk_data": "benefit_risk_assessment",
+      "risk_analysis": "risk_assessment",
+    };
+    
+    return TYPE_MAPPINGS[type] || type;
   }
 
   /**
@@ -702,10 +1021,8 @@ export class CompileOrchestrator {
     allAtoms: any[],
     input: CompileOrchestratorInput
   ): Promise<CompiledSection> {
-    const slotAtoms = this.filterAtomsForSlot(
-      allAtoms,
-      slot.evidence_requirements?.required_types || []
-    );
+    const requiredTypes = this.getRequiredEvidenceTypes(slot);
+    const slotAtoms = this.filterAtomsForSlot(allAtoms, requiredTypes);
 
     console.log(`[${this.orchestratorId}] SOTA: Generating LLM narrative for ${slot.slot_id} with ${slotAtoms.length} atoms`);
 
@@ -1216,10 +1533,8 @@ ${sectionConfig.requiredTypes.map(t => `- ${t}`).join("\n")}
     allAtoms: any[],
     input: CompileOrchestratorInput
   ): Promise<CompiledSection> {
-    const slotAtoms = this.filterAtomsForSlot(
-      allAtoms,
-      slot.evidence_requirements?.required_types || []
-    );
+    const requiredTypes = this.getRequiredEvidenceTypes(slot);
+    const slotAtoms = this.filterAtomsForSlot(allAtoms, requiredTypes);
 
     console.log(`[${this.orchestratorId}] SOTA: Generating LLM table for ${slot.slot_id} with ${slotAtoms.length} atoms`);
 

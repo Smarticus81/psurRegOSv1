@@ -45,6 +45,29 @@ function getSlotName(slot: any): string {
   return slot?.slot_name || slot?.title || slot?.name || slot?.slot_id || "Unknown";
 }
 
+/**
+ * Parse the required field to convert conditional strings to booleans.
+ * Templates may use strings like "conditional:serious_incidents_count_greater_than_zero"
+ * but the database expects boolean values.
+ * 
+ * @param required - The required field value (boolean, string, or any)
+ * @returns boolean - true if absolutely required, false if conditional or not required
+ */
+function parseRequiredField(required: any): boolean {
+  // If it's already a boolean, return it
+  if (typeof required === 'boolean') {
+    return required;
+  }
+  
+  // If it's a string starting with "conditional:", treat as not absolutely required
+  if (typeof required === 'string' && required.startsWith('conditional:')) {
+    return false;
+  }
+  
+  // Coerce other values to boolean
+  return Boolean(required);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -300,6 +323,24 @@ async function matchCustomSlotToMdcg(
     reasoning: string;
   }> = [];
 
+  // Strategy 0: Direct MDCG reference (highest priority)
+  const mdcgReference = (customSlot as any).mdcg_reference;
+  if (mdcgReference) {
+    const directMatch = mdcgSlots.find(s => s.slot_id === mdcgReference);
+    if (directMatch) {
+      return {
+        customSlotId: customSlot.slot_id,
+        customSlotName: getSlotName(customSlot),
+        mdcgSlotId: directMatch.slot_id,
+        mdcgSlotTitle: directMatch.title,
+        confidence: 100,
+        method: "manual",
+        reasoning: `Direct MDCG reference: ${mdcgReference}`,
+        grkbObligationsCovered: mdcgSlotToObligations.get(directMatch.slot_id) || [],
+      };
+    }
+  }
+
   // Strategy 1: Name/title similarity
   // Handle slots that may have slot_name, title, or name fields
   const customName = (customSlot.slot_name || (customSlot as any).title || (customSlot as any).name || customSlot.slot_id || "").toLowerCase();
@@ -350,7 +391,7 @@ async function matchCustomSlotToMdcg(
 
   // Strategy 3: LLM-powered semantic matching
   if (options.useLLM) {
-    const llmMatch = await llmMatchSlot(customSlot, mdcgSlots.slice(0, 20));
+    const llmMatch = await llmMatchSlot(customSlot, mdcgSlots);
     if (llmMatch) {
       candidates.push(llmMatch);
     }
@@ -420,7 +461,7 @@ ${mdcgSlots.map((s, i) => `${i + 1}. ${s.slot_id}: ${s.title}${s.evidence_requir
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
-      config: { model: "gpt-4o-mini", temperature: 0.1, maxTokens: 500 },
+      config: { model: "gpt-5.2", temperature: 0.1, maxTokens: 4000 },
       responseFormat: "json",
     });
 
@@ -545,6 +586,8 @@ async function saveHierarchicalMapping(
   for (let i = 0; i < template.slots.length; i++) {
     const slot = template.slots[i];
     const slotTitle = getSlotName(slot);
+    const isRequired = parseRequiredField(slot.required);
+    
     await db.insert(slotDefinitions).values({
       slotId: slot.slot_id,
       title: slotTitle,
@@ -554,7 +597,7 @@ async function saveHierarchicalMapping(
       requiredEvidenceTypes: Array.isArray(slot.evidence_requirements)
         ? slot.evidence_requirements
         : slot.evidence_requirements?.required_types || [],
-      hardRequireEvidence: slot.required,
+      hardRequireEvidence: isRequired,
       minAtoms: 1,
       sortOrder: i,
     }).onConflictDoUpdate({
@@ -565,7 +608,7 @@ async function saveHierarchicalMapping(
         requiredEvidenceTypes: Array.isArray(slot.evidence_requirements)
           ? slot.evidence_requirements
           : slot.evidence_requirements?.required_types || [],
-        hardRequireEvidence: slot.required,
+        hardRequireEvidence: isRequired,
         sortOrder: i,
       },
     });

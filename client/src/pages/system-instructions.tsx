@@ -25,13 +25,11 @@ import {
     BarChart,
     Database,
     Cpu,
-    Layers,
     FileText,
     ChevronDown,
     ChevronRight,
     User,
-    Cog,
-    ListTree
+    Cog
 } from "lucide-react";
 
 // Types
@@ -75,7 +73,7 @@ const CATEGORY_DEFINITIONS: CategoryDefinition[] = [
     {
         name: "NARRATIVE AGENTS",
         icon: FileText,
-        standalone: ["DEFAULT_NARRATIVE_TASK", "BENEFIT_RISK_CONCLUSION", "GAP_JUSTIFICATION"],
+        standalone: ["NARRATIVE_GENERATION", "BENEFIT_RISK_CONCLUSION", "GAP_JUSTIFICATION"],
         agents: [
             {
                 name: "Base Narrative",
@@ -84,82 +82,72 @@ const CATEGORY_DEFINITIONS: CategoryDefinition[] = [
                 ]
             },
             {
-                name: "Executive Summary",
+                name: "Executive Summary (Section A)",
                 prompts: [
                     { key: "EXEC_SUMMARY_SYSTEM", label: "System Prompt", type: "SYSTEM" },
-                    { key: "EXEC_SUMMARY_TASK", label: "Task Template", type: "TASK" },
                     { key: "ExecSummaryNarrativeAgent", label: "Agent Persona", type: "PERSONA" },
                 ]
             },
             {
-                name: "Safety Narrative",
-                prompts: [
-                    { key: "SAFETY_SYSTEM", label: "System Prompt", type: "SYSTEM" },
-                    { key: "SAFETY_TASK", label: "Task Template", type: "TASK" },
-                    { key: "SafetyNarrativeAgent", label: "Agent Persona", type: "PERSONA" },
-                ]
-            },
-            {
-                name: "Clinical Evaluation",
-                prompts: [
-                    { key: "CLINICAL_SYSTEM", label: "System Prompt", type: "SYSTEM" },
-                    { key: "CLINICAL_TASK", label: "Task Template", type: "TASK" },
-                    { key: "ClinicalNarrativeAgent", label: "Agent Persona", type: "PERSONA" },
-                ]
-            },
-            {
-                name: "Benefit-Risk Assessment",
-                prompts: [
-                    { key: "BENEFIT_RISK_SYSTEM", label: "System Prompt", type: "SYSTEM" },
-                    { key: "BENEFIT_RISK_TASK", label: "Task Template", type: "TASK" },
-                    { key: "BenefitRiskNarrativeAgent", label: "Agent Persona", type: "PERSONA" },
-                ]
-            },
-            {
-                name: "Trend Analysis Narrative",
-                prompts: [
-                    { key: "TREND_SYSTEM", label: "System Prompt", type: "SYSTEM" },
-                    { key: "TREND_TASK", label: "Task Template", type: "TASK" },
-                    { key: "TrendNarrativeAgent", label: "Agent Persona", type: "PERSONA" },
-                ]
-            },
-            {
-                name: "Device Scope",
+                name: "Device Scope (Section B)",
                 prompts: [
                     { key: "DEVICE_SCOPE_SYSTEM", label: "System Prompt", type: "SYSTEM" },
-                    { key: "DEVICE_SCOPE_TASK", label: "Task Template", type: "TASK" },
                     { key: "DeviceScopeNarrativeAgent", label: "Agent Persona", type: "PERSONA" },
                 ]
             },
             {
-                name: "PMS Activity",
+                name: "PMS Activity (Section C)",
                 prompts: [
                     { key: "PMS_ACTIVITY_SYSTEM", label: "System Prompt", type: "SYSTEM" },
-                    { key: "PMS_ACTIVITY_TASK", label: "Task Template", type: "TASK" },
                     { key: "PMSActivityNarrativeAgent", label: "Agent Persona", type: "PERSONA" },
                 ]
             },
             {
-                name: "FSCA / Recalls",
+                name: "Safety (Sections D, E, F)",
+                prompts: [
+                    { key: "SAFETY_SYSTEM", label: "System Prompt", type: "SYSTEM" },
+                    { key: "SafetyNarrativeAgent", label: "Agent Persona", type: "PERSONA" },
+                ]
+            },
+            {
+                name: "Trend Analysis (Section G)",
+                prompts: [
+                    { key: "TREND_SYSTEM", label: "System Prompt", type: "SYSTEM" },
+                    { key: "TrendNarrativeAgent", label: "Agent Persona", type: "PERSONA" },
+                ]
+            },
+            {
+                name: "FSCA / Recalls (Section H)",
                 prompts: [
                     { key: "FSCA_SYSTEM", label: "System Prompt", type: "SYSTEM" },
-                    { key: "FSCA_TASK", label: "Task Template", type: "TASK" },
                     { key: "FSCANarrativeAgent", label: "Agent Persona", type: "PERSONA" },
                 ]
             },
             {
-                name: "CAPA Narrative",
+                name: "CAPA (Section I)",
                 prompts: [
                     { key: "CAPA_SYSTEM", label: "System Prompt", type: "SYSTEM" },
-                    { key: "CAPA_TASK", label: "Task Template", type: "TASK" },
                     { key: "CAPANarrativeAgent", label: "Agent Persona", type: "PERSONA" },
                 ]
             },
             {
-                name: "Conclusions",
+                name: "Clinical (Sections J, K, L)",
+                prompts: [
+                    { key: "CLINICAL_SYSTEM", label: "System Prompt", type: "SYSTEM" },
+                    { key: "ClinicalNarrativeAgent", label: "Agent Persona", type: "PERSONA" },
+                ]
+            },
+            {
+                name: "Benefit-Risk (Section M)",
+                prompts: [
+                    { key: "BENEFIT_RISK_SYSTEM", label: "System Prompt", type: "SYSTEM" },
+                    { key: "BenefitRiskNarrativeAgent", label: "Agent Persona", type: "PERSONA" },
+                ]
+            },
+            {
+                name: "Conclusions (Section M)",
                 prompts: [
                     { key: "CONCLUSION_SYSTEM", label: "System Prompt", type: "SYSTEM" },
-                    { key: "CONCLUSION_TASK", label: "Task Template", type: "TASK" },
                     { key: "ConclusionNarrativeAgent", label: "Agent Persona", type: "PERSONA" },
                 ]
             },
@@ -168,7 +156,7 @@ const CATEGORY_DEFINITIONS: CategoryDefinition[] = [
     {
         name: "TABLE AGENTS (ANNEXES)",
         icon: Table,
-        standalone: ["DEFAULT_TABLE_TASK", "TABLE_FORMATTING"],
+        standalone: ["TABLE_FORMATTING"],
         agents: [
             {
                 name: "Base Table",
@@ -177,53 +165,49 @@ const CATEGORY_DEFINITIONS: CategoryDefinition[] = [
                 ]
             },
             {
-                name: "Annex I - Serious Incidents",
+                name: "Serious Incidents (Tables 2-4)",
                 prompts: [
-                    { key: "SERIOUS_INCIDENTS_TABLE_TASK", label: "Table Template", type: "TASK" },
                     { key: "SeriousIncidentsTableAgent", label: "Agent Persona", type: "PERSONA" },
                 ]
             },
             {
-                name: "Annex II - Complaints",
+                name: "Complaints (Table 8)",
                 prompts: [
-                    { key: "COMPLAINTS_TABLE_TASK", label: "Table Template", type: "TASK" },
                     { key: "ComplaintsTableAgent", label: "Agent Persona", type: "PERSONA" },
                 ]
             },
             {
-                name: "Annex III - CAPA",
+                name: "CAPA (Table I.1)",
                 prompts: [
-                    { key: "CAPA_TABLE_TASK", label: "Table Template", type: "TASK" },
                     { key: "CAPATableAgent", label: "Agent Persona", type: "PERSONA" },
                 ]
             },
             {
-                name: "Annex IV - Sales & Exposure",
+                name: "Sales & Exposure (Table 1)",
                 prompts: [
-                    { key: "SALES_TABLE_TASK", label: "Table Template", type: "TASK" },
                     { key: "SalesExposureTableAgent", label: "Agent Persona", type: "PERSONA" },
                 ]
             },
             {
-                name: "FSCA Table",
+                name: "FSCA (Table H.1)",
                 prompts: [
                     { key: "FSCATableAgent", label: "Agent Persona", type: "PERSONA" },
                 ]
             },
             {
-                name: "Literature Review Table",
+                name: "Literature Review",
                 prompts: [
                     { key: "LiteratureTableAgent", label: "Agent Persona", type: "PERSONA" },
                 ]
             },
             {
-                name: "PMCF Table",
+                name: "PMCF (Table 11)",
                 prompts: [
                     { key: "PMCFTableAgent", label: "Agent Persona", type: "PERSONA" },
                 ]
             },
             {
-                name: "Trend Analysis Table",
+                name: "Trend Analysis (Table G.4)",
                 prompts: [
                     { key: "TrendAnalysisTableAgent", label: "Agent Persona", type: "PERSONA" },
                 ]
@@ -239,12 +223,6 @@ const CATEGORY_DEFINITIONS: CategoryDefinition[] = [
                 name: "Base Chart",
                 prompts: [
                     { key: "BaseChartAgent", label: "Agent Persona", type: "PERSONA" },
-                ]
-            },
-            {
-                name: "Chart Generation Core",
-                prompts: [
-                    { key: "CHART_GENERATION_SYSTEM", label: "System Prompt", type: "SYSTEM" },
                 ]
             },
             {
@@ -287,7 +265,7 @@ const CATEGORY_DEFINITIONS: CategoryDefinition[] = [
     {
         name: "INGESTION & MAPPING",
         icon: Database,
-        standalone: [],
+        standalone: ["SEVERITY_CLASSIFICATION"],
         agents: [
             {
                 name: "Document Analysis",
@@ -312,29 +290,16 @@ const CATEGORY_DEFINITIONS: CategoryDefinition[] = [
                     { key: "FieldMappingAgent", label: "Agent Persona", type: "PERSONA" },
                 ]
             },
-            {
-                name: "Severity Classification",
-                prompts: [
-                    { key: "SEVERITY_CLASSIFICATION", label: "Classification Prompt", type: "SYSTEM" },
-                ]
-            },
         ]
     },
     {
         name: "RUNTIME AGENTS",
         icon: Cpu,
-        standalone: [],
+        standalone: ["COMPLIANCE_CHECK"],
         agents: [
             {
-                name: "Compliance Check",
+                name: "Narrative Writer",
                 prompts: [
-                    { key: "COMPLIANCE_CHECK", label: "System Prompt", type: "SYSTEM" },
-                ]
-            },
-            {
-                name: "Narrative Generation",
-                prompts: [
-                    { key: "NARRATIVE_GENERATION", label: "System Prompt", type: "SYSTEM" },
                     { key: "NarrativeWriterAgent", label: "Agent Persona", type: "PERSONA" },
                 ]
             },
@@ -469,7 +434,7 @@ export default function SystemInstructionsPage() {
     const getPromptIcon = (type: "SYSTEM" | "TASK" | "PERSONA") => {
         switch (type) {
             case "SYSTEM": return <Cog className="w-3 h-3" />;
-            case "TASK": return <ListTree className="w-3 h-3" />;
+            case "TASK": return <Code className="w-3 h-3" />;
             case "PERSONA": return <User className="w-3 h-3" />;
         }
     };

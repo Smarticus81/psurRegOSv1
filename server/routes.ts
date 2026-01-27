@@ -595,10 +595,34 @@ export async function registerRoutes(
   // Health check endpoint with database connectivity test
   app.get("/api/health", async (_req, res) => {
     const { isPoolHealthy, pool } = await import("./db");
+    const { DEFAULT_PROMPT_TEMPLATES } = await import("./src/agents/llmService");
+    const { systemInstructions } = await import("@shared/schema");
+    const { db } = await import("./db");
+    
     const dbHealthy = await isPoolHealthy();
-    const status = dbHealthy ? "healthy" : "degraded";
+    
+    // Check prompt seeding status
+    let promptStatus = { total: 0, inDb: 0, missing: 0, healthy: false };
+    try {
+      const expectedCount = Object.keys(DEFAULT_PROMPT_TEMPLATES).length;
+      const existingRows = await db.select({ key: systemInstructions.key }).from(systemInstructions);
+      const existingKeys = new Set(existingRows.map(r => r.key));
+      const missingCount = Object.keys(DEFAULT_PROMPT_TEMPLATES).filter(k => !existingKeys.has(k)).length;
+      
+      promptStatus = {
+        total: expectedCount,
+        inDb: existingKeys.size,
+        missing: missingCount,
+        healthy: missingCount === 0
+      };
+    } catch (e) {
+      // DB might not be ready
+    }
+    
+    const allHealthy = dbHealthy && promptStatus.healthy;
+    const status = allHealthy ? "healthy" : "degraded";
 
-    res.status(dbHealthy ? 200 : 503).json({
+    res.status(allHealthy ? 200 : 503).json({
       status,
       timestamp: new Date().toISOString(),
       database: {
@@ -607,8 +631,38 @@ export async function registerRoutes(
         poolIdle: pool.idleCount,
         poolWaiting: pool.waitingCount,
       },
+      prompts: promptStatus,
       uptime: process.uptime(),
     });
+  });
+  
+  // Prompt seeding status endpoint
+  app.get("/api/system-instructions/status", async (_req, res) => {
+    try {
+      const { DEFAULT_PROMPT_TEMPLATES } = await import("./src/agents/llmService");
+      const { systemInstructions } = await import("@shared/schema");
+      const { db } = await import("./db");
+      
+      const expectedKeys = Object.keys(DEFAULT_PROMPT_TEMPLATES);
+      const existingRows = await db.select({ key: systemInstructions.key }).from(systemInstructions);
+      const existingKeys = new Set(existingRows.map(r => r.key));
+      
+      const missingKeys = expectedKeys.filter(k => !existingKeys.has(k));
+      const extraKeys = Array.from(existingKeys).filter(k => !expectedKeys.includes(k));
+      
+      res.json({
+        healthy: missingKeys.length === 0,
+        expected: expectedKeys.length,
+        inDatabase: existingKeys.size,
+        missing: missingKeys,
+        extra: extraKeys,
+        message: missingKeys.length === 0 
+          ? "All prompts are seeded" 
+          : `${missingKeys.length} prompts missing - restart server or visit System Instructions page`
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
   });
 
 
@@ -4652,7 +4706,7 @@ Execute according to your persona instructions.`
         const acceptedProposals = allProposals.filter(p => p.status === "accepted");
 
         // Build coverage queue to get updated coverage summary
-        const coverageOutput = buildCoverageSlotQueue({
+        const coverageOutput = await buildCoverageSlotQueue({
           psurReference: psurCase.psurReference,
           profileId: psurCase.templateId,
           jurisdictions: psurCase.jurisdictions || [],
@@ -4673,7 +4727,7 @@ Execute according to your persona instructions.`
 
         // Calculate delta (coverage before vs after this proposal)
         const proposalsBefore = acceptedProposals.filter(p => p.id !== proposal.id);
-        const coverageBefore = buildCoverageSlotQueue({
+        const coverageBefore = await buildCoverageSlotQueue({
           psurReference: psurCase.psurReference,
           profileId: psurCase.templateId,
           jurisdictions: psurCase.jurisdictions || [],
@@ -6158,7 +6212,7 @@ Execute according to your persona instructions.`
       const evidenceAtoms = await storage.getEvidenceAtoms(psurCaseId);
       const acceptedProposals = await storage.getSlotProposals(psurCaseId);
 
-      const queueOutput = buildCoverageSlotQueue({
+      const queueOutput = await buildCoverageSlotQueue({
         psurReference: psurCase.psurReference,
         profileId: psurCase.templateId,
         jurisdictions: psurCase.jurisdictions || [],
@@ -6188,6 +6242,49 @@ Execute according to your persona instructions.`
     } catch (error) {
       console.error("Failed to build coverage slot queue:", error);
       res.status(500).json({ error: "Failed to build coverage slot queue" });
+    }
+  });
+
+  // ============== AGENT RECOMMENDATION ROUTES ==============
+
+  // Get recommended agents for a specific slot
+  app.get("/api/agents/recommend/:slotId", async (req, res) => {
+    try {
+      const { slotId } = req.params;
+      const { mdcgReference, agentAssignment } = req.query;
+      const evidenceTypes = req.query.evidenceTypes 
+        ? String(req.query.evidenceTypes).split(",") 
+        : [];
+
+      const { getAgentsForSlot, getAllAgentNames } = await import("./queue-builder");
+      
+      const recommended = getAgentsForSlot(
+        slotId,
+        mdcgReference as string | undefined,
+        agentAssignment as string | undefined,
+        evidenceTypes
+      );
+
+      res.json({
+        slotId,
+        mdcgReference: mdcgReference || null,
+        agentAssignment: agentAssignment || null,
+        evidenceTypes,
+        recommendedAgents: recommended,
+        allAvailableAgents: getAllAgentNames(),
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to get agent recommendations", details: error.message });
+    }
+  });
+
+  // Get all available agent names by category
+  app.get("/api/agents/all", async (req, res) => {
+    try {
+      const { getAllAgentNames } = await import("./queue-builder");
+      res.json(getAllAgentNames());
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to get agent names", details: error.message });
     }
   });
 

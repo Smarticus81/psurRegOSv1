@@ -115,22 +115,28 @@ export abstract class BaseTableAgent extends BaseAgent<TableInput, TableOutput> 
     // Filter relevant atoms
     const relevantAtoms = this.filterRelevantAtoms(input.atoms);
     
-    // Check for negative evidence (confirmed zero data)
-    const negativeEvidence = relevantAtoms.find(a => 
+    // Separate negative evidence from real data
+    const negativeEvidenceAtoms = relevantAtoms.filter(a => 
       a.normalizedData.isNegativeEvidence === true
+    );
+    const realDataAtoms = relevantAtoms.filter(a => 
+      a.normalizedData.isNegativeEvidence !== true
     );
 
     let result: TableOutput;
 
-    if (negativeEvidence) {
-      // Generate "no data" table
-      result = this.generateNoDataTable(input, negativeEvidence);
+    if (realDataAtoms.length > 0) {
+      // Generate full table with real data (ignore negative evidence)
+      result = await this.generateTable(input, realDataAtoms);
+    } else if (negativeEvidenceAtoms.length > 0) {
+      // Only negative evidence - generate "no data" table (confirmed zero)
+      result = this.generateNoDataTable(input, negativeEvidenceAtoms[0]);
     } else if (relevantAtoms.length === 0) {
-      // Generate empty table with gap notice
+      // No relevant atoms at all - generate empty table with gap notice
       result = this.generateEmptyTable(input);
       trace.addGap(`No ${this.tableType} data available`);
     } else {
-      // Generate full table with LLM assistance for formatting
+      // Fallback - should not reach here, but generate full table
       result = await this.generateTable(input, relevantAtoms);
     }
 
@@ -238,18 +244,142 @@ export abstract class BaseTableAgent extends BaseAgent<TableInput, TableOutput> 
     return num.toLocaleString();
   }
 
+  /**
+   * SOTA date parsing with multi-format support.
+   * Handles: Excel serial dates (1900/1904 systems), ISO strings, Unix timestamps,
+   * locale formats, and partial dates.
+   */
   protected formatDate(value: unknown): string {
     if (!value) return "-";
-    const str = String(value);
+    
+    // Already a Date object (from xlsx with cellDates: true)
+    if (value instanceof Date) {
+      if (!isNaN(value.getTime()) && this.isReasonableDate(value)) {
+        return value.toISOString().split("T")[0];
+      }
+    }
+    
+    const numValue = Number(value);
+    
+    // Excel serial date detection (Windows 1900 system: 1-60000+, Mac 1904 system: -1462 to 58538)
+    // Excel stores dates as days since epoch, with optional fractional time component
+    if (!isNaN(numValue) && Math.abs(numValue) < 100000) {
+      const date = this.excelSerialToDate(numValue);
+      if (date && this.isReasonableDate(date)) {
+        return date.toISOString().split("T")[0];
+      }
+    }
+    
+    // Unix timestamp detection (seconds since 1970-01-01)
+    // Valid range: ~946684800 (2000-01-01) to ~1893456000 (2030-01-01)
+    if (!isNaN(numValue) && numValue > 946684800 && numValue < 2000000000) {
+      const date = new Date(numValue * 1000);
+      if (this.isReasonableDate(date)) {
+        return date.toISOString().split("T")[0];
+      }
+    }
+    
+    // Unix timestamp in milliseconds
+    if (!isNaN(numValue) && numValue > 946684800000 && numValue < 2000000000000) {
+      const date = new Date(numValue);
+      if (this.isReasonableDate(date)) {
+        return date.toISOString().split("T")[0];
+      }
+    }
+    
+    const str = String(value).trim();
+    
+    // ISO 8601 format (most reliable)
+    if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
+      const date = new Date(str);
+      if (!isNaN(date.getTime()) && this.isReasonableDate(date)) {
+        return date.toISOString().split("T")[0];
+      }
+    }
+    
+    // Common date formats: DD/MM/YYYY, MM/DD/YYYY, DD.MM.YYYY
+    const datePatterns = [
+      { regex: /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/, dayIdx: 0, monthIdx: 1, yearIdx: 2 }, // US: MM/DD/YYYY
+      { regex: /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/, dayIdx: 0, monthIdx: 1, yearIdx: 2 }, // EU: DD.MM.YYYY
+      { regex: /^(\d{4})\/(\d{1,2})\/(\d{1,2})$/, dayIdx: 2, monthIdx: 1, yearIdx: 0 }, // YYYY/MM/DD
+    ];
+    
+    for (const pattern of datePatterns) {
+      const match = str.match(pattern.regex);
+      if (match) {
+        const parts = [match[1], match[2], match[3]].map(Number);
+        // Heuristic: if first number > 12, it's likely day-first format
+        const isEuropean = parts[0] > 12 && parts[1] <= 12;
+        const day = isEuropean ? parts[0] : parts[pattern.dayIdx];
+        const month = isEuropean ? parts[1] : parts[pattern.monthIdx];
+        const year = parts[pattern.yearIdx];
+        
+        if (year >= 1900 && year <= 2100 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+          const date = new Date(year, month - 1, day);
+          if (this.isReasonableDate(date)) {
+            return date.toISOString().split("T")[0];
+          }
+        }
+      }
+    }
+    
+    // Last resort: try native Date parsing
     try {
       const date = new Date(str);
-      if (!isNaN(date.getTime())) {
+      if (!isNaN(date.getTime()) && this.isReasonableDate(date)) {
         return date.toISOString().split("T")[0];
       }
     } catch {
       // Fall through
     }
-    return str.substring(0, 10);
+    
+    // Return first 10 chars if looks like a date, otherwise "-"
+    return str.length >= 10 && /\d/.test(str) ? str.substring(0, 10) : "-";
+  }
+
+  /**
+   * Convert Excel serial date number to JavaScript Date.
+   * Handles both Windows 1900 system and Mac 1904 system.
+   */
+  private excelSerialToDate(serial: number, use1904System = false): Date | null {
+    if (serial < -1500 || serial > 100000) return null;
+    
+    // Excel 1900 system has a leap year bug: it treats 1900 as a leap year
+    // Serial 1 = January 1, 1900 (in 1900 system)
+    // Serial 60 = February 29, 1900 (doesn't exist, but Excel thinks it does)
+    // Serial 61 = March 1, 1900
+    
+    let epoch: Date;
+    if (use1904System) {
+      // Mac Excel 1904 system: Serial 0 = January 1, 1904
+      epoch = new Date(Date.UTC(1904, 0, 1));
+    } else {
+      // Windows Excel 1900 system: Serial 1 = January 1, 1900
+      // We use Dec 30, 1899 as base because:
+      // - Serial 1 should be Jan 1, 1900
+      // - Dec 30, 1899 + 1 day = Dec 31, 1899? No, we need to account for the bug
+      epoch = new Date(Date.UTC(1899, 11, 30));
+    }
+    
+    // Handle the 1900 leap year bug for dates after Feb 28, 1900
+    let adjustedSerial = serial;
+    if (!use1904System && serial > 60) {
+      // Subtract 1 to account for the phantom Feb 29, 1900
+      adjustedSerial = serial;
+    }
+    
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const resultMs = epoch.getTime() + adjustedSerial * msPerDay;
+    
+    return new Date(resultMs);
+  }
+
+  /**
+   * Validate that a date falls within a reasonable range for PSUR data.
+   */
+  private isReasonableDate(date: Date): boolean {
+    const year = date.getFullYear();
+    return !isNaN(date.getTime()) && year >= 1990 && year <= 2100;
   }
 
   protected truncate(value: unknown, maxLength: number = 50): string {

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useLocation, useSearch } from "wouter";
 import { EvidenceIngestionPanel } from "@/components/evidence-ingestion-panel";
 import { CompilationRuntimeViewer } from "@/components/compilation-runtime-viewer";
 import { cn } from "@/lib/utils";
@@ -7,6 +8,53 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useQuery } from "@tanstack/react-query";
 import { FileText, Settings, Info, LayoutDashboard, Search, CheckCircle2, AlertCircle, Trash2, ArrowRight, Loader2, ChevronDown, ChevronUp, Sparkles } from "lucide-react";
+
+// Helper to update URL without full navigation
+function updateUrlParams(params: Record<string, string | null>) {
+    const url = new URL(window.location.href);
+    for (const [key, value] of Object.entries(params)) {
+        if (value === null) {
+            url.searchParams.delete(key);
+        } else {
+            url.searchParams.set(key, value);
+        }
+    }
+    window.history.replaceState({}, '', url.toString());
+}
+
+// Calculate wizard step from workflow state
+function calculateStepFromWorkflow(workflowSteps: WorkflowStep[] | undefined): WizardStep {
+    if (!workflowSteps || workflowSteps.length === 0) return 2;
+    
+    // Find the furthest completed or running step
+    let maxCompletedStep = 0;
+    let hasRunningStep = false;
+    
+    for (const ws of workflowSteps) {
+        if (ws.status === "RUNNING") {
+            hasRunningStep = true;
+            maxCompletedStep = Math.max(maxCompletedStep, ws.step);
+        } else if (ws.status === "COMPLETED") {
+            maxCompletedStep = Math.max(maxCompletedStep, ws.step);
+        }
+    }
+    
+    // Map workflow steps to wizard steps:
+    // Workflow 1-3 (Validate, Create, Load) -> Wizard step 3 (Review)
+    // Workflow 4-5 (Map, Adjudicate) -> Wizard step 4 (Compile) 
+    // Workflow 6-8 (Coverage, Generate, Export) -> Wizard step 5 (Results)
+    
+    if (maxCompletedStep >= 6 || workflowSteps.some(s => s.step >= 6 && s.status === "RUNNING")) {
+        return 5; // Results
+    }
+    if (maxCompletedStep >= 4 || workflowSteps.some(s => s.step >= 4 && s.status === "RUNNING")) {
+        return 4; // Compile
+    }
+    if (maxCompletedStep >= 1 || hasRunningStep) {
+        return 3; // Review
+    }
+    return 2; // Upload
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -1667,7 +1715,15 @@ interface ExistingCase {
 
 export default function PsurWizard() {
     const { toast } = useToast();
+    const [, setLocation] = useLocation();
+    const searchString = useSearch();
+    
+    // Parse URL params on mount
+    const urlParams = useMemo(() => new URLSearchParams(searchString), [searchString]);
+    const urlCaseId = urlParams.get('caseId');
+    
     const [step, setStep] = useState<WizardStep>(1);
+    const [isResumingFromUrl, setIsResumingFromUrl] = useState(false);
 
     // Draft state
     const [deviceCode, setDeviceCode] = useState("");
@@ -1682,10 +1738,16 @@ export default function PsurWizard() {
         const now = new Date();
         return `${now.getFullYear() - 1}-12-31`;
     });
-    const [psurCaseId, setPsurCaseId] = useState<number | null>(null);
+    const [psurCaseId, setPsurCaseIdInternal] = useState<number | null>(null);
     const [psurRef, setPsurRef] = useState<string | null>(null);
     const [createBusy, setCreateBusy] = useState(false);
     const [createError, setCreateError] = useState("");
+    
+    // Wrapper to update URL when psurCaseId changes
+    const setPsurCaseId = useCallback((id: number | null) => {
+        setPsurCaseIdInternal(id);
+        updateUrlParams({ caseId: id ? String(id) : null });
+    }, []);
 
     // State for Bulk Upload
     const [bulkMode, setBulkMode] = useState(false);

@@ -129,6 +129,23 @@ app.use((req, res, next) => {
   try {
     await registerRoutes(httpServer, app);
 
+    // Seed system prompts on startup (idempotent - only inserts missing prompts)
+    try {
+      const { seedSystemPrompts } = await import("./src/agents/llmService");
+      const result = await seedSystemPrompts();
+      if (result.seeded > 0) {
+        log(`Seeded ${result.seeded} system prompts (${result.existing} already existed)`, "startup");
+      }
+    } catch (seedError: any) {
+      console.error("======================================================");
+      console.error("[STARTUP WARNING] Failed to seed system prompts!");
+      console.error("Agents may fail until prompts are seeded.");
+      console.error("Check /api/health or /api/system-instructions/status");
+      console.error("Error:", seedError.message || seedError);
+      console.error("======================================================");
+      // Don't fail startup - prompts can still be seeded via the UI or on-demand
+    }
+
     app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
       const status = err.status || err.statusCode || 500;
       const message = err.message || "Internal Server Error";

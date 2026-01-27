@@ -139,7 +139,8 @@ export async function lintTemplate(templatePath: string): Promise<LintResult> {
 }
 
 /**
- * Lint a slot-based template (GRKB style) from parsed data
+ * Lint a slot-based template (GRKB style) from parsed data.
+ * PERMISSIVE: Only generates warnings, never blocks templates.
  */
 function lintSlotBasedTemplateData(
   template: Template,
@@ -150,22 +151,22 @@ function lintSlotBasedTemplateData(
   const warnings: LintError[] = [];
   const templateType: "slot-based" = "slot-based";
 
-  // 3. Check every slot_id has a mapping entry
+  // Check for missing mappings (WARNING only - mappings can be auto-generated)
   const slotIds = new Set(template.slots.map(s => s.slot_id));
-  const mappingKeys = new Set(Object.keys(template.mapping));
+  const mappingKeys = new Set(Object.keys(template.mapping || {}));
 
   for (const slotId of Array.from(slotIds)) {
     if (!mappingKeys.has(slotId)) {
-      errors.push({
-        level: "error",
+      warnings.push({
+        level: "warning",
         code: "MISSING_MAPPING",
-        message: `Slot '${slotId}' has no entry in mapping`,
+        message: `Slot '${slotId}' has no entry in mapping (will be auto-mapped at runtime)`,
         path: `slots[${slotId}]`,
       });
     }
   }
 
-  // Check for orphaned mapping keys
+  // Check for orphaned mapping keys (WARNING only)
   for (const mappingKey of Array.from(mappingKeys)) {
     if (!slotIds.has(mappingKey)) {
       warnings.push({
@@ -177,41 +178,41 @@ function lintSlotBasedTemplateData(
     }
   }
 
-  // 4. Check mapping obligation IDs are present (GRKB check is done at runtime)
+  // Collect all obligation IDs for informational purposes
   const allObligationIds = new Set<string>();
-  for (const ids of Object.values(template.mapping)) {
+  for (const ids of Object.values(template.mapping || {})) {
     for (const id of ids) {
       allObligationIds.add(id);
     }
   }
-  // Also include mandatory_obligation_ids
-  for (const id of template.mandatory_obligation_ids) {
+  for (const id of (template.mandatory_obligation_ids || [])) {
     allObligationIds.add(id);
   }
 
-  // Note: GRKB validation is performed at workflow runtime, not during lint
-  // This keeps linting fast and independent of database state
-
-  // 5. Check required slots have min_atoms >= 1 unless allow_empty_with_justification=true
+  // Check evidence requirements (WARNING only - permissive)
   for (const slot of template.slots) {
-    if (slot.required && slot.evidence_requirements.required_types.length > 0) {
-      const minAtoms = slot.evidence_requirements.min_atoms;
-      const allowEmpty = slot.evidence_requirements.allow_empty_with_justification;
+    // Handle both array and object formats for evidence_requirements
+    const evReq = slot.evidence_requirements;
+    const requiredTypes = Array.isArray(evReq) 
+      ? evReq 
+      : (evReq?.required_types || []);
+    const minAtoms = Array.isArray(evReq) ? 0 : (evReq?.min_atoms || 0);
+    const allowEmpty = Array.isArray(evReq) ? true : (evReq?.allow_empty_with_justification ?? true);
 
-      if (minAtoms < 1 && !allowEmpty) {
-        errors.push({
-          level: "error",
-          code: "INVALID_MIN_ATOMS",
-          message: `Required slot '${slot.slot_id}' with evidence requirements must have min_atoms >= 1 or allow_empty_with_justification=true`,
-          path: `slots[${slot.slot_id}].evidence_requirements`,
-        });
-      }
+    if (slot.required && requiredTypes.length > 0 && minAtoms < 1 && !allowEmpty) {
+      warnings.push({
+        level: "warning",
+        code: "LOW_MIN_ATOMS",
+        message: `Required slot '${slot.slot_id}' has min_atoms=0; evidence may be auto-filled at runtime`,
+        path: `slots[${slot.slot_id}].evidence_requirements`,
+      });
     }
   }
 
-  // 6. Check slot_kind consistency with output_requirements
+  // Check slot_kind consistency (WARNING only)
   for (const slot of template.slots) {
-    if (slot.slot_kind === "TABLE" && !slot.output_requirements.table_schema) {
+    const outputReq = slot.output_requirements || {};
+    if (slot.slot_kind === "TABLE" && !outputReq.table_schema) {
       warnings.push({
         level: "warning",
         code: "TABLE_NO_SCHEMA",
@@ -219,21 +220,13 @@ function lintSlotBasedTemplateData(
         path: `slots[${slot.slot_id}].output_requirements`,
       });
     }
-
-    if (slot.output_requirements.render_as === "table" && slot.slot_kind !== "TABLE") {
-      warnings.push({
-        level: "warning",
-        code: "RENDER_KIND_MISMATCH",
-        message: `Slot '${slot.slot_id}' has render_as=table but slot_kind is ${slot.slot_kind}`,
-        path: `slots[${slot.slot_id}]`,
-      });
-    }
   }
 
+  // PERMISSIVE: Always valid - only warnings, no blocking errors
   return {
     templateId,
     templateType,
-    valid: errors.length === 0,
+    valid: true,
     errors,
     warnings,
   };

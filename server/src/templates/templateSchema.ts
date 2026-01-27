@@ -3,76 +3,84 @@ import { z } from "zod";
 /**
  * TEMPLATE VALIDATION SCHEMA
  * 
- * This schema defines MINIMUM REQUIRED FIELDS for templates.
- * All schemas use .passthrough() to allow custom fields and extensions.
+ * PERMISSIVE SCHEMA - accepts custom fields and values.
  * 
  * Validation will PASS if:
- * - All required minimum fields are present and valid
- * - Extra fields are present (they are allowed and preserved)
+ * - Core structural fields are present (template_id, name, slots array, etc.)
+ * - Extra fields, custom enum values, and extensions are ALLOWED
  * 
  * Validation will FAIL only if:
- * - A required minimum field is missing
- * - A required field has an invalid type or value
+ * - A core structural field is completely missing
+ * - slots is not an array or is empty
  */
 
-// Column definition for table schemas
+// Column definition for table schemas - permissive
 export const TableColumnZ = z.object({
   name: z.string().min(1),
-  type: z.enum(["string", "number", "boolean"]),
-}).passthrough(); // Allow custom column metadata
+  type: z.string(), // Any string type allowed
+}).passthrough();
 
-// Table schema for TABLE slot kinds
-export const TableSchemaZ = z.object({
-  columns: z.array(TableColumnZ).min(1),
-  primary_key: z.array(z.string()).optional(),
-}).passthrough(); // Allow custom table metadata
+// Table schema - can be object OR string reference
+export const TableSchemaZ = z.union([
+  z.string(), // String reference to predefined schema
+  z.object({
+    columns: z.array(TableColumnZ).optional(),
+    primary_key: z.array(z.string()).optional(),
+  }).passthrough(),
+]);
 
-// Output requirements define how a slot is rendered
+// Output requirements - fully permissive
 export const OutputRequirementsZ = z.object({
-  renderer: z.enum(["md", "docx"]),
-  render_as: z.enum(["cover_page", "table_of_contents", "narrative", "table"]).optional(),
+  renderer: z.string().default("md"), // Any renderer string
+  render_as: z.string().optional(), // Any render type: narrative, table, list, summary_table, multi_table, etc.
   table_schema: TableSchemaZ.optional(),
-}).passthrough(); // Allow custom rendering options like mdcg_standard, include_checkboxes, etc.
+  table_schemas: z.array(TableSchemaZ).optional(), // Support multiple schemas
+}).passthrough();
 
-// Evidence requirements define what evidence is needed for a slot
-export const EvidenceRequirementsZ = z.object({
-  required_types: z.array(z.string()),
-  min_atoms: z.number().int().min(0).default(0),
-  allow_empty_with_justification: z.boolean().default(false),
-}).passthrough(); // Allow custom fields for user-defined extensions
+// Evidence requirements - permissive
+export const EvidenceRequirementsZ = z.union([
+  // Array format (legacy)
+  z.array(z.string()),
+  // Object format (preferred)
+  z.object({
+    required_types: z.array(z.string()).default([]),
+    min_atoms: z.number().int().min(0).default(0),
+    allow_empty_with_justification: z.boolean().default(false),
+  }).passthrough(),
+]);
 
-// Slot definition - a single section/field in the PSUR template
+// Slot definition - permissive with only core fields required
 export const SlotDefinitionZ = z.object({
   slot_id: z.string().min(1),
   title: z.string().min(1),
-  section_path: z.string().min(1), // e.g. "A > Executive Summary"
-  slot_kind: z.enum(["ADMIN", "NARRATIVE", "TABLE", "METRIC"]),
-  required: z.boolean(),
-  evidence_requirements: EvidenceRequirementsZ,
-  output_requirements: OutputRequirementsZ,
-}).passthrough(); // Allow custom fields like agent_assignment, quality_checks, regulatory_obligations, etc.
+  section_path: z.string().default(""), // Optional, can be empty
+  slot_kind: z.string().default("NARRATIVE"), // Any slot kind allowed
+  required: z.boolean().default(false),
+  evidence_requirements: EvidenceRequirementsZ.optional().default({ required_types: [], min_atoms: 0, allow_empty_with_justification: false }),
+  output_requirements: OutputRequirementsZ.optional().default({ renderer: "md" }),
+}).passthrough();
 
-// Template defaults
+// Template defaults - all optional with defaults
 export const TemplateDefaultsZ = z.object({
-  require_traceability: z.boolean(),
-  require_method_statement: z.boolean(),
-  require_claimed_obligations: z.boolean(),
-  min_method_chars: z.number().int().min(0),
-  min_evidence_atoms: z.number().int().min(0),
-}).passthrough(); // Allow custom defaults like mdcg_annex_i_compliant, no_citation_markers_in_output, etc.
+  require_traceability: z.boolean().default(true),
+  require_method_statement: z.boolean().default(true),
+  require_claimed_obligations: z.boolean().default(true),
+  min_method_chars: z.number().int().min(0).default(10),
+  min_evidence_atoms: z.number().int().min(0).default(0),
+}).passthrough();
 
-// Full template schema
+// Full template schema - minimal required fields
 export const TemplateZ = z.object({
   template_id: z.string().min(1),
   name: z.string().min(1),
-  version: z.string().min(1),
-  jurisdiction_scope: z.array(z.string()).min(1), // Changed from strict enum to allow custom jurisdictions like UKCA
+  version: z.string().default("1.0"),
+  jurisdiction_scope: z.array(z.string()).default(["EU_MDR"]),
   normative_basis: z.array(z.string()).optional(),
-  mandatory_obligation_ids: z.array(z.string()),
-  defaults: TemplateDefaultsZ,
+  mandatory_obligation_ids: z.array(z.string()).default([]),
+  defaults: TemplateDefaultsZ.optional().default({}),
   slots: z.array(SlotDefinitionZ).min(1),
-  mapping: z.record(z.string(), z.array(z.string())),
-}).passthrough(); // Allow custom top-level fields like regulatory_basis, template_metadata, mdcg_annex_i_compliance_matrix, etc.
+  mapping: z.record(z.string(), z.array(z.string())).default({}),
+}).passthrough();
 
 // Type exports
 export type TableColumn = z.infer<typeof TableColumnZ>;

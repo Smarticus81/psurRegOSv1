@@ -78,6 +78,33 @@ export interface PipelineResult {
 const embeddingCache = new Map<string, number[]>();
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Parse the required field to convert conditional strings to booleans.
+ * Templates may use strings like "conditional:serious_incidents_count_greater_than_zero"
+ * but the database expects boolean values.
+ * 
+ * @param required - The required field value (boolean, string, or any)
+ * @returns boolean - true if absolutely required, false if conditional or not required
+ */
+function parseRequiredField(required: any): boolean {
+  // If it's already a boolean, return it
+  if (typeof required === 'boolean') {
+    return required;
+  }
+  
+  // If it's a string starting with "conditional:", treat as not absolutely required
+  if (typeof required === 'string' && required.startsWith('conditional:')) {
+    return false;
+  }
+  
+  // Coerce other values to boolean
+  return Boolean(required);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // SCHEMA TRANSFORMATION: Pipeline → Workflow Format
 // 
 // SOTA approach: Transform at ingestion, store in canonical format.
@@ -574,7 +601,7 @@ ${candidates.map((o, i) => `${i + 1}. ${o.obligationId}: ${o.title}`).join("\n")
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
-      config: { model: "gpt-4o-mini", temperature: 0.1, maxTokens: 1000 },
+      config: { model: "gpt-5.2", temperature: 0.1, maxTokens: 4000 },
       responseFormat: "json",
     });
 
@@ -684,6 +711,8 @@ async function saveToDatabase(
   // Save slot definitions using transformed slot data
   for (let i = 0; i < workflowTemplate.slots.length; i++) {
     const slot = workflowTemplate.slots[i];
+    const isRequired = parseRequiredField(slot.required);
+    
     await db.insert(slotDefinitions).values({
       slotId: slot.slot_id,
       title: slot.title, // Use workflow field name
@@ -691,7 +720,7 @@ async function saveToDatabase(
       templateId: workflowTemplate.template_id,
       jurisdictions: validJurisdictions.length > 0 ? validJurisdictions : ["EU_MDR"],
       requiredEvidenceTypes: slot.evidence_requirements.required_types,
-      hardRequireEvidence: slot.required,
+      hardRequireEvidence: isRequired,
       minAtoms: slot.evidence_requirements.min_atoms,
       sortOrder: i,
     }).onConflictDoUpdate({
@@ -700,7 +729,7 @@ async function saveToDatabase(
         title: slot.title,
         description: slot.section_path,
         requiredEvidenceTypes: slot.evidence_requirements.required_types,
-        hardRequireEvidence: slot.required,
+        hardRequireEvidence: isRequired,
         minAtoms: slot.evidence_requirements.min_atoms,
         sortOrder: i,
       },

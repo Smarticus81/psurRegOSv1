@@ -162,6 +162,95 @@ export function detectDocumentType(filename: string, buffer?: Buffer): DocumentT
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// EXCEL VALUE NORMALIZATION (SOTA)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Normalize Excel cell values for consistent data handling.
+ * Handles: Date objects, Excel serial dates, numbers, strings with trimming.
+ */
+function normalizeExcelValue(value: unknown): unknown {
+  if (value === null || value === undefined || value === "") {
+    return "";
+  }
+  
+  // Handle Date objects (from cellDates: true)
+  if (value instanceof Date) {
+    if (!isNaN(value.getTime())) {
+      // Check if this is a time-only value (year 1899/1900)
+      if (value.getFullYear() <= 1900) {
+        // Likely a time, return as HH:MM:SS
+        return value.toISOString().split("T")[1]?.split(".")[0] || String(value);
+      }
+      // Normal date - return ISO format
+      return value.toISOString().split("T")[0];
+    }
+    return String(value);
+  }
+  
+  // Handle numbers that might be Excel serial dates
+  if (typeof value === "number") {
+    // Excel serial date range: ~1 (Jan 1, 1900) to ~60000+ (year 2064)
+    // But we need to distinguish from regular numbers
+    // Serial dates for reasonable years (1990-2100) are roughly 32874 to 73415
+    if (Number.isInteger(value) && value >= 25569 && value <= 73415) {
+      // Likely an Excel serial date - convert it
+      // 25569 = Jan 1, 1970 in Excel (Unix epoch)
+      const date = excelSerialToDate(value);
+      if (date) {
+        return date.toISOString().split("T")[0];
+      }
+    }
+    return value;
+  }
+  
+  // Handle strings
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    
+    // Check if it's a numeric string that looks like an Excel serial date
+    const num = parseFloat(trimmed);
+    if (!isNaN(num) && /^\d+$/.test(trimmed) && num >= 25569 && num <= 73415) {
+      const date = excelSerialToDate(num);
+      if (date) {
+        return date.toISOString().split("T")[0];
+      }
+    }
+    
+    return trimmed;
+  }
+  
+  return value;
+}
+
+/**
+ * Convert Excel serial date number to JavaScript Date.
+ * Handles the Excel 1900 date system with its leap year bug.
+ */
+function excelSerialToDate(serial: number): Date | null {
+  if (serial < 1 || serial > 100000) return null;
+  
+  // Excel's epoch is December 30, 1899 (not Jan 1, 1900)
+  // This accounts for Excel's off-by-one and leap year bug
+  const excelEpoch = Date.UTC(1899, 11, 30);
+  const msPerDay = 24 * 60 * 60 * 1000;
+  
+  // For dates after Feb 28, 1900 (serial 60), Excel has a leap year bug
+  // We need to subtract 1 day for serials > 60
+  const adjustedSerial = serial > 60 ? serial - 1 : serial;
+  
+  const date = new Date(excelEpoch + adjustedSerial * msPerDay);
+  
+  // Validate the result is reasonable
+  const year = date.getUTCFullYear();
+  if (year >= 1990 && year <= 2100) {
+    return date;
+  }
+  
+  return null;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // EXCEL PARSER
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -184,7 +273,15 @@ function parseExcelDocument(
   };
 
   try {
-    const workbook = xlsx.read(buffer, { type: "buffer" });
+    // SOTA Excel parsing with comprehensive date handling
+    // - cellDates: true converts serial dates to JS Date objects
+    // - dateNF: standard ISO format for consistent output
+    const workbook = xlsx.read(buffer, { 
+      type: "buffer", 
+      cellDates: true,
+      dateNF: "yyyy-mm-dd",
+    });
+    
     result.metadata.sheetNames = workbook.SheetNames;
     result.metadata.sheetCount = workbook.SheetNames.length;
 
@@ -192,25 +289,40 @@ function parseExcelDocument(
 
     for (const sheetName of workbook.SheetNames) {
       const sheet = workbook.Sheets[sheetName];
-      const jsonData = xlsx.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+      
+      // Parse with raw: false to get formatted values, defval for empty cells
+      const jsonData = xlsx.utils.sheet_to_json<Record<string, unknown>>(sheet, { 
+        defval: "",
+        raw: false, // Get formatted strings instead of raw values
+        dateNF: "yyyy-mm-dd", // ISO date format
+      });
       
       if (jsonData.length === 0) continue;
 
+      // Post-process: normalize dates and clean values
+      const processedRows = jsonData.map(row => {
+        const processed: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(row)) {
+          processed[key] = normalizeExcelValue(value);
+        }
+        return processed;
+      });
+
       // Extract headers from first row keys
-      const headers = Object.keys(jsonData[0] || {});
+      const headers = Object.keys(processedRows[0] || {});
       
       // Create table
       const table: ParsedTable = {
         name: sheetName,
         headers,
-        rows: jsonData,
+        rows: processedRows,
       };
       result.tables.push(table);
 
       // Add to raw text
       textParts.push(`=== Sheet: ${sheetName} ===`);
       textParts.push(headers.join("\t"));
-      for (const row of jsonData) {
+      for (const row of processedRows) {
         textParts.push(headers.map(h => String(row[h] ?? "")).join("\t"));
       }
       textParts.push("");

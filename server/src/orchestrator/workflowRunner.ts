@@ -30,6 +30,7 @@ import {
   qualificationReports,
   decisionTraceSummaries,
   templates,
+  slotDefinitions,
   WorkflowStep,
   WorkflowStepStatus,
   OrchestratorWorkflowResult,
@@ -1600,16 +1601,29 @@ export async function getWorkflowResultForCase(psurCaseId: number): Promise<Orch
   const kernelStatus = await getKernelStatus(psurCase.jurisdictions || []);
   let template: Template | null = null;
   try {
-    // Check if it's a form-based template
     if (await isTemplateFormBased(psurCase.templateId)) {
-      // Form-based templates don't have slots
       kernelStatus.templateSlots = 0;
     } else {
       template = await loadTemplate(psurCase.templateId);
-      kernelStatus.templateSlots = (getSlots(template) || []).length;
+      const slots = getSlots(template) || [];
+      kernelStatus.templateSlots = slots.length;
     }
-  } catch {
+  } catch (err: unknown) {
+    console.warn(`[WorkflowRunner] getWorkflowResultForCase: failed to load template ${psurCase.templateId}, templateSlots=0. Error:`, err);
     kernelStatus.templateSlots = 0;
+    // Fallback: use slot_definitions count when template load fails (e.g. validation)
+    try {
+      const slotRows = await db
+        .select({ slotId: slotDefinitions.slotId })
+        .from(slotDefinitions)
+        .where(eq(slotDefinitions.templateId, psurCase.templateId));
+      if (slotRows.length > 0) {
+        kernelStatus.templateSlots = slotRows.length;
+        console.log(`[WorkflowRunner] getWorkflowResultForCase: using slot_definitions count for ${psurCase.templateId}: ${slotRows.length}`);
+      }
+    } catch (fallbackErr) {
+      // ignore
+    }
   }
 
   const result: OrchestratorWorkflowResult = {

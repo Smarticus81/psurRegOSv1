@@ -16,3 +16,4 @@ __pycache__/
 
 .env
 outputpsur.docx
+server/output.md

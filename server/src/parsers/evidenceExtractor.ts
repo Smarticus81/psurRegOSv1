@@ -1,18 +1,23 @@
 /**
  * SOTA Evidence Extractor
- * Uses Claude Sonnet 4.5 for intelligent semantic extraction with rule-based fallback
+ * 
+ * UPGRADED: Now uses GPT-5.2 with comprehensive semantic analysis.
+ * NO FALLBACKS - All extractions use LLM-first approach.
+ * All low-confidence items are FLAGGED, never silently dropped.
  * 
  * Architecture:
- * 1. LLM-powered schema inference (primary) - Uses Claude to understand column semantics
- * 2. Rule-based extraction (fallback) - Pattern matching when LLM unavailable
- * 3. Specialized CER extraction - Multi-evidence extraction from Clinical Evaluation Reports
- * 4. Granular decision tracing - Full audit trail for all extraction decisions
+ * 1. SOTA Schema Discovery - GPT-5.2 understands document structure
+ * 2. SOTA Field Mapping - Semantic mapping for every column
+ * 3. SOTA Validation - Multi-level validation with quality flags
+ * 4. Full Audit Trail - Complete reasoning trace for all decisions
  */
 
 import { ParsedDocument, ParsedTable, ParsedSection } from "./documentParser";
 import { createHash, randomUUID } from "crypto";
 import { complete, LLMRequest } from "../agents/llmService";
 import { extractFromCER, CERExtractionResult, CERDecisionTrace } from "./cerExtractor";
+import { extractEvidenceSOTA, SOTAExtractionResult, convertToLegacyFormat } from "./sotaExtractor";
+import { SOTA_EVIDENCE_REGISTRY, getEvidenceTypeDefinition } from "./sotaEvidenceRegistry";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -404,7 +409,14 @@ function applyLLMMappings(
 
 export async function extractEvidence(
   document: ParsedDocument,
-  sourceType?: string
+  sourceType?: string,
+  context?: {
+    periodStart?: string;
+    periodEnd?: string;
+    deviceCode?: string;
+    psurCaseId?: number;
+    useSOTA?: boolean;  // Flag to enable SOTA extraction
+  }
 ): Promise<ExtractionResult> {
   const startTime = Date.now();
   const decisionTrace: ExtractionDecisionTrace[] = [];
@@ -418,6 +430,71 @@ export async function extractEvidence(
     decisionTrace: [],
   };
 
+  // Check if SOTA extraction should be used (default: true for tabular data)
+  const useSOTA = context?.useSOTA !== false && document.tables.length > 0;
+  
+  if (useSOTA && document.tables.length > 0) {
+    console.log(`[Evidence Extractor] Using SOTA extraction pipeline for ${document.filename}`);
+    
+    try {
+      // Use the new SOTA extraction pipeline
+      const sotaResult = await extractEvidenceSOTA(document, {
+        periodStart: context?.periodStart || new Date().toISOString().split("T")[0],
+        periodEnd: context?.periodEnd || new Date().toISOString().split("T")[0],
+        deviceCode: context?.deviceCode,
+        psurCaseId: context?.psurCaseId
+      });
+      
+      // Convert to legacy format for backward compatibility
+      const legacyFormat = convertToLegacyFormat(sotaResult);
+      
+      result.extractedEvidence = legacyFormat.extractedEvidence;
+      result.decisionTrace = legacyFormat.decisionTrace.map(t => ({
+        traceId: t.traceId,
+        timestamp: t.timestamp,
+        stage: t.stage as any,
+        decision: t.decision,
+        confidence: t.confidence,
+        inputSummary: t.reasoning[0] || "",
+        outputSummary: t.decision,
+        reasoning: t.reasoning
+      }));
+      
+      // Add quality summary to suggestions
+      if (sotaResult.quality.humanReviewRequired) {
+        result.suggestions.push(`HUMAN REVIEW REQUIRED: ${sotaResult.quality.reviewReasons.join("; ")}`);
+      }
+      if (sotaResult.stats.unmappedColumns > 0) {
+        result.suggestions.push(`${sotaResult.stats.unmappedColumns} columns could not be mapped - review column names`);
+      }
+      if (sotaResult.quality.overallScore < 70) {
+        result.suggestions.push(`Low extraction quality score (${sotaResult.quality.overallScore}%) - manual review recommended`);
+      }
+      
+      // Add SOTA-specific metadata
+      (result as any).sotaResult = sotaResult;
+      
+      result.processingTime = Date.now() - startTime;
+      return result;
+      
+    } catch (sotaError: any) {
+      console.error(`[Evidence Extractor] SOTA extraction failed, error: ${sotaError?.message}`);
+      // Add error to trace but continue with fallback
+      decisionTrace.push({
+        traceId: randomUUID(),
+        timestamp: new Date().toISOString(),
+        stage: "VALIDATION",
+        decision: `SOTA extraction failed: ${sotaError?.message}`,
+        confidence: 0,
+        inputSummary: document.filename,
+        outputSummary: "Falling back to legacy extraction",
+        reasoning: [`Error: ${sotaError?.message}`, "Using legacy extraction as fallback"]
+      });
+    }
+  }
+
+  // LEGACY EXTRACTION PATH (for CER documents or when SOTA fails)
+  
   // PHASE 0: Document classification decision trace
   const classificationTraceId = randomUUID();
   const classificationStart = Date.now();

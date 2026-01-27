@@ -167,6 +167,9 @@ router.post("/parse", upload.single("file"), async (req: Request, res: Response)
 /**
  * POST /api/ingest/extract
  * Parse document and extract evidence atoms with full decision tracing
+ * 
+ * UPGRADED: Now uses SOTA GPT-5.2 extraction pipeline by default.
+ * Pass useSOTA=false to use legacy extraction.
  */
 router.post("/extract", upload.single("file"), async (req: Request, res: Response) => {
   try {
@@ -177,8 +180,15 @@ router.post("/extract", upload.single("file"), async (req: Request, res: Respons
     const { buffer, originalname } = req.file;
     const sourceType = req.body.sourceType;
     const includeTrace = req.body.includeTrace !== "false"; // Default to true
+    const useSOTA = req.body.useSOTA !== "false"; // Default to true - use SOTA extraction
+    
+    // Extract context for SOTA extraction
+    const periodStart = req.body.periodStart || new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+    const periodEnd = req.body.periodEnd || new Date().toISOString().split("T")[0];
+    const deviceCode = req.body.deviceCode;
+    const psurCaseId = req.body.psurCaseId ? parseInt(req.body.psurCaseId) : undefined;
 
-    console.log(`[Ingest] Extracting evidence from: ${originalname}, sourceType: ${sourceType}, tracing: ${includeTrace}`);
+    console.log(`[Ingest] Extracting evidence from: ${originalname}, sourceType: ${sourceType}, SOTA: ${useSOTA}, tracing: ${includeTrace}`);
 
     // Parse document
     const parsed = await parseDocument(buffer, originalname);
@@ -190,8 +200,14 @@ router.post("/extract", upload.single("file"), async (req: Request, res: Respons
       });
     }
 
-    // Extract evidence with decision tracing
-    const extraction = await extractEvidence(parsed, sourceType);
+    // Extract evidence with SOTA pipeline (or legacy if disabled)
+    const extraction = await extractEvidence(parsed, sourceType, {
+      periodStart,
+      periodEnd,
+      deviceCode,
+      psurCaseId,
+      useSOTA
+    });
 
     console.log(`[Ingest] Extracted ${extraction.extractedEvidence.length} evidence items from ${originalname} with ${extraction.decisionTrace.length} trace entries`);
 
@@ -246,6 +262,48 @@ router.post("/extract", upload.single("file"), async (req: Request, res: Respons
         processingTimeMs: extraction.cerExtractionResult.processingTimeMs,
         warnings: extraction.cerExtractionResult.warnings,
       };
+    }
+
+    // Include SOTA-specific quality metadata if available
+    const sotaResult = (extraction as any).sotaResult;
+    if (sotaResult) {
+      response.sotaExtraction = {
+        overallScore: sotaResult.quality.overallScore,
+        documentConfidence: sotaResult.quality.documentConfidence,
+        schemaConfidence: sotaResult.quality.schemaConfidence,
+        validationScore: sotaResult.quality.validationScore,
+        humanReviewRequired: sotaResult.quality.humanReviewRequired,
+        reviewReasons: sotaResult.quality.reviewReasons,
+        stats: sotaResult.stats,
+        schemaDiscovery: {
+          documentClassification: sotaResult.schemaDiscovery.documentClassification,
+          detectedEvidenceTypes: sotaResult.schemaDiscovery.detectedEvidenceTypes.map((e: any) => ({
+            evidenceType: e.evidenceType,
+            category: e.category,
+            confidence: e.confidence,
+            estimatedRecordCount: e.estimatedRecordCount
+          })),
+          tableMappings: sotaResult.schemaDiscovery.tableMappings.map((t: any) => ({
+            tableName: t.tableName,
+            primaryEvidenceType: t.primaryEvidenceType,
+            primaryConfidence: t.primaryConfidence,
+            mappedColumns: t.columnMappings.filter((c: any) => c.targetField).length,
+            unmappedColumns: t.columnMappings.filter((c: any) => !c.targetField).map((c: any) => c.sourceColumn)
+          }))
+        }
+      };
+      
+      // Add quality flags for each evidence item
+      response.evidence = extraction.extractedEvidence.map((e: any) => ({
+        evidenceType: e.evidenceType,
+        confidence: e.confidence,
+        source: e.source,
+        sourceName: e.sourceName,
+        data: e.data,
+        extractionMethod: e.extractionMethod,
+        warnings: e.warnings,
+        quality: e.quality || null  // Include quality metadata if available
+      }));
     }
 
     res.json(response);

@@ -1,18 +1,14 @@
 /**
- * HIERARCHICAL TEMPLATE PIPELINE UI
+ * Template Management - PSUR Report Structure Configuration
  * 
- * Architecture:
- *   EU MDR / UK MDR (Regulations in GRKB)
- *         ↓
- *   MDCG 2022-21 (Official Standard - 100% coverage of regulations)
- *         ↓
- *   Custom Templates (validated against MDCG 2022-21)
+ * Manages PSUR templates that define report structure:
+ * - Upload custom JSON templates with section definitions
+ * - AI-powered alignment with MDCG 2022-21 standard structure
+ * - Validate regulatory coverage (EU MDR / UK MDR)
+ * - Map sections to evidence requirements
  * 
- * Flow:
- * 1. Upload custom template JSON
- * 2. LLM-powered alignment with MDCG 2022-21 standard
- * 3. Review slot alignments & adjust
- * 4. Save to DB + Neo4j
+ * Regulatory Context:
+ *   EU MDR / UK MDR (Regulations) → MDCG 2022-21 (Standard) → Custom Templates
  */
 
 import { useState, useCallback } from "react";

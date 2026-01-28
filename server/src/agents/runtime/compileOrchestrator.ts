@@ -15,6 +15,8 @@ import {
   getTraceSummary,
   CompileTraceSummary,
 } from "../../services/compileTraceRepository";
+import { validateCrossSectionConsistency, CrossSectionValidationResult } from "../../services/crossSectionValidator";
+import { clearMetricsCache } from "../../services/canonicalMetricsService";
 import { 
   loadTemplate, 
   loadFormTemplate,
@@ -152,6 +154,7 @@ export interface CompileOrchestratorResult {
   traceSummary: CompileTraceSummary;
   errors: string[];
   warnings: string[];
+  validation?: CrossSectionValidationResult;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -573,6 +576,7 @@ export class CompileOrchestrator {
                 periodStart: input.periodStart,
                 periodEnd: input.periodEnd,
                 templateId: input.templateId,
+                psurCaseId: input.psurCaseId, // Required for canonical metrics
               },
             }, this.createAgentContext(input.psurCaseId, slot.slot_id, {
               deviceCode: input.deviceCode,
@@ -638,6 +642,7 @@ export class CompileOrchestrator {
                 deviceCode: input.deviceCode,
                 periodStart: input.periodStart,
                 periodEnd: input.periodEnd,
+                psurCaseId: input.psurCaseId, // Required for canonical metrics
               },
             }, this.createAgentContext(input.psurCaseId, slot.slot_id));
 
@@ -801,8 +806,31 @@ export class CompileOrchestrator {
 
       console.log(`[${this.orchestratorId}] Compilation complete in ${Date.now() - startTime}ms`);
 
+      // Run cross-section consistency validation
+      const validationResult = validateCrossSectionConsistency(
+        sections,
+        input.psurCaseId,
+        allAtoms,
+        input.periodStart,
+        input.periodEnd
+      );
+      
+      // Add validation issues to warnings
+      for (const issue of validationResult.issues) {
+        if (issue.severity === "ERROR") {
+          errors.push(`[DATA CONSISTENCY] ${issue.description}`);
+        } else if (issue.severity === "WARNING") {
+          warnings.push(`[DATA CONSISTENCY] ${issue.description}`);
+        }
+      }
+      
+      console.log(`[${this.orchestratorId}] Cross-section validation: ${validationResult.isValid ? "PASSED" : "ISSUES FOUND"} (Score: ${validationResult.overallScore}%)`);
+
       // Mark live content generation as finished
       finishLiveContent(input.psurCaseId);
+      
+      // Clear metrics cache for this PSUR case
+      clearMetricsCache(input.psurCaseId);
 
       return {
         success: formatResult.success && errors.length === 0,
@@ -812,6 +840,7 @@ export class CompileOrchestrator {
         traceSummary,
         errors,
         warnings,
+        validation: validationResult,
       };
 
     } catch (err: any) {
@@ -1218,6 +1247,7 @@ IMPORTANT: Do NOT include [ATOM-xxx] citations in the text. Write clean prose.`;
               periodStart: input.periodStart,
               periodEnd: input.periodEnd,
               templateId: input.templateId,
+              psurCaseId: input.psurCaseId, // Required for canonical metrics
             },
           }, this.createAgentContext(input.psurCaseId, sectionId, {
             deviceCode: input.deviceCode,
@@ -1273,6 +1303,7 @@ IMPORTANT: Do NOT include [ATOM-xxx] citations in the text. Write clean prose.`;
                 deviceCode: input.deviceCode,
                 periodStart: input.periodStart,
                 periodEnd: input.periodEnd,
+                psurCaseId: input.psurCaseId, // Required for canonical metrics
               },
             }, this.createAgentContext(input.psurCaseId, `${sectionId}_table`));
 

@@ -2,15 +2,20 @@
  * Sales & Exposure Table Agent
  * 
  * SOTA agent for generating sales volume and exposure estimate tables.
+ * 
+ * CRITICAL: Uses CanonicalMetricsService to ensure totals match
+ * what's presented in Executive Summary and other sections.
+ * 
  * Features:
  * - Multi-dimensional aggregation (region, country, product)
  * - Automatic region normalization and hierarchy detection
  * - Data quality scoring and validation
  * - Period-aware aggregation with overlap detection
- * - Statistical confidence intervals for large datasets
+ * - Cross-section consistency with canonical metrics
  */
 
 import { BaseTableAgent, TableInput, TableOutput, TableEvidenceAtom } from "./baseTableAgent";
+import { getCanonicalMetrics } from "../../../services/canonicalMetricsService";
 
 // Region normalization map for consistent grouping
 const REGION_NORMALIZATION: Record<string, string> = {
@@ -254,6 +259,20 @@ export class SalesExposureTableAgent extends BaseTableAgent {
       allShares.push(...agg.shares);
     }
 
+    // Verify against canonical metrics for cross-section consistency
+    const ctx = input.context as typeof input.context & { psurCaseId?: number };
+    const canonicalMetrics = getCanonicalMetrics(
+      ctx.psurCaseId || 0,
+      atoms,
+      input.context.periodStart,
+      input.context.periodEnd
+    );
+    const canonicalTotal = canonicalMetrics.sales.totalUnits.value;
+    
+    // Use canonical total if there's a discrepancy (ensures executive summary matches)
+    const finalTotal = canonicalTotal > 0 ? canonicalTotal : totalUnits;
+    const hasDiscrepancy = Math.abs(totalUnits - canonicalTotal) > 1 && canonicalTotal > 0;
+
     // Add total row with computed aggregates
     if (rows.length > 0) {
       const totalShare = allShares.length > 0
@@ -262,7 +281,7 @@ export class SalesExposureTableAgent extends BaseTableAgent {
       
       rows.push([
         "**TOTAL**",
-        `**${this.formatNumber(totalUnits)}**`,
+        `**${this.formatNumber(finalTotal)}**`,
         `**${totalShare}**`,
         totalUsage > 0 ? `**${this.formatNumber(totalUsage)}**` : "-",
         `${input.context.periodStart} to ${input.context.periodEnd}`,
@@ -278,15 +297,21 @@ export class SalesExposureTableAgent extends BaseTableAgent {
 
     // Calculate data quality score
     const qualityScore = this.calculateDataQuality(regionAggregation);
+    
+    // Build footer with consistency note
+    let footerNote = `Data Source: ${atomIds.length} evidence atoms across ${sortedRegions.length} regions. ` +
+      `Total: ${this.formatNumber(finalTotal)} units. ` +
+      `Data Quality: ${qualityScore}%`;
+    if (hasDiscrepancy) {
+      footerNote += ` (Note: Total aligned with canonical metrics for cross-section consistency)`;
+    }
 
     return {
       markdown: markdownLines.join("\n"),
       evidenceAtomIds: Array.from(new Set(atomIds)),
       rowCount: rows.length - 1, // Exclude total row
       columns,
-      dataSourceFooter: `Data Source: ${atomIds.length} evidence atoms across ${sortedRegions.length} regions. ` +
-        `Total: ${this.formatNumber(totalUnits)} units. ` +
-        `Data Quality: ${qualityScore}%`,
+      dataSourceFooter: footerNote,
       docxTable: {
         headers: columns,
         rows,

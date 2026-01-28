@@ -37,6 +37,7 @@ export interface TableInput {
     deviceCode: string;
     periodStart: string;
     periodEnd: string;
+    psurCaseId?: number; // Required for canonical metrics lookup
   };
 }
 

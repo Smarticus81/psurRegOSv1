@@ -1,12 +1,14 @@
 /**
- * Content Traces Page - SOTA Ultra-Granular PSUR Content Traceability
+ * Evidence Lineage - PSUR Data Provenance & Decision Traceability
  * 
- * Shows WHY/HOW/WHAT for every content element with:
- * - Real-time trace streaming during compilation
- * - Advanced filtering and natural language search
- * - Slot-based grouping with timeline view
- * - Export capabilities for audit compliance
- * - Visualization of trace statistics
+ * Provides complete audit trail for PSUR content:
+ * - WHERE: Source file, row, column for every data point
+ * - WHEN: Timestamps for extraction, transformation, rendering
+ * - HOW: Derivation method (aggregation, inference, direct quote)
+ * - WHY: Reasoning trace for every decision
+ * - WHICH: Evidence records that contributed to each statement
+ * 
+ * Regulatory Purpose: EU MDR Article 86 Post-Market Surveillance traceability
  */
 
 import { useState, useEffect, useMemo } from "react";

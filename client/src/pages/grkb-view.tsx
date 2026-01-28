@@ -1,3 +1,13 @@
+/**
+ * Regulatory Knowledge - PSUR Compliance Requirements Reference
+ * 
+ * Displays all regulatory obligations for PSUR content by jurisdiction:
+ * - EU MDR (Medical Device Regulation 2017/745)
+ * - UK MDR (Medical Devices Regulations 2002, as amended)
+ * 
+ * Source: Global Regulatory Knowledge Base (GRKB)
+ */
+
 import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -61,10 +71,10 @@ export default function GrkbView() {
                 <div className="space-y-1">
                     <div className="flex items-center gap-2 text-primary font-semibold uppercase text-xs">
                         <Globe className="w-3 h-3" />
-                        Regulatory Reference
+                        Regulatory Knowledge Base
                     </div>
-                    <h1 className="text-3xl font-bold text-foreground">PSUR Requirements</h1>
-                    <p className="text-muted-foreground text-sm">All regulatory requirements for PSUR content by jurisdiction.</p>
+                    <h1 className="text-3xl font-bold text-foreground">PSUR Compliance Requirements</h1>
+                    <p className="text-muted-foreground text-sm">EU MDR and UK MDR obligations for periodic safety update reports.</p>
                 </div>
 
                 <div className="flex items-center gap-2 bg-secondary/50 p-1 rounded-xl border border-border/50">

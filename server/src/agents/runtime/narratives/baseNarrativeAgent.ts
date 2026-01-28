@@ -45,6 +45,7 @@ export interface NarrativeInput {
     periodStart: string;
     periodEnd: string;
     templateId: string;
+    psurCaseId?: number; // Required for canonical metrics lookup
   };
   previousSections?: {
     slotId: string;

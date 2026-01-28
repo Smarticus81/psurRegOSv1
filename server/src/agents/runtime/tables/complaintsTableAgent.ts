@@ -2,16 +2,21 @@
  * Complaints Table Agent
  * 
  * SOTA agent for generating complaints by region/severity tables.
+ * 
+ * CRITICAL: Uses CanonicalMetricsService for denominator (total units) to
+ * ensure rate calculations are consistent with other sections.
+ * 
  * Features:
  * - Multi-dimensional grouping (region, severity, type)
  * - IMDRF code extraction and categorization
- * - Rate calculation with proper denominator handling
+ * - Rate calculation with canonical denominator
  * - Severity normalization across different data sources
  * - Trend detection for complaint patterns
  * - Data quality scoring
  */
 
 import { BaseTableAgent, TableInput, TableOutput, TableEvidenceAtom } from "./baseTableAgent";
+import { getCanonicalMetrics } from "../../../services/canonicalMetricsService";
 
 // Severity normalization map
 const SEVERITY_NORMALIZATION: Record<string, string> = {
@@ -134,16 +139,15 @@ export class ComplaintsTableAgent extends BaseTableAgent {
       a.normalizedData?.isNegativeEvidence !== true
     );
 
-    // Calculate denominator from sales data
-    const salesAtoms = input.atoms?.filter(a => {
-      const type = a.evidenceType.toLowerCase();
-      return type.includes("sales") || type.includes("volume") || type.includes("distribution");
-    }) || [];
-    
-    const totalUnits = salesAtoms.reduce((sum, a) => {
-      const qty = Number(this.getValue(a.normalizedData, "quantity", "units_sold", "units", "count", "volume") || 0);
-      return sum + (isNaN(qty) ? 0 : qty);
-    }, 0);
+    // Use CANONICAL METRICS for denominator - ensures consistency with other sections
+    const ctx = input.context as typeof input.context & { psurCaseId?: number };
+    const canonicalMetrics = getCanonicalMetrics(
+      ctx.psurCaseId || 0,
+      input.atoms,
+      input.context.periodStart,
+      input.context.periodEnd
+    );
+    const totalUnits = canonicalMetrics.sales.totalUnits.value;
 
     // Multi-dimensional aggregation: Region -> Severity -> ComplaintAggregation
     const grouped = new Map<string, Map<string, ComplaintAggregation>>();

@@ -12,91 +12,110 @@ import Admin from "@/pages/admin";
 import Instructions from "@/pages/instructions";
 import GrkbView from "@/pages/grkb-view";
 import GrkbMapping from "@/pages/grkb-mapping";
-import AgentSystem from "@/pages/agent-system";
 import SystemInstructions from "@/pages/system-instructions";
 import ContentTraces from "@/pages/content-traces";
-import TemplateManagement from "@/pages/template-management";
 import TemplatePipeline from "@/pages/template-pipeline";
-import AgentActivity from "@/pages/agent-activity";
-import { LayoutDashboard, Settings, Info, Globe, Cpu, Brain, ShieldCheck, BarChart3, FileText, Activity, Link2, Zap } from "lucide-react";
+import { FileText, Settings, BookOpen, Globe, Brain, ShieldCheck, GitBranch, Layers, Cpu } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 function Navigation() {
   const [location] = useLocation();
 
-  const navItems = [
-    { href: "/psur", icon: LayoutDashboard, label: "Wizard" },
-    { href: "/pipeline", icon: Zap, label: "Pipeline" },
-    { href: "/agent-activity", icon: Activity, label: "Agents" },
-    { href: "/content-traces", icon: BarChart3, label: "Content" },
-    { href: "/system-instructions", icon: Brain, label: "Prompts" },
-    { href: "/grkb", icon: Globe, label: "GRKB" },
-    { href: "/grkb-mapping", icon: Link2, label: "Mappings" },
-    { href: "/instructions", icon: Info, label: "Docs" },
-    { href: "/admin", icon: Settings, label: "Admin" },
+  // PSUR Expert-Facing Navigation - Organized by Workflow
+  const navGroups = [
+    {
+      label: "Workflow",
+      items: [
+        { href: "/psur", icon: FileText, label: "Report Generation" },
+        { href: "/lineage", icon: GitBranch, label: "Evidence Lineage" },
+      ]
+    },
+    {
+      label: "Configuration",
+      items: [
+        { href: "/templates", icon: Layers, label: "Templates" },
+        { href: "/prompts", icon: Brain, label: "Agent Config" },
+        { href: "/regulatory", icon: Globe, label: "Regulatory" },
+      ]
+    },
+    {
+      label: "System",
+      items: [
+        { href: "/guide", icon: BookOpen, label: "User Guide" },
+        { href: "/settings", icon: Settings, label: "Settings" },
+      ]
+    }
   ];
 
-  return (
-    <nav className="sticky top-0 w-full z-50 bg-[#0B1221] border-b border-white/5 shadow-md shrink-0">
-      <div className="max-w-[1800px] mx-auto h-16 px-6 flex items-center justify-between gap-8">
+  // Flatten for rendering
+  const navItems = navGroups.flatMap(g => g.items);
 
-        {/* Brand */}
+  return (
+    <nav className="sticky top-0 w-full z-50 bg-slate-900 border-b border-slate-700/50 shadow-lg shrink-0">
+      <div className="max-w-[1800px] mx-auto h-14 px-6 flex items-center justify-between gap-6">
+
+        {/* Brand - PSUR Expert Facing */}
         <Link href="/psur">
           <div className="flex items-center gap-3 group cursor-pointer shrink-0">
-            <div className="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-900/50 group-hover:bg-blue-500 transition-colors">
-              <Cpu className="w-6 h-6 text-white" />
+            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center shadow-md group-hover:from-blue-500 group-hover:to-blue-600 transition-all">
+              <Cpu className="w-5 h-5 text-white" />
             </div>
             <div className="flex flex-col">
-              <span className="font-bold text-xl tracking-tight text-white leading-tight">
-                DraftEngine
+              <span className="font-semibold text-lg tracking-tight text-white leading-tight">
+                PSUR DraftEngine
               </span>
-              <span className="text-[10px] font-medium text-blue-200 uppercase tracking-widest leading-none">
-                Enterprise
+              <span className="text-[9px] font-medium text-slate-400 uppercase tracking-wider leading-none">
+                EU MDR Compliant
               </span>
             </div>
           </div>
         </Link>
 
-        {/* Desktop Nav */}
-        <div className="hidden lg:flex flex-1 items-center justify-center max-w-5xl">
-          <div className="flex items-center justify-between w-full bg-white/5 rounded-full px-2 py-1 border border-white/5">
-            {navItems.map((item) => {
-              const isActive = location === item.href;
-              return (
-                <Link key={item.href} href={item.href}>
-                  <button
-                    className={cn(
-                      "flex items-center gap-2 px-4 py-2 rounded-full transition-all duration-200 font-medium text-sm whitespace-nowrap",
-                      isActive
-                        ? "bg-blue-600 text-white shadow-sm"
-                        : "text-blue-100/70 hover:text-white hover:bg-white/5"
-                    )}
-                  >
-                    <item.icon className={cn("w-4 h-4", isActive ? "text-white" : "text-blue-300/70")} />
-                    <span>{item.label}</span>
-                  </button>
-                </Link>
-              );
-            })}
+        {/* Desktop Nav - Grouped by Function */}
+        <div className="hidden lg:flex flex-1 items-center justify-center">
+          <div className="flex items-center gap-1 bg-slate-800/50 rounded-lg px-1.5 py-1 border border-slate-700/50">
+            {navGroups.map((group, groupIndex) => (
+              <div key={group.label} className="flex items-center">
+                {groupIndex > 0 && (
+                  <div className="w-px h-6 bg-slate-700/50 mx-1.5" />
+                )}
+                {group.items.map((item) => {
+                  const isActive = location === item.href;
+                  return (
+                    <Link key={item.href} href={item.href}>
+                      <button
+                        className={cn(
+                          "flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-all duration-200 font-medium text-xs whitespace-nowrap",
+                          isActive
+                            ? "bg-blue-600 text-white shadow-sm"
+                            : "text-slate-300 hover:text-white hover:bg-slate-700/50"
+                        )}
+                      >
+                        <item.icon className={cn("w-3.5 h-3.5", isActive ? "text-white" : "text-slate-400")} />
+                        <span>{item.label}</span>
+                      </button>
+                    </Link>
+                  );
+                })}
+              </div>
+            ))}
           </div>
         </div>
 
-        {/* Right Actions */}
-        <div className="flex items-center gap-4 shrink-0">
-          <div className="hidden xl:flex items-center space-x-4">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 cursor-help transition-colors hover:bg-emerald-500/20">
-                  <ShieldCheck className="w-4 h-4 text-emerald-500" />
-                  <span className="text-[11px] font-bold text-emerald-500 tracking-wide uppercase">Guard: Active</span>
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                </div>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" className="max-w-xs bg-[#0B1221] text-white border-white/10">
-                <p className="text-xs">Regulatory Guardrails Online</p>
-              </TooltipContent>
-            </Tooltip>
-          </div>
+        {/* Right Actions - Compliance Status */}
+        <div className="flex items-center gap-3 shrink-0">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20 cursor-help transition-colors hover:bg-emerald-500/15">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+                <span className="text-[10px] font-semibold text-emerald-500 tracking-wide uppercase">MDR Compliant</span>
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-xs bg-slate-900 text-white border-slate-700">
+              <p className="text-xs">MDCG 2022-21 Annex I Structure Active</p>
+            </TooltipContent>
+          </Tooltip>
           <ThemeToggle />
         </div>
       </div>
@@ -108,23 +127,54 @@ function Router() {
   return (
     <div className="h-full">
       <Switch>
+        {/* Default redirect to Report Generation */}
         <Route path="/">
           {() => {
             window.location.href = "/psur";
             return null;
           }}
         </Route>
+
+        {/* WORKFLOW */}
         <Route path="/psur" component={PsurWizard} />
-        <Route path="/agent-activity" component={AgentActivity} />
-        <Route path="/content-traces" component={ContentTraces} />
-        <Route path="/grkb" component={GrkbView} />
-        <Route path="/grkb-mapping" component={GrkbMapping} />
-        <Route path="/pipeline" component={TemplatePipeline} />
-        <Route path="/agent-system" component={AgentSystem} />
-        <Route path="/system-instructions" component={SystemInstructions} />
-        <Route path="/admin" component={Admin} />
-        <Route path="/instructions" component={Instructions} />
-        <Route path="/template-management" component={TemplateManagement} />
+        <Route path="/lineage" component={ContentTraces} />
+
+        {/* CONFIGURATION */}
+        <Route path="/templates" component={TemplatePipeline} />
+        <Route path="/prompts" component={SystemInstructions} />
+        <Route path="/regulatory" component={GrkbView} />
+
+        {/* SYSTEM */}
+        <Route path="/guide" component={Instructions} />
+        <Route path="/settings" component={Admin} />
+
+        {/* Legacy routes - redirect to new paths */}
+        <Route path="/content-traces">
+          {() => { window.location.href = "/lineage"; return null; }}
+        </Route>
+        <Route path="/pipeline">
+          {() => { window.location.href = "/templates"; return null; }}
+        </Route>
+        <Route path="/system-instructions">
+          {() => { window.location.href = "/prompts"; return null; }}
+        </Route>
+        <Route path="/grkb">
+          {() => { window.location.href = "/regulatory"; return null; }}
+        </Route>
+        <Route path="/grkb-mapping">
+          {() => { window.location.href = "/regulatory"; return null; }}
+        </Route>
+        <Route path="/admin">
+          {() => { window.location.href = "/settings"; return null; }}
+        </Route>
+        <Route path="/instructions">
+          {() => { window.location.href = "/guide"; return null; }}
+        </Route>
+        <Route path="/template-management">
+          {() => { window.location.href = "/templates"; return null; }}
+        </Route>
+
+        {/* 404 */}
         <Route component={NotFound} />
       </Switch>
     </div>

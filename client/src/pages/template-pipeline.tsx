@@ -379,7 +379,7 @@ export default function TemplatePipelinePage() {
       case "ALIGNED": return "text-emerald-400";
       case "PARTIAL": return "text-amber-400";
       case "MISALIGNED": return "text-red-400";
-      default: return "text-slate-400";
+      default: return "text-muted-foreground";
     }
   };
 
@@ -393,7 +393,7 @@ export default function TemplatePipelinePage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 p-6">
+    <div className="min-h-screen bg-background p-6">
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -401,15 +401,15 @@ export default function TemplatePipelinePage() {
             <h1 className="text-3xl font-bold bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">
               Template Pipeline
             </h1>
-            <p className="text-slate-400 mt-1">
+            <p className="text-muted-foreground mt-1">
               Manage and align templates with MDCG 2022-21 standard
             </p>
           </div>
           
           {/* Neo4j Status */}
           <div className="flex items-center gap-2">
-            <GitBranch className={cn("w-4 h-4", neo4jHealth?.healthy ? "text-emerald-400" : "text-slate-600")} />
-            <span className="text-sm text-slate-400">
+            <GitBranch className={cn("w-4 h-4", neo4jHealth?.healthy ? "text-emerald-400" : "text-muted-foreground/70")} />
+            <span className="text-sm text-muted-foreground">
               Neo4j: {neo4jHealth?.healthy ? "Connected" : "Offline"}
             </span>
           </div>
@@ -417,7 +417,7 @@ export default function TemplatePipelinePage() {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "pipeline" | "templates")}>
-          <TabsList className="bg-slate-800/50 border border-slate-700/50">
+          <TabsList className="bg-secondary border border-border">
             <TabsTrigger value="pipeline" className="data-[state=active]:bg-cyan-600">
               <Zap className="w-4 h-4 mr-2" />
               Mapping Pipeline
@@ -430,7 +430,7 @@ export default function TemplatePipelinePage() {
 
           {/* Template Management Tab */}
           <TabsContent value="templates" className="space-y-6 mt-6">
-            <Card className="bg-slate-800/30 border-slate-700/50">
+            <Card className="bg-card border-border">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <FileJson className="w-5 h-5 text-cyan-400" />
@@ -443,11 +443,11 @@ export default function TemplatePipelinePage() {
               <CardContent>
                 {templatesLoading ? (
                   <div className="flex items-center justify-center py-12">
-                    <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
-                    <span className="ml-2 text-slate-400">Loading templates...</span>
+                    <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                    <span className="ml-2 text-muted-foreground">Loading templates...</span>
                   </div>
                 ) : templatesData?.templates?.length === 0 ? (
-                  <div className="text-center py-12 text-slate-500">
+                  <div className="text-center py-12 text-muted-foreground">
                     <FileJson className="w-12 h-12 mx-auto mb-4 opacity-50" />
                     <p>No templates found</p>
                     <Button 
@@ -463,7 +463,7 @@ export default function TemplatePipelinePage() {
                     {templatesData?.templates?.map((template: TemplateListItem) => (
                       <div 
                         key={template.templateId}
-                        className="flex items-center justify-between p-4 rounded-lg bg-slate-900/50 border border-slate-700/50 hover:border-slate-600/50 transition-colors"
+                        className="flex items-center justify-between p-4 rounded-lg bg-muted border border-border hover:border-primary/30 transition-colors"
                       >
                         <div className="flex-1">
                           <div className="flex items-center gap-3">
@@ -477,7 +477,7 @@ export default function TemplatePipelinePage() {
                               </Badge>
                             )}
                           </div>
-                          <div className="flex items-center gap-4 mt-2 text-xs text-slate-500">
+                          <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
                             <span>v{template.version}</span>
                             <span>{template.templateType}</span>
                             {template.jurisdictions?.length > 0 && (
@@ -524,25 +524,25 @@ export default function TemplatePipelinePage() {
           {/* Pipeline Tab */}
           <TabsContent value="pipeline" className="space-y-6 mt-6">
             {/* Architecture Diagram */}
-            <Card className="bg-slate-800/30 border-slate-700/50">
+            <Card className="bg-card border-border">
               <CardContent className="py-4">
                 <div className="flex items-center justify-center gap-4 text-sm">
                   <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-950/50 border border-blue-500/30">
                     <Shield className="w-4 h-4 text-blue-400" />
                     <span className="text-blue-300">EU MDR / UK MDR</span>
-                    <span className="text-xs text-slate-500">(Regulations)</span>
+                    <span className="text-xs text-muted-foreground">(Regulations)</span>
                   </div>
-                  <ArrowRight className="w-5 h-5 text-slate-600" />
+                  <ArrowRight className="w-5 h-5 text-muted-foreground/70" />
                   <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-950/50 border border-purple-500/30">
                     <Layers className="w-4 h-4 text-purple-400" />
                     <span className="text-purple-300">MDCG 2022-21</span>
-                    <span className="text-xs text-slate-500">(Standard)</span>
+                    <span className="text-xs text-muted-foreground">(Standard)</span>
                   </div>
-                  <ArrowRight className="w-5 h-5 text-slate-600" />
+                  <ArrowRight className="w-5 h-5 text-muted-foreground/70" />
                   <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-cyan-950/50 border border-cyan-500/30">
                     <FileJson className="w-4 h-4 text-cyan-400" />
                     <span className="text-cyan-300">Custom Template</span>
-                    <span className="text-xs text-slate-500">(Your Input)</span>
+                    <span className="text-xs text-muted-foreground">(Your Input)</span>
                   </div>
                 </div>
               </CardContent>
@@ -556,14 +556,14 @@ export default function TemplatePipelinePage() {
                     "w-8 h-8 rounded-full flex items-center justify-center font-medium",
                     step === s ? "bg-cyan-500 text-white" :
                     ["upload", "review", "complete"].indexOf(step) > i ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/50" :
-                    "bg-slate-800 text-slate-500 border border-slate-700"
+                    "bg-muted text-muted-foreground border border-border"
                   )}>
                     {i + 1}
                   </div>
-                  <span className={cn("text-sm font-medium capitalize", step === s ? "text-white" : "text-slate-500")}>
+                  <span className={cn("text-sm font-medium capitalize", step === s ? "text-white" : "text-muted-foreground")}>
                     {s}
                   </span>
-                  {i < 2 && <ChevronRight className="w-4 h-4 text-slate-600 mx-2" />}
+                  {i < 2 && <ChevronRight className="w-4 h-4 text-muted-foreground/70 mx-2" />}
                 </div>
               ))}
             </div>
@@ -573,7 +573,7 @@ export default function TemplatePipelinePage() {
           <div className="grid grid-cols-12 gap-6">
             {/* Editor */}
             <div className="col-span-8">
-              <Card className="bg-slate-800/30 border-slate-700/50">
+              <Card className="bg-card border-border">
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <div>
@@ -593,7 +593,7 @@ export default function TemplatePipelinePage() {
                     value={templateJson}
                     onChange={(e) => setTemplateJson(e.target.value)}
                     placeholder='{\n  "template_id": "MY_TEMPLATE",\n  "name": "My PSUR Template",\n  "version": "1.0",\n  "jurisdiction_scope": ["EU_MDR"],\n  "slots": [...]\n}'
-                    className="font-mono text-sm h-[400px] bg-slate-900/50 border-slate-700"
+                    className="font-mono text-sm h-[400px] bg-muted border-border"
                   />
                   
                   {parseError && (
@@ -639,10 +639,10 @@ export default function TemplatePipelinePage() {
 
             {/* Options */}
             <div className="col-span-4 space-y-4">
-              <Card className="bg-slate-800/30 border-slate-700/50">
+              <Card className="bg-card border-border">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-sm flex items-center gap-2">
-                    <Settings2 className="w-4 h-4 text-slate-400" />
+                    <Settings2 className="w-4 h-4 text-muted-foreground" />
                     Pipeline Options
                   </CardTitle>
                 </CardHeader>
@@ -651,7 +651,7 @@ export default function TemplatePipelinePage() {
                     <Label htmlFor="llm" className="text-sm">LLM Analysis</Label>
                     <Switch id="llm" checked={useLLM} onCheckedChange={setUseLLM} />
                   </div>
-                  <p className="text-xs text-slate-500">Use GPT-4o-mini for semantic slot matching</p>
+                  <p className="text-xs text-muted-foreground">Use GPT-4o-mini for semantic slot matching</p>
                   
                   <div className="flex items-center justify-between">
                     <Label htmlFor="neo4j" className="text-sm">Sync to Neo4j</Label>
@@ -662,12 +662,12 @@ export default function TemplatePipelinePage() {
                       disabled={!neo4jHealth?.healthy}
                     />
                   </div>
-                  <p className="text-xs text-slate-500">Replicate hierarchy to graph database</p>
+                  <p className="text-xs text-muted-foreground">Replicate hierarchy to graph database</p>
                   
                   <div className="space-y-2">
                     <Label className="text-sm">Confidence Threshold</Label>
                     <Select value={String(confidenceThreshold)} onValueChange={(v) => setConfidenceThreshold(Number(v))}>
-                      <SelectTrigger className="bg-slate-900/50">
+                      <SelectTrigger className="bg-muted">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -689,9 +689,9 @@ export default function TemplatePipelinePage() {
                     Reference Standard
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="text-xs text-slate-400 space-y-2">
+                <CardContent className="text-xs text-muted-foreground space-y-2">
                   <p>Your custom template will be aligned against:</p>
-                  <div className="p-2 bg-slate-800/50 rounded font-mono text-purple-300">
+                  <div className="p-2 bg-secondary rounded font-mono text-purple-300">
                     MDCG_2022_21_ANNEX_I
                   </div>
                   <p>This is the official EU template for PSURs and provides 100% coverage of MDR Article 86 requirements.</p>
@@ -721,7 +721,7 @@ export default function TemplatePipelinePage() {
                          result.status === "MISALIGNED" ? "Alignment Issues Detected" :
                          "Partially Aligned"}
                       </h3>
-                      <p className="text-slate-400">
+                      <p className="text-muted-foreground">
                         Template: {result.customTemplateId} | Reference: {result.referenceStandard}
                       </p>
                     </div>
@@ -730,33 +730,33 @@ export default function TemplatePipelinePage() {
                   <div className="flex items-center gap-8">
                     <div className="text-center">
                       <div className="text-4xl font-bold text-white">{result.alignmentStats.alignmentPercent}%</div>
-                      <div className="text-xs text-slate-500 uppercase">MDCG Alignment</div>
+                      <div className="text-xs text-muted-foreground uppercase">MDCG Alignment</div>
                     </div>
                     <Progress value={result.alignmentStats.alignmentPercent} className="w-40 h-3" />
                   </div>
                 </div>
                 
                 {/* Stats Row */}
-                <div className="grid grid-cols-5 gap-4 mt-6 pt-6 border-t border-slate-700/50">
+                <div className="grid grid-cols-5 gap-4 mt-6 pt-6 border-t border-border">
                   <div className="text-center">
                     <div className="text-2xl font-bold text-cyan-400">{result.alignmentStats.totalCustomSlots}</div>
-                    <div className="text-xs text-slate-500">Custom Slots</div>
+                    <div className="text-xs text-muted-foreground">Custom Slots</div>
                   </div>
                   <div className="text-center">
                     <div className="text-2xl font-bold text-purple-400">{result.alignmentStats.totalMdcgSlots}</div>
-                    <div className="text-xs text-slate-500">MDCG Slots</div>
+                    <div className="text-xs text-muted-foreground">MDCG Slots</div>
                   </div>
                   <div className="text-center">
                     <div className="text-2xl font-bold text-emerald-400">{result.alignmentStats.coveredMdcgSlots}</div>
-                    <div className="text-xs text-slate-500">Aligned</div>
+                    <div className="text-xs text-muted-foreground">Aligned</div>
                   </div>
                   <div className="text-center">
                     <div className="text-2xl font-bold text-amber-400">{result.uncoveredMdcgSlots.length}</div>
-                    <div className="text-xs text-slate-500">Missing MDCG</div>
+                    <div className="text-xs text-muted-foreground">Missing MDCG</div>
                   </div>
                   <div className="text-center">
                     <div className="text-2xl font-bold text-blue-400">{result.grkbStats.grkbCoveragePercent}%</div>
-                    <div className="text-xs text-slate-500">GRKB via MDCG</div>
+                    <div className="text-xs text-muted-foreground">GRKB via MDCG</div>
                   </div>
                 </div>
               </CardContent>
@@ -765,7 +765,7 @@ export default function TemplatePipelinePage() {
             <div className="grid grid-cols-12 gap-6">
               {/* Slot Alignments */}
               <div className="col-span-7">
-                <Card className="bg-slate-800/30 border-slate-700/50">
+                <Card className="bg-card border-border">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <Link2 className="w-5 h-5 text-cyan-400" />
@@ -786,7 +786,7 @@ export default function TemplatePipelinePage() {
                               selectedSlot === alignment.customSlotId
                                 ? "bg-cyan-950/30 border-cyan-500/50"
                                 : alignment.mdcgSlotId 
-                                  ? "bg-slate-800/50 border-slate-700/50 hover:border-slate-600"
+                                  ? "bg-secondary border-border hover:border-primary/30"
                                   : "bg-red-950/20 border-red-500/30"
                             )}
                             onClick={() => setSelectedSlot(alignment.customSlotId)}
@@ -802,7 +802,7 @@ export default function TemplatePipelinePage() {
                                 
                                 {alignment.mdcgSlotId ? (
                                   <div className="flex items-center gap-2 mt-2">
-                                    <ArrowRight className="w-4 h-4 text-slate-500" />
+                                    <ArrowRight className="w-4 h-4 text-muted-foreground" />
                                     <div className="flex items-center gap-2">
                                       <Badge className={cn("text-xs border", METHOD_COLORS[alignment.method])}>
                                         {METHOD_ICONS[alignment.method]}
@@ -827,7 +827,7 @@ export default function TemplatePipelinePage() {
                                 )}
 
                                 {alignment.grkbObligationsCovered.length > 0 && (
-                                  <div className="mt-2 text-xs text-slate-500">
+                                  <div className="mt-2 text-xs text-muted-foreground">
                                     GRKB: {alignment.grkbObligationsCovered.slice(0, 3).join(", ")}
                                     {alignment.grkbObligationsCovered.length > 3 && ` +${alignment.grkbObligationsCovered.length - 3} more`}
                                   </div>
@@ -836,7 +836,7 @@ export default function TemplatePipelinePage() {
                             </div>
                             
                             {alignment.reasoning && alignment.mdcgSlotId && (
-                              <p className="mt-2 text-xs text-slate-500 italic">
+                              <p className="mt-2 text-xs text-muted-foreground italic">
                                 {alignment.reasoning}
                               </p>
                             )}
@@ -851,7 +851,7 @@ export default function TemplatePipelinePage() {
               {/* Sidebar */}
               <div className="col-span-5 space-y-4">
                 {/* Method Legend */}
-                <Card className="bg-slate-800/30 border-slate-700/50">
+                <Card className="bg-card border-border">
                   <CardHeader className="pb-3">
                     <CardTitle className="text-sm flex items-center gap-2">
                       <Zap className="w-4 h-4 text-amber-400" />
@@ -865,7 +865,7 @@ export default function TemplatePipelinePage() {
                           <span className={cn("p-1 rounded", color)}>
                             {METHOD_ICONS[method]}
                           </span>
-                          <span className="text-xs text-slate-300 capitalize">{method.replace("_", " ")}</span>
+                          <span className="text-xs text-foreground/80 capitalize">{method.replace("_", " ")}</span>
                         </div>
                       ))}
                     </div>
@@ -888,9 +888,9 @@ export default function TemplatePipelinePage() {
                       <ScrollArea className="h-[150px]">
                         <div className="space-y-2">
                           {result.uncoveredMdcgSlots.map(slot => (
-                            <div key={slot.slotId} className="text-xs p-2 bg-slate-800/50 rounded">
+                            <div key={slot.slotId} className="text-xs p-2 bg-secondary rounded">
                               <div className="font-mono text-amber-300">{slot.slotId}</div>
-                              <div className="text-slate-400 mt-1">{slot.title}</div>
+                              <div className="text-muted-foreground mt-1">{slot.title}</div>
                             </div>
                           ))}
                         </div>
@@ -915,9 +915,9 @@ export default function TemplatePipelinePage() {
                       <ScrollArea className="h-[100px]">
                         <div className="space-y-1">
                           {result.orphanedCustomSlots.map(slot => (
-                            <div key={slot.slotId} className="text-xs p-2 bg-slate-800/50 rounded flex justify-between">
+                            <div key={slot.slotId} className="text-xs p-2 bg-secondary rounded flex justify-between">
                               <span className="font-mono text-red-300">{slot.slotId}</span>
-                              <span className="text-slate-400">{slot.name}</span>
+                              <span className="text-muted-foreground">{slot.name}</span>
                             </div>
                           ))}
                         </div>
@@ -928,7 +928,7 @@ export default function TemplatePipelinePage() {
 
                 {/* Actions */}
                 {selectedSlot && (
-                  <Card className="bg-slate-800/30 border-slate-700/50">
+                  <Card className="bg-card border-border">
                     <CardHeader className="pb-3">
                       <CardTitle className="text-sm">Selected: {selectedSlot}</CardTitle>
                     </CardHeader>
@@ -964,11 +964,11 @@ export default function TemplatePipelinePage() {
 
         {/* Step 3: Complete */}
         {step === "complete" && result && (
-          <Card className="bg-slate-800/30 border-slate-700/50">
+          <Card className="bg-card border-border">
             <CardContent className="py-12 text-center">
               <CheckCircle2 className="w-16 h-16 text-emerald-400 mx-auto mb-4" />
               <h2 className="text-2xl font-bold text-white mb-2">Template Aligned & Saved</h2>
-              <p className="text-slate-400 mb-6">
+              <p className="text-muted-foreground mb-6">
                 Template <code className="text-cyan-400">{result.customTemplateId}</code> is now aligned with MDCG 2022-21
               </p>
               
@@ -988,17 +988,17 @@ export default function TemplatePipelinePage() {
               </div>
 
               <div className="grid grid-cols-3 gap-4 max-w-md mx-auto mb-8">
-                <div className="p-3 bg-slate-800/50 rounded-lg">
+                <div className="p-3 bg-secondary rounded-lg">
                   <div className="text-2xl font-bold text-cyan-400">{result.alignmentStats.alignmentPercent}%</div>
-                  <div className="text-xs text-slate-500">MDCG Alignment</div>
+                  <div className="text-xs text-muted-foreground">MDCG Alignment</div>
                 </div>
-                <div className="p-3 bg-slate-800/50 rounded-lg">
+                <div className="p-3 bg-secondary rounded-lg">
                   <div className="text-2xl font-bold text-purple-400">{result.alignmentStats.coveredMdcgSlots}/{result.alignmentStats.totalMdcgSlots}</div>
-                  <div className="text-xs text-slate-500">MDCG Slots</div>
+                  <div className="text-xs text-muted-foreground">MDCG Slots</div>
                 </div>
-                <div className="p-3 bg-slate-800/50 rounded-lg">
+                <div className="p-3 bg-secondary rounded-lg">
                   <div className="text-2xl font-bold text-blue-400">{result.grkbStats.grkbCoveragePercent}%</div>
-                  <div className="text-xs text-slate-500">GRKB Coverage</div>
+                  <div className="text-xs text-muted-foreground">GRKB Coverage</div>
                 </div>
               </div>
               
@@ -1041,7 +1041,7 @@ export default function TemplatePipelinePage() {
                       "flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all",
                       selectedMdcgSlot === slot.slot_id
                         ? "bg-purple-950/30 border-purple-500/50"
-                        : "bg-slate-800/50 border-slate-700/50 hover:border-slate-600"
+                        : "bg-secondary border-border hover:border-primary/30"
                     )}
                     onClick={() => setSelectedMdcgSlot(slot.slot_id)}
                   >
@@ -1049,7 +1049,7 @@ export default function TemplatePipelinePage() {
                       "w-4 h-4 rounded-full border-2 mt-0.5 flex-shrink-0",
                       selectedMdcgSlot === slot.slot_id 
                         ? "border-purple-400 bg-purple-400" 
-                        : "border-slate-600"
+                        : "border-border"
                     )} />
                     <div>
                       <div className="flex items-center gap-2">
@@ -1058,7 +1058,7 @@ export default function TemplatePipelinePage() {
                       </div>
                       <p className="text-sm text-white mt-1">{slot.title}</p>
                       {slot.section_path && (
-                        <p className="text-xs text-slate-500 mt-1">{slot.section_path}</p>
+                        <p className="text-xs text-muted-foreground mt-1">{slot.section_path}</p>
                       )}
                     </div>
                   </div>
@@ -1086,7 +1086,7 @@ export default function TemplatePipelinePage() {
 
         {/* Delete Confirmation Dialog */}
         <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-          <AlertDialogContent className="bg-slate-900 border-slate-700">
+          <AlertDialogContent className="bg-card border-border">
             <AlertDialogHeader>
               <AlertDialogTitle className="text-red-400">Delete Template</AlertDialogTitle>
               <AlertDialogDescription>
@@ -1098,7 +1098,7 @@ export default function TemplatePipelinePage() {
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel className="bg-slate-800 border-slate-700 hover:bg-slate-700">
+              <AlertDialogCancel className="bg-secondary border-border hover:bg-muted">
                 Cancel
               </AlertDialogCancel>
               <AlertDialogAction

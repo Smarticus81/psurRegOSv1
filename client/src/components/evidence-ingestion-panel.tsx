@@ -732,7 +732,7 @@ export function EvidenceIngestionPanel({
                     "p-6 rounded-[2rem] border-2 transition-all duration-500 text-left group hover:scale-105 active:scale-95",
                     selectedSourceType === config.sourceType
                       ? "border-primary bg-primary/5 shadow-xl shadow-primary/10"
-                      : "border-border/50 bg-white/50 hover:bg-white"
+                      : "border-border/50 bg-card/80 hover:bg-accent"
                   )}
                 >
                   <div className="flex items-center gap-3 mb-4">
@@ -800,12 +800,12 @@ export function EvidenceIngestionPanel({
               "relative border-2 border-dashed rounded-[3rem] p-16 text-center transition-all duration-700 group cursor-pointer overflow-hidden",
               dragActive 
                 ? "border-primary bg-primary/5 shadow-inner scale-[0.99]" 
-                : "border-border hover:border-primary/30 bg-secondary/20 hover:bg-white/50"
+                : "border-border hover:border-primary/30 bg-secondary/20 hover:bg-card/80"
             )}
           >
             <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
             <div className="relative space-y-6">
-              <div className="w-24 h-24 rounded-[2rem] bg-white flex items-center justify-center mx-auto shadow-lg group-hover:scale-110 group-hover:-rotate-6 transition-all duration-700 border border-border/50">
+              <div className="w-24 h-24 rounded-[2rem] bg-card flex items-center justify-center mx-auto shadow-lg group-hover:scale-110 group-hover:-rotate-6 transition-all duration-700 border border-border/50">
                 <FolderUp className={cn("w-12 h-12 transition-colors duration-500", dragActive ? "text-primary" : "text-muted-foreground/50")} />
               </div>
               <div className="space-y-2">
@@ -848,7 +848,7 @@ export function EvidenceIngestionPanel({
                 {files.map((file, i) => (
                   <div
                     key={i}
-                    className="flex items-center justify-between p-5 glass-card border-border/50 hover:border-primary/30 transition-all bg-white/40"
+                    className="flex items-center justify-between p-5 glass-card border-border/50 hover:border-primary/30 transition-all bg-card/60"
                   >
                     <div className="flex items-center gap-4">
                       <div className="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center text-muted-foreground shadow-sm">
@@ -935,7 +935,7 @@ export function EvidenceIngestionPanel({
                 className={cn(
                   "p-8 rounded-[2.5rem] border transition-all duration-500",
                   analysis.success
-                    ? "bg-white/40 border-border/50"
+                    ? "bg-card/60 border-border/50"
                     : "bg-destructive/5 border-destructive/20"
                 )}
               >
@@ -999,7 +999,7 @@ export function EvidenceIngestionPanel({
                               "p-4 rounded-xl border-2 text-left transition-all duration-300",
                               isSelected
                                 ? "bg-primary/5 border-primary shadow-lg scale-[1.02]"
-                                : "bg-white/50 border-transparent hover:border-border shadow-sm hover:shadow-md"
+                                : "bg-card/80 border-transparent hover:border-border shadow-sm hover:shadow-md"
                             )}
                           >
                             <div className="flex items-center justify-between mb-2">
@@ -1138,7 +1138,7 @@ export function EvidenceIngestionPanel({
                 className={cn(
                   "p-8 rounded-[2.5rem] border transition-all duration-500",
                   result.success
-                    ? "bg-white/40 border-border/50 hover:border-primary/30"
+                    ? "bg-card/60 border-border/50 hover:border-primary/30"
                     : "bg-destructive/5 border-destructive/20"
                 )}
               >
@@ -1171,7 +1171,7 @@ export function EvidenceIngestionPanel({
                           setReviewResult(result);
                           setReviewOpen(true);
                         }}
-                        className="w-12 h-12 rounded-full flex items-center justify-center bg-white hover:bg-primary hover:text-white transition-all shadow-sm group active:scale-90"
+                        className="w-12 h-12 rounded-full flex items-center justify-center bg-card hover:bg-primary hover:text-primary-foreground transition-all shadow-sm group active:scale-90"
                       >
                         <Eye className="w-6 h-6 transition-transform group-hover:scale-110" />
                       </button>
@@ -1198,7 +1198,7 @@ export function EvidenceIngestionPanel({
                             "flex items-center justify-between p-5 rounded-2xl cursor-pointer transition-all duration-300 group hover:-translate-y-1",
                             selected
                               ? "bg-primary/5 border-2 border-primary shadow-lg scale-[1.02]"
-                              : "bg-white/50 border-2 border-transparent hover:border-border shadow-sm hover:shadow-md"
+                              : "bg-card/80 border-2 border-transparent hover:border-border shadow-sm hover:shadow-md"
                           )}
                         >
                           <div className="flex items-center gap-4">
@@ -1230,7 +1230,7 @@ export function EvidenceIngestionPanel({
                           setReviewResult(result);
                           setReviewOpen(true);
                         }}
-                        className="flex items-center justify-center gap-3 p-5 rounded-2xl border-2 border-dashed border-border/50 hover:border-primary/50 hover:text-primary transition-all font-black text-xs uppercase tracking-widest bg-white/20"
+                        className="flex items-center justify-center gap-3 p-5 rounded-2xl border-2 border-dashed border-border/50 hover:border-primary/50 hover:text-primary transition-all font-black text-xs uppercase tracking-widest bg-card/30"
                       >
                         <span>VIEW ALL {result.evidence.length} ITEMS</span>
                         <ChevronRight className="w-5 h-5" />
@@ -1287,7 +1287,7 @@ export function EvidenceIngestionPanel({
       {/* Review Dialog */}
       <Dialog open={reviewOpen} onOpenChange={setReviewOpen}>
         <DialogContent className="glass-card max-w-5xl max-h-[90vh] overflow-hidden p-0 border-none">
-          <div className="flex flex-col h-full bg-white/80 backdrop-blur-3xl">
+          <div className="flex flex-col h-full bg-card backdrop-blur-3xl">
             <div className="px-10 py-8 border-b border-border/10 flex items-center justify-between">
               <div className="space-y-1">
                 <h3 className="text-3xl font-black tracking-tighter text-foreground italic">
@@ -1314,7 +1314,7 @@ export function EvidenceIngestionPanel({
                         "p-8 rounded-[2rem] border-2 transition-all duration-500",
                         selected
                           ? "bg-primary/[0.02] border-primary shadow-xl scale-[1.01]"
-                          : "bg-white/50 border-border/50 hover:border-primary/20"
+                          : "bg-card/80 border-border/50 hover:border-primary/20"
                       )}
                     >
                       <div className="flex items-start justify-between mb-8">
@@ -1369,7 +1369,7 @@ export function EvidenceIngestionPanel({
               <div className="flex gap-4">
                 <button 
                   onClick={() => setReviewOpen(false)}
-                  className="ios-pill px-8 py-4 font-black tracking-widest hover:bg-white transition-all active:scale-95"
+                  className="ios-pill px-8 py-4 font-black tracking-widest hover:bg-accent transition-all active:scale-95"
                 >
                   CLOSE
                 </button>

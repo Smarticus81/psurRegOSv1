@@ -7,7 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useQuery } from "@tanstack/react-query";
-import { FileText, Settings, Info, LayoutDashboard, Search, CheckCircle2, AlertCircle, Trash2, ArrowRight, Loader2, ChevronDown, ChevronUp, Sparkles } from "lucide-react";
+import { FileText, Settings, Info, LayoutDashboard, Search, CheckCircle2, AlertCircle, Trash2, ArrowRight, Loader2, ChevronDown, ChevronUp, Sparkles, Upload, Download, Check, ChevronRight, Cpu } from "lucide-react";
 
 // Helper to update URL without full navigation
 function updateUrlParams(params: Record<string, string | null>) {
@@ -1387,11 +1387,11 @@ function ReconcileStep({
 
             {/* Action Bar */}
             {missingTypes.length > 0 && (
-                <div className="bg-white dark:bg-card border border-border shadow-sm rounded-lg p-4 flex items-center justify-between shadow-xl">
+                <div className="bg-card border border-border shadow-sm rounded-lg p-4 flex items-center justify-between shadow-xl">
                     <div className="flex items-center gap-2">
                         <button
                             onClick={selectAllMissing}
-                            className="ios-pill hover:bg-white/80 active:scale-95 transition-all"
+                            className="ios-pill hover:bg-accent/80 active:scale-95 transition-all"
                         >
                             Select All Missing
                         </button>
@@ -1417,7 +1417,7 @@ function ReconcileStep({
                         <button
                             onClick={() => selectedTypes.size > 0 && setShowNAModal(true)}
                             disabled={selectedTypes.size === 0}
-                            className="glossy-button bg-white text-foreground border-border/50 disabled:opacity-40"
+                            className="glossy-button bg-card text-foreground border-border/50 disabled:opacity-40"
                         >
                             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
@@ -1456,10 +1456,10 @@ function ReconcileStep({
                                         key={t}
                                         onClick={() => toggleType(t)}
                                         className={cn(
-                                            "bg-white dark:bg-card border border-border shadow-sm rounded-lg p-6 cursor-pointer group hover:scale-105",
+                                            "bg-card border border-border shadow-sm rounded-lg p-6 cursor-pointer group hover:scale-105",
                                             selectedTypes.has(t)
                                                 ? "border-primary bg-primary/5 shadow-2xl scale-[1.02]"
-                                                : "hover:bg-white/80"
+                                                : "hover:bg-accent/80"
                                         )}
                                     >
                                         <div className="flex items-center justify-between mb-6">
@@ -1475,7 +1475,7 @@ function ReconcileStep({
                                             </div>
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); openUploadForType(t); }}
-                                                className="w-10 h-10 rounded-full flex items-center justify-center bg-secondary/50 hover:bg-white transition-all text-muted-foreground hover:text-primary shadow-sm"
+                                                className="w-10 h-10 rounded-full flex items-center justify-center bg-secondary/50 hover:bg-accent transition-all text-muted-foreground hover:text-primary shadow-sm"
                                             >
                                                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
@@ -1502,7 +1502,7 @@ function ReconcileStep({
                                     const atomCount = counts?.byType?.[t] || 0;
                                     const coverageInfo = counts?.coverage?.coveredByType?.[t];
                                     return (
-                                        <div key={t} className="bg-white dark:bg-card border border-border shadow-sm rounded-lg p-6 bg-emerald-500/[0.02] border-emerald-500/10">
+                                        <div key={t} className="bg-card border border-border shadow-sm rounded-lg p-6 bg-emerald-500/[0.02] border-emerald-500/10">
                                             <div className="flex items-center justify-between mb-6">
                                                 <div className="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center shadow-sm">
                                                     <svg className="w-5 h-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -2303,428 +2303,307 @@ export default function PsurWizard() {
     const allComplete = runResult?.steps.every(s => s.status === "COMPLETED");
 
     return (
-        <div className="h-full flex flex-col overflow-hidden bg-background/30 px-6 py-2">
-            {/* Minimalist Step Indicator */}
-            <div className="flex items-center justify-center gap-2 mb-4 shrink-0 scale-90">
-                {[1, 2, 3, 4, 5].map(n => {
-                    const isCompleted = step > n;
-                    const isActive = step === n;
-                    const isDisabled = (n === 2 && !canGoStep2) || (n === 3 && !canGoStep3) || (n === 4 && !canGoStep4) || (n === 5 && !canGoStep5);
-                    const label = ["Setup", "Data", "Verify", "Review", "Generate"][n - 1];
-                    const desc = ["Config", "Import", "Checks", "Finalize", "Done"][n - 1];
+        <div className="h-full flex flex-col overflow-hidden bg-background/30 px-6 py-4">
+            {/* Page Header */}
+            <div className="mb-4 shrink-0 text-center">
+                <h1 className="text-2xl font-bold text-foreground">Report Generation</h1>
+                <p className="text-sm text-muted-foreground">Create EU MDR-compliant PSUR documentation with full traceability</p>
+            </div>
 
-                    return (
-                        <button
-                            key={n}
-                            onClick={() => !isDisabled && setStep(n as WizardStep)}
-                            disabled={isDisabled}
-                            className={cn(
-                                "flex-1 relative group flex flex-col items-center justify-center py-4 px-2 rounded-xl border-2 transition-all duration-300",
-                                isActive
-                                    ? "bg-white dark:bg-card border-primary shadow-lg scale-105 z-10"
-                                    : isCompleted
-                                        ? "bg-emerald-50/50 border-emerald-200 text-emerald-700"
-                                        : "bg-secondary/30 border-transparent text-muted-foreground hover:bg-white hover:border-border/50 disabled:opacity-40 disabled:hover:bg-secondary/30 disabled:hover:border-transparent"
-                            )}
-                        >
-                            <div className={cn(
-                                "text-2xl font-black mb-1 transition-colors",
-                                isActive ? "text-primary" : isCompleted ? "text-emerald-600" : "text-muted-foreground/50"
-                            )}>
-                                {isCompleted ? <CheckCircle2 className="w-8 h-8" /> : `0${n}`}
+            {/* v0.dev Style Horizontal Stepper */}
+            <div className="flex items-center justify-center mb-6 shrink-0">
+                <div className="inline-flex items-center gap-2 p-2 rounded-full bg-card border border-border shadow-lg">
+                    {[1, 2, 3, 4, 5].map((n, idx) => {
+                        const isCompleted = step > n;
+                        const isActive = step === n;
+                        const isDisabled = (n === 2 && !canGoStep2) || (n === 3 && !canGoStep3) || (n === 4 && !canGoStep4) || (n === 5 && !canGoStep5);
+                        const labels = ["Configuration", "Evidence", "Review", "Generate", "Results"];
+                        const icons = [Settings, Upload, FileText, Cpu, Download];
+                        const Icon = icons[n - 1];
+
+                        return (
+                            <div key={n} className="flex items-center">
+                                <button
+                                    onClick={() => !isDisabled && setStep(n as WizardStep)}
+                                    disabled={isDisabled}
+                                    className={cn(
+                                        "flex items-center gap-2 px-4 py-2 rounded-full transition-all duration-200",
+                                        isActive
+                                            ? "bg-primary text-primary-foreground shadow-md"
+                                            : isCompleted
+                                                ? "bg-transparent text-primary hover:bg-primary/10"
+                                                : "bg-transparent text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed"
+                                    )}
+                                >
+                                    {/* Icon */}
+                                    <div className={cn(
+                                        "flex items-center justify-center w-7 h-7 rounded-full transition-all",
+                                        isActive
+                                            ? "bg-primary-foreground/20"
+                                            : isCompleted
+                                                ? "bg-primary/20"
+                                                : "bg-muted"
+                                    )}>
+                                        {isCompleted ? (
+                                            <Check className="w-4 h-4" />
+                                        ) : (
+                                            <Icon className="w-4 h-4" />
+                                        )}
+                                    </div>
+                                    
+                                    {/* Label */}
+                                    <span className="text-sm font-medium whitespace-nowrap">
+                                        {labels[n - 1]}
+                                    </span>
+                                </button>
+                                
+                                {/* Chevron Separator */}
+                                {idx < 4 && (
+                                    <ChevronRight className={cn(
+                                        "w-4 h-4 mx-1 transition-colors",
+                                        step > n ? "text-primary" : "text-muted-foreground/50"
+                                    )} />
+                                )}
                             </div>
-                            <div className={cn(
-                                "text-xs font-bold uppercase tracking-wider",
-                                isActive ? "text-foreground" : "text-muted-foreground"
-                            )}>
-                                {label}
-                            </div>
-                            {isActive && (
-                                <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-8 h-1 bg-primary rounded-full shadow-[0_0_10px_rgba(59,130,246,0.5)]" />
-                            )}
-                        </button>
-                    );
-                })}
+                        );
+                    })}
+                </div>
             </div>
 
             {/* Step Content */}
             <div className="flex-1 overflow-y-auto min-h-0 w-full scroll-smooth pr-2 no-scrollbar ">
                 {/* STEP 1: CREATE DRAFT */}
                 {step === 1 && (
-                    <div className="max-w-7xl mx-auto space-y-6 animate-slide-up pb-10">
-                        <div className="text-center space-y-2">
-                            <h2 className="text-2xl font-semibold tracking-tight text-foreground leading-tight">Create a new PSUR Draft</h2>
-                            <p className="text-sm text-muted-foreground max-w-lg mx-auto">Configure device and reporting period to begin.</p>
-                        </div>
+                    <div className="max-w-5xl mx-auto space-y-6 animate-slide-up pb-10">
 
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 pb-20">
-                            {/* LEFT COLUMN: Device Configuration (Span 2) */}
-                            <div className="lg:col-span-2 bg-white dark:bg-card rounded-lg border border-border shadow-sm p-6 space-y-6 h-fit">
-                                <div className="flex items-center justify-between border-b border-border pb-4">
-                                    <div className="flex items-center gap-3">
-                                        <div className="p-2 rounded bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400">
-                                            <Settings className="w-5 h-5" />
-                                        </div>
-                                        <div>
-                                            <h3 className="font-bold text-foreground">Device Configuration</h3>
-                                            <p className="text-xs text-muted-foreground">Setup reporting parameters</p>
-                                        </div>
-                                    </div>
-                                </div>
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            {/* LEFT CARD: Device Information */}
+                            <div className="bg-card rounded-xl border border-border p-6 space-y-5 relative z-10">
+                                <h3 className="text-lg font-semibold text-foreground">Device Information</h3>
 
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
-                                    {/* Left Sub-Column: Identity */}
-                                    <div className="space-y-6">
-                                        <div className="space-y-3">
-                                            <div className="flex items-center justify-between">
-                                                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Device Selection</label>
-                                                <div className="flex items-center gap-2 p-1 rounded-lg bg-secondary/50 border border-border">
-                                                    <button
-                                                        onClick={() => setBulkMode(false)}
-                                                        className={cn(
-                                                            "px-2 py-1 rounded text-[10px] font-bold transition-all",
-                                                            !bulkMode ? "bg-white shadow-sm text-primary" : "text-muted-foreground hover:text-foreground"
-                                                        )}
-                                                    >
-                                                        Single
-                                                    </button>
-                                                    <button
-                                                        onClick={() => setBulkMode(true)}
-                                                        className={cn(
-                                                            "px-2 py-1 rounded text-[10px] font-bold transition-all",
-                                                            bulkMode ? "bg-white shadow-sm text-primary" : "text-muted-foreground hover:text-foreground"
-                                                        )}
-                                                    >
-                                                        Bulk List
-                                                    </button>
-                                                </div>
-                                            </div>
-
-                                            {bulkMode ? (
-                                                <div className="space-y-2 animate-in fade-in slide-in-from-top-2">
-                                                    <textarea
-                                                        className="w-full h-32 bg-background border border-input rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all shadow-sm resize-none font-mono"
-                                                        placeholder="Paste product codes (one per line)...&#10;MK-001&#10;MK-002&#10;MK-003"
-                                                        value={bulkCodes}
-                                                        onChange={e => setBulkCodes(e.target.value)}
-                                                    />
-                                                    <p className="text-[10px] text-muted-foreground">
-                                                        {bulkCodes.split('\n').filter(l => l.trim()).length} codes detected
-                                                    </p>
-                                                </div>
-                                            ) : (
-                                                devices.length > 0 ? (
-                                                    <div className="space-y-2 animate-in fade-in slide-in-from-top-2">
-                                                        <select
-                                                            className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all shadow-sm appearance-none cursor-pointer"
-                                                            value={deviceId || ""}
-                                                            onChange={e => {
-                                                                const id = parseInt(e.target.value);
-                                                                if (id) {
-                                                                    const device = devices.find(d => d.id === id);
-                                                                    if (device) {
-                                                                        setDeviceId(device.id);
-                                                                        setDeviceName(device.deviceName);
-                                                                        setDeviceCode(device.deviceCode);
-                                                                        setDeviceRiskClass(device.riskClass as "I" | "IIa" | "IIb" | "III");
-                                                                        if (device.gmdnCode) setGmdnCode(device.gmdnCode);
-                                                                    }
-                                                                } else {
-                                                                    setDeviceId(0);
-                                                                }
-                                                            }}
-                                                        >
-                                                            <option value="">Select from registry...</option>
-                                                            {devices.map(d => (
-                                                                <option key={d.id} value={d.id}>{d.deviceName} ({d.deviceCode})</option>
-                                                            ))}
-                                                        </select>
-                                                        {!deviceId && (
-                                                            <input
-                                                                className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all shadow-sm"
-                                                                value={deviceName}
-                                                                onChange={e => {
-                                                                    setDeviceName(e.target.value);
-                                                                    if (!deviceCode) {
-                                                                        setDeviceCode(e.target.value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 12) || "DEVICE");
-                                                                    }
-                                                                }}
-                                                                placeholder="Or enter new device name..."
-                                                            />
-                                                        )}
-                                                    </div>
-                                                ) : (
-                                                    <input
-                                                        className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all shadow-sm"
-                                                        value={deviceName}
-                                                        onChange={e => {
-                                                            setDeviceName(e.target.value);
-                                                            if (!deviceCode) {
-                                                                setDeviceCode(e.target.value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 12) || "DEVICE");
-                                                            }
-                                                        }}
-                                                        placeholder="e.g., CardioSync Pacemaker Model X"
-                                                    />
-                                                )
-                                            )}
-                                        </div>
-
-                                        <div className="space-y-3">
-                                            <div className="flex items-center justify-between">
-                                                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Template Strategy</label>
-                                                <div className="flex items-center gap-2 p-1 rounded-lg bg-secondary/50 border border-border">
-                                                    <button onClick={() => setTemplateType("standard")} className={cn("px-2 py-1 rounded text-[10px] font-bold transition-all", templateType === "standard" ? "bg-white shadow-sm text-primary" : "text-muted-foreground hover:text-foreground")}>Standard</button>
-                                                    <button onClick={() => setTemplateType("custom")} className={cn("px-2 py-1 rounded text-[10px] font-bold transition-all", templateType === "custom" ? "bg-white shadow-sm text-primary" : "text-muted-foreground hover:text-foreground")}>Custom</button>
-                                                </div>
-                                            </div>
-
-                                            {templateType === "standard" ? (
-                                                <div className="space-y-2 animate-in fade-in slide-in-from-top-1">
-                                                    <Select value={templateId} onValueChange={setTemplateId}>
-                                                        <SelectTrigger className="w-full bg-secondary/20 border-border">
-                                                            <SelectValue placeholder="Select a template..." />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            {/* Default MDCG Template - Always First */}
-                                                            <SelectItem value={DEFAULT_TEMPLATE_ID}>
-                                                                <div className="flex items-center gap-2">
-                                                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-100 text-emerald-700">
-                                                                        BASE
-                                                                    </span>
-                                                                    <span className="font-medium">MDCG 2022-21 Annex I</span>
-                                                                    <span className="text-muted-foreground text-xs">(Official EU Standard)</span>
-                                                                </div>
-                                                            </SelectItem>
-                                                            
-                                                            {/* Custom Templates */}
-                                                            {availableTemplates.length > 0 && (
-                                                                <>
-                                                                    <div className="px-2 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider border-t border-border mt-1">
-                                                                        Custom Templates
-                                                                    </div>
-                                                                    {availableTemplates.map((t) => (
-                                                                        <SelectItem key={t.templateId} value={t.templateId}>
-                                                                            <div className="flex items-center gap-2">
-                                                                                <span className={cn(
-                                                                                    "px-1.5 py-0.5 rounded text-[9px] font-bold",
-                                                                                    t.templateType === 'form-based' 
-                                                                                        ? "bg-purple-100 text-purple-700" 
-                                                                                        : "bg-blue-100 text-blue-700"
-                                                                                )}>
-                                                                                    {t.templateType === 'form-based' ? 'FORM' : 'SLOT'}
-                                                                                </span>
-                                                                                <span className="font-medium">{t.name}</span>
-                                                                                <span className="text-muted-foreground text-xs">v{t.version}</span>
-                                                                            </div>
-                                                                        </SelectItem>
-                                                                    ))}
-                                                                </>
-                                                            )}
-                                                        </SelectContent>
-                                                    </Select>
-                                                    
-                                                    {/* Template Info Display */}
-                                                    {templateId === DEFAULT_TEMPLATE_ID ? (
-                                                        <div className="p-2 rounded-md bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/50 flex items-center gap-2">
-                                                            <div className="w-6 h-6 rounded bg-emerald-500 flex items-center justify-center">
-                                                                <span className="font-bold text-[9px] text-white">EU</span>
-                                                            </div>
-                                                            <div className="text-[10px] text-emerald-700 dark:text-emerald-300">
-                                                                Official EU MDR template - 100% regulatory coverage
-                                                            </div>
-                                                        </div>
-                                                    ) : templateId && availableTemplates.find(t => t.templateId === templateId) && (
-                                                        <div className="p-2 rounded-md bg-secondary/10 border border-border/50 flex items-center gap-2">
-                                                            <div className="w-6 h-6 rounded bg-white flex items-center justify-center border border-border">
-                                                                <span className="font-bold text-[9px] text-primary">
-                                                                    {availableTemplates.find(t => t.templateId === templateId)?.jurisdictions[0]?.split('_')[0] || 'EU'}
-                                                                </span>
-                                                            </div>
-                                                            <div className="text-[10px] text-muted-foreground">
-                                                                {availableTemplates.find(t => t.templateId === templateId)?.jurisdictions.join(', ')}
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            ) : (
-                                                <div className="space-y-3 animate-in fade-in slide-in-from-top-1">
-                                                    <div className="border-2 border-dashed border-border rounded-lg p-6 hover:bg-secondary/20 transition-colors text-center cursor-pointer relative group">
-                                                        <input
-                                                            type="file"
-                                                            accept=".json"
-                                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                                            onChange={async (e) => {
-                                                                const file = e.target.files?.[0];
-                                                                if (file) {
-                                                                    setCustomTemplate(file);
-                                                                    setTemplateValidation({ valid: false, missingTags: [] });
-
-                                                                    const formData = new FormData();
-                                                                    formData.append("file", file);
-
-                                                                    try {
-                                                                        const res = await fetch("/api/templates/upload", { method: "POST", body: formData });
-                                                                        const data = await res.json();
-
-                                                                        if (res.ok && data.success) {
-                                                                            setTemplateValidation({ valid: true, missingTags: [] });
-                                                                            setTemplateId(data.templateId);
-                                                                            toast({ title: "Template Uploaded", description: `Template saved: ${data.name} (${data.templateId})`, variant: "default" });
-                                                                        } else {
-                                                                            setTemplateValidation({ valid: false, missingTags: data.details || [data.error || "Invalid template"] });
-                                                                            toast({ title: "Validation Failed", description: data.error || "Template validation failed", variant: "destructive" });
-                                                                        }
-                                                                    } catch (err) {
-                                                                        console.error(err);
-                                                                        setTemplateValidation({ valid: false, missingTags: ["Network error"] });
-                                                                        toast({ title: "Upload Error", description: "Failed to upload template", variant: "destructive" });
-                                                                    }
-                                                                }
-                                                            }}
-                                                        />
-                                                        <div className="flex flex-col items-center gap-2">
-                                                            <div className="p-2 rounded-full bg-primary/10 text-primary group-hover:scale-110 transition-transform">
-                                                                <FileText className="w-5 h-5" />
-                                                            </div>
-                                                            <div className="space-y-1">
-                                                                <p className="text-sm font-semibold text-foreground">
-                                                                    {customTemplate ? customTemplate.name : "Upload Custom Template"}
-                                                                </p>
-                                                                <p className="text-xs text-muted-foreground">
-                                                                    {customTemplate ? "Click to change" : "Drag & drop or click to browse (.json)"}
-                                                                </p>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-
-                                                    {customTemplate && (
-                                                        <div className={cn("p-3 rounded-md border flex items-center gap-3", templateValidation.valid ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-700" : "bg-amber-500/10 border-amber-500/20 text-amber-700")}>
-                                                            {templateValidation.valid ? <CheckCircle2 className="w-4 h-4" /> : <Loader2 className="w-4 h-4 animate-spin" />}
-                                                            <div className="text-xs font-medium">
-                                                                {templateValidation.valid ? "Template validated and saved to database." : "Validating template structure..."}
-                                                            </div>
-                                                        </div>
-                                                    )}
-
-                                                    <div className="flex justify-between items-center px-1">
-                                                        <a href="/template-pipeline" className="text-[10px] text-primary hover:underline flex items-center gap-1">
-                                                            <ArrowRight className="w-3 h-3" />
-                                                            Advanced Template Pipeline
-                                                        </a>
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        <div className="space-y-3">
-                                            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Jurisdictions</label>
-                                            <div className="flex gap-3">
-                                                {["EU_MDR", "UK_MDR"].map(j => (
-                                                    <label key={j} className={cn(
-                                                        "flex-1 flex items-center justify-center gap-2 p-3 rounded-xl border cursor-pointer transition-all duration-300",
-                                                        jurisdictions.includes(j)
-                                                            ? "bg-primary text-primary-foreground border-primary shadow-sm"
-                                                            : "bg-background border-input text-muted-foreground hover:bg-secondary/50"
-                                                    )}>
-                                                        <input type="checkbox" checked={jurisdictions.includes(j)} onChange={() => setJurisdictions(jurisdictions.includes(j) ? jurisdictions.filter(x => x !== j) : [...jurisdictions, j])} className="hidden" />
-                                                        <span className="text-xs font-bold uppercase tracking-widest">{j.replace("_", " ")}</span>
-                                                        {jurisdictions.includes(j) && <CheckCircle2 className="w-3 h-3" />}
-                                                    </label>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <label className="text-sm text-muted-foreground">Device Name</label>
+                                        {devices.length > 0 ? (
+                                            <select
+                                                className="w-full h-10 bg-muted/50 border border-border rounded-lg px-3 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+                                                value={deviceId || ""}
+                                                onChange={e => {
+                                                    const id = parseInt(e.target.value);
+                                                    if (id) {
+                                                        const device = devices.find(d => d.id === id);
+                                                        if (device) {
+                                                            setDeviceId(device.id);
+                                                            setDeviceName(device.deviceName);
+                                                            setDeviceCode(device.deviceCode);
+                                                            setDeviceRiskClass(device.riskClass as "I" | "IIa" | "IIb" | "III");
+                                                            if (device.gmdnCode) setGmdnCode(device.gmdnCode);
+                                                        }
+                                                    } else {
+                                                        setDeviceId(0);
+                                                    }
+                                                }}
+                                            >
+                                                <option value="">e.g., CardioFlow Monitor</option>
+                                                {devices.map(d => (
+                                                    <option key={d.id} value={d.id}>{d.deviceName}</option>
                                                 ))}
-                                            </div>
+                                            </select>
+                                        ) : (
+                                            <input
+                                                className="w-full h-10 bg-muted/50 border border-border rounded-lg px-3 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all placeholder:text-muted-foreground"
+                                                value={deviceName}
+                                                onChange={e => {
+                                                    setDeviceName(e.target.value);
+                                                    if (!deviceCode) {
+                                                        setDeviceCode(e.target.value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 12) || "DEVICE");
+                                                    }
+                                                }}
+                                                placeholder="e.g., CardioFlow Monitor"
+                                            />
+                                        )}
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-sm text-muted-foreground">Manufacturer</label>
+                                        <input
+                                            className="w-full h-10 bg-muted/50 border border-border rounded-lg px-3 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all placeholder:text-muted-foreground"
+                                            value={manufacturerName}
+                                            onChange={e => setManufacturerName(e.target.value)}
+                                            placeholder="e.g., MedTech Corp"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <label className="text-sm text-muted-foreground">Device Code</label>
+                                        <div className="flex gap-2">
+                                            <input
+                                                className="flex-1 h-10 bg-muted/50 border border-border rounded-lg px-3 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all placeholder:text-muted-foreground"
+                                                value={deviceCode}
+                                                onChange={e => setDeviceCode(e.target.value)}
+                                                placeholder="Auto-generated"
+                                            />
+                                            <button
+                                                onClick={() => setDeviceCode(deviceName.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 12) || "DEVICE")}
+                                                className="px-3 h-10 bg-secondary border border-border rounded-lg text-xs font-medium text-foreground hover:bg-accent transition-colors"
+                                            >
+                                                Auto
+                                            </button>
                                         </div>
                                     </div>
 
-                                    {/* Right Sub-Column: Temporal & Details */}
-                                    <div className="space-y-6">
-                                        <div className="space-y-3">
-                                            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Reporting Period</label>
-                                            <div className="grid grid-cols-2 gap-3">
-                                                <div className="space-y-1">
-                                                    <span className="text-[10px] font-bold text-muted-foreground uppercase ml-1">Start</span>
-                                                    <input type="date" className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all shadow-sm" value={periodStart} onChange={e => setPeriodStart(e.target.value)} />
-                                                </div>
-                                                <div className="space-y-1">
-                                                    <span className="text-[10px] font-bold text-muted-foreground uppercase ml-1">End</span>
-                                                    <input type="date" className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all shadow-sm" value={periodEnd} onChange={e => setPeriodEnd(e.target.value)} />
-                                                </div>
-                                            </div>
-                                        </div>
+                                    <div className="space-y-2">
+                                        <label className="text-sm text-muted-foreground">Risk Class</label>
+                                        <Select value={deviceRiskClass} onValueChange={(v) => setDeviceRiskClass(v as "I" | "IIa" | "IIb" | "III")}>
+                                            <SelectTrigger className="w-full h-10 bg-muted/50 border-border">
+                                                <SelectValue placeholder="Select class" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="I">Class I</SelectItem>
+                                                <SelectItem value="IIa">Class IIa</SelectItem>
+                                                <SelectItem value="IIb">Class IIb</SelectItem>
+                                                <SelectItem value="III">Class III</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                </div>
 
-                                        <div className="pt-8">
-                                            <button
-                                                onClick={createDraft}
-                                                disabled={createBusy || !deviceName || !deviceCode || (templateType === 'custom' && !templateValidation.valid) || existingDrafts.length > 0}
-                                                className="w-full py-3 rounded-md bg-primary text-primary-foreground font-bold shadow-md hover:bg-primary/90 transition-all disabled:opacity-50 flex items-center justify-center gap-2 disabled:cursor-not-allowed"
-                                            >
-                                                {createBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : existingDrafts.length > 0 ? "Draft in Progress" : "Initialize Draft"}
-                                                {existingDrafts.length === 0 && <ArrowRight className="w-4 h-4" />}
-                                                {existingDrafts.length > 0 && <AlertCircle className="w-4 h-4" />}
-                                            </button>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <label className="text-sm text-muted-foreground">UDI-DI</label>
+                                        <input
+                                            className="w-full h-10 bg-muted/50 border border-border rounded-lg px-3 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all placeholder:text-muted-foreground"
+                                            value={udiDi}
+                                            onChange={e => setUdiDi(e.target.value)}
+                                            placeholder="e.g., 00844588003288"
+                                        />
+                                    </div>
 
-                                            {createError && <p className="text-xs text-red-500 font-medium text-center mt-2">{createError}</p>}
-
-                                            {existingDrafts.length > 0 && (
-                                                <div className="flex items-center gap-2 justify-center mt-3 text-amber-600 bg-amber-50 p-2 rounded border border-amber-200">
-                                                    <AlertCircle className="w-3.5 h-3.5" />
-                                                    <p className="text-[10px] font-medium">Please resume, delete, or cancel the active draft to start a new one.</p>
-                                                </div>
-                                            )}
-                                        </div>
+                                    <div className="space-y-2">
+                                        <label className="text-sm text-muted-foreground">GMDN Code</label>
+                                        <input
+                                            className="w-full h-10 bg-muted/50 border border-border rounded-lg px-3 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all placeholder:text-muted-foreground"
+                                            value={gmdnCode}
+                                            onChange={e => setGmdnCode(e.target.value)}
+                                            placeholder="e.g., 38456"
+                                        />
                                     </div>
                                 </div>
                             </div>
 
-                            {/* RIGHT COLUMN: Recent Drafts (Span 1) */}
-                            <div className="lg:col-span-1 space-y-3">
-                                {existingDrafts.length > 0 ? (
-                                    <div className="grid grid-cols-1 gap-3">
-                                        {existingDrafts.map(draft => (
-                                            <div
-                                                key={draft.id}
-                                                onClick={() => !loadingDraft && !deletingDraftId && resumeDraft(draft)}
-                                                className={cn(
-                                                    "bg-white dark:bg-card border border-border rounded-lg p-5 shadow-sm hover:border-primary/50 hover:shadow-md cursor-pointer transition-all group h-full flex flex-col justify-between relative",
-                                                    deletingDraftId === draft.id && "opacity-50 pointer-events-none"
-                                                )}
-                                            >
-                                                <button
-                                                    onClick={(e) => deleteDraft(draft, e)}
-                                                    disabled={deletingDraftId === draft.id}
-                                                    className="absolute top-2 right-2 p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover:opacity-100"
-                                                    title="Delete draft"
-                                                >
-                                                    {deletingDraftId === draft.id ? (
-                                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                                    ) : (
-                                                        <Trash2 className="w-3.5 h-3.5" />
-                                                    )}
-                                                </button>
-                                                <div className="flex justify-between items-start mb-2 pr-6">
-                                                    <span className="font-bold text-sm text-foreground group-hover:text-primary transition-colors">{draft.psurReference}</span>
-                                                    <Badge variant="outline" className="text-[10px] h-5 bg-secondary/50">{draft.status}</Badge>
-                                                </div>
-                                                <div className="text-xs text-muted-foreground mb-4 line-clamp-1 font-medium">
-                                                    {draft.deviceInfo?.deviceName || "Unknown Device"}
-                                                </div>
-                                                <div className="flex items-center justify-between text-[10px] text-muted-foreground mt-auto">
-                                                    <span className="font-medium bg-secondary/50 px-1.5 py-0.5 rounded">{draft.startPeriod || "N/A"}</span>
-                                                    <ArrowRight className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0 text-primary" />
-                                                </div>
-                                            </div>
-                                        ))}
+                            {/* RIGHT CARD: Report Settings */}
+                            <div className="bg-card rounded-xl border border-border p-6 space-y-5">
+                                <h3 className="text-lg font-semibold text-foreground">Report Settings</h3>
+
+                                <div className="space-y-2">
+                                    <label className="text-sm text-muted-foreground">Template Selection</label>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <button
+                                            onClick={() => setTemplateType("standard")}
+                                            className={cn(
+                                                "h-12 rounded-lg font-medium transition-all border",
+                                                templateType === "standard"
+                                                    ? "bg-primary text-primary-foreground border-primary"
+                                                    : "bg-muted/50 text-muted-foreground border-border hover:bg-muted hover:text-foreground"
+                                            )}
+                                        >
+                                            Standard
+                                        </button>
+                                        <button
+                                            onClick={() => setTemplateType("custom")}
+                                            className={cn(
+                                                "h-12 rounded-lg font-medium transition-all border",
+                                                templateType === "custom"
+                                                    ? "bg-primary text-primary-foreground border-primary"
+                                                    : "bg-muted/50 text-muted-foreground border-border hover:bg-muted hover:text-foreground"
+                                            )}
+                                        >
+                                            Custom
+                                        </button>
                                     </div>
-                                ) : (
-                                    <div className="bg-secondary/20 border border-dashed border-border rounded-lg p-8 text-center h-full flex flex-col items-center justify-center">
-                                        <p className="text-sm text-muted-foreground">No recent drafts found.</p>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-sm text-muted-foreground">Surveillance Period</label>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <input
+                                            type="date"
+                                            className="w-full h-10 bg-muted/50 border border-border rounded-lg px-3 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+                                            value={periodStart}
+                                            onChange={e => setPeriodStart(e.target.value)}
+                                        />
+                                        <input
+                                            type="date"
+                                            className="w-full h-10 bg-muted/50 border border-border rounded-lg px-3 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+                                            value={periodEnd}
+                                            onChange={e => setPeriodEnd(e.target.value)}
+                                        />
                                     </div>
-                                )}
+                                </div>
+
+                                {/* Action Buttons */}
+                                <div className="pt-4 space-y-3">
+                                    {existingDrafts.length > 0 && (
+                                        <button
+                                            onClick={() => resumeDraft(existingDrafts[0])}
+                                            disabled={loadingDraft}
+                                            className="w-full h-12 rounded-full bg-secondary border border-border font-medium text-foreground hover:bg-accent transition-all flex items-center justify-center gap-2"
+                                        >
+                                            <Loader2 className={cn("w-4 h-4", loadingDraft ? "animate-spin" : "hidden")} />
+                                            <span>Resume Draft</span>
+                                        </button>
+                                    )}
+                                    <button
+                                        onClick={createDraft}
+                                        disabled={createBusy || !deviceName || !deviceCode || (templateType === 'custom' && !templateValidation.valid) || existingDrafts.length > 0}
+                                        className="w-full h-12 rounded-full bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                    >
+                                        {createBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                                        <span>Start New Draft</span>
+                                        <ChevronRight className="w-4 h-4" />
+                                    </button>
+                                    {createError && <p className="text-xs text-destructive text-center">{createError}</p>}
+                                </div>
                             </div>
                         </div>
 
-                    </div >
-                )}
+                        {/* Recent Drafts Section - Only shown if there are drafts */}
+                        {existingDrafts.length > 0 && (
+                            <div className="bg-card rounded-xl border border-border p-6">
+                                <h3 className="text-lg font-semibold text-foreground mb-4">Recent Drafts</h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    {existingDrafts.map(draft => (
+                                        <div
+                                            key={draft.id}
+                                            onClick={() => !loadingDraft && !deletingDraftId && resumeDraft(draft)}
+                                            className={cn(
+                                                "bg-muted/50 border border-border rounded-lg p-4 cursor-pointer hover:border-primary/50 transition-all group relative",
+                                                deletingDraftId === draft.id && "opacity-50 pointer-events-none"
+                                            )}
+                                        >
+                                            <button
+                                                onClick={(e) => deleteDraft(draft, e)}
+                                                disabled={deletingDraftId === draft.id}
+                                                className="absolute top-2 right-2 p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover:opacity-100"
+                                            >
+                                                {deletingDraftId === draft.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                                            </button>
+                                            <div className="flex justify-between items-start mb-2 pr-6">
+                                                <span className="font-semibold text-sm text-foreground">{draft.psurReference}</span>
+                                                <Badge variant="outline" className="text-[10px] h-5">{draft.status}</Badge>
+                                            </div>
+                                            <p className="text-xs text-muted-foreground mb-2">{draft.deviceInfo?.deviceName || "Unknown Device"}</p>
+                                            <p className="text-xs text-muted-foreground">{draft.startPeriod} - {draft.endPeriod}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
 
+                    </div>
+                )}
                 {/* STEP 2: UPLOAD */}
                 {
                     step === 2 && psurCaseId && (
@@ -2736,15 +2615,15 @@ export default function PsurWizard() {
 
                             {/* Top Stats Cards */}
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                                <div className="bg-white dark:bg-card border border-border shadow-sm rounded-lg p-8 bg-primary/5 border-primary/10 shadow-xl group hover:scale-105">
+                                <div className="bg-card border border-border shadow-sm rounded-lg p-8 bg-primary/5 border-primary/10 shadow-xl group hover:scale-105">
                                     <div className="text-sm font-black text-primary uppercase tracking-[0.2em] mb-4">Data Records</div>
                                     <div className="text-6xl font-black text-primary tracking-tighter group-hover:scale-110 transition-transform">{totalAtoms}</div>
                                 </div>
-                                <div className="bg-white dark:bg-card border border-border shadow-sm rounded-lg p-8 bg-emerald-500/5 border-emerald-500/10 shadow-xl group hover:scale-105">
+                                <div className="bg-card border border-border shadow-sm rounded-lg p-8 bg-emerald-500/5 border-emerald-500/10 shadow-xl group hover:scale-105">
                                     <div className="text-sm font-black text-emerald-600 uppercase tracking-[0.2em] mb-4">Requirements Status</div>
                                     <div className="text-6xl font-black text-emerald-600 tracking-tighter group-hover:scale-110 transition-transform">{((requiredTypes.length - missingTypes.length) / requiredTypes.length * 100).toFixed(0)}%</div>
                                 </div>
-                                <div className="bg-white dark:bg-card border border-border shadow-sm rounded-lg p-8 bg-amber-500/5 border-amber-500/10 shadow-xl group hover:scale-105">
+                                <div className="bg-card border border-border shadow-sm rounded-lg p-8 bg-amber-500/5 border-amber-500/10 shadow-xl group hover:scale-105">
                                     <div className="text-sm font-black text-amber-600 uppercase tracking-[0.2em] mb-4">Verification Gaps</div>
                                     <div className="text-6xl font-black text-amber-600 tracking-tighter group-hover:scale-110 transition-transform">{missingTypes.length}</div>
                                 </div>
@@ -2752,7 +2631,7 @@ export default function PsurWizard() {
 
                             {/* Large Action Panels */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                <button onClick={() => setShowIngestionModal(true)} className="bg-white dark:bg-card border border-border shadow-sm rounded-lg p-10 text-left space-y-8 group active:scale-95">
+                                <button onClick={() => setShowIngestionModal(true)} className="bg-card border border-border shadow-sm rounded-lg p-10 text-left space-y-8 group active:scale-95">
                                     <div className="w-20 h-20 rounded-3xl bg-primary/10 flex items-center justify-center text-primary group-hover:scale-110 group-hover:rotate-3 transition-all duration-500 shadow-inner">
                                         <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
                                     </div>
@@ -2762,7 +2641,7 @@ export default function PsurWizard() {
                                     </div>
                                 </button>
 
-                                <button onClick={() => setShowEvidenceModal(true)} className="bg-white dark:bg-card border border-border shadow-sm rounded-lg p-10 text-left space-y-8 group active:scale-95">
+                                <button onClick={() => setShowEvidenceModal(true)} className="bg-card border border-border shadow-sm rounded-lg p-10 text-left space-y-8 group active:scale-95">
                                     <div className="w-20 h-20 rounded-3xl bg-emerald-500/10 flex items-center justify-center text-emerald-600 group-hover:scale-110 group-hover:-rotate-3 transition-all duration-500 shadow-inner">
                                         <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
                                     </div>
@@ -2774,13 +2653,13 @@ export default function PsurWizard() {
                             </div>
 
                             {/* Evidence Status Grid */}
-                            <div className="bg-white dark:bg-card border border-border shadow-sm rounded-lg p-10 space-y-10 shadow-2xl">
+                            <div className="bg-card border border-border shadow-sm rounded-lg p-10 space-y-10 shadow-2xl">
                                 <div className="flex items-center justify-between cursor-pointer group" onClick={() => setIsEvidenceGridOpen(!isEvidenceGridOpen)}>
                                     <div className="flex items-center gap-4">
                                         <h3 className="text-2xl font-black tracking-tighter text-foreground">Compliance Matrix</h3>
                                         {isEvidenceGridOpen ? <ChevronUp className="w-6 h-6 text-muted-foreground group-hover:text-primary transition-colors" /> : <ChevronDown className="w-6 h-6 text-muted-foreground group-hover:text-primary transition-colors" />}
                                     </div>
-                                    <button onClick={(e) => { e.stopPropagation(); refreshCounts(); }} className="w-12 h-12 rounded-full flex items-center justify-center bg-secondary hover:bg-white hover:text-primary transition-all active:rotate-180">
+                                    <button onClick={(e) => { e.stopPropagation(); refreshCounts(); }} className="w-12 h-12 rounded-full flex items-center justify-center bg-secondary hover:bg-accent hover:text-primary transition-all active:rotate-180">
                                         <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                                     </button>
                                 </div>
@@ -2857,26 +2736,26 @@ export default function PsurWizard() {
                         <div className="h-full flex flex-col">
                             {/* Stats Row */}
                             <div className="grid grid-cols-4 gap-3 mb-3">
-                                <div className="p-4 rounded-xl bg-white dark:bg-card border border-border shadow-sm rounded-lg border border-primary/20 text-center">
+                                <div className="p-4 rounded-xl bg-card border border-border shadow-sm rounded-lg border border-primary/20 text-center">
                                     <div className="text-2xl font-bold text-primary">{totalAtoms}</div>
                                     <div className="text-xs text-muted-foreground">Total Records</div>
                                 </div>
-                                <div className="p-4 rounded-xl bg-white dark:bg-card border border-border shadow-sm rounded-lg border border-emerald-500/20 text-center">
+                                <div className="p-4 rounded-xl bg-card border border-border shadow-sm rounded-lg border border-emerald-500/20 text-center">
                                     <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{requiredTypes.length - missingTypes.length}</div>
                                     <div className="text-xs text-muted-foreground">Requirements Met</div>
                                 </div>
-                                <div className="p-4 rounded-xl bg-white dark:bg-card border border-border shadow-sm rounded-lg border border-amber-500/20 text-center">
+                                <div className="p-4 rounded-xl bg-card border border-border shadow-sm rounded-lg border border-amber-500/20 text-center">
                                     <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">{missingTypes.length}</div>
                                     <div className="text-xs text-muted-foreground">Types Missing</div>
                                 </div>
-                                <div className={`p-4 rounded-xl bg-white dark:bg-card border border-border shadow-sm rounded-lg border text-center ${missingTypes.length === 0 ? "border-emerald-500/30 bg-emerald-500/5" : "border-amber-500/30 bg-amber-500/5"}`}>
+                                <div className={`p-4 rounded-xl bg-card border border-border shadow-sm rounded-lg border text-center ${missingTypes.length === 0 ? "border-emerald-500/30 bg-emerald-500/5" : "border-amber-500/30 bg-amber-500/5"}`}>
                                     <div className={`text-lg font-bold ${missingTypes.length === 0 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>{missingTypes.length === 0 ? "Ready" : "Incomplete"}</div>
                                     <div className="text-xs text-muted-foreground">Status</div>
                                 </div>
                             </div>
 
                             {/* Evidence Grid */}
-                            <div className="flex-1 min-h-0 overflow-y-auto bg-white dark:bg-card border border-border shadow-sm rounded-lg rounded-xl p-4">
+                            <div className="flex-1 min-h-0 overflow-y-auto bg-card border border-border shadow-sm rounded-lg rounded-xl p-4">
                                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
                                     {requiredTypes.map(t => {
                                         const c = counts?.byType?.[t] || 0;
@@ -2931,7 +2810,7 @@ export default function PsurWizard() {
                                     {/* Configuration - Full Width Horizontal Layout */}
                                     <div className="flex-1 flex gap-6 min-h-0">
                                         {/* Left: Report Summary Card */}
-                                        <div className="flex-1 bg-white dark:bg-card border border-border shadow-sm rounded-xl p-6 flex flex-col">
+                                        <div className="flex-1 bg-card border border-border shadow-sm rounded-xl p-6 flex flex-col">
                                             <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
                                                 <svg className="w-4 h-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                                                 Report Summary
@@ -2957,7 +2836,7 @@ export default function PsurWizard() {
                                         </div>
 
                                         {/* Middle: Output Options Card */}
-                                        <div className="w-[320px] bg-white dark:bg-card border border-border shadow-sm rounded-xl p-6 flex flex-col">
+                                        <div className="w-[320px] bg-card border border-border shadow-sm rounded-xl p-6 flex flex-col">
                                             <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
                                                 <svg className="w-4 h-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                                                 Output Options
@@ -3083,14 +2962,14 @@ export default function PsurWizard() {
                                                             isComplete && "bg-emerald-50 border-emerald-300 dark:bg-emerald-950/30 dark:border-emerald-800",
                                                             isRunning && "bg-primary/10 border-primary shadow-lg shadow-primary/20 ring-1 ring-primary/50",
                                                             isFailed && "bg-red-50 border-red-300 dark:bg-red-950/30 dark:border-red-800",
-                                                            !isComplete && !isRunning && !isFailed && "bg-slate-50 border-slate-200 dark:bg-slate-900 dark:border-slate-700"
+                                                            !isComplete && !isRunning && !isFailed && "bg-muted border-border"
                                                         )}>
                                                             <div className="flex items-center gap-2">
                                                                 {/* Status Icon */}
                                                                 {isComplete && <div className="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center"><svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>}
                                                                 {isRunning && <div className="w-4 h-4"><Loader2 className="w-4 h-4 text-primary animate-spin" /></div>}
                                                                 {isFailed && <div className="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center"><svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg></div>}
-                                                                {!isComplete && !isRunning && !isFailed && <div className="w-4 h-4 rounded-full bg-slate-300 dark:bg-slate-600 flex items-center justify-center"><span className="text-[8px] font-bold text-slate-600 dark:text-slate-300">{s.step}</span></div>}
+                                                                {!isComplete && !isRunning && !isFailed && <div className="w-4 h-4 rounded-full bg-muted-foreground/30 flex items-center justify-center"><span className="text-[8px] font-bold text-slate-600 dark:text-slate-300">{s.step}</span></div>}
                                                                 
                                                                 {/* Label */}
                                                                 <span className={cn(
@@ -3109,7 +2988,7 @@ export default function PsurWizard() {
                                                         {idx < runResult.steps.length - 1 && (
                                                             <div className={cn(
                                                                 "w-4 h-0.5 flex-shrink-0",
-                                                                isComplete ? "bg-emerald-400" : "bg-slate-200 dark:bg-slate-700"
+                                                                isComplete ? "bg-emerald-400" : "bg-muted"
                                                             )} />
                                                         )}
                                                     </div>
@@ -3141,11 +3020,11 @@ export default function PsurWizard() {
                                                             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                                                             PDF
                                                         </a>
-                                                        <a href={`/api/audit-bundles/${psurCaseId}/download`} className="px-2.5 py-1 rounded bg-slate-600 text-white text-[10px] font-medium hover:bg-slate-700 transition-colors flex items-center gap-1">
+                                                        <a href={`/api/audit-bundles/${psurCaseId}/download`} className="px-2.5 py-1 rounded bg-secondary text-secondary-foreground text-[10px] font-medium hover:bg-secondary/80 transition-colors flex items-center gap-1">
                                                             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
                                                             Audit
                                                         </a>
-                                                        <button onClick={resetWizard} className="px-2.5 py-1 rounded border border-border text-[10px] font-medium text-muted-foreground hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center gap-1">
+                                                        <button onClick={resetWizard} className="px-2.5 py-1 rounded border border-border text-[10px] font-medium text-muted-foreground hover:bg-accent transition-colors flex items-center gap-1">
                                                             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                                                             New
                                                         </button>
@@ -3153,7 +3032,7 @@ export default function PsurWizard() {
                                                 </div>
                                                 
                                                 {/* Document Preview */}
-                                                <div className="flex-1 p-3 bg-slate-100 dark:bg-slate-900">
+                                                <div className="flex-1 p-3 bg-muted/50">
                                                     <iframe
                                                         src={`/api/psur-cases/${psurCaseId}/psur.html?style=${documentStyle}`}
                                                         className="w-full h-full rounded-lg border border-border/30 bg-white shadow-lg"
@@ -3166,7 +3045,7 @@ export default function PsurWizard() {
                                             <div className="flex-1 flex gap-4 p-4 overflow-hidden">
                                                 {/* Left: Live Sections Being Generated */}
                                                 <div className="flex-1 min-w-0 flex flex-col border rounded-xl bg-card overflow-hidden">
-                                                    <div className="flex-shrink-0 px-4 py-2 border-b bg-slate-50 dark:bg-slate-900/50 flex items-center justify-between">
+                                                    <div className="flex-shrink-0 px-4 py-2 border-b bg-muted/50 flex items-center justify-between">
                                                         <div className="flex items-center gap-2">
                                                             <Sparkles className="w-4 h-4 text-primary animate-pulse" />
                                                             <span className="text-xs font-semibold text-foreground">Live Content Generation</span>
@@ -3207,9 +3086,9 @@ export default function PsurWizard() {
                                                         
                                                         {/* Pending sections */}
                                                         {liveSections.filter(s => s.status === "pending").slice(0, 5).map(section => (
-                                                            <div key={section.slotId} className="p-2.5 rounded-lg border border-dashed border-border/50 bg-slate-50/50 dark:bg-slate-900/30">
+                                                            <div key={section.slotId} className="p-2.5 rounded-lg border border-dashed border-border/50 bg-muted/30">
                                                                 <div className="flex items-center gap-2">
-                                                                    <div className="w-3 h-3 rounded-full bg-slate-200 dark:bg-slate-700" />
+                                                                    <div className="w-3 h-3 rounded-full bg-muted" />
                                                                     <span className="text-[10px] text-muted-foreground">{section.title}</span>
                                                                 </div>
                                                             </div>
@@ -3257,7 +3136,7 @@ export default function PsurWizard() {
                                                                         {runResult.steps.filter(s => s.status === "RUNNING")[0].name}
                                                                     </span>
                                                                 </div>
-                                                                <div className="h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                                                                <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                                                                     <div className="h-full bg-primary rounded-full animate-pulse" style={{ width: '60%' }} />
                                                                 </div>
                                                             </div>
@@ -3278,11 +3157,11 @@ export default function PsurWizard() {
             {
                 step > 1 && (
                     <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50">
-                        <div className="bg-white dark:bg-card border border-border shadow-sm rounded-lg px-4 py-3 flex items-center gap-6 shadow-2xl rounded-full">
+                        <div className="bg-card border border-border shadow-sm rounded-lg px-4 py-3 flex items-center gap-6 shadow-2xl rounded-full">
                             <button
                                 onClick={() => setStep((step - 1) as WizardStep)}
                                 disabled={step === 1}
-                                className="w-12 h-12 rounded-full flex items-center justify-center bg-secondary hover:bg-white text-muted-foreground hover:text-foreground transition-all active:scale-90 disabled:opacity-20"
+                                className="w-12 h-12 rounded-full flex items-center justify-center bg-secondary hover:bg-accent text-muted-foreground hover:text-foreground transition-all active:scale-90 disabled:opacity-20"
                             >
                                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 19l-7-7 7-7" /></svg>
                             </button>
@@ -3378,7 +3257,7 @@ function ManualUploadForm({ psurCaseId, deviceCode, periodStart, periodEnd, requ
                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                         onChange={e => setFile(e.target.files?.[0] || null)}
                     />
-                    <div className="bg-white dark:bg-card border border-border shadow-sm rounded-lg p-8 border-2 border-dashed border-border/50 group-hover:border-primary/50 transition-all flex flex-col items-center justify-center text-center gap-4">
+                    <div className="bg-card border border-border shadow-sm rounded-lg p-8 border-2 border-dashed border-border/50 group-hover:border-primary/50 transition-all flex flex-col items-center justify-center text-center gap-4">
                         <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
                             <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
                         </div>

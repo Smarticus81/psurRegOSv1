@@ -219,7 +219,7 @@ const CONTENT_TYPE_CONFIG: Record<ContentType, {
   heading: { 
     icon: FileQuestion, 
     color: "text-slate-600", 
-    bgColor: "bg-slate-50 dark:bg-slate-950", 
+    bgColor: "bg-muted", 
     label: "Heading",
     description: "Section or subsection heading"
   },

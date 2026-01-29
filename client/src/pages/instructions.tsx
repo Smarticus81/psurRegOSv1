@@ -342,7 +342,7 @@ export default function Instructions() {
           </div>
 
           <TabsContent value="overview" className="space-y-8 mt-0 focus-visible:outline-none">
-            <div className="glass-card p-10 space-y-10">
+            <div className="bg-card rounded-xl border border-border p-10 space-y-10">
               <div className="space-y-2">
                 <h3 className="text-2xl font-bold tracking-tight text-foreground">How to Prepare Your Data</h3>
                 <p className="text-muted-foreground">Follow these steps to prepare your surveillance data for PSUR generation.</p>
@@ -356,7 +356,7 @@ export default function Instructions() {
                   { step: "04", title: "Verify Coverage", desc: "Review the data completeness checklist. Ensure all required categories are covered before generating the document." }
                 ].map((s, i) => (
                   <div key={i} className="flex gap-6 group hover:-translate-y-1 transition-transform duration-500">
-                    <div className="flex-shrink-0 w-14 h-14 rounded-2xl bg-secondary flex items-center justify-center text-xl font-bold text-primary/40 shadow-inner group-hover:bg-primary group-hover:text-white transition-all duration-500">{s.step}</div>
+                    <div className="flex-shrink-0 w-14 h-14 rounded-2xl bg-secondary flex items-center justify-center text-xl font-bold text-muted-foreground group-hover:bg-primary group-hover:text-primary-foreground transition-all duration-500">{s.step}</div>
                     <div className="space-y-2">
                       <h4 className="text-lg font-semibold text-foreground">{s.title}</h4>
                       <p className="text-sm text-muted-foreground leading-relaxed">{s.desc}</p>
@@ -367,32 +367,32 @@ export default function Instructions() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div className="glass-card p-8 space-y-6">
+              <div className="bg-card rounded-xl border border-border p-8 space-y-6">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-600 shadow-sm"><FileSpreadsheet className="h-5 w-5" /></div>
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-600 dark:text-emerald-400"><FileSpreadsheet className="h-5 w-5" /></div>
                   <h3 className="text-lg font-semibold text-foreground">Supported File Formats</h3>
                 </div>
                 <div className="space-y-4">
-                  <div className="p-5 rounded-2xl bg-white/50 border border-border/50 space-y-2">
+                  <div className="p-5 rounded-2xl bg-secondary/50 border border-border space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-sm text-foreground">CSV Files</span>
-                      <span className="ios-pill bg-emerald-500 text-white text-[9px] font-bold border-none">RECOMMENDED</span>
+                      <span className="px-2 py-1 rounded-full bg-emerald-500 text-white text-[9px] font-bold">RECOMMENDED</span>
                     </div>
                     <p className="text-xs text-muted-foreground leading-relaxed">Use UTF-8 encoding. First row should be column headers. Wrap text with commas in quotes.</p>
                   </div>
-                  <div className="p-5 rounded-2xl bg-white/50 border border-border/50 space-y-2">
+                  <div className="p-5 rounded-2xl bg-secondary/50 border border-border space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-sm text-foreground">Excel Files (.xlsx)</span>
-                      <span className="ios-pill bg-blue-500 text-white text-[9px] font-bold border-none">SUPPORTED</span>
+                      <span className="px-2 py-1 rounded-full bg-blue-500 text-white text-[9px] font-bold">SUPPORTED</span>
                     </div>
                     <p className="text-xs text-muted-foreground leading-relaxed">Data is read from the first sheet. Column headers should be in the first row.</p>
                   </div>
                 </div>
               </div>
 
-              <div className="glass-card p-8 space-y-6 bg-amber-500/[0.02] border-amber-500/20 shadow-amber-500/5">
+              <div className="bg-card rounded-xl border border-amber-500/30 p-8 space-y-6">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-600 shadow-sm"><AlertTriangle className="h-5 w-5" /></div>
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-600 dark:text-amber-400"><AlertTriangle className="h-5 w-5" /></div>
                   <h3 className="text-lg font-semibold text-foreground">Important Notes</h3>
                 </div>
                 <ul className="space-y-4">
@@ -404,8 +404,8 @@ export default function Instructions() {
                     <li key={i} className="flex gap-4">
                       <div className="mt-1 w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" />
                       <div className="space-y-1">
-                        <div className="text-xs font-semibold text-amber-700">{note.t}</div>
-                        <p className="text-xs text-amber-900/70 leading-relaxed">{note.d}</p>
+                        <div className="text-xs font-semibold text-amber-600 dark:text-amber-400">{note.t}</div>
+                        <p className="text-xs text-muted-foreground leading-relaxed">{note.d}</p>
                       </div>
                     </li>
                   ))}
@@ -415,7 +415,7 @@ export default function Instructions() {
           </TabsContent>
 
           <TabsContent value="evidence-types" className="mt-0 focus-visible:outline-none">
-            <div className="glass-card p-10 space-y-10">
+            <div className="bg-card rounded-xl border border-border p-10 space-y-10">
               <div className="space-y-2 text-center">
                 <h3 className="text-2xl font-bold text-foreground">Data Categories Reference</h3>
                 <p className="text-muted-foreground">Detailed specifications for each type of surveillance data.</p>
@@ -424,44 +424,44 @@ export default function Instructions() {
               <Accordion type="single" collapsible className="w-full space-y-4">
                 {EVIDENCE_EXAMPLES.map((example) => (
                   <AccordionItem key={example.type} value={example.type} className="border-none">
-                    <AccordionTrigger className="glass-card px-8 py-6 hover:no-underline hover:bg-white transition-all group data-[state=open]:bg-white border border-border/50">
+                    <AccordionTrigger className="bg-secondary/50 rounded-xl px-8 py-6 hover:no-underline hover:bg-secondary transition-all group data-[state=open]:bg-secondary border border-border">
                       <div className="flex items-center gap-6">
-                        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-secondary group-hover:bg-primary group-hover:text-white transition-all duration-500 shadow-sm">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-card group-hover:bg-primary group-hover:text-primary-foreground transition-all duration-500 border border-border">
                           <example.icon className="h-6 w-6" />
                         </div>
                         <div className="text-left space-y-1">
-                          <div className="text-xl font-black tracking-tight text-foreground">{example.label}</div>
-                          <div className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">{example.type}</div>
+                          <div className="text-xl font-bold tracking-tight text-foreground">{example.label}</div>
+                          <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{example.type}</div>
                         </div>
                       </div>
                     </AccordionTrigger>
-                    <AccordionContent className="glass-card mt-2 p-10 bg-white/40 border border-primary/10 shadow-inner">
+                    <AccordionContent className="bg-card rounded-xl mt-2 p-10 border border-border">
                       <div className="space-y-10">
                         <p className="text-lg text-muted-foreground font-medium italic leading-relaxed">"{example.description}"</p>
                         
                         <div className="space-y-6">
-                          <h4 className="text-sm font-black uppercase tracking-[0.2em] text-foreground flex items-center gap-3">
+                          <h4 className="text-sm font-bold uppercase tracking-[0.2em] text-foreground flex items-center gap-3">
                             <Info className="h-4 w-4 text-primary" />
                             Required Columns
                           </h4>
-                          <div className="rounded-3xl border border-border/50 overflow-hidden bg-white shadow-xl">
+                          <div className="rounded-xl border border-border overflow-hidden bg-card">
                             <Table>
-                              <TableHeader className="bg-secondary/50">
+                              <TableHeader className="bg-secondary">
                                 <TableRow>
-                                  <TableHead className="text-[10px] font-black uppercase tracking-widest px-6 py-4">Attribute</TableHead>
-                                  <TableHead className="text-[10px] font-black uppercase tracking-widest px-6 py-4 text-center">Protocol</TableHead>
-                                  <TableHead className="text-[10px] font-black uppercase tracking-widest px-6 py-4">Definition</TableHead>
+                                  <TableHead className="text-[10px] font-bold uppercase tracking-widest px-6 py-4 text-foreground">Attribute</TableHead>
+                                  <TableHead className="text-[10px] font-bold uppercase tracking-widest px-6 py-4 text-center text-foreground">Protocol</TableHead>
+                                  <TableHead className="text-[10px] font-bold uppercase tracking-widest px-6 py-4 text-foreground">Definition</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
                                 {example.columns.map((col) => (
-                                  <TableRow key={col.name} className="hover:bg-primary/[0.02] transition-colors">
-                                    <TableCell className="px-6 py-4 font-black text-sm text-foreground">{col.name}</TableCell>
+                                  <TableRow key={col.name} className="hover:bg-muted/50 transition-colors border-border">
+                                    <TableCell className="px-6 py-4 font-bold text-sm text-foreground">{col.name}</TableCell>
                                     <TableCell className="px-6 py-4 text-center">
                                       {col.required ? (
-                                        <span className="ios-pill bg-destructive text-white text-[8px] font-black border-none px-3 py-1">MANDATORY</span>
+                                        <span className="px-3 py-1 rounded-full bg-destructive text-destructive-foreground text-[8px] font-bold">MANDATORY</span>
                                       ) : (
-                                        <span className="ios-pill bg-muted text-muted-foreground text-[8px] font-black border-none px-3 py-1">OPTIONAL</span>
+                                        <span className="px-3 py-1 rounded-full bg-muted text-muted-foreground text-[8px] font-bold">OPTIONAL</span>
                                       )}
                                     </TableCell>
                                     <TableCell className="px-6 py-4 text-xs text-muted-foreground font-medium leading-relaxed">{col.description}</TableCell>
@@ -474,13 +474,13 @@ export default function Instructions() {
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                           <div className="space-y-4">
-                            <h4 className="text-sm font-black uppercase tracking-[0.2em] text-emerald-600 flex items-center gap-3">
+                            <h4 className="text-sm font-bold uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-400 flex items-center gap-3">
                               <CheckCircle2 className="h-4 w-4" />
                               Optimization Tips
                             </h4>
-                            <div className="p-6 rounded-3xl bg-emerald-500/[0.03] border border-emerald-500/10 space-y-3">
+                            <div className="p-6 rounded-xl bg-emerald-500/10 border border-emerald-500/20 space-y-3">
                               {example.tips.map((tip, i) => (
-                                <div key={i} className="flex gap-3 text-xs text-emerald-900/70 font-medium">
+                                <div key={i} className="flex gap-3 text-xs text-foreground font-medium">
                                   <div className="mt-1.5 w-1 h-1 rounded-full bg-emerald-500 flex-shrink-0" />
                                   {tip}
                                 </div>
@@ -488,13 +488,13 @@ export default function Instructions() {
                             </div>
                           </div>
                           <div className="space-y-4">
-                            <h4 className="text-sm font-black uppercase tracking-[0.2em] text-destructive flex items-center gap-3">
+                            <h4 className="text-sm font-bold uppercase tracking-[0.2em] text-destructive flex items-center gap-3">
                               <AlertCircle className="h-4 w-4" />
                               Critical Bypass Triggers
                             </h4>
-                            <div className="p-6 rounded-3xl bg-destructive/[0.03] border border-destructive/10 space-y-3">
+                            <div className="p-6 rounded-xl bg-destructive/10 border border-destructive/20 space-y-3">
                               {example.commonErrors.map((error, i) => (
-                                <div key={i} className="flex gap-3 text-xs text-destructive/70 font-medium">
+                                <div key={i} className="flex gap-3 text-xs text-foreground font-medium">
                                   <div className="mt-1.5 w-1 h-1 rounded-full bg-destructive flex-shrink-0" />
                                   {error}
                                 </div>
@@ -511,7 +511,7 @@ export default function Instructions() {
           </TabsContent>
 
           <TabsContent value="troubleshooting" className="mt-0 focus-visible:outline-none">
-            <div className="glass-card p-10 space-y-10 shadow-2xl animate-slide-up">
+            <div className="bg-card rounded-xl border border-border p-10 space-y-10 animate-slide-up">
               <div className="space-y-2 text-center">
                 <h3 className="text-2xl font-bold text-foreground">Common Issues</h3>
                 <p className="text-muted-foreground">Solutions for common data import problems.</p>
@@ -524,7 +524,7 @@ export default function Instructions() {
                   { q: "Date Format Error", a: "Dates must be in YYYY-MM-DD format (e.g., 2024-06-15). In Excel, format date cells as Custom: YYYY-MM-DD before exporting." },
                   { q: "Duplicate Records Skipped", a: "The system automatically removes duplicate records based on unique identifiers to prevent double-counting in your report." }
                 ].map((item, i) => (
-                  <div key={i} className="glass-card p-8 bg-white/50 border border-border/50 hover:border-primary/30 transition-all space-y-4 group">
+                  <div key={i} className="bg-secondary/50 rounded-xl p-8 border border-border hover:border-primary/30 transition-all space-y-4 group">
                     <div className="flex items-center gap-3">
                       <div className="w-2 h-2 rounded-full bg-primary" />
                       <h4 className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">{item.q}</h4>
@@ -534,7 +534,7 @@ export default function Instructions() {
                 ))}
               </div>
 
-              <div className="p-6 rounded-xl bg-primary/5 border border-primary/10">
+              <div className="p-6 rounded-xl bg-primary/10 border border-primary/20">
                 <div className="space-y-2">
                   <div className="text-lg font-semibold text-foreground">Need Help?</div>
                   <p className="text-sm text-muted-foreground">If you're having trouble with data import or have questions about PSUR requirements, contact your regulatory affairs team or system administrator.</p>

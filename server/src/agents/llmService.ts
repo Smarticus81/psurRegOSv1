@@ -34,7 +34,7 @@ const DEFAULT_CONFIG: Required<LLMConfig> = {
   model: "gpt-4o",
   temperature: 0.1,
   maxTokens: 4096,
-  timeout: 60000,
+  timeout: 180000,
   retryCount: 3,
   retryDelay: 1000,
 };
@@ -2558,19 +2558,38 @@ async function executeOpenAI(
   // Newer models (o-series, gpt-5.x) use max_completion_tokens instead of max_tokens
   const usesCompletionTokens = model.startsWith("o1") || model.startsWith("o3") || model.startsWith("o4") || model.startsWith("gpt-5");
   
-  const response = await client.chat.completions.create({
-    model,
-    messages: request.messages.map(m => ({
-      role: m.role,
-      content: m.content,
-    })),
-    temperature: config.temperature,
-    ...(usesCompletionTokens 
-      ? { max_completion_tokens: config.maxTokens }
-      : { max_tokens: config.maxTokens }
-    ),
-    response_format: request.responseFormat === "json" ? { type: "json_object" } : undefined,
-  });
+  const controller = new AbortController();
+  const timeoutMs = Math.max(1_000, config.timeout || DEFAULT_CONFIG.timeout);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let response: any;
+  try {
+    response = await (client.chat.completions.create as any)(
+      {
+        model,
+        messages: request.messages.map(m => ({
+          role: m.role,
+          content: m.content,
+        })),
+        temperature: config.temperature,
+        ...(usesCompletionTokens
+          ? { max_completion_tokens: config.maxTokens }
+          : { max_tokens: config.maxTokens }
+        ),
+        response_format: request.responseFormat === "json" ? { type: "json_object" } : undefined,
+      },
+      {
+        signal: controller.signal,
+        timeout: timeoutMs,
+      }
+    );
+  } catch (e: any) {
+    if (e?.name === "AbortError") {
+      throw new Error(`OpenAI request timed out after ${timeoutMs}ms`);
+    }
+    throw e;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   const choice = response.choices[0];
 
@@ -2604,15 +2623,34 @@ async function executeAnthropic(
   const systemMessage = request.messages.find(m => m.role === "system");
   const userMessages = request.messages.filter(m => m.role !== "system");
 
-  const response = await client.messages.create({
-    model,
-    max_tokens: config.maxTokens,
-    system: systemMessage?.content,
-    messages: userMessages.map(m => ({
-      role: m.role as "user" | "assistant",
-      content: m.content,
-    })),
-  });
+  const controller = new AbortController();
+  const timeoutMs = Math.max(1_000, config.timeout || DEFAULT_CONFIG.timeout);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let response: any;
+  try {
+    response = await (client.messages.create as any)(
+      {
+        model,
+        max_tokens: config.maxTokens,
+        system: systemMessage?.content,
+        messages: userMessages.map(m => ({
+          role: m.role as "user" | "assistant",
+          content: m.content,
+        })),
+      },
+      {
+        signal: controller.signal,
+        timeout: timeoutMs,
+      }
+    );
+  } catch (e: any) {
+    if (e?.name === "AbortError") {
+      throw new Error(`Anthropic request timed out after ${timeoutMs}ms`);
+    }
+    throw e;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   const textContent = response.content.find(c => c.type === "text");
 

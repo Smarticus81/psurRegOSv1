@@ -783,31 +783,65 @@ function buildDocumentContext(document: ParsedDocument): string {
 }
 
 function parseJsonResponse(content: string): any {
+  const raw = (content || "").replace(/^\uFEFF/, "").trim();
+  if (!raw) return {};
+
   try {
-    // Try direct parse
-    return JSON.parse(content);
+    return JSON.parse(raw);
   } catch {
     // Try extracting from markdown code block
-    const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
+    const jsonMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
     if (jsonMatch) {
       try {
         return JSON.parse(jsonMatch[1].trim());
       } catch {
-        // Continue to fallback
+        // fall through
       }
     }
-    
-    // Try finding JSON object in text
-    const objectMatch = content.match(/\{[\s\S]*\}/);
+
+    // Try largest balanced { ... } block
+    const firstBrace = raw.indexOf("{");
+    if (firstBrace !== -1) {
+      let depth = 0;
+      let end = -1;
+      for (let i = firstBrace; i < raw.length; i++) {
+        if (raw[i] === "{") depth++;
+        else if (raw[i] === "}") {
+          depth--;
+          if (depth === 0) {
+            end = i;
+            break;
+          }
+        }
+      }
+      if (end !== -1) {
+        const block = raw.slice(firstBrace, end + 1);
+        try {
+          return JSON.parse(block);
+        } catch {
+          try {
+            return JSON.parse(block.replace(/,(\s*[}\]])/g, "$1"));
+          } catch {
+            // fall through
+          }
+        }
+      }
+    }
+
+    const objectMatch = raw.match(/\{[\s\S]*\}/);
     if (objectMatch) {
       try {
         return JSON.parse(objectMatch[0]);
       } catch {
-        // Continue to fallback
+        try {
+          return JSON.parse(objectMatch[0].replace(/,(\s*[}\]])/g, "$1"));
+        } catch {
+          // fall through
+        }
       }
     }
-    
-    console.warn("[Schema Discovery] Failed to parse JSON response:", content.substring(0, 200));
+
+    console.warn("[Schema Discovery] Failed to parse JSON response:", raw.substring(0, 200));
     return {};
   }
 }

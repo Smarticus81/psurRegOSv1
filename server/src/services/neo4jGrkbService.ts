@@ -129,6 +129,7 @@ export async function setupGrkbSchema(): Promise<boolean> {
       "CREATE CONSTRAINT slot_id IF NOT EXISTS FOR (s:Slot) REQUIRE s.slotId IS UNIQUE",
       "CREATE CONSTRAINT evidence_type_id IF NOT EXISTS FOR (e:EvidenceType) REQUIRE e.typeId IS UNIQUE",
       "CREATE CONSTRAINT regulation_id IF NOT EXISTS FOR (r:Regulation) REQUIRE r.regulationId IS UNIQUE",
+      "CREATE CONSTRAINT context_section_id IF NOT EXISTS FOR (c:ContextSection) REQUIRE c.sectionId IS UNIQUE",
     ];
 
     const indexes = [
@@ -316,6 +317,62 @@ export async function createSlotObligationMapping(
   } catch (error) {
     console.error("[Neo4j] Create mapping failed:", error);
     return false;
+  } finally {
+    await session.close();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// REGULATORY CONTEXT SECTIONS (16-section PSUR knowledge for graph)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Sync PSUR regulatory context sections from psurRegulatoryContext to Neo4j.
+ * Creates ContextSection nodes and APPLIES_TO relationships to Slots.
+ * Used for knowledge graph visualization and queries; runtime generation reads from the constants module.
+ */
+export async function syncRegulatoryContextSectionsToNeo4j(): Promise<number> {
+  const session = getSession();
+  if (!session) return 0;
+
+  const { PSUR_REGULATORY_CONTEXT_SECTIONS } = await import("../constants/psurRegulatoryContext");
+  let synced = 0;
+
+  try {
+    for (const section of PSUR_REGULATORY_CONTEXT_SECTIONS) {
+      const contentSummary =
+        typeof section.content === "string"
+          ? section.content.substring(0, 4000)
+          : JSON.stringify(section.content).substring(0, 4000);
+
+      await session.run(
+        `
+        MERGE (c:ContextSection {sectionId: $sectionId})
+        SET c.title = $title,
+            c.contentSummary = $contentSummary,
+            c.updatedAt = datetime()
+        WITH c
+        UNWIND $slotIds AS slotId
+        OPTIONAL MATCH (s:Slot {slotId: slotId})
+        WITH c, s
+        WHERE s IS NOT NULL
+        MERGE (c)-[:APPLIES_TO]->(s)
+        RETURN c
+        `,
+        {
+          sectionId: section.id,
+          title: section.title,
+          contentSummary,
+          slotIds: section.slotIds ?? [],
+        }
+      );
+      synced++;
+    }
+    console.log(`[Neo4j] Synced ${synced} regulatory context sections to graph`);
+    return synced;
+  } catch (error) {
+    console.error("[Neo4j] Sync regulatory context sections failed:", error);
+    return synced;
   } finally {
     await session.close();
   }

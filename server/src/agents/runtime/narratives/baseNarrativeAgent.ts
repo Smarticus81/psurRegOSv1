@@ -4,10 +4,11 @@
  * Foundation for all section-specific narrative agents.
  * Provides common functionality for PSUR narrative generation.
  * 
- * Uses 3-layer prompt architecture:
+ * Uses 4-layer prompt architecture:
  * - Layer 1: Agent Persona (WHO)
  * - Layer 2: System Prompt (WHAT) - loaded from DATABASE ONLY
  * - Layer 3: Template Field Instructions (HOW)
+ * - Layer 4: Device Dossier Context (SPECIFICS) - rich device context for non-generic content
  * 
  * SINGLE SOURCE OF TRUTH: All prompts come from the database.
  * Visit System Instructions page to manage prompts.
@@ -17,6 +18,7 @@ import { BaseAgent, AgentConfig, AgentContext, createAgentConfig } from "../../b
 import { createTraceBuilder } from "../../../services/compileTraceRepository";
 import { composeSystemMessage } from "../../promptLayers";
 import { getPromptTemplate } from "../../llmService";
+import { getDossierContext, type DossierContext } from "../../../services/deviceDossierService";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -144,6 +146,16 @@ export abstract class BaseNarrativeAgent extends BaseAgent<NarrativeInput, Narra
       evidenceCount: input.evidenceAtoms.length,
     });
 
+    // Fetch device dossier context for non-generic content generation
+    const dossierContext = await this.fetchDossierContext(input);
+    
+    await this.logTrace("DOSSIER_CONTEXT_LOADED", "INFO", "SLOT", input.slot.slotId, {
+      completenessScore: dossierContext.completenessScore,
+      hasClinicalBenefits: dossierContext.clinicalBenefits.length > 0,
+      hasRiskThresholds: !!dossierContext.riskThresholds,
+      hasPriorPsur: !!dossierContext.priorPsurConclusion,
+    });
+
     // Check for data gaps
     const gaps = this.identifyGaps(input);
     for (const gap of gaps) {
@@ -154,8 +166,8 @@ export abstract class BaseNarrativeAgent extends BaseAgent<NarrativeInput, Narra
     const evidenceSummary = this.generateEvidenceSummary(input.evidenceAtoms);
     const evidenceRecords = this.formatEvidenceRecords(input.evidenceAtoms);
 
-    // Build the prompt
-    const userPrompt = this.buildUserPrompt(input, evidenceSummary, evidenceRecords);
+    // Build the prompt with dossier context
+    const userPrompt = this.buildUserPrompt(input, evidenceSummary, evidenceRecords, dossierContext);
 
     // Get composed system message (3-layer architecture)
     const systemMessage = await this.getComposedSystemMessage();
@@ -223,6 +235,22 @@ export abstract class BaseNarrativeAgent extends BaseAgent<NarrativeInput, Narra
   }
 
   // ═══════════════════════════════════════════════════════════════════════════════
+  // DOSSIER CONTEXT - Rich device-specific context for non-generic content
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Fetch device dossier context for enriching prompts.
+   * Subclasses can override to customize context fetching.
+   */
+  protected async fetchDossierContext(input: NarrativeInput): Promise<DossierContext> {
+    return getDossierContext(
+      input.context.deviceCode,
+      input.context.periodStart,
+      input.context.periodEnd
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════════
   // ABSTRACT METHODS - Must be implemented by subclasses
   // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -232,24 +260,34 @@ export abstract class BaseNarrativeAgent extends BaseAgent<NarrativeInput, Narra
   protected abstract identifyGaps(input: NarrativeInput): string[];
 
   /**
-   * Build section-specific user prompt
+   * Build section-specific user prompt with dossier context.
+   * 
+   * Subclasses should override this to include section-specific context.
+   * The dossierContext parameter provides rich device-specific information
+   * that should be used to generate non-generic, device-appropriate content.
    */
   protected buildUserPrompt(
     input: NarrativeInput,
     evidenceSummary: string,
-    evidenceRecords: string
+    evidenceRecords: string,
+    dossierContext?: DossierContext
   ): string {
     // Build list of actual atom IDs for reference
     const atomIdList = input.evidenceAtoms.slice(0, 20).map(a => a.atomId).join(", ");
+
+    if (!dossierContext?.dossierExists) {
+      throw new Error("Device dossier required for narrative generation. Create and complete a device dossier first.");
+    }
+    const dossierSection = this.formatDossierContextForPrompt(dossierContext);
 
     return `## Section: ${input.slot.title}
 ## Section Requirements: ${input.slot.requirements || "Generate appropriate content based on evidence"}
 ## Template Guidance: ${input.slot.guidance || "Follow regulatory best practices"}
 
-## Device Context:
-- Device Code: ${input.context.deviceCode}
-- Device Name: ${input.context.deviceName || "N/A"}
-- Reporting Period: ${input.context.periodStart} to ${input.context.periodEnd}
+${dossierSection}
+
+## REPORTING PERIOD:
+- Period: ${input.context.periodStart} to ${input.context.periodEnd}
 
 ## Evidence Summary:
 ${evidenceSummary}
@@ -257,12 +295,63 @@ ${evidenceSummary}
 ## Detailed Evidence Records:
 ${evidenceRecords}
 
-## CRITICAL CITATION RULES:
+## CRITICAL INSTRUCTIONS:
 - DO NOT use placeholder citations like [ATOM-001], [ATOM-002], [ATOM-xxx]
 - ONLY cite actual atom IDs that appear in the evidence records above
 - Available atom IDs: ${atomIdList || "None provided"}
 - If no relevant evidence, write the narrative WITHOUT citations
-- Focus on content quality, not citation density`;
+- USE THE DOSSIER CONTEXT to write device-specific, non-generic content
+- Reference specific clinical benefits, risk thresholds, and prior PSUR conclusions where relevant
+- Focus on content quality and regulatory compliance`;
+  }
+
+  /**
+   * Format dossier context for inclusion in the prompt.
+   * Subclasses can override to customize which dossier sections are included.
+   */
+  protected formatDossierContextForPrompt(dossier: DossierContext): string {
+    const sections: string[] = [];
+
+    if (dossier.regulatoryAlignment) {
+      sections.push(dossier.regulatoryAlignment);
+    }
+
+    if (dossier.regulatoryKnowledgeContext) {
+      sections.push("---");
+      sections.push(dossier.regulatoryKnowledgeContext);
+    }
+
+    if (dossier.productSummary) {
+      sections.push("---");
+      sections.push(dossier.productSummary);
+    }
+
+    if (dossier.clinicalContext) {
+      sections.push("---");
+      sections.push(dossier.clinicalContext);
+    }
+
+    if (dossier.riskContext) {
+      sections.push("---");
+      sections.push(dossier.riskContext);
+    }
+
+    if (dossier.regulatoryContext) {
+      sections.push("---");
+      sections.push(dossier.regulatoryContext);
+    }
+
+    if (dossier.priorPsurContext) {
+      sections.push("---");
+      sections.push(dossier.priorPsurContext);
+    }
+
+    if (dossier.baselineContext) {
+      sections.push("---");
+      sections.push(dossier.baselineContext);
+    }
+
+    return sections.join("\n\n");
   }
 
   // ═══════════════════════════════════════════════════════════════════════════════

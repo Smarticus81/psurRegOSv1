@@ -17,6 +17,7 @@ import {
   Home,
   Lock,
   LogOut,
+  FileBox,
 } from "lucide-react"
 
 const navGroups = [
@@ -32,6 +33,7 @@ const navGroups = [
     label: "Configuration",
     items: [
       { name: "Templates", href: "/templates", icon: Layers, public: false },
+      { name: "Dossiers", href: "/dossiers", icon: FileBox, public: false },
       { name: "Agent Config", href: "/prompts", icon: Brain, public: false },
       { name: "Regulatory", href: "/regulatory", icon: Globe, public: true },
     ],

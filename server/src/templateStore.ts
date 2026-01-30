@@ -31,8 +31,21 @@ import {
   type FormTemplate,
 } from "./templates/formTemplateSchema";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// NOTE:
+// - In dev this file runs as ESM → import.meta.url is available
+// - In prod build we bundle to CJS via esbuild (format=cjs) → import.meta is empty
+// This helper avoids runtime crashes in the CJS bundle.
+function getModuleDirname(): string {
+  try {
+    // ESM path
+    return path.dirname(fileURLToPath(import.meta.url));
+  } catch {
+    // CJS bundle fallback
+    return process.cwd();
+  }
+}
+
+const __dirname = getModuleDirname();
 
 type HttpError = Error & { status?: number };
 

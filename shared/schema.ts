@@ -1826,3 +1826,435 @@ export const instructionVersionsRelations = relations(instructionVersions, ({ on
     references: [systemInstructions.key],
   }),
 }));
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DEVICE DOSSIER CONTEXT SYSTEM
+// Rich device-specific context for non-generic PSUR content generation
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ============== DEVICE DOSSIERS ==============
+// Core dossier table - one per device
+export const deviceDossiers = pgTable("device_dossiers", {
+  id: serial("id").primaryKey(),
+  deviceCode: text("device_code").notNull().unique(),
+  deviceId: integer("device_id").references(() => devices.id, { onDelete: "set null" }),
+  
+  // Identity
+  basicUdiDi: text("basic_udi_di"),
+  tradeName: text("trade_name").notNull(),
+  manufacturerName: text("manufacturer_name"),
+  
+  // Classification
+  classification: jsonb("classification").$type<{
+    class: "I" | "IIa" | "IIb" | "III";
+    rule: string;
+    rationale: string;
+  }>(),
+  
+  // Device variants and accessories
+  variants: jsonb("variants").$type<Array<{
+    variantId: string;
+    name: string;
+    udiDi?: string;
+    description?: string;
+  }>>(),
+  accessories: text("accessories").array().default(sql`ARRAY[]::text[]`),
+  
+  // Software info (if applicable)
+  software: jsonb("software").$type<{
+    version: string;
+    significantChanges: string[];
+    isSaMD: boolean;
+  }>(),
+  
+  // Market info
+  marketEntryDate: timestamp("market_entry_date"),
+  cumulativeExposure: jsonb("cumulative_exposure").$type<{
+    patientYears?: number;
+    unitsDistributed?: number;
+    asOfDate: string;
+  }>(),
+  
+  // Dossier completeness tracking
+  completenessScore: integer("completeness_score").default(0), // 0-100
+  lastValidatedAt: timestamp("last_validated_at"),
+  
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, (t) => ({
+  deviceCodeIdx: uniqueIndex("device_dossiers_device_code_idx").on(t.deviceCode),
+}));
+
+export const insertDeviceDossierSchema = createInsertSchema(deviceDossiers).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type DeviceDossier = typeof deviceDossiers.$inferSelect;
+export type InsertDeviceDossier = z.infer<typeof insertDeviceDossierSchema>;
+
+// ============== DOSSIER CLINICAL CONTEXT ==============
+// Clinical/therapeutic context for the device
+export const dossierClinicalContext = pgTable("dossier_clinical_context", {
+  id: serial("id").primaryKey(),
+  deviceCode: text("device_code").notNull().references(() => deviceDossiers.deviceCode, { onDelete: "cascade" }),
+  
+  // Intended purpose (verbatim from IFU)
+  intendedPurpose: text("intended_purpose").notNull(),
+  
+  // Indications and contraindications
+  indications: text("indications").array().default(sql`ARRAY[]::text[]`),
+  contraindications: text("contraindications").array().default(sql`ARRAY[]::text[]`),
+  
+  // Target population
+  targetPopulation: jsonb("target_population").$type<{
+    description: string;
+    ageRange?: { min: number; max: number };
+    conditions: string[];
+    excludedPopulations: string[];
+  }>(),
+  
+  // Clinical benefits (key for B/R assessment)
+  clinicalBenefits: jsonb("clinical_benefits").$type<Array<{
+    benefitId: string;
+    description: string;
+    endpoint: string;
+    evidenceSource: string;
+    quantifiedValue?: string;
+  }>>(),
+  
+  // Alternative treatments (for B/R context)
+  alternativeTreatments: text("alternative_treatments").array().default(sql`ARRAY[]::text[]`),
+  
+  // State of the art
+  stateOfTheArt: jsonb("state_of_the_art").$type<{
+    description: string;
+    benchmarkDevices: string[];
+    performanceThresholds: Record<string, number>;
+  }>(),
+  
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, (t) => ({
+  deviceCodeIdx: uniqueIndex("dossier_clinical_device_code_idx").on(t.deviceCode),
+}));
+
+export const insertDossierClinicalContextSchema = createInsertSchema(dossierClinicalContext).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type DossierClinicalContext = typeof dossierClinicalContext.$inferSelect;
+export type InsertDossierClinicalContext = z.infer<typeof insertDossierClinicalContextSchema>;
+
+// ============== DOSSIER RISK CONTEXT ==============
+// Risk management context from Risk Analysis/FMEA
+export const dossierRiskContext = pgTable("dossier_risk_context", {
+  id: serial("id").primaryKey(),
+  deviceCode: text("device_code").notNull().references(() => deviceDossiers.deviceCode, { onDelete: "cascade" }),
+  
+  // Principal identified risks (top risks from risk file)
+  principalRisks: jsonb("principal_risks").$type<Array<{
+    riskId: string;
+    hazard: string;
+    harm: string;
+    severity: "Negligible" | "Minor" | "Serious" | "Critical" | "Catastrophic";
+    probability: string;
+    preMarketOccurrenceRate?: number;
+    mitigations: string[];
+    residualRiskAcceptable: boolean;
+  }>>(),
+  
+  // Risk acceptability criteria
+  residualRiskAcceptability: jsonb("residual_risk_acceptability").$type<{
+    criteria: string;
+    afapAnalysisSummary: string;
+  }>(),
+  
+  // Signal detection thresholds
+  riskThresholds: jsonb("risk_thresholds").$type<{
+    complaintRateThreshold: number;
+    seriousIncidentThreshold: number;
+    signalDetectionMethod: string;
+  }>(),
+  
+  // Hazard categories for IMDRF mapping
+  hazardCategories: text("hazard_categories").array().default(sql`ARRAY[]::text[]`),
+  
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, (t) => ({
+  deviceCodeIdx: uniqueIndex("dossier_risk_device_code_idx").on(t.deviceCode),
+}));
+
+export const insertDossierRiskContextSchema = createInsertSchema(dossierRiskContext).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type DossierRiskContext = typeof dossierRiskContext.$inferSelect;
+export type InsertDossierRiskContext = z.infer<typeof insertDossierRiskContextSchema>;
+
+// ============== DOSSIER PRIOR PSURS ==============
+// Summaries of prior PSURs for continuity
+export const dossierPriorPsurs = pgTable("dossier_prior_psurs", {
+  id: serial("id").primaryKey(),
+  deviceCode: text("device_code").notNull().references(() => deviceDossiers.deviceCode, { onDelete: "cascade" }),
+  
+  // Period
+  periodStart: timestamp("period_start").notNull(),
+  periodEnd: timestamp("period_end").notNull(),
+  psurReference: text("psur_reference"),
+  
+  // Conclusions
+  benefitRiskConclusion: text("benefit_risk_conclusion"), // "Favorable" | "Acceptable" | "Unfavorable"
+  keyFindings: text("key_findings").array().default(sql`ARRAY[]::text[]`),
+  
+  // Actions and commitments
+  actionsRequired: jsonb("actions_required").$type<Array<{
+    actionId: string;
+    description: string;
+    dueDate?: string;
+    completed: boolean;
+    completedDate?: string;
+  }>>(),
+  
+  // Key metrics from that period (for trend comparison)
+  periodMetrics: jsonb("period_metrics").$type<{
+    totalUnits?: number;
+    totalComplaints?: number;
+    complaintRate?: number;
+    seriousIncidents?: number;
+    fscaCount?: number;
+  }>(),
+  
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, (t) => ({
+  deviceCodeIdx: index("dossier_prior_psurs_device_code_idx").on(t.deviceCode),
+  periodIdx: index("dossier_prior_psurs_period_idx").on(t.periodStart, t.periodEnd),
+}));
+
+export const insertDossierPriorPsurSchema = createInsertSchema(dossierPriorPsurs).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type DossierPriorPsur = typeof dossierPriorPsurs.$inferSelect;
+export type InsertDossierPriorPsur = z.infer<typeof insertDossierPriorPsurSchema>;
+
+// ============== DOSSIER BASELINES ==============
+// Historical performance baselines for trend analysis
+export const dossierBaselines = pgTable("dossier_baselines", {
+  id: serial("id").primaryKey(),
+  deviceCode: text("device_code").notNull().references(() => deviceDossiers.deviceCode, { onDelete: "cascade" }),
+  
+  // Metric identification
+  metricType: text("metric_type").notNull(), // complaint_rate, incident_rate, return_rate, etc.
+  
+  // Period for this baseline
+  periodStart: timestamp("period_start").notNull(),
+  periodEnd: timestamp("period_end").notNull(),
+  
+  // Value
+  value: text("value").notNull(), // Stored as text for precision
+  denominator: integer("denominator"), // Units sold/distributed
+  unit: text("unit"), // "per_1000_units", "percent", "count"
+  
+  // Methodology
+  methodology: text("methodology"), // How baseline was calculated
+  dataSource: text("data_source"), // Where data came from
+  
+  // Confidence
+  confidence: text("confidence"), // High, Medium, Low
+  notes: text("notes"),
+  
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, (t) => ({
+  deviceCodeIdx: index("dossier_baselines_device_code_idx").on(t.deviceCode),
+  metricTypeIdx: index("dossier_baselines_metric_type_idx").on(t.metricType),
+}));
+
+export const insertDossierBaselineSchema = createInsertSchema(dossierBaselines).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type DossierBaseline = typeof dossierBaselines.$inferSelect;
+export type InsertDossierBaseline = z.infer<typeof insertDossierBaselineSchema>;
+
+// ============== DOSSIER CLINICAL EVIDENCE ==============
+// Clinical evidence foundation (CER, PMCF, Literature)
+export const dossierClinicalEvidence = pgTable("dossier_clinical_evidence", {
+  id: serial("id").primaryKey(),
+  deviceCode: text("device_code").notNull().references(() => deviceDossiers.deviceCode, { onDelete: "cascade" }),
+  
+  // CER conclusions
+  cerConclusions: jsonb("cer_conclusions").$type<{
+    lastUpdateDate: string;
+    benefitRiskConclusion: string;
+    keyFindings: string[];
+    dataGapsIdentified: string[];
+  }>(),
+  
+  // PMCF plan
+  pmcfPlan: jsonb("pmcf_plan").$type<{
+    objectives: string[];
+    endpoints: Array<{
+      endpointId: string;
+      description: string;
+      targetValue?: string;
+      measurementMethod?: string;
+    }>;
+    targetEnrollment?: number;
+    currentStatus: string;
+    studyIds?: string[];
+  }>(),
+  
+  // Literature search protocol
+  literatureSearchProtocol: jsonb("literature_search_protocol").$type<{
+    databases: string[];
+    searchStrings: string[];
+    inclusionCriteria: string[];
+    exclusionCriteria: string[];
+    lastSearchDate: string;
+  }>(),
+  
+  // External database search protocol (MDCG 2022-21 Section 10)
+  externalDbSearchProtocol: jsonb("external_db_search_protocol").$type<{
+    databases: string[];
+    queryTerms: string[];
+    dateRange?: string;
+    lastSearchDate: string;
+    relevanceCriteria: string[];
+  }>(),
+  
+  // Equivalent devices (if equivalence route)
+  equivalentDevices: jsonb("equivalent_devices").$type<Array<{
+    deviceName: string;
+    manufacturer: string;
+    equivalenceType: "Technical" | "Biological" | "Clinical";
+    equivalenceJustification: string;
+  }>>(),
+  
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, (t) => ({
+  deviceCodeIdx: uniqueIndex("dossier_clinical_evidence_device_code_idx").on(t.deviceCode),
+}));
+
+export const insertDossierClinicalEvidenceSchema = createInsertSchema(dossierClinicalEvidence).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type DossierClinicalEvidence = typeof dossierClinicalEvidence.$inferSelect;
+export type InsertDossierClinicalEvidence = z.infer<typeof insertDossierClinicalEvidenceSchema>;
+
+// ============== DOSSIER REGULATORY HISTORY ==============
+// Regulatory certificates, commitments, and history
+export const dossierRegulatoryHistory = pgTable("dossier_regulatory_history", {
+  id: serial("id").primaryKey(),
+  deviceCode: text("device_code").notNull().references(() => deviceDossiers.deviceCode, { onDelete: "cascade" }),
+  
+  // Certificates
+  certificates: jsonb("certificates").$type<Array<{
+    certificateId: string;
+    type: string; // EC Certificate, UK CA Mark, etc.
+    notifiedBody: string;
+    issueDate: string;
+    expiryDate: string;
+    scope: string;
+    status: "Active" | "Expired" | "Suspended" | "Withdrawn";
+  }>>(),
+  
+  // NB Commitments/Conditions
+  nbCommitments: jsonb("nb_commitments").$type<Array<{
+    commitmentId: string;
+    description: string;
+    source: string; // Which audit/review
+    dueDate?: string;
+    status: "Open" | "In Progress" | "Completed" | "Overdue";
+    completedDate?: string;
+    evidence?: string;
+  }>>(),
+  
+  // FSCA History
+  fscaHistory: jsonb("fsca_history").$type<Array<{
+    fscaId: string;
+    type: string; // Recall, Advisory, etc.
+    initiationDate: string;
+    description: string;
+    affectedUnits?: number;
+    regions: string[];
+    status: "Active" | "Completed";
+    completionDate?: string;
+  }>>(),
+  
+  // Design changes
+  designChanges: jsonb("design_changes").$type<Array<{
+    changeId: string;
+    description: string;
+    effectiveDate: string;
+    type: string; // Hardware, Software, Labeling, etc.
+    significance: "Significant" | "Non-Significant";
+    regulatoryImpact: string;
+  }>>(),
+  
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+}, (t) => ({
+  deviceCodeIdx: uniqueIndex("dossier_regulatory_device_code_idx").on(t.deviceCode),
+}));
+
+export const insertDossierRegulatoryHistorySchema = createInsertSchema(dossierRegulatoryHistory).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type DossierRegulatoryHistory = typeof dossierRegulatoryHistory.$inferSelect;
+export type InsertDossierRegulatoryHistory = z.infer<typeof insertDossierRegulatoryHistorySchema>;
+
+// ============== DOSSIER RELATIONS ==============
+export const deviceDossiersRelations = relations(deviceDossiers, ({ one, many }) => ({
+  device: one(devices, {
+    fields: [deviceDossiers.deviceId],
+    references: [devices.id],
+  }),
+  clinicalContext: one(dossierClinicalContext, {
+    fields: [deviceDossiers.deviceCode],
+    references: [dossierClinicalContext.deviceCode],
+  }),
+  riskContext: one(dossierRiskContext, {
+    fields: [deviceDossiers.deviceCode],
+    references: [dossierRiskContext.deviceCode],
+  }),
+  clinicalEvidence: one(dossierClinicalEvidence, {
+    fields: [deviceDossiers.deviceCode],
+    references: [dossierClinicalEvidence.deviceCode],
+  }),
+  regulatoryHistory: one(dossierRegulatoryHistory, {
+    fields: [deviceDossiers.deviceCode],
+    references: [dossierRegulatoryHistory.deviceCode],
+  }),
+  priorPsurs: many(dossierPriorPsurs),
+  baselines: many(dossierBaselines),
+}));
+
+export const dossierPriorPsursRelations = relations(dossierPriorPsurs, ({ one }) => ({
+  dossier: one(deviceDossiers, {
+    fields: [dossierPriorPsurs.deviceCode],
+    references: [deviceDossiers.deviceCode],
+  }),
+}));
+
+export const dossierBaselinesRelations = relations(dossierBaselines, ({ one }) => ({
+  dossier: one(deviceDossiers, {
+    fields: [dossierBaselines.deviceCode],
+    references: [deviceDossiers.deviceCode],
+  }),
+}));

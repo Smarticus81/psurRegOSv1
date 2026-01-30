@@ -6868,5 +6868,372 @@ Execute according to your persona instructions.`
     }
   });
 
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // DEVICE DOSSIER ROUTES
+  // Rich device context for non-generic PSUR content generation
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  const {
+    listDossiers,
+    getFullDossier,
+    getDossierContext,
+    createDossier,
+    updateDossier,
+    deleteDossier,
+    upsertClinicalContext,
+    upsertRiskContext,
+    upsertClinicalEvidence,
+    upsertRegulatoryHistory,
+    addPriorPsur,
+    updatePriorPsur,
+    deletePriorPsur,
+    addBaseline,
+    updateBaseline,
+    deleteBaseline,
+    updateCompletenessScore,
+    dossierExists,
+    autoPopulateDossierFromEvidence,
+  } = await import("./src/services/deviceDossierService");
+
+  // List all dossiers
+  app.get("/api/device-dossiers", async (_req, res) => {
+    try {
+      const dossiers = await listDossiers();
+      res.json(dossiers);
+    } catch (error: any) {
+      console.error("[GET /api/device-dossiers] Error:", error);
+      res.status(500).json({ error: "Failed to list dossiers", details: error.message });
+    }
+  });
+
+  // Get full dossier by device code
+  app.get("/api/device-dossiers/:deviceCode", async (req, res) => {
+    try {
+      const dossier = await getFullDossier(req.params.deviceCode);
+      if (!dossier) {
+        return res.status(404).json({ error: "Dossier not found" });
+      }
+      res.json(dossier);
+    } catch (error: any) {
+      console.error("[GET /api/device-dossiers/:deviceCode] Error:", error);
+      res.status(500).json({ error: "Failed to get dossier", details: error.message });
+    }
+  });
+
+  // Get dossier context for agent use (formatted strings)
+  app.get("/api/device-dossiers/:deviceCode/context", async (req, res) => {
+    try {
+      const { periodStart, periodEnd } = req.query;
+      const context = await getDossierContext(
+        req.params.deviceCode,
+        periodStart as string | undefined,
+        periodEnd as string | undefined
+      );
+      res.json(context);
+    } catch (error: any) {
+      console.error("[GET /api/device-dossiers/:deviceCode/context] Error:", error);
+      res.status(500).json({ error: "Failed to get dossier context", details: error.message });
+    }
+  });
+
+  // Check if dossier exists
+  app.get("/api/device-dossiers/:deviceCode/exists", async (req, res) => {
+    try {
+      const exists = await dossierExists(req.params.deviceCode);
+      res.json({ exists });
+    } catch (error: any) {
+      console.error("[GET /api/device-dossiers/:deviceCode/exists] Error:", error);
+      res.status(500).json({ error: "Failed to check dossier existence", details: error.message });
+    }
+  });
+
+  // Create new dossier
+  app.post("/api/device-dossiers", async (req, res) => {
+    try {
+      const dossier = await createDossier(req.body);
+      res.status(201).json(dossier);
+    } catch (error: any) {
+      console.error("[POST /api/device-dossiers] Error:", error);
+      if (error.code === "23505") { // Unique violation
+        return res.status(409).json({ error: "Dossier already exists for this device code" });
+      }
+      res.status(500).json({ error: "Failed to create dossier", details: error.message });
+    }
+  });
+
+  // Update dossier core data
+  app.patch("/api/device-dossiers/:deviceCode", async (req, res) => {
+    try {
+      const dossier = await updateDossier(req.params.deviceCode, req.body);
+      if (!dossier) {
+        return res.status(404).json({ error: "Dossier not found" });
+      }
+      res.json(dossier);
+    } catch (error: any) {
+      console.error("[PATCH /api/device-dossiers/:deviceCode] Error:", error);
+      res.status(500).json({ error: "Failed to update dossier", details: error.message });
+    }
+  });
+
+  // Delete dossier
+  app.delete("/api/device-dossiers/:deviceCode", async (req, res) => {
+    try {
+      const deleted = await deleteDossier(req.params.deviceCode);
+      if (!deleted) {
+        return res.status(404).json({ error: "Dossier not found" });
+      }
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("[DELETE /api/device-dossiers/:deviceCode] Error:", error);
+      res.status(500).json({ error: "Failed to delete dossier", details: error.message });
+    }
+  });
+
+  // Update completeness score
+  app.post("/api/device-dossiers/:deviceCode/completeness", async (req, res) => {
+    try {
+      const score = await updateCompletenessScore(req.params.deviceCode);
+      res.json({ completenessScore: score });
+    } catch (error: any) {
+      console.error("[POST /api/device-dossiers/:deviceCode/completeness] Error:", error);
+      res.status(500).json({ error: "Failed to update completeness score", details: error.message });
+    }
+  });
+
+  // --- Clinical Context ---
+  app.put("/api/device-dossiers/:deviceCode/clinical-context", async (req, res) => {
+    try {
+      const result = await upsertClinicalContext(req.params.deviceCode, req.body);
+      res.json(result);
+    } catch (error: any) {
+      console.error("[PUT /api/device-dossiers/:deviceCode/clinical-context] Error:", error);
+      res.status(500).json({ error: "Failed to update clinical context", details: error.message });
+    }
+  });
+
+  // --- Risk Context ---
+  app.put("/api/device-dossiers/:deviceCode/risk-context", async (req, res) => {
+    try {
+      const result = await upsertRiskContext(req.params.deviceCode, req.body);
+      res.json(result);
+    } catch (error: any) {
+      console.error("[PUT /api/device-dossiers/:deviceCode/risk-context] Error:", error);
+      res.status(500).json({ error: "Failed to update risk context", details: error.message });
+    }
+  });
+
+  // --- Clinical Evidence ---
+  app.put("/api/device-dossiers/:deviceCode/clinical-evidence", async (req, res) => {
+    try {
+      const result = await upsertClinicalEvidence(req.params.deviceCode, req.body);
+      res.json(result);
+    } catch (error: any) {
+      console.error("[PUT /api/device-dossiers/:deviceCode/clinical-evidence] Error:", error);
+      res.status(500).json({ error: "Failed to update clinical evidence", details: error.message });
+    }
+  });
+
+  // --- Regulatory History ---
+  app.put("/api/device-dossiers/:deviceCode/regulatory-history", async (req, res) => {
+    try {
+      const result = await upsertRegulatoryHistory(req.params.deviceCode, req.body);
+      res.json(result);
+    } catch (error: any) {
+      console.error("[PUT /api/device-dossiers/:deviceCode/regulatory-history] Error:", error);
+      res.status(500).json({ error: "Failed to update regulatory history", details: error.message });
+    }
+  });
+
+  // --- Prior PSURs ---
+  app.post("/api/device-dossiers/:deviceCode/prior-psurs", async (req, res) => {
+    try {
+      const result = await addPriorPsur(req.params.deviceCode, req.body);
+      res.status(201).json(result);
+    } catch (error: any) {
+      console.error("[POST /api/device-dossiers/:deviceCode/prior-psurs] Error:", error);
+      res.status(500).json({ error: "Failed to add prior PSUR", details: error.message });
+    }
+  });
+
+  app.patch("/api/device-dossiers/:deviceCode/prior-psurs/:id", async (req, res) => {
+    try {
+      const result = await updatePriorPsur(parseInt(req.params.id), req.body);
+      if (!result) {
+        return res.status(404).json({ error: "Prior PSUR not found" });
+      }
+      res.json(result);
+    } catch (error: any) {
+      console.error("[PATCH /api/device-dossiers/:deviceCode/prior-psurs/:id] Error:", error);
+      res.status(500).json({ error: "Failed to update prior PSUR", details: error.message });
+    }
+  });
+
+  app.delete("/api/device-dossiers/:deviceCode/prior-psurs/:id", async (req, res) => {
+    try {
+      const deleted = await deletePriorPsur(parseInt(req.params.id));
+      if (!deleted) {
+        return res.status(404).json({ error: "Prior PSUR not found" });
+      }
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("[DELETE /api/device-dossiers/:deviceCode/prior-psurs/:id] Error:", error);
+      res.status(500).json({ error: "Failed to delete prior PSUR", details: error.message });
+    }
+  });
+
+  // --- Baselines ---
+  app.post("/api/device-dossiers/:deviceCode/baselines", async (req, res) => {
+    try {
+      const result = await addBaseline(req.params.deviceCode, req.body);
+      res.status(201).json(result);
+    } catch (error: any) {
+      console.error("[POST /api/device-dossiers/:deviceCode/baselines] Error:", error);
+      res.status(500).json({ error: "Failed to add baseline", details: error.message });
+    }
+  });
+
+  app.patch("/api/device-dossiers/:deviceCode/baselines/:id", async (req, res) => {
+    try {
+      const result = await updateBaseline(parseInt(req.params.id), req.body);
+      if (!result) {
+        return res.status(404).json({ error: "Baseline not found" });
+      }
+      res.json(result);
+    } catch (error: any) {
+      console.error("[PATCH /api/device-dossiers/:deviceCode/baselines/:id] Error:", error);
+      res.status(500).json({ error: "Failed to update baseline", details: error.message });
+    }
+  });
+
+  app.delete("/api/device-dossiers/:deviceCode/baselines/:id", async (req, res) => {
+    try {
+      const deleted = await deleteBaseline(parseInt(req.params.id));
+      if (!deleted) {
+        return res.status(404).json({ error: "Baseline not found" });
+      }
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("[DELETE /api/device-dossiers/:deviceCode/baselines/:id] Error:", error);
+      res.status(500).json({ error: "Failed to delete baseline", details: error.message });
+    }
+  });
+
+  // --- Auto-populate dossier from uploaded documents ---
+  // Upload docs (CER/IFU/RMF/Certs/etc), run LLM extraction, and populate dossier fields.
+  app.post(
+    "/api/device-dossiers/:deviceCode/auto-populate",
+    upload.array("files", 20),
+    async (req, res) => {
+      try {
+        const deviceCode = req.params.deviceCode;
+        const overwrite =
+          req.body.overwrite === true ||
+          req.body.overwrite === "true" ||
+          req.body.overwrite === "1";
+        const useLLMInference =
+          req.body.useLLMInference === undefined ||
+          req.body.useLLMInference === null ||
+          req.body.useLLMInference === "" ||
+          req.body.useLLMInference === true ||
+          req.body.useLLMInference === "true" ||
+          req.body.useLLMInference === "1";
+
+        const files = req.files as Express.Multer.File[];
+        if (!files || files.length === 0) {
+          return res.status(400).json({ error: "No files uploaded" });
+        }
+
+        const exists = await dossierExists(deviceCode);
+        if (!exists) {
+          return res.status(404).json({ error: "Dossier not found. Create a dossier first." });
+        }
+
+        const periodEnd = req.body.periodEnd
+          ? new Date(req.body.periodEnd).toISOString().split("T")[0]
+          : new Date().toISOString().split("T")[0];
+        const periodStart = req.body.periodStart
+          ? new Date(req.body.periodStart).toISOString().split("T")[0]
+          : new Date(Date.now() - 730 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+
+        const { parseDocument } = await import("./src/parsers/documentParser");
+        const { extractEvidence } = await import("./src/parsers/evidenceExtractor");
+
+        const allEvidence: any[] = [];
+        const fileSummaries: any[] = [];
+
+        for (const file of files) {
+          const parsed = await parseDocument(file.buffer, file.originalname, {
+            extractTables: true,
+            extractSections: true,
+            maxTextLength: 2_000_000,
+          });
+
+          if (parsed.errors.length > 0 && parsed.rawText.length === 0 && parsed.tables.length === 0) {
+            fileSummaries.push({
+              filename: file.originalname,
+              success: false,
+              error: "Failed to parse document",
+              details: parsed.errors,
+            });
+            continue;
+          }
+
+          const extraction = await extractEvidence(parsed, "auto", {
+            deviceCode,
+            periodStart,
+            periodEnd,
+            useSOTA: true,
+          });
+
+          fileSummaries.push({
+            filename: file.originalname,
+            success: true,
+            evidenceCount: extraction.extractedEvidence.length,
+            suggestions: extraction.suggestions || [],
+            isCER: extraction.cerExtractionResult !== undefined,
+          });
+
+          for (const e of extraction.extractedEvidence) {
+            allEvidence.push({
+              evidenceType: e.evidenceType,
+              confidence: e.confidence,
+              data: e.data,
+              sourceName: e.sourceName || file.originalname,
+              sourceFile: file.originalname,
+            });
+          }
+        }
+
+        if (allEvidence.length === 0) {
+          return res.status(400).json({
+            error: "No extractable evidence found in uploaded documents.",
+            files: fileSummaries,
+          });
+        }
+
+        const applyResult = await autoPopulateDossierFromEvidence(deviceCode, allEvidence, {
+          overwrite,
+          useLLMInference,
+        });
+        const completenessScore = await updateCompletenessScore(deviceCode);
+        const dossier = await getFullDossier(deviceCode);
+
+        res.json({
+          success: true,
+          overwrite,
+          useLLMInference,
+          files: fileSummaries,
+          evidenceItemsProcessed: allEvidence.length,
+          applyResult,
+          completenessScore,
+          dossier,
+        });
+      } catch (error: any) {
+        console.error("[POST /api/device-dossiers/:deviceCode/auto-populate] Error:", error);
+        res.status(500).json({ error: "Failed to auto-populate dossier", details: error?.message });
+      }
+    }
+  );
+
   return httpServer;
 }

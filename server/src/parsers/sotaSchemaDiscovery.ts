@@ -786,25 +786,34 @@ function parseJsonResponse(content: string): any {
   const raw = (content || "").replace(/^\uFEFF/, "").trim();
   if (!raw) return {};
 
+  const tryParse = (str: string): any => {
+    const normalized = str.replace(/,(\s*[}\]])/g, "$1");
+    return JSON.parse(normalized);
+  };
+
   try {
-    return JSON.parse(raw);
+    return tryParse(raw);
   } catch {
     // Try extracting from markdown code block
     const jsonMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
     if (jsonMatch) {
       try {
-        return JSON.parse(jsonMatch[1].trim());
+        return tryParse(jsonMatch[1].trim());
       } catch {
         // fall through
       }
     }
 
-    // Try largest balanced { ... } block
-    const firstBrace = raw.indexOf("{");
-    if (firstBrace !== -1) {
+    // Try balanced { ... } blocks: first from start, then last occurrence (LLM often appends text after JSON)
+    const braceStarts: number[] = [];
+    for (let i = 0; i < raw.length; i++) {
+      if (raw[i] === "{") braceStarts.push(i);
+    }
+    const candidates: string[] = [];
+    for (const start of braceStarts) {
       let depth = 0;
       let end = -1;
-      for (let i = firstBrace; i < raw.length; i++) {
+      for (let i = start; i < raw.length; i++) {
         if (raw[i] === "{") depth++;
         else if (raw[i] === "}") {
           depth--;
@@ -814,34 +823,28 @@ function parseJsonResponse(content: string): any {
           }
         }
       }
-      if (end !== -1) {
-        const block = raw.slice(firstBrace, end + 1);
-        try {
-          return JSON.parse(block);
-        } catch {
-          try {
-            return JSON.parse(block.replace(/,(\s*[}\]])/g, "$1"));
-          } catch {
-            // fall through
-          }
-        }
+      if (end !== -1) candidates.push(raw.slice(start, end + 1));
+    }
+    for (const block of candidates.length > 0 ? [candidates[candidates.length - 1], ...candidates.slice(0, -1)] : []) {
+      try {
+        return tryParse(block);
+      } catch {
+        // fall through
       }
     }
 
     const objectMatch = raw.match(/\{[\s\S]*\}/);
     if (objectMatch) {
       try {
-        return JSON.parse(objectMatch[0]);
+        return tryParse(objectMatch[0]);
       } catch {
-        try {
-          return JSON.parse(objectMatch[0].replace(/,(\s*[}\]])/g, "$1"));
-        } catch {
-          // fall through
-        }
+        // fall through
       }
     }
 
-    console.warn("[Schema Discovery] Failed to parse JSON response:", raw.substring(0, 200));
+    if (raw.length > 0) {
+      console.warn("[Schema Discovery] Failed to parse JSON response:", raw.substring(0, 200));
+    }
     return {};
   }
 }

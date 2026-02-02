@@ -7218,6 +7218,56 @@ Execute according to your persona instructions.`
         const completenessScore = await updateCompletenessScore(deviceCode);
         const dossier = await getFullDossier(deviceCode);
 
+        // Also persist as evidence atoms for PSUR use if psurCaseId is provided
+        const psurCaseId = req.body.psurCaseId ? Number(req.body.psurCaseId) : null;
+        let atomsPersisted = 0;
+        let atomIds: string[] = [];
+
+        if (psurCaseId && !isNaN(psurCaseId)) {
+          console.log(`[Dossier Auto-Populate] Also persisting ${allEvidence.length} evidence items as atoms for PSUR case ${psurCaseId}`);
+          
+          const atomRecords: EvidenceAtomRecord[] = allEvidence.map((e, idx) => {
+            const atomId = makeAtomId({
+              evidenceType: e.evidenceType,
+              sourceFile: e.sourceFile,
+              recordIndex: idx,
+              timestamp: Date.now(),
+            });
+            const contentHash = makeContentHash(e.data);
+            
+            return {
+              atomId,
+              evidenceType: coerceEvType(e.evidenceType),
+              normalizedData: e.data,
+              contentHash,
+              provenance: {
+                uploadId: 0,
+                sourceFile: e.sourceFile || "dossier_auto_populate",
+                uploadedAt: new Date().toISOString(),
+                deviceRef: { deviceCode },
+                psurPeriod: { periodStart, periodEnd },
+                extractDate: new Date().toISOString(),
+              },
+            };
+          });
+
+          try {
+            const { inserted, atomIds: createdAtomIds } = await persistEvidenceAtoms({
+              psurCaseId,
+              deviceCode,
+              periodStart,
+              periodEnd,
+              atoms: atomRecords,
+            });
+            atomsPersisted = inserted;
+            atomIds = createdAtomIds;
+            console.log(`[Dossier Auto-Populate] Persisted ${atomsPersisted} atoms for PSUR case ${psurCaseId}`);
+          } catch (atomError: any) {
+            console.error(`[Dossier Auto-Populate] Failed to persist atoms:`, atomError?.message);
+            // Don't fail the whole request if atom persistence fails
+          }
+        }
+
         res.json({
           success: true,
           overwrite,
@@ -7227,6 +7277,14 @@ Execute according to your persona instructions.`
           applyResult,
           completenessScore,
           dossier,
+          // Include PSUR atom persistence info if applicable
+          ...(psurCaseId && {
+            psurAtoms: {
+              psurCaseId,
+              atomsPersisted,
+              atomIds,
+            },
+          }),
         });
       } catch (error: any) {
         console.error("[POST /api/device-dossiers/:deviceCode/auto-populate] Error:", error);

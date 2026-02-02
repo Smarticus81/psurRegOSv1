@@ -7,7 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useQuery } from "@tanstack/react-query";
-import { FileText, Settings, Info, LayoutDashboard, Search, CheckCircle2, AlertCircle, Trash2, ArrowRight, Loader2, ChevronDown, ChevronUp, Sparkles, Upload, Download, Check, ChevronRight, Cpu } from "lucide-react";
+import { FileText, Settings, Info, LayoutDashboard, Search, CheckCircle2, AlertCircle, Trash2, ArrowRight, Loader2, ChevronDown, ChevronUp, Sparkles, Upload, Download, Check, ChevronRight, Cpu, Link2, FolderOpen, RefreshCw } from "lucide-react";
 
 // Helper to update URL without full navigation
 function updateUrlParams(params: Record<string, string | null>) {
@@ -123,6 +123,29 @@ type Device = {
     jurisdictions?: string[];
     gmdnCode?: string;
     basicUdf?: string;
+};
+
+// Device Dossier type - contains pre-populated device context
+type DeviceDossier = {
+    id: number;
+    deviceCode: string;
+    basicUdiDi?: string;
+    tradeName?: string;
+    manufacturerName?: string;
+    classification?: {
+        class?: string;
+        rule?: string;
+        rationale?: string;
+    };
+    completenessScore?: number;
+    lastValidatedAt?: string;
+    clinical?: {
+        intendedPurpose?: string;
+        indications?: string[];
+        contraindications?: string[];
+        targetPopulation?: any;
+        clinicalBenefits?: any[];
+    };
 };
 
 // Column mapping types
@@ -1789,6 +1812,23 @@ export default function PsurWizard() {
     // The default MDCG template is shown separately
     const availableTemplates = customTemplates;
 
+    // Fetch device dossiers for pre-populated device context
+    const { data: dossiers, refetch: refetchDossiers } = useQuery<DeviceDossier[]>({
+        queryKey: ["/api/device-dossiers"],
+        queryFn: async () => {
+            const res = await fetch("/api/device-dossiers");
+            if (!res.ok) return [];
+            return res.json();
+        },
+    });
+
+    // Selected dossier for linking
+    const [selectedDossierId, setSelectedDossierId] = useState<number | null>(null);
+    const selectedDossier = useMemo(() => dossiers?.find(d => d.id === selectedDossierId), [dossiers, selectedDossierId]);
+    
+    // Import from dossier state
+    const [importingFromDossier, setImportingFromDossier] = useState(false);
+
     // Workflow
     const [runBusy, setRunBusy] = useState(false);
     const [runResult, setRunResult] = useState<RunWorkflowResponse | null>(null);
@@ -2379,55 +2419,116 @@ export default function PsurWizard() {
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                             {/* LEFT CARD: Device Information */}
                             <div className="bg-card rounded-xl border border-border p-6 space-y-5 relative z-10">
-                                <h3 className="text-lg font-semibold text-foreground">Device Information</h3>
+                                <div className="flex items-center justify-between">
+                                    <h3 className="text-lg font-semibold text-foreground">Device Information</h3>
+                                    {dossiers && dossiers.length > 0 && (
+                                        <Badge variant="outline" className="text-xs bg-primary/5 border-primary/20 text-primary">
+                                            <Link2 className="w-3 h-3 mr-1" />
+                                            {dossiers.length} Dossier{dossiers.length > 1 ? 's' : ''} Available
+                                        </Badge>
+                                    )}
+                                </div>
 
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="space-y-2">
-                                        <label className="text-sm text-muted-foreground">Device Name</label>
-                                        {devices.length > 0 ? (
-                                            <select
-                                                className="w-full h-10 bg-muted/50 border border-border rounded-lg px-3 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
-                                                value={deviceId || ""}
-                                                onChange={e => {
-                                                    const id = parseInt(e.target.value);
+                                {/* Dossier Linking Section */}
+                                <div className="p-4 rounded-lg bg-primary/5 border border-primary/20 space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2 text-sm font-medium text-primary">
+                                            <FolderOpen className="w-4 h-4" />
+                                            Link to Device Dossier
+                                        </div>
+                                        <a 
+                                            href="/dossiers" 
+                                            className="text-xs text-primary hover:underline flex items-center gap-1"
+                                        >
+                                            Manage Dossiers
+                                            <ChevronRight className="w-3 h-3" />
+                                        </a>
+                                    </div>
+                                    {dossiers && dossiers.length > 0 ? (
+                                        <>
+                                            <Select 
+                                                value={selectedDossierId?.toString() || ""} 
+                                                onValueChange={(v) => {
+                                                    const id = v ? parseInt(v) : null;
+                                                    setSelectedDossierId(id);
                                                     if (id) {
-                                                        const device = devices.find(d => d.id === id);
-                                                        if (device) {
-                                                            setDeviceId(device.id);
-                                                            setDeviceName(device.deviceName);
-                                                            setDeviceCode(device.deviceCode);
-                                                            setDeviceRiskClass(device.riskClass as "I" | "IIa" | "IIb" | "III");
-                                                            if (device.gmdnCode) setGmdnCode(device.gmdnCode);
+                                                        const dossier = dossiers.find(d => d.id === id);
+                                                        if (dossier) {
+                                                            setDeviceCode(dossier.deviceCode || "");
+                                                            if (dossier.tradeName) setDeviceName(dossier.tradeName);
+                                                            if (dossier.manufacturerName) setManufacturerName(dossier.manufacturerName);
+                                                            if (dossier.basicUdiDi) setUdiDi(dossier.basicUdiDi);
+                                                            if (dossier.classification?.class) {
+                                                                const cls = dossier.classification.class.replace(/Class\s*/i, "");
+                                                                if (["I", "IIa", "IIb", "III"].includes(cls)) {
+                                                                    setDeviceRiskClass(cls as "I" | "IIa" | "IIb" | "III");
+                                                                }
+                                                            }
+                                                            toast({
+                                                                title: "Dossier Linked",
+                                                                description: `Device info populated from ${dossier.deviceCode}`,
+                                                            });
                                                         }
-                                                    } else {
-                                                        setDeviceId(0);
                                                     }
                                                 }}
                                             >
-                                                <option value="">e.g., CardioFlow Monitor</option>
-                                                {devices.map(d => (
-                                                    <option key={d.id} value={d.id}>{d.deviceName}</option>
-                                                ))}
-                                            </select>
-                                        ) : (
-                                            <input
-                                                className="w-full h-10 bg-muted/50 border border-border rounded-lg px-3 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all placeholder:text-muted-foreground"
-                                                value={deviceName}
-                                                onChange={e => {
-                                                    setDeviceName(e.target.value);
-                                                    if (!deviceCode) {
-                                                        setDeviceCode(e.target.value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 12) || "DEVICE");
-                                                    }
-                                                }}
-                                                placeholder="e.g., CardioFlow Monitor"
-                                            />
-                                        )}
+                                                <SelectTrigger className="w-full bg-background">
+                                                    <SelectValue placeholder="Select a dossier to auto-fill device info" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="">None (enter manually)</SelectItem>
+                                                    {dossiers.map(d => (
+                                                        <SelectItem key={d.id} value={d.id.toString()}>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="font-medium">{d.tradeName || d.deviceCode}</span>
+                                                                {d.completenessScore && (
+                                                                    <Badge variant="outline" className="text-[10px]">{d.completenessScore}%</Badge>
+                                                                )}
+                                                            </div>
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                            {selectedDossier && (
+                                                <div className="text-xs text-muted-foreground">
+                                                    Evidence from this dossier will be automatically available for your PSUR.
+                                                </div>
+                                            )}
+                                        </>
+                                    ) : (
+                                        <div className="text-sm text-muted-foreground">
+                                            No dossiers found. <a href="/dossiers" className="text-primary hover:underline">Create a dossier</a> to pre-populate device context and evidence.
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Device fields - simplified when dossier selected */}
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <label className="text-sm text-muted-foreground">Device Name</label>
+                                        <input
+                                            className={cn(
+                                                "w-full h-10 bg-muted/50 border border-border rounded-lg px-3 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all placeholder:text-muted-foreground",
+                                                selectedDossier && "bg-primary/5 border-primary/20"
+                                            )}
+                                            value={deviceName}
+                                            onChange={e => {
+                                                setDeviceName(e.target.value);
+                                                if (!deviceCode) {
+                                                    setDeviceCode(e.target.value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 12) || "DEVICE");
+                                                }
+                                            }}
+                                            placeholder="e.g., CardioFlow Monitor"
+                                        />
                                     </div>
 
                                     <div className="space-y-2">
                                         <label className="text-sm text-muted-foreground">Manufacturer</label>
                                         <input
-                                            className="w-full h-10 bg-muted/50 border border-border rounded-lg px-3 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all placeholder:text-muted-foreground"
+                                            className={cn(
+                                                "w-full h-10 bg-muted/50 border border-border rounded-lg px-3 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all placeholder:text-muted-foreground",
+                                                selectedDossier && "bg-primary/5 border-primary/20"
+                                            )}
                                             value={manufacturerName}
                                             onChange={e => setManufacturerName(e.target.value)}
                                             placeholder="e.g., MedTech Corp"
@@ -2438,26 +2539,24 @@ export default function PsurWizard() {
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-2">
                                         <label className="text-sm text-muted-foreground">Device Code</label>
-                                        <div className="flex gap-2">
-                                            <input
-                                                className="flex-1 h-10 bg-muted/50 border border-border rounded-lg px-3 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all placeholder:text-muted-foreground"
-                                                value={deviceCode}
-                                                onChange={e => setDeviceCode(e.target.value)}
-                                                placeholder="Auto-generated"
-                                            />
-                                            <button
-                                                onClick={() => setDeviceCode(deviceName.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 12) || "DEVICE")}
-                                                className="px-3 h-10 bg-secondary border border-border rounded-lg text-xs font-medium text-foreground hover:bg-accent transition-colors"
-                                            >
-                                                Auto
-                                            </button>
-                                        </div>
+                                        <input
+                                            className={cn(
+                                                "w-full h-10 bg-muted/50 border border-border rounded-lg px-3 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all placeholder:text-muted-foreground",
+                                                selectedDossier && "bg-primary/5 border-primary/20"
+                                            )}
+                                            value={deviceCode}
+                                            onChange={e => setDeviceCode(e.target.value)}
+                                            placeholder="Auto-generated from name"
+                                        />
                                     </div>
 
                                     <div className="space-y-2">
                                         <label className="text-sm text-muted-foreground">Risk Class</label>
                                         <Select value={deviceRiskClass} onValueChange={(v) => setDeviceRiskClass(v as "I" | "IIa" | "IIb" | "III")}>
-                                            <SelectTrigger className="w-full h-10 bg-muted/50 border-border">
+                                            <SelectTrigger className={cn(
+                                                "w-full h-10 bg-muted/50 border-border",
+                                                selectedDossier && "bg-primary/5 border-primary/20"
+                                            )}>
                                                 <SelectValue placeholder="Select class" />
                                             </SelectTrigger>
                                             <SelectContent>
@@ -2467,28 +2566,6 @@ export default function PsurWizard() {
                                                 <SelectItem value="III">Class III</SelectItem>
                                             </SelectContent>
                                         </Select>
-                                    </div>
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="space-y-2">
-                                        <label className="text-sm text-muted-foreground">UDI-DI</label>
-                                        <input
-                                            className="w-full h-10 bg-muted/50 border border-border rounded-lg px-3 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all placeholder:text-muted-foreground"
-                                            value={udiDi}
-                                            onChange={e => setUdiDi(e.target.value)}
-                                            placeholder="e.g., 00844588003288"
-                                        />
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <label className="text-sm text-muted-foreground">GMDN Code</label>
-                                        <input
-                                            className="w-full h-10 bg-muted/50 border border-border rounded-lg px-3 text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all placeholder:text-muted-foreground"
-                                            value={gmdnCode}
-                                            onChange={e => setGmdnCode(e.target.value)}
-                                            placeholder="e.g., 38456"
-                                        />
                                     </div>
                                 </div>
                             </div>
@@ -2630,24 +2707,84 @@ export default function PsurWizard() {
                             </div>
 
                             {/* Large Action Panels */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                <button onClick={() => setShowIngestionModal(true)} className="bg-card border border-border shadow-sm rounded-lg p-10 text-left space-y-8 group active:scale-95">
-                                    <div className="w-20 h-20 rounded-3xl bg-primary/10 flex items-center justify-center text-primary group-hover:scale-110 group-hover:rotate-3 transition-all duration-500 shadow-inner">
-                                        <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                {/* Import from Dossier - if dossier is linked */}
+                                {selectedDossier && (
+                                    <button 
+                                        onClick={async () => {
+                                            if (!psurCaseId || !selectedDossier) return;
+                                            setImportingFromDossier(true);
+                                            try {
+                                                // Trigger auto-populate from dossier with PSUR linkage
+                                                const res = await fetch(`/api/device-dossiers/${selectedDossier.deviceCode}/auto-populate`, {
+                                                    method: "POST",
+                                                    headers: { "Content-Type": "application/json" },
+                                                    body: JSON.stringify({
+                                                        psurCaseId,
+                                                        overwrite: false,
+                                                    }),
+                                                });
+                                                const data = await res.json();
+                                                if (data.psurAtoms?.atomsPersisted) {
+                                                    toast({
+                                                        title: "Evidence Imported from Dossier",
+                                                        description: `${data.psurAtoms.atomsPersisted} evidence records added to PSUR`,
+                                                    });
+                                                    refreshCounts();
+                                                    refreshDeviceInfo();
+                                                } else {
+                                                    toast({
+                                                        title: "Dossier Synced",
+                                                        description: "No new evidence to import. Upload documents to the dossier first.",
+                                                    });
+                                                }
+                                            } catch (e: any) {
+                                                toast({
+                                                    title: "Import Failed",
+                                                    description: e.message || "Could not import from dossier",
+                                                    variant: "destructive",
+                                                });
+                                            } finally {
+                                                setImportingFromDossier(false);
+                                            }
+                                        }} 
+                                        disabled={importingFromDossier}
+                                        className="bg-gradient-to-br from-violet-500/10 to-violet-600/5 border border-violet-500/20 shadow-sm rounded-lg p-8 text-left space-y-6 group active:scale-95 hover:border-violet-500/40 transition-all"
+                                    >
+                                        <div className="w-16 h-16 rounded-2xl bg-violet-500/10 flex items-center justify-center text-violet-600 group-hover:scale-110 transition-all duration-500 shadow-inner">
+                                            {importingFromDossier ? (
+                                                <Loader2 className="w-8 h-8 animate-spin" />
+                                            ) : (
+                                                <Link2 className="w-8 h-8" />
+                                            )}
+                                        </div>
+                                        <div className="space-y-3">
+                                            <h3 className="text-2xl font-black tracking-tighter text-foreground group-hover:text-violet-600 transition-colors">Import from Dossier</h3>
+                                            <p className="text-sm text-muted-foreground font-medium leading-relaxed">Pull pre-extracted evidence from your linked Device Dossier.</p>
+                                            <Badge variant="outline" className="text-xs border-violet-500/30 text-violet-600">
+                                                {selectedDossier.tradeName || selectedDossier.deviceCode}
+                                            </Badge>
+                                        </div>
+                                    </button>
+                                )}
+
+                                <button onClick={() => setShowIngestionModal(true)} className="bg-card border border-border shadow-sm rounded-lg p-8 text-left space-y-6 group active:scale-95">
+                                    <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center text-primary group-hover:scale-110 group-hover:rotate-3 transition-all duration-500 shadow-inner">
+                                        <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
                                     </div>
-                                    <div className="space-y-4">
-                                        <h3 className="text-3xl font-black tracking-tighter text-foreground group-hover:text-primary transition-colors">Document Import</h3>
-                                        <p className="text-lg text-muted-foreground font-medium leading-relaxed">Smart extraction from CER, Risk Assessment, and PMCF dossiers.</p>
+                                    <div className="space-y-3">
+                                        <h3 className="text-2xl font-black tracking-tighter text-foreground group-hover:text-primary transition-colors">Document Import</h3>
+                                        <p className="text-sm text-muted-foreground font-medium leading-relaxed">Smart extraction from CER, Risk Assessment, and PMCF documents.</p>
                                     </div>
                                 </button>
 
-                                <button onClick={() => setShowEvidenceModal(true)} className="bg-card border border-border shadow-sm rounded-lg p-10 text-left space-y-8 group active:scale-95">
-                                    <div className="w-20 h-20 rounded-3xl bg-emerald-500/10 flex items-center justify-center text-emerald-600 group-hover:scale-110 group-hover:-rotate-3 transition-all duration-500 shadow-inner">
-                                        <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+                                <button onClick={() => setShowEvidenceModal(true)} className="bg-card border border-border shadow-sm rounded-lg p-8 text-left space-y-6 group active:scale-95">
+                                    <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-600 group-hover:scale-110 group-hover:-rotate-3 transition-all duration-500 shadow-inner">
+                                        <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
                                     </div>
-                                    <div className="space-y-4">
-                                        <h3 className="text-3xl font-black tracking-tighter text-foreground group-hover:text-emerald-600 transition-colors">Structured Data Import</h3>
-                                        <p className="text-lg text-muted-foreground font-medium leading-relaxed">Import Sales, Complaints, and FSCA data from spreadsheets.</p>
+                                    <div className="space-y-3">
+                                        <h3 className="text-2xl font-black tracking-tighter text-foreground group-hover:text-emerald-600 transition-colors">Spreadsheet Import</h3>
+                                        <p className="text-sm text-muted-foreground font-medium leading-relaxed">Import Sales, Complaints, and FSCA data from Excel/CSV.</p>
                                     </div>
                                 </button>
                             </div>
@@ -2730,195 +2867,158 @@ export default function PsurWizard() {
                     )
                 }
 
-                {/* STEP 4: REVIEW */}
+                {/* STEP 4: GENERATE CONFIGURATION */}
                 {
-                    step === 4 && psurCaseId && (
-                        <div className="h-full flex flex-col">
-                            {/* Stats Row */}
-                            <div className="grid grid-cols-4 gap-3 mb-3">
-                                <div className="p-4 rounded-xl bg-card border border-border shadow-sm rounded-lg border border-primary/20 text-center">
-                                    <div className="text-2xl font-bold text-primary">{totalAtoms}</div>
-                                    <div className="text-xs text-muted-foreground">Total Records</div>
+                    step === 4 && psurCaseId && !runResult && (
+                        <div className="max-w-4xl mx-auto space-y-8 animate-slide-up">
+                            {/* Header */}
+                            <div className="text-center space-y-2">
+                                <h2 className="text-2xl font-semibold tracking-tight text-foreground">Generate Document</h2>
+                                <p className="text-muted-foreground">Configure your PSUR output settings</p>
+                            </div>
+
+                            {/* Stats Summary */}
+                            <div className="grid grid-cols-4 gap-4">
+                                <div className="p-5 rounded-xl bg-card border border-primary/20 text-center">
+                                    <div className="text-3xl font-bold text-primary">{totalAtoms}</div>
+                                    <div className="text-xs text-muted-foreground mt-1">Data Records</div>
                                 </div>
-                                <div className="p-4 rounded-xl bg-card border border-border shadow-sm rounded-lg border border-emerald-500/20 text-center">
-                                    <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{requiredTypes.length - missingTypes.length}</div>
-                                    <div className="text-xs text-muted-foreground">Requirements Met</div>
+                                <div className="p-5 rounded-xl bg-card border border-emerald-500/20 text-center">
+                                    <div className="text-3xl font-bold text-emerald-600">{requiredTypes.length - missingTypes.length}</div>
+                                    <div className="text-xs text-muted-foreground mt-1">Requirements Met</div>
                                 </div>
-                                <div className="p-4 rounded-xl bg-card border border-border shadow-sm rounded-lg border border-amber-500/20 text-center">
-                                    <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">{missingTypes.length}</div>
-                                    <div className="text-xs text-muted-foreground">Types Missing</div>
+                                <div className="p-5 rounded-xl bg-card border border-amber-500/20 text-center">
+                                    <div className="text-3xl font-bold text-amber-600">{missingTypes.length}</div>
+                                    <div className="text-xs text-muted-foreground mt-1">Types Missing</div>
                                 </div>
-                                <div className={`p-4 rounded-xl bg-card border border-border shadow-sm rounded-lg border text-center ${missingTypes.length === 0 ? "border-emerald-500/30 bg-emerald-500/5" : "border-amber-500/30 bg-amber-500/5"}`}>
-                                    <div className={`text-lg font-bold ${missingTypes.length === 0 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>{missingTypes.length === 0 ? "Ready" : "Incomplete"}</div>
-                                    <div className="text-xs text-muted-foreground">Status</div>
+                                <div className={cn(
+                                    "p-5 rounded-xl bg-card border text-center",
+                                    missingTypes.length === 0 ? "border-emerald-500/30 bg-emerald-500/5" : "border-amber-500/30 bg-amber-500/5"
+                                )}>
+                                    <div className={cn(
+                                        "text-xl font-bold",
+                                        missingTypes.length === 0 ? "text-emerald-600" : "text-amber-600"
+                                    )}>
+                                        {missingTypes.length === 0 ? "Ready" : "Incomplete"}
+                                    </div>
+                                    <div className="text-xs text-muted-foreground mt-1">Status</div>
                                 </div>
                             </div>
 
-                            {/* Evidence Grid */}
-                            <div className="flex-1 min-h-0 overflow-y-auto bg-card border border-border shadow-sm rounded-lg rounded-xl p-4">
-                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-                                    {requiredTypes.map(t => {
-                                        const c = counts?.byType?.[t] || 0;
-                                        const isCovered = isTypeCovered(t);
-                                        const coverageInfo = counts?.coverage?.coveredByType?.[t];
-                                        return (
-                                            <div key={t} className={cn(
-                                                "flex items-center justify-between px-3 py-2 rounded-lg border transition-all",
-                                                isCovered
-                                                    ? c > 0
-                                                        ? "bg-emerald-500/10 border-emerald-500/30 dark:bg-emerald-500/5"
-                                                        : "bg-primary/10 border-primary/30 dark:bg-primary/5"
-                                                    : "bg-destructive/10 border-destructive/30 dark:bg-destructive/5"
-                                            )}>
-                                                <span className="text-sm font-medium truncate mr-2 text-foreground">{formatType(t)}</span>
-                                                <span className={cn(
-                                                    "text-sm font-bold",
-                                                    c > 0 ? "text-emerald-600 dark:text-emerald-400"
-                                                        : isCovered ? "text-primary"
-                                                            : "text-destructive"
-                                                )}>
-                                                    {c > 0 ? c : isCovered ? `(${coverageInfo?.source || "covered"})` : "-"}
-                                                </span>
-                                            </div>
-                                        );
-                                    })}
+                            {/* Configuration Cards */}
+                            <div className="grid grid-cols-2 gap-6">
+                                {/* Output Options */}
+                                <div className="bg-card border border-border rounded-xl p-6 space-y-5">
+                                    <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                                        <Settings className="w-4 h-4 text-muted-foreground" />
+                                        Output Options
+                                    </h3>
+
+                                    <label className="flex items-center justify-between cursor-pointer group p-3 rounded-lg border border-border/50 hover:border-primary/30 hover:bg-primary/5 transition-all">
+                                        <div>
+                                            <div className="text-sm font-medium text-foreground">Smart Narrative</div>
+                                            <div className="text-xs text-muted-foreground">AI-generated contextual summaries</div>
+                                        </div>
+                                        <div 
+                                            onClick={() => setEnableAIGeneration(!enableAIGeneration)}
+                                            className={`relative w-11 h-6 rounded-full transition-all cursor-pointer ${enableAIGeneration ? "bg-primary" : "bg-border"}`}
+                                        >
+                                            <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${enableAIGeneration ? "left-5" : "left-0.5"}`}></div>
+                                        </div>
+                                    </label>
+
+                                    <label className="flex items-center justify-between cursor-pointer group p-3 rounded-lg border border-border/50 hover:border-primary/30 hover:bg-primary/5 transition-all">
+                                        <div>
+                                            <div className="text-sm font-medium text-foreground">Visual Charts</div>
+                                            <div className="text-xs text-muted-foreground">Include trend visualizations</div>
+                                        </div>
+                                        <div 
+                                            onClick={() => setEnableCharts(!enableCharts)}
+                                            className={`relative w-11 h-6 rounded-full transition-all cursor-pointer ${enableCharts ? "bg-primary" : "bg-border"}`}
+                                        >
+                                            <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${enableCharts ? "left-5" : "left-0.5"}`}></div>
+                                        </div>
+                                    </label>
+
+                                    <div className="p-3 rounded-lg border border-border/50">
+                                        <div className="text-sm font-medium text-foreground mb-3">Document Style</div>
+                                        <div className="grid grid-cols-3 gap-2">
+                                            {([
+                                                { value: "corporate" as const, label: "Corporate" },
+                                                { value: "regulatory" as const, label: "Regulatory" },
+                                                { value: "premium" as const, label: "Premium" },
+                                            ]).map(style => (
+                                                <button
+                                                    key={style.value}
+                                                    onClick={() => setDocumentStyle(style.value)}
+                                                    className={cn(
+                                                        "py-2.5 px-3 rounded-lg text-sm font-medium transition-all",
+                                                        documentStyle === style.value
+                                                            ? "bg-primary text-primary-foreground shadow-sm"
+                                                            : "bg-secondary/50 text-muted-foreground hover:bg-secondary"
+                                                    )}
+                                                >
+                                                    {style.label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Generate Action */}
+                                <div className="bg-gradient-to-br from-primary/5 to-primary/10 border border-primary/20 rounded-xl p-6 flex flex-col items-center justify-center">
+                                    <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
+                                        <Cpu className="w-8 h-8 text-primary" />
+                                    </div>
+                                    <h3 className="text-lg font-semibold text-foreground mb-2">Ready to Generate</h3>
+                                    <p className="text-sm text-muted-foreground text-center mb-6">
+                                        Your PSUR will be compiled with {totalAtoms} data records
+                                    </p>
+                                    <button
+                                        onClick={() => { runWorkflow(); setStep(5); }}
+                                        disabled={runBusy}
+                                        className="w-full px-6 py-4 rounded-xl bg-foreground text-background font-medium shadow-lg hover:shadow-xl transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-3"
+                                    >
+                                        {runBusy ? <Loader2 className="w-5 h-5 animate-spin" /> : <Cpu className="w-5 h-5" />}
+                                        Generate PSUR
+                                    </button>
                                 </div>
                             </div>
 
                             {missingTypes.length > 0 && (
-                                <div className="mt-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-700 dark:text-amber-300">
-                                    Missing: {missingTypes.slice(0, 5).map(formatType).join(", ")}{missingTypes.length > 5 && ` +${missingTypes.length - 5} more`}
+                                <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-sm text-amber-700 dark:text-amber-300">
+                                    <span className="font-medium">Note:</span> {missingTypes.length} evidence type{missingTypes.length > 1 ? 's are' : ' is'} missing. The PSUR will be generated with available data. You can mark missing types as N/A in the Review step.
                                 </div>
                             )}
                         </div>
                     )
                 }
+                {/* STEP 4 -> STEP 5: Show results when workflow starts */}
+                {
+                    step === 4 && psurCaseId && runResult && (
+                        (() => { setStep(5); return null; })()
+                    )
+                }
 
-                {/* STEP 5: COMPILE - Full Width Modern Design */}
+                {/* STEP 5: RESULTS - Compilation Progress & Document */}
                 {
                     step === 5 && psurCaseId && (
                         <div className="h-full flex flex-col">
-                            {/* Pre-compile configuration */}
+                            {/* Show loading state if workflow not started yet */}
                             {!runResult ? (
-                                <div className="flex-1 flex flex-col">
-                                    {/* Header */}
-                                    <div className="text-center mb-6">
-                                        <h2 className="text-2xl font-semibold tracking-tight text-foreground mb-2">Generate Document</h2>
-                                        <p className="text-muted-foreground">Configure your PSUR output settings</p>
-                                    </div>
-
-                                    {/* Configuration - Full Width Horizontal Layout */}
-                                    <div className="flex-1 flex gap-6 min-h-0">
-                                        {/* Left: Report Summary Card */}
-                                        <div className="flex-1 bg-card border border-border shadow-sm rounded-xl p-6 flex flex-col">
-                                            <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
-                                                <svg className="w-4 h-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                                                Report Summary
-                                            </h3>
-                                            <div className="grid grid-cols-2 gap-x-8 gap-y-4 flex-1">
-                                                {[
-                                                    { label: "Template", value: templateId.split("_")[0], icon: "📋" },
-                                                    { label: "Jurisdictions", value: jurisdictions.join(", ").replace(/_/g, " "), icon: "🌍" },
-                                                    { label: "Device", value: deviceName || deviceCode, icon: "🏥" },
-                                                    { label: "Period", value: `${periodStart} → ${periodEnd}`, icon: "📅" },
-                                                    { label: "Data Records", value: String(totalAtoms), icon: "📊" },
-                                                    { label: "Case ID", value: `#${psurCaseId}`, icon: "🔖" },
-                                                ].map((item, i) => (
-                                                    <div key={i} className="flex items-center gap-3 py-2 border-b border-border/30">
-                                                        <span className="text-lg">{item.icon}</span>
-                                                        <div className="flex-1 min-w-0">
-                                                            <span className="text-xs text-muted-foreground block">{item.label}</span>
-                                                            <span className="text-sm font-medium text-foreground truncate block">{item.value}</span>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
+                                <div className="flex-1 flex items-center justify-center">
+                                    <div className="text-center space-y-4">
+                                        <Loader2 className="w-12 h-12 text-primary animate-spin mx-auto" />
+                                        <div>
+                                            <h3 className="text-lg font-semibold text-foreground">Starting Generation</h3>
+                                            <p className="text-sm text-muted-foreground">Initializing workflow...</p>
                                         </div>
-
-                                        {/* Middle: Output Options Card */}
-                                        <div className="w-[320px] bg-card border border-border shadow-sm rounded-xl p-6 flex flex-col">
-                                            <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
-                                                <svg className="w-4 h-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                                                Output Options
-                                            </h3>
-
-                                            <div className="space-y-5 flex-1">
-                                                {/* Smart Narrative Toggle */}
-                                                <label className="flex items-center justify-between cursor-pointer group p-3 rounded-lg border border-border/50 hover:border-primary/30 hover:bg-primary/5 transition-all">
-                                                    <div>
-                                                        <div className="text-sm font-medium text-foreground">Smart Narrative</div>
-                                                        <div className="text-xs text-muted-foreground">Auto-generate contextual summaries</div>
-                                                    </div>
-                                                    <div 
-                                                        onClick={() => setEnableAIGeneration(!enableAIGeneration)}
-                                                        className={`relative w-11 h-6 rounded-full transition-all cursor-pointer ${enableAIGeneration ? "bg-primary" : "bg-border"}`}
-                                                    >
-                                                        <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${enableAIGeneration ? "left-5" : "left-0.5"}`}></div>
-                                                    </div>
-                                                </label>
-
-                                                {/* Charts Toggle */}
-                                                <label className="flex items-center justify-between cursor-pointer group p-3 rounded-lg border border-border/50 hover:border-primary/30 hover:bg-primary/5 transition-all">
-                                                    <div>
-                                                        <div className="text-sm font-medium text-foreground">Visual Charts</div>
-                                                        <div className="text-xs text-muted-foreground">Include trend visualizations</div>
-                                                    </div>
-                                                    <div 
-                                                        onClick={() => setEnableCharts(!enableCharts)}
-                                                        className={`relative w-11 h-6 rounded-full transition-all cursor-pointer ${enableCharts ? "bg-primary" : "bg-border"}`}
-                                                    >
-                                                        <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${enableCharts ? "left-5" : "left-0.5"}`}></div>
-                                                    </div>
-                                                </label>
-
-                                                {/* Document Style */}
-                                                <div className="p-3 rounded-lg border border-border/50">
-                                                    <div className="text-sm font-medium text-foreground mb-3">Document Style</div>
-                                                    <div className="grid grid-cols-3 gap-2">
-                                                        {([
-                                                            { value: "corporate" as const, label: "Corporate", icon: "🏢" },
-                                                            { value: "regulatory" as const, label: "Regulatory", icon: "📜" },
-                                                            { value: "premium" as const, label: "Premium", icon: "✨" },
-                                                        ]).map(style => (
-                                                            <button
-                                                                key={style.value}
-                                                                onClick={() => setDocumentStyle(style.value)}
-                                                                className={`py-3 px-2 rounded-lg text-xs font-medium transition-all flex flex-col items-center gap-1 ${documentStyle === style.value
-                                                                    ? "bg-primary text-primary-foreground shadow-sm ring-2 ring-primary/20"
-                                                                    : "bg-secondary/50 text-muted-foreground hover:bg-secondary"
-                                                                    }`}
-                                                            >
-                                                                <span className="text-base">{style.icon}</span>
-                                                                {style.label}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* Right: Generate Action Card */}
-                                        <div className="w-[280px] bg-gradient-to-br from-primary/5 to-primary/10 dark:from-primary/10 dark:to-primary/20 border border-primary/20 shadow-sm rounded-xl p-6 flex flex-col items-center justify-center">
-                                            <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
-                                                <svg className="w-8 h-8 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                                </svg>
-                                            </div>
-                                            <h3 className="text-lg font-semibold text-foreground mb-2">Ready to Generate</h3>
-                                            <p className="text-sm text-muted-foreground text-center mb-6">
-                                                Your PSUR will be compiled with {totalAtoms} data records
-                                            </p>
-                                            <button
-                                                onClick={runWorkflow}
-                                                disabled={runBusy}
-                                                className="w-full px-6 py-4 rounded-xl bg-foreground text-background font-medium shadow-lg hover:shadow-xl transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-3"
-                                            >
-                                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                                </svg>
-                                                Generate PSUR
-                                            </button>
-                                        </div>
+                                        <button
+                                            onClick={() => setStep(4)}
+                                            className="text-sm text-primary hover:underline"
+                                        >
+                                            Back to Configuration
+                                        </button>
                                     </div>
                                 </div>
                             ) : (

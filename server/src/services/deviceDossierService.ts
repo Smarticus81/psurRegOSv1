@@ -41,6 +41,194 @@ import { buildRegulatoryAlignmentBlock } from "../constants/grkbMdcgAlignment";
 import { buildRegulatoryContextForAgents } from "../constants/psurRegulatoryContext";
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// FIELD NORMALIZATION - Canonical field name mappings for LLM output consistency
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Maps all known LLM field name variants to canonical names.
+ * This ensures consistent field access regardless of how the LLM names the fields.
+ */
+const FIELD_NAME_MAPPINGS: Record<string, string[]> = {
+  // Device identity
+  tradeName: ["trade_name", "device_name", "deviceName", "product_name", "productName", "name"],
+  manufacturer: ["manufacturer_name", "manufacturerName", "manufacturer", "legal_manufacturer", "legalManufacturer"],
+  basicUdiDi: ["basic_udi_di", "basicUdi", "basic_udi", "udi_di", "udiDi", "udi"],
+  riskClass: ["risk_class", "classification", "device_class", "deviceClass", "class"],
+  gmdnCode: ["gmdn_code", "gmdnTerm", "gmdn_term", "gmdn"],
+  model: ["model_number", "modelNumber", "model_name", "modelName"],
+  
+  // Intended purpose / IFU
+  intendedPurpose: ["intended_purpose", "intendedUse", "intended_use", "purpose", "indication_for_use"],
+  indications: ["indication", "indications_for_use", "indicationsForUse", "clinical_indications"],
+  contraindications: ["contraindication", "contra_indications", "contraindicationsForUse"],
+  warnings: ["warning", "precautions", "warnings_and_precautions"],
+  targetPopulation: ["target_population", "patient_population", "patientPopulation", "intended_population"],
+  
+  // Clinical benefits
+  clinicalBenefits: ["clinical_benefits", "benefits", "clinical_benefit", "claimed_benefits", "claimedBenefits"],
+  benefitDescription: ["benefit_description", "description", "benefit"],
+  endpoint: ["clinical_endpoint", "clinicalEndpoint", "outcome_measure", "outcomeMeasure"],
+  evidenceSource: ["evidence_source", "source", "reference", "study_reference"],
+  quantifiedValue: ["quantified_value", "value", "measured_value", "measuredValue", "result"],
+  
+  // Risk management
+  principalRisks: ["principal_risks", "identified_risks", "identifiedRisks", "hazards", "risks"],
+  hazard: ["hazard_description", "hazardDescription", "risk_description", "riskDescription"],
+  harm: ["potential_harm", "potentialHarm", "harm_description", "harmDescription"],
+  severity: ["severity_level", "severityLevel", "risk_severity", "riskSeverity"],
+  probability: ["occurrence_probability", "occurrenceProbability", "likelihood"],
+  mitigations: ["mitigation_measures", "mitigationMeasures", "risk_controls", "riskControls", "controls"],
+  residualRiskAcceptable: ["residual_risk_acceptable", "acceptable", "residualAcceptable"],
+  riskAcceptability: ["risk_acceptability", "acceptability_criteria", "acceptabilityCriteria", "overall_acceptability"],
+  afapAnalysisSummary: ["afap_analysis", "afapAnalysis", "afap_summary", "afap"],
+  complaintRateThreshold: ["complaint_rate_threshold", "complaint_threshold", "complaintThreshold"],
+  seriousIncidentThreshold: ["serious_incident_threshold", "incident_threshold", "incidentThreshold"],
+  signalDetectionMethod: ["signal_detection_method", "detection_method", "detectionMethod"],
+  hazardCategories: ["hazard_categories", "hazard_types", "hazardTypes", "risk_categories"],
+  
+  // Clinical evaluation / B-R
+  conclusion: ["overall_conclusion", "overallConclusion", "cer_conclusion", "cerConclusion", "benefit_risk_conclusion", "benefitRiskConclusion"],
+  safetyConclusion: ["safety_conclusion", "safety_assessment", "safetyAssessment"],
+  performanceConclusion: ["performance_conclusion", "performance_assessment", "performanceAssessment"],
+  keyFindings: ["key_findings", "findings", "main_findings", "mainFindings"],
+  dataGapsIdentified: ["data_gaps", "dataGaps", "gaps_identified", "gapsIdentified", "gaps"],
+  benefitsSummary: ["benefits_summary", "benefit_summary", "benefitSummary"],
+  risksSummary: ["risks_summary", "risk_summary", "riskSummary"],
+  acceptableRisk: ["acceptable_risk", "risk_acceptable", "riskAcceptable"],
+  
+  // Literature
+  databasesSearched: ["databases_searched", "databases", "search_databases", "searchDatabases"],
+  searchTerms: ["search_terms", "searchStrings", "search_strings", "keywords", "search_keywords"],
+  inclusionCriteria: ["inclusion_criteria", "inclusion", "include_criteria"],
+  exclusionCriteria: ["exclusion_criteria", "exclusion", "exclude_criteria"],
+  lastSearchDate: ["last_search_date", "search_date", "searchDate"],
+  totalArticlesIdentified: ["total_articles_identified", "articles_found", "articlesFound", "total_found"],
+  totalArticlesIncluded: ["total_articles_included", "articles_included", "articlesIncluded", "total_included"],
+  
+  // PMCF
+  studyType: ["study_type", "pmcf_type", "pmcfType", "activity_type", "activityType"],
+  studyId: ["study_id", "pmcf_id", "pmcfId"],
+  studyName: ["study_name", "pmcf_name", "pmcfName"],
+  patientCount: ["patient_count", "sample_size", "sampleSize", "enrollment", "n"],
+  followUpDuration: ["follow_up_duration", "followUp", "follow_up", "duration"],
+  primaryEndpoint: ["primary_endpoint", "main_endpoint", "mainEndpoint"],
+  pmcfObjectives: ["pmcf_objectives", "objectives", "study_objectives", "studyObjectives"],
+  activitiesPerformed: ["activities_performed", "pmcf_activities", "pmcfActivities", "activities"],
+  
+  // State of the art
+  stateOfTheArt: ["state_of_the_art", "sota", "current_treatment", "currentTreatment", "benchmark"],
+  benchmarkDevices: ["benchmark_devices", "comparator_devices", "comparatorDevices", "reference_devices"],
+  performanceThresholds: ["performance_thresholds", "benchmarks", "thresholds"],
+  alternativeTreatments: ["alternative_treatments", "alternatives", "treatment_alternatives", "treatmentAlternatives"],
+  
+  // Equivalence
+  equivalentDevices: ["equivalent_devices", "equivalence", "equivalentDevice", "equivalent_device"],
+  equivalenceType: ["equivalence_type", "type_of_equivalence", "typeOfEquivalence"],
+  equivalenceJustification: ["equivalence_justification", "justification", "rationale"],
+  
+  // Regulatory
+  certificateNumber: ["certificate_number", "certificate_id", "certificateId", "cert_number", "certNumber"],
+  notifiedBody: ["notified_body", "nb", "nb_name", "nbName"],
+  issueDate: ["issue_date", "issued_date", "issuedDate", "cert_date", "certDate"],
+  expiryDate: ["expiry_date", "expiration_date", "expirationDate", "valid_until", "validUntil"],
+  
+  // Sales / exposure
+  totalUnits: ["total_units", "units_sold", "unitsSold", "cumulative_units", "cumulativeUnits", "quantity"],
+  periodStart: ["period_start", "start_date", "startDate", "from_date", "fromDate"],
+  periodEnd: ["period_end", "end_date", "endDate", "to_date", "toDate"],
+  patientExposure: ["patient_exposure", "exposure", "patient_years", "patientYears"],
+  
+  // Complaints / incidents
+  totalComplaints: ["total_complaints", "complaint_count", "complaintCount", "complaints"],
+  totalIncidents: ["total_incidents", "incident_count", "incidentCount", "incidents"],
+  seriousCount: ["serious_count", "serious_complaints", "seriousComplaints"],
+  complaintRate: ["complaint_rate", "rate_per_unit", "ratePerUnit"],
+};
+
+/**
+ * Normalize evidence data by mapping all field name variants to canonical names.
+ * Returns a new object with canonical field names.
+ */
+function normalizeEvidenceData(data: Record<string, any> | undefined): Record<string, any> {
+  if (!data) return {};
+  
+  const normalized: Record<string, any> = {};
+  
+  // Copy all original fields first
+  for (const [key, value] of Object.entries(data)) {
+    // Skip internal metadata fields
+    if (key.startsWith("_")) {
+      normalized[key] = value;
+      continue;
+    }
+    
+    // Check if this key should be mapped to a canonical name
+    let canonicalKey = key;
+    for (const [canonical, variants] of Object.entries(FIELD_NAME_MAPPINGS)) {
+      if (variants.includes(key) || key === canonical) {
+        canonicalKey = canonical;
+        break;
+      }
+    }
+    
+    // Only set if not already set (prefer first occurrence)
+    if (!(canonicalKey in normalized)) {
+      normalized[canonicalKey] = value;
+    }
+  }
+  
+  return normalized;
+}
+
+/**
+ * Get a field value from data, trying all known variants of the field name.
+ */
+function getField(data: Record<string, any> | undefined, canonicalName: string): any {
+  if (!data) return undefined;
+  
+  // Try canonical name first
+  if (data[canonicalName] !== undefined) return data[canonicalName];
+  
+  // Try all variants
+  const variants = FIELD_NAME_MAPPINGS[canonicalName];
+  if (variants) {
+    for (const variant of variants) {
+      if (data[variant] !== undefined) return data[variant];
+    }
+  }
+  
+  return undefined;
+}
+
+/**
+ * Get a string field value from data, trying all known variants.
+ */
+function getStringField(data: Record<string, any> | undefined, canonicalName: string): string | undefined {
+  const value = getField(data, canonicalName);
+  return value !== undefined && value !== null ? String(value) : undefined;
+}
+
+/**
+ * Get an array field value from data, trying all known variants.
+ */
+function getArrayField(data: Record<string, any> | undefined, canonicalName: string): any[] {
+  const value = getField(data, canonicalName);
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string") return [value];
+  return [];
+}
+
+/**
+ * Get a number field value from data, trying all known variants.
+ */
+function getNumberField(data: Record<string, any> | undefined, canonicalName: string): number | undefined {
+  const value = getField(data, canonicalName);
+  if (value === undefined || value === null) return undefined;
+  const num = Number(value);
+  return isNaN(num) ? undefined : num;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // CONTEXT TYPES - What agents receive
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1018,6 +1206,45 @@ function mergeStringArray(existing: any, incoming: any, overwrite: boolean): str
   return Array.from(set);
 }
 
+/**
+ * Merge arrays of objects by a unique ID field.
+ * Useful for clinicalBenefits, principalRisks, etc.
+ */
+function mergeArrayById<T extends Record<string, any>>(
+  existing: T[],
+  incoming: T[],
+  idField: string,
+  overwrite: boolean
+): T[] {
+  if (!existing?.length && !incoming?.length) return [];
+  if (overwrite && incoming?.length) return incoming;
+  
+  const exArr = Array.isArray(existing) ? existing : [];
+  const incArr = Array.isArray(incoming) ? incoming : [];
+  
+  const idMap = new Map<string, T>();
+  
+  // Add existing items
+  for (const item of exArr) {
+    const id = item[idField] || `auto_${idMap.size}`;
+    idMap.set(id, item);
+  }
+  
+  // Merge incoming items
+  for (const item of incArr) {
+    const id = item[idField] || `auto_${idMap.size}`;
+    if (idMap.has(id) && !overwrite) {
+      // Merge fields from incoming into existing
+      const existingItem = idMap.get(id)!;
+      idMap.set(id, { ...existingItem, ...item });
+    } else {
+      idMap.set(id, item);
+    }
+  }
+  
+  return Array.from(idMap.values());
+}
+
 function normalizeRiskClass(v: any): "I" | "IIa" | "IIb" | "III" | null {
   const s = asString(v);
   if (!s) return null;
@@ -1027,6 +1254,27 @@ function normalizeRiskClass(v: any): "I" | "IIa" | "IIb" | "III" | null {
   if (normalized === "IIB") return "IIb";
   if (normalized === "III") return "III";
   return null;
+}
+
+function normalizeEquivalenceType(v: any): "Technical" | "Biological" | "Clinical" {
+  const s = asString(v);
+  if (!s) return "Technical";
+  const normalized = s.toLowerCase().trim();
+  if (normalized.includes("biolog")) return "Biological";
+  if (normalized.includes("clinic")) return "Clinical";
+  return "Technical";
+}
+
+function normalizeSeverity(v: any): "Negligible" | "Minor" | "Serious" | "Critical" | "Catastrophic" {
+  const s = asString(v);
+  if (!s) return "Serious";
+  const normalized = s.toLowerCase().trim();
+  if (normalized.includes("negligible") || normalized.includes("minimal")) return "Negligible";
+  if (normalized.includes("minor") || normalized.includes("low")) return "Minor";
+  if (normalized.includes("catastrophic") || normalized.includes("death") || normalized.includes("fatal")) return "Catastrophic";
+  if (normalized.includes("critical") || normalized.includes("severe") || normalized.includes("high")) return "Critical";
+  if (normalized.includes("serious") || normalized.includes("moderate") || normalized.includes("medium")) return "Serious";
+  return "Serious";
 }
 
 function safeDateString(v: any): string | null {
@@ -1528,10 +1776,16 @@ export async function autoPopulateDossierFromEvidence(
   }
 
   // -------------------------
-  // CLINICAL CONTEXT
+  // CLINICAL CONTEXT (with comprehensive fallback chains)
   // -------------------------
   const existingClinical = dossier.clinicalContext;
+  
+  // Gather all potential sources with fallback priority
   const ifu = pickBestByConfidence(byType.get("ifu_extract") || []);
+  const clinicalEvalForClinical = pickBestByConfidence(byType.get("clinical_evaluation_extract") || []);
+  const braForClinical = pickBestByConfidence(byType.get("benefit_risk_assessment") || []);
+  const cerExtract = pickBestByConfidence(byType.get("cer_extract") || []);
+  const deviceRegForClinical = pickBestByConfidence(byType.get("device_registry_record") || []);
 
   const clinicalUpdate: any = {};
   if (existingClinical) {
@@ -1552,45 +1806,170 @@ export async function autoPopulateDossierFromEvidence(
     clinicalUpdate.stateOfTheArt = undefined;
   }
 
-  if (ifu?.data) {
-    clinicalUpdate.intendedPurpose = mergeString(
-      clinicalUpdate.intendedPurpose,
-      ifu.data.intended_use ?? ifu.data.intendedUse ?? ifu.data.intended_purpose ?? ifu.data.intendedPurpose,
-      overwrite
-    ) || clinicalUpdate.intendedPurpose;
-    if (clinicalUpdate.intendedPurpose && (!existingClinical?.intendedPurpose || overwrite)) {
+  // === INTENDED PURPOSE (fallback chain: IFU -> CER/CE extract -> device registry) ===
+  const intendedPurposeSources = [ifu?.data, clinicalEvalForClinical?.data, cerExtract?.data, deviceRegForClinical?.data].filter(Boolean);
+  for (const source of intendedPurposeSources) {
+    const extracted = getStringField(source, "intendedPurpose");
+    if (extracted && (!clinicalUpdate.intendedPurpose || overwrite)) {
+      clinicalUpdate.intendedPurpose = extracted;
       filledFields.push("clinical.intendedPurpose");
-    }
-
-    clinicalUpdate.indications = mergeStringArray(
-      clinicalUpdate.indications,
-      ifu.data.indications,
-      overwrite
-    );
-    if (clinicalUpdate.indications.length && (!existingClinical?.indications?.length || overwrite)) {
-      filledFields.push("clinical.indications");
-    }
-
-    clinicalUpdate.contraindications = mergeStringArray(
-      clinicalUpdate.contraindications,
-      ifu.data.contraindications,
-      overwrite
-    );
-    if (clinicalUpdate.contraindications.length && (!existingClinical?.contraindications?.length || overwrite)) {
-      filledFields.push("clinical.contraindications");
+      break;
     }
   }
 
-  // Ensure required field intendedPurpose is not empty if we need to upsert
+  // === INDICATIONS (fallback chain: IFU -> CE extract -> CER extract) ===
+  const indicationsSources = [ifu?.data, clinicalEvalForClinical?.data, cerExtract?.data].filter(Boolean);
+  for (const source of indicationsSources) {
+    const extracted = getArrayField(source, "indications");
+    if (extracted.length && (!clinicalUpdate.indications?.length || overwrite)) {
+      clinicalUpdate.indications = mergeStringArray(clinicalUpdate.indications || [], extracted, overwrite);
+      filledFields.push("clinical.indications");
+      break;
+    }
+  }
+
+  // === CONTRAINDICATIONS (fallback chain: IFU -> CE extract) ===
+  const contraSources = [ifu?.data, clinicalEvalForClinical?.data].filter(Boolean);
+  for (const source of contraSources) {
+    const extracted = getArrayField(source, "contraindications");
+    if (extracted.length && (!clinicalUpdate.contraindications?.length || overwrite)) {
+      clinicalUpdate.contraindications = mergeStringArray(clinicalUpdate.contraindications || [], extracted, overwrite);
+      filledFields.push("clinical.contraindications");
+      break;
+    }
+  }
+
+  // === TARGET POPULATION (fallback chain: IFU -> CE extract -> device registry) ===
+  const targetPopSources = [ifu?.data, clinicalEvalForClinical?.data, deviceRegForClinical?.data].filter(Boolean);
+  for (const source of targetPopSources) {
+    const extracted = getField(source, "targetPopulation");
+    if (extracted && (!clinicalUpdate.targetPopulation || overwrite)) {
+      // Handle both string and object formats
+      if (typeof extracted === "string") {
+        clinicalUpdate.targetPopulation = {
+          description: extracted,
+          conditions: [],
+          excludedPopulations: [],
+        };
+      } else if (typeof extracted === "object") {
+        clinicalUpdate.targetPopulation = {
+          description: extracted.description || extracted.population || "",
+          ageRange: extracted.ageRange || extracted.age_range,
+          conditions: getArrayField(extracted, "conditions") || [],
+          excludedPopulations: getArrayField(extracted, "excludedPopulations") || [],
+        };
+      }
+      if (clinicalUpdate.targetPopulation?.description) {
+        filledFields.push("clinical.targetPopulation");
+      }
+      break;
+    }
+  }
+
+  // === CLINICAL BENEFITS (fallback chain: CE extract -> B-R assessment -> CER extract) ===
+  const benefitsSources = [clinicalEvalForClinical?.data, braForClinical?.data, cerExtract?.data].filter(Boolean);
+  for (const source of benefitsSources) {
+    const extracted = getField(source, "clinicalBenefits");
+    const benefitDesc = getStringField(source, "clinicalBenefit") || getStringField(source, "benefit");
+    const benefitsSummary = getStringField(source, "benefitsSummary");
+    
+    if (Array.isArray(extracted) && extracted.length) {
+      // Already structured array
+      clinicalUpdate.clinicalBenefits = mergeArrayById(
+        clinicalUpdate.clinicalBenefits || [],
+        extracted.map((b: any, idx: number) => ({
+          benefitId: b.benefitId || b.benefit_id || `benefit_${idx + 1}`,
+          description: b.description || b.benefit || "",
+          endpoint: b.endpoint || b.clinical_endpoint || "",
+          evidenceSource: b.evidenceSource || b.evidence_source || b.source || "",
+          quantifiedValue: b.quantifiedValue || b.quantified_value || b.value || undefined,
+        })),
+        "benefitId",
+        overwrite
+      );
+      if (clinicalUpdate.clinicalBenefits.length) {
+        filledFields.push("clinical.clinicalBenefits");
+      }
+      break;
+    } else if (benefitDesc || benefitsSummary) {
+      // Single benefit description - convert to structured format
+      const newBenefit = {
+        benefitId: `benefit_${Date.now()}`,
+        description: benefitDesc || benefitsSummary || "",
+        endpoint: getStringField(source, "endpoint") || "",
+        evidenceSource: getStringField(source, "evidenceSource") || "CER extraction",
+        quantifiedValue: getStringField(source, "quantifiedValue"),
+      };
+      if (!clinicalUpdate.clinicalBenefits?.length || overwrite) {
+        clinicalUpdate.clinicalBenefits = [newBenefit];
+        filledFields.push("clinical.clinicalBenefits");
+      }
+      break;
+    }
+  }
+
+  // === ALTERNATIVE TREATMENTS (fallback chain: CE extract -> CER extract) ===
+  const altTreatmentSources = [clinicalEvalForClinical?.data, cerExtract?.data].filter(Boolean);
+  for (const source of altTreatmentSources) {
+    const extracted = getArrayField(source, "alternativeTreatments");
+    const comparison = getStringField(source, "comparisonToAlternatives");
+    
+    if (extracted.length && (!clinicalUpdate.alternativeTreatments?.length || overwrite)) {
+      clinicalUpdate.alternativeTreatments = mergeStringArray(clinicalUpdate.alternativeTreatments || [], extracted, overwrite);
+      filledFields.push("clinical.alternativeTreatments");
+      break;
+    } else if (comparison && (!clinicalUpdate.alternativeTreatments?.length || overwrite)) {
+      // Parse alternatives from comparison text
+      clinicalUpdate.alternativeTreatments = [comparison];
+      filledFields.push("clinical.alternativeTreatments");
+      break;
+    }
+  }
+
+  // === STATE OF THE ART (fallback chain: CE extract -> CER extract) ===
+  const sotaSources = [clinicalEvalForClinical?.data, cerExtract?.data].filter(Boolean);
+  for (const source of sotaSources) {
+    const extracted = getField(source, "stateOfTheArt");
+    const sotaDescription = getStringField(source, "stateOfTheArt") || getStringField(source, "sota");
+    const benchmarkDevices = getArrayField(source, "benchmarkDevices");
+    
+    if (typeof extracted === "object" && extracted) {
+      clinicalUpdate.stateOfTheArt = {
+        description: extracted.description || "",
+        benchmarkDevices: getArrayField(extracted, "benchmarkDevices") || [],
+        performanceThresholds: extracted.performanceThresholds || {},
+      };
+      if (clinicalUpdate.stateOfTheArt.description) {
+        filledFields.push("clinical.stateOfTheArt");
+      }
+      break;
+    } else if (sotaDescription || benchmarkDevices.length) {
+      clinicalUpdate.stateOfTheArt = {
+        description: sotaDescription || "",
+        benchmarkDevices: benchmarkDevices,
+        performanceThresholds: {},
+      };
+      if (sotaDescription || benchmarkDevices.length) {
+        filledFields.push("clinical.stateOfTheArt");
+      }
+      break;
+    }
+  }
+
+  // Determine if clinical context was updated
   const clinicalHasMinimum = asString(clinicalUpdate.intendedPurpose) || existingClinical?.intendedPurpose;
   const clinicalApplied =
-    (ifu?.data && asString(clinicalUpdate.intendedPurpose) !== asString(existingClinical?.intendedPurpose)) ||
-    (ifu?.data && JSON.stringify(clinicalUpdate.indications || []) !== JSON.stringify(existingClinical?.indications || [])) ||
-    (ifu?.data && JSON.stringify(clinicalUpdate.contraindications || []) !== JSON.stringify(existingClinical?.contraindications || []));
+    asString(clinicalUpdate.intendedPurpose) !== asString(existingClinical?.intendedPurpose) ||
+    JSON.stringify(clinicalUpdate.indications || []) !== JSON.stringify(existingClinical?.indications || []) ||
+    JSON.stringify(clinicalUpdate.contraindications || []) !== JSON.stringify(existingClinical?.contraindications || []) ||
+    JSON.stringify(clinicalUpdate.targetPopulation || null) !== JSON.stringify(existingClinical?.targetPopulation || null) ||
+    JSON.stringify(clinicalUpdate.clinicalBenefits || []) !== JSON.stringify(existingClinical?.clinicalBenefits || []) ||
+    JSON.stringify(clinicalUpdate.alternativeTreatments || []) !== JSON.stringify(existingClinical?.alternativeTreatments || []) ||
+    JSON.stringify(clinicalUpdate.stateOfTheArt || null) !== JSON.stringify(existingClinical?.stateOfTheArt || null);
 
   if (clinicalApplied) {
     if (!clinicalHasMinimum) {
-      warnings.push("Clinical Context: intended purpose could not be extracted from uploaded documents.");
+      warnings.push("Clinical Context: intended purpose could not be extracted from uploaded documents. Please provide manually or upload IFU.");
     } else {
       await upsertClinicalContext(deviceCode, {
         ...clinicalUpdate,
@@ -1600,11 +1979,16 @@ export async function autoPopulateDossierFromEvidence(
   }
 
   // -------------------------
-  // RISK CONTEXT
+  // RISK CONTEXT (with comprehensive fallback chains)
   // -------------------------
   const existingRisk = dossier.riskContext;
+  
+  // Gather all potential risk sources with fallback priority
   const riskAssessment = pickBestByConfidence(byType.get("risk_assessment") || []);
   const rmf = pickBestByConfidence(byType.get("rmf_extract") || []);
+  const principalRiskExtract = byType.get("principal_risk_extract") || [];
+  const riskThresholdExtract = pickBestByConfidence(byType.get("risk_threshold_extract") || []);
+  const braForRisk = pickBestByConfidence(byType.get("benefit_risk_assessment") || []);
 
   const riskUpdate: any = {};
   if (existingRisk) {
@@ -1619,13 +2003,14 @@ export async function autoPopulateDossierFromEvidence(
     riskUpdate.hazardCategories = [];
   }
 
-  const riskSources = [riskAssessment, rmf].filter(Boolean) as AutoPopulateEvidenceItem[];
-  for (const src of riskSources) {
+  // === Process legacy risk sources (risk_assessment, rmf_extract) ===
+  const legacyRiskSources = [riskAssessment, rmf].filter(Boolean) as AutoPopulateEvidenceItem[];
+  for (const src of legacyRiskSources) {
     const d = src.data || {};
 
     // Hazard categories
-    const hazards = d.hazard_categories ?? d.hazards ?? d.hazardCategories;
-    if (hazards) {
+    const hazards = getArrayField(d, "hazardCategories");
+    if (hazards.length) {
       riskUpdate.hazardCategories = mergeStringArray(riskUpdate.hazardCategories, hazards, overwrite);
       if (riskUpdate.hazardCategories.length && (!existingRisk?.hazardCategories?.length || overwrite)) {
         filledFields.push("risk.hazardCategories");
@@ -1633,24 +2018,26 @@ export async function autoPopulateDossierFromEvidence(
     }
 
     // Residual risk acceptability (criteria / AFAP)
-    const criteria = d.residual_risk_criteria ?? d.criteria ?? d.acceptability_criteria ?? d.acceptabilityCriteria;
-    const afap = d.afap_analysis_summary ?? d.afapAnalysisSummary ?? d.afap;
-    riskUpdate.residualRiskAcceptability = {
-      criteria: mergeString(riskUpdate.residualRiskAcceptability?.criteria, criteria, overwrite) || "",
-      afapAnalysisSummary: mergeString(riskUpdate.residualRiskAcceptability?.afapAnalysisSummary, afap, overwrite) || "",
-    };
-    if (asString(riskUpdate.residualRiskAcceptability.criteria) && (!existingRisk?.residualRiskAcceptability || overwrite)) {
-      filledFields.push("risk.residualRiskAcceptability.criteria");
+    const criteria = getStringField(d, "riskAcceptability") || getStringField(d, "acceptabilityCriteria");
+    const afap = getStringField(d, "afapAnalysisSummary");
+    if (criteria || afap) {
+      riskUpdate.residualRiskAcceptability = {
+        criteria: mergeString(riskUpdate.residualRiskAcceptability?.criteria, criteria, overwrite) || "",
+        afapAnalysisSummary: mergeString(riskUpdate.residualRiskAcceptability?.afapAnalysisSummary, afap, overwrite) || "",
+      };
+      if (asString(riskUpdate.residualRiskAcceptability.criteria) && (!existingRisk?.residualRiskAcceptability || overwrite)) {
+        filledFields.push("risk.residualRiskAcceptability.criteria");
+      }
     }
 
     // Thresholds (if present)
-    const complaintRateThreshold = d.complaint_rate_threshold ?? d.complaintRateThreshold;
-    const seriousIncidentThreshold = d.serious_incident_threshold ?? d.seriousIncidentThreshold;
-    const method = d.signal_detection_method ?? d.signalDetectionMethod;
+    const complaintRateThreshold = getNumberField(d, "complaintRateThreshold");
+    const seriousIncidentThreshold = getNumberField(d, "seriousIncidentThreshold");
+    const method = getStringField(d, "signalDetectionMethod");
     if (complaintRateThreshold !== undefined || seriousIncidentThreshold !== undefined || method !== undefined) {
       const next = {
-        complaintRateThreshold: Number(complaintRateThreshold ?? riskUpdate.riskThresholds?.complaintRateThreshold ?? 0) || 0,
-        seriousIncidentThreshold: Number(seriousIncidentThreshold ?? riskUpdate.riskThresholds?.seriousIncidentThreshold ?? 0) || 0,
+        complaintRateThreshold: complaintRateThreshold ?? riskUpdate.riskThresholds?.complaintRateThreshold ?? 0,
+        seriousIncidentThreshold: seriousIncidentThreshold ?? riskUpdate.riskThresholds?.seriousIncidentThreshold ?? 0,
         signalDetectionMethod: mergeString(riskUpdate.riskThresholds?.signalDetectionMethod, method, overwrite) || "",
       };
       if (overwrite || !existingRisk?.riskThresholds) {
@@ -1661,13 +2048,96 @@ export async function autoPopulateDossierFromEvidence(
       }
     }
 
-    // Principal risks (if extractor gives structured risks)
-    const principalRisks = d.principal_risks ?? d.principalRisks ?? d.identified_risks ?? d.identifiedRisks;
+    // Principal risks from legacy sources
+    const principalRisks = getField(d, "principalRisks");
     if (Array.isArray(principalRisks) && principalRisks.length) {
       if (overwrite || !(existingRisk?.principalRisks as any[])?.length) {
-        riskUpdate.principalRisks = principalRisks;
+        riskUpdate.principalRisks = principalRisks.map((r: any, idx: number) => ({
+          riskId: r.riskId || r.risk_id || `risk_${idx + 1}`,
+          hazard: getStringField(r, "hazard") || r.hazard_description || "",
+          harm: getStringField(r, "harm") || r.potential_harm || "",
+          severity: normalizeSeverity(getStringField(r, "severity")),
+          probability: getStringField(r, "probability") || "",
+          preMarketOccurrenceRate: getNumberField(r, "preMarketOccurrenceRate"),
+          mitigations: getArrayField(r, "mitigations"),
+          residualRiskAcceptable: r.residualRiskAcceptable ?? r.acceptable ?? true,
+        }));
         filledFields.push("risk.principalRisks");
       }
+    }
+  }
+
+  // === Process new principal_risk_extract evidence (from CER Risk Analysis section) ===
+  if (principalRiskExtract.length && (!riskUpdate.principalRisks?.length || overwrite)) {
+    const extractedRisks = principalRiskExtract.map((ev, idx) => {
+      const d = ev.data || {};
+      return {
+        riskId: getStringField(d, "riskId") || `risk_${idx + 1}`,
+        hazard: getStringField(d, "hazard") || "",
+        harm: getStringField(d, "harm") || "",
+        severity: normalizeSeverity(getStringField(d, "severity")),
+        probability: getStringField(d, "probability") || "",
+        preMarketOccurrenceRate: getNumberField(d, "preMarketOccurrenceRate"),
+        mitigations: getArrayField(d, "mitigations"),
+        residualRiskAcceptable: d.residualRiskAcceptable ?? d.acceptable ?? true,
+      };
+    }).filter(r => r.hazard && r.harm); // Only include risks with both hazard and harm
+
+    if (extractedRisks.length) {
+      riskUpdate.principalRisks = mergeArrayById(
+        riskUpdate.principalRisks || [],
+        extractedRisks,
+        "riskId",
+        overwrite
+      );
+      filledFields.push("risk.principalRisks");
+    }
+  }
+
+  // === Process risk_threshold_extract evidence ===
+  if (riskThresholdExtract?.data) {
+    const d = riskThresholdExtract.data;
+    const complaintThreshold = getNumberField(d, "complaintRateThreshold");
+    const incidentThreshold = getNumberField(d, "seriousIncidentThreshold");
+    const method = getStringField(d, "signalDetectionMethod");
+    const afap = getStringField(d, "afapAnalysisSummary");
+    const criteria = getStringField(d, "acceptabilityCriteria");
+
+    if (complaintThreshold !== undefined || incidentThreshold !== undefined || method) {
+      const next = {
+        complaintRateThreshold: complaintThreshold ?? riskUpdate.riskThresholds?.complaintRateThreshold ?? 0,
+        seriousIncidentThreshold: incidentThreshold ?? riskUpdate.riskThresholds?.seriousIncidentThreshold ?? 0,
+        signalDetectionMethod: mergeString(riskUpdate.riskThresholds?.signalDetectionMethod, method, overwrite) || "",
+      };
+      if (overwrite || !existingRisk?.riskThresholds?.complaintRateThreshold) {
+        riskUpdate.riskThresholds = next;
+        filledFields.push("risk.riskThresholds");
+      }
+    }
+
+    if (criteria || afap) {
+      riskUpdate.residualRiskAcceptability = {
+        criteria: mergeString(riskUpdate.residualRiskAcceptability?.criteria, criteria, overwrite) || riskUpdate.residualRiskAcceptability?.criteria || "",
+        afapAnalysisSummary: mergeString(riskUpdate.residualRiskAcceptability?.afapAnalysisSummary, afap, overwrite) || riskUpdate.residualRiskAcceptability?.afapAnalysisSummary || "",
+      };
+      if (criteria) filledFields.push("risk.residualRiskAcceptability.criteria");
+      if (afap) filledFields.push("risk.residualRiskAcceptability.afapAnalysis");
+    }
+  }
+
+  // === Fallback: Extract risk info from benefit_risk_assessment ===
+  if (braForRisk?.data && (!riskUpdate.residualRiskAcceptability?.criteria || overwrite)) {
+    const d = braForRisk.data;
+    const risksSummary = getStringField(d, "risksSummary");
+    const residualRisks = getArrayField(d, "residualRisks");
+    const acceptability = getStringField(d, "acceptability");
+
+    if (acceptability) {
+      riskUpdate.residualRiskAcceptability = {
+        criteria: mergeString(riskUpdate.residualRiskAcceptability?.criteria, acceptability, overwrite) || riskUpdate.residualRiskAcceptability?.criteria || "",
+        afapAnalysisSummary: riskUpdate.residualRiskAcceptability?.afapAnalysisSummary || "",
+      };
+      filledFields.push("risk.residualRiskAcceptability.criteria");
     }
   }
 
@@ -1748,7 +2218,7 @@ export async function autoPopulateDossierFromEvidence(
     if (next.databases.length) filledFields.push("clinicalEvidence.literatureSearchProtocol.databases");
   }
 
-  // PMCF plan (basic scaffolding from summary/results)
+  // PMCF plan (enhanced extraction from summary/results with endpoints)
   if (pmcfSummary?.data || pmcfResults.length) {
     const existing = ceUpdate.pmcfPlan || {
       objectives: [],
@@ -1758,20 +2228,43 @@ export async function autoPopulateDossierFromEvidence(
       studyIds: [],
     };
 
-    const summaryObjectives = asStringArray(pmcfSummary?.data?.objectives ?? pmcfSummary?.data?.activities ?? pmcfSummary?.data?.main_findings ?? pmcfSummary?.data?.mainFindings);
-    const status = asString(pmcfSummary?.data?.status ?? pmcfSummary?.data?.currentStatus ?? pmcfSummary?.data?.current_status);
-    const targetEnrollment = pmcfSummary?.data?.target_enrollment ?? pmcfSummary?.data?.targetEnrollment;
+    const summaryObjectives = asStringArray(
+      getField(pmcfSummary?.data, "pmcfObjectives") ?? 
+      getField(pmcfSummary?.data, "activitiesPerformed") ?? 
+      pmcfSummary?.data?.objectives ?? 
+      pmcfSummary?.data?.activities
+    );
+    const status = getStringField(pmcfSummary?.data, "currentStatus") || 
+                   asString(pmcfSummary?.data?.status);
+    const targetEnrollment = getNumberField(pmcfSummary?.data, "patientCount") ??
+                             pmcfSummary?.data?.target_enrollment ?? 
+                             pmcfSummary?.data?.targetEnrollment;
 
     const studyIdsFromResults = pmcfResults
-      .map(r => asString(r.data?.study_id ?? r.data?.studyId))
+      .map(r => getStringField(r.data, "studyId") || asString(r.data?.study_id))
       .filter(Boolean) as string[];
     const findingsFromResults = pmcfResults
-      .map(r => asString(r.data?.finding ?? r.data?.conclusion))
+      .map(r => getStringField(r.data, "keyFindings") || asString(r.data?.finding ?? r.data?.conclusion))
       .filter(Boolean) as string[];
+
+    // Extract endpoints from PMCF results (more detailed)
+    const extractedEndpoints: Array<{ endpointId: string; description: string; targetValue?: string; measurementMethod?: string }> = [];
+    for (const result of pmcfResults) {
+      const d = result.data || {};
+      const primaryEndpoint = getStringField(d, "primaryEndpoint") || d.primary_endpoint || d.endpoint;
+      if (primaryEndpoint) {
+        extractedEndpoints.push({
+          endpointId: `ep_${extractedEndpoints.length + 1}`,
+          description: primaryEndpoint,
+          targetValue: getStringField(d, "targetValue") || d.target_value,
+          measurementMethod: getStringField(d, "measurementMethod") || d.measurement_method,
+        });
+      }
+    }
 
     const next = {
       objectives: mergeStringArray(existing.objectives, [...summaryObjectives, ...findingsFromResults], overwrite),
-      endpoints: existing.endpoints || [],
+      endpoints: mergeArrayById(existing.endpoints || [], extractedEndpoints, "endpointId", overwrite),
       targetEnrollment: overwrite
         ? (Number(targetEnrollment) || existing.targetEnrollment)
         : (existing.targetEnrollment ?? (Number(targetEnrollment) || undefined)),
@@ -1782,12 +2275,62 @@ export async function autoPopulateDossierFromEvidence(
     ceUpdate.pmcfPlan = next;
     if (next.objectives.length) filledFields.push("clinicalEvidence.pmcfPlan.objectives");
     if (next.studyIds?.length) filledFields.push("clinicalEvidence.pmcfPlan.studyIds");
+    if (next.endpoints?.length) filledFields.push("clinicalEvidence.pmcfPlan.endpoints");
+  }
+
+  // === EQUIVALENCE DEVICES (from CE extract or dedicated equivalence evidence) ===
+  const equivalenceEvidence = byType.get("equivalence_extract") || [];
+  const ceForEquivalence = clinicalEval?.data;
+  
+  // Try to extract equivalence from clinical evaluation extract
+  const extractedEquivalence = getField(ceForEquivalence, "equivalentDevices") ||
+                               getField(ceForEquivalence, "equivalence");
+  
+  if (Array.isArray(extractedEquivalence) && extractedEquivalence.length) {
+    ceUpdate.equivalentDevices = mergeArrayById(
+      ceUpdate.equivalentDevices || [],
+      extractedEquivalence.map((eq: any, idx: number) => ({
+        deviceName: eq.deviceName || eq.device_name || eq.name || "",
+        manufacturer: eq.manufacturer || eq.manufacturer_name || "",
+        equivalenceType: normalizeEquivalenceType(eq.equivalenceType || eq.equivalence_type || eq.type),
+        equivalenceJustification: eq.equivalenceJustification || eq.justification || eq.rationale || "",
+      })),
+      "deviceName",
+      overwrite
+    );
+    if (ceUpdate.equivalentDevices?.length) {
+      filledFields.push("clinicalEvidence.equivalentDevices");
+    }
+  }
+  
+  // Also check dedicated equivalence evidence
+  for (const eqEv of equivalenceEvidence) {
+    const d = eqEv.data || {};
+    const deviceName = getStringField(d, "deviceName") || d.device_name || d.name;
+    if (deviceName) {
+      const eqDevice = {
+        deviceName,
+        manufacturer: getStringField(d, "manufacturer") || d.manufacturer_name || "",
+        equivalenceType: normalizeEquivalenceType(getStringField(d, "equivalenceType") || d.equivalence_type),
+        equivalenceJustification: getStringField(d, "equivalenceJustification") || d.justification || "",
+      };
+      ceUpdate.equivalentDevices = mergeArrayById(
+        ceUpdate.equivalentDevices || [],
+        [eqDevice],
+        "deviceName",
+        overwrite
+      );
+    }
+  }
+  if (ceUpdate.equivalentDevices?.length && !filledFields.includes("clinicalEvidence.equivalentDevices")) {
+    filledFields.push("clinicalEvidence.equivalentDevices");
   }
 
   const ceApplied =
     JSON.stringify(ceUpdate.cerConclusions || null) !== JSON.stringify(existingCE?.cerConclusions || null) ||
     JSON.stringify(ceUpdate.pmcfPlan || null) !== JSON.stringify(existingCE?.pmcfPlan || null) ||
-    JSON.stringify(ceUpdate.literatureSearchProtocol || null) !== JSON.stringify(existingCE?.literatureSearchProtocol || null);
+    JSON.stringify(ceUpdate.literatureSearchProtocol || null) !== JSON.stringify(existingCE?.literatureSearchProtocol || null) ||
+    JSON.stringify(ceUpdate.equivalentDevices || null) !== JSON.stringify(existingCE?.equivalentDevices || null);
 
   if (ceApplied) {
     await upsertClinicalEvidence(deviceCode, ceUpdate);

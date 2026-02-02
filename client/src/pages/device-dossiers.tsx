@@ -533,15 +533,29 @@ function DossierEditor({
   const queryClient = useQueryClient();
   const [autoFiles, setAutoFiles] = useState<File[]>([]);
   const [autoOverwrite, setAutoOverwrite] = useState(false);
+  const [autoPsurCaseId, setAutoPsurCaseId] = useState<string>(""); // Empty = no PSUR case
   const [autoResultOpen, setAutoResultOpen] = useState(false);
   const [autoResult, setAutoResult] = useState<any>(null);
   const autoFileInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Fetch PSUR cases for optional linking
+  const { data: psurCases } = useQuery<any[]>({
+    queryKey: ["/api/psur-cases"],
+    queryFn: async () => {
+      const res = await fetch("/api/psur-cases");
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
   const autoPopulateMutation = useMutation({
-    mutationFn: async ({ files, overwrite }: { files: File[]; overwrite: boolean }) => {
+    mutationFn: async ({ files, overwrite, psurCaseId }: { files: File[]; overwrite: boolean; psurCaseId?: number }) => {
       const formData = new FormData();
       for (const f of files) formData.append("files", f);
       formData.append("overwrite", overwrite ? "true" : "false");
+      if (psurCaseId) {
+        formData.append("psurCaseId", String(psurCaseId));
+      }
 
       const res = await fetch(`/api/device-dossiers/${dossier.core.deviceCode}/auto-populate`, {
         method: "POST",
@@ -560,6 +574,10 @@ function DossierEditor({
       setAutoFiles([]);
       queryClient.invalidateQueries({ queryKey: ["/api/device-dossiers"] });
       queryClient.invalidateQueries({ queryKey: ["/api/device-dossiers", dossier.core.deviceCode] });
+      // Also invalidate evidence counts if PSUR atoms were persisted
+      if (data.psurAtoms?.psurCaseId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/evidence/atoms/counts"] });
+      }
     },
   });
 
@@ -615,31 +633,62 @@ function DossierEditor({
                 Upload CER / IFU / RMF / certificates and auto-fill dossier fields. Anything missing can be completed manually.
               </p>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="overwrite"
-                  checked={autoOverwrite}
-                  onCheckedChange={(v) => setAutoOverwrite(v === true)}
-                  disabled={autoPopulateMutation.isPending || isUpdating}
-                />
-                <Label htmlFor="overwrite" className="text-sm">
-                  Overwrite existing
-                </Label>
+            <div className="flex flex-col gap-3 items-end">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="overwrite"
+                    checked={autoOverwrite}
+                    onCheckedChange={(v) => setAutoOverwrite(v === true)}
+                    disabled={autoPopulateMutation.isPending || isUpdating}
+                  />
+                  <Label htmlFor="overwrite" className="text-sm">
+                    Overwrite existing
+                  </Label>
+                </div>
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={() => autoPopulateMutation.mutate({ 
+                    files: autoFiles, 
+                    overwrite: autoOverwrite,
+                    psurCaseId: autoPsurCaseId ? Number(autoPsurCaseId) : undefined,
+                  })}
+                  disabled={autoFiles.length === 0 || autoPopulateMutation.isPending || isUpdating}
+                >
+                  {autoPopulateMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Upload className="w-4 h-4 mr-2" />
+                  )}
+                  Extract & Populate
+                </Button>
               </div>
-              <Button
-                variant="default"
-                size="sm"
-                onClick={() => autoPopulateMutation.mutate({ files: autoFiles, overwrite: autoOverwrite })}
-                disabled={autoFiles.length === 0 || autoPopulateMutation.isPending || isUpdating}
-              >
-                {autoPopulateMutation.isPending ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                ) : (
-                  <Upload className="w-4 h-4 mr-2" />
-                )}
-                Extract & Populate
-              </Button>
+              {/* Optional: Also store evidence for a PSUR case */}
+              <div className="flex items-center gap-2">
+                <Label htmlFor="psur-case-select" className="text-sm text-muted-foreground whitespace-nowrap">
+                  Also add evidence to PSUR:
+                </Label>
+                <Select
+                  value={autoPsurCaseId}
+                  onValueChange={setAutoPsurCaseId}
+                  disabled={autoPopulateMutation.isPending || isUpdating}
+                >
+                  <SelectTrigger id="psur-case-select" className="w-[220px] h-8 text-sm">
+                    <SelectValue placeholder="None (dossier only)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">None (dossier only)</SelectItem>
+                    {psurCases?.filter((c: any) => c.status !== "exported")
+                      .slice(0, 20)
+                      .map((c: any) => (
+                        <SelectItem key={c.id} value={String(c.id)}>
+                          {c.psurReference || `PSUR #${c.id}`}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
 
@@ -648,7 +697,7 @@ function DossierEditor({
               ref={autoFileInputRef}
               type="file"
               multiple
-              accept=".pdf,.docx,.xlsx,.xls,.csv,.json"
+              accept=".pdf,.docx,.xlsx,.xls,.csv,.json,.txt"
               className="hidden"
               onChange={(e) => {
                 const files = e.target.files ? Array.from(e.target.files) : [];
@@ -817,6 +866,19 @@ function DossierEditor({
                   </div>
                 </div>
               )}
+
+              {/* Show PSUR atom persistence info if applicable */}
+              {autoResult?.psurAtoms && (
+                <div className="space-y-2 p-3 rounded-lg bg-green-50 border border-green-200">
+                  <p className="text-sm font-medium flex items-center gap-2 text-green-700">
+                    <CheckCircle2 className="w-4 h-4" />
+                    Evidence also stored for PSUR
+                  </p>
+                  <div className="text-sm text-green-600">
+                    <span className="font-medium">{autoResult.psurAtoms.atomsPersisted}</span> evidence atoms persisted for PSUR case #{autoResult.psurAtoms.psurCaseId}
+                  </div>
+                </div>
+              )}
             </div>
 
             <DialogFooter>
@@ -954,6 +1016,16 @@ function IdentityTab({
     classification: dossier.classification || { class: "IIa", rule: "", rationale: "" },
   });
 
+  // Sync form state when dossier data changes (after save/refetch)
+  useEffect(() => {
+    setFormData({
+      tradeName: dossier.tradeName || "",
+      manufacturerName: dossier.manufacturerName || "",
+      basicUdiDi: dossier.basicUdiDi || "",
+      classification: dossier.classification || { class: "IIa", rule: "", rationale: "" },
+    });
+  }, [dossier.deviceCode, dossier.tradeName, dossier.manufacturerName, dossier.basicUdiDi, dossier.classification]);
+
   const handleSave = () => {
     onUpdate(formData);
   };
@@ -1074,6 +1146,22 @@ function ClinicalTab({
     clinicalBenefits: clinicalContext?.clinicalBenefits || [],
     alternativeTreatments: clinicalContext?.alternativeTreatments || [],
   });
+
+  // Sync form state when clinicalContext data changes (after save/refetch)
+  useEffect(() => {
+    setFormData({
+      intendedPurpose: clinicalContext?.intendedPurpose || "",
+      indications: clinicalContext?.indications || [],
+      contraindications: clinicalContext?.contraindications || [],
+      targetPopulation: clinicalContext?.targetPopulation || {
+        description: "",
+        conditions: [],
+        excludedPopulations: [],
+      },
+      clinicalBenefits: clinicalContext?.clinicalBenefits || [],
+      alternativeTreatments: clinicalContext?.alternativeTreatments || [],
+    });
+  }, [deviceCode, clinicalContext]);
 
   const [newIndication, setNewIndication] = useState("");
   const [newContraindication, setNewContraindication] = useState("");
@@ -1242,6 +1330,23 @@ function RiskTab({
     },
     hazardCategories: riskContext?.hazardCategories || [],
   });
+
+  // Sync form state when riskContext data changes (after save/refetch)
+  useEffect(() => {
+    setFormData({
+      principalRisks: riskContext?.principalRisks || [],
+      residualRiskAcceptability: riskContext?.residualRiskAcceptability || {
+        criteria: "",
+        afapAnalysisSummary: "",
+      },
+      riskThresholds: riskContext?.riskThresholds || {
+        complaintRateThreshold: 0,
+        seriousIncidentThreshold: 0,
+        signalDetectionMethod: "",
+      },
+      hazardCategories: riskContext?.hazardCategories || [],
+    });
+  }, [deviceCode, riskContext]);
 
   const handleSave = () => {
     onUpdate(formData);

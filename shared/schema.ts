@@ -732,6 +732,9 @@ export const decisionTraceEventTypeEnum = [
   "NARRATIVE_GENERATION_STARTED",
   "NARRATIVE_GENERATED",
   "CITATION_VERIFIED",
+  // Context loading events
+  "DOSSIER_CONTEXT_LOADED",
+  "AGENT_ROLE_CONTEXT_LOADED",
 ] as const;
 
 export type DecisionTraceEventType = typeof decisionTraceEventTypeEnum[number];
@@ -886,47 +889,47 @@ export const decisionTraceSummaries = pgTable("decision_trace_summaries", {
 
 export const contentTraces = pgTable("content_traces", {
   id: serial("id").primaryKey(),
-  
+
   // Linking
   psurCaseId: integer("psur_case_id").notNull().references(() => psurCases.id, { onDelete: "cascade" }),
   slotId: text("slot_id").notNull(), // Which slot this content belongs to
   slotTitle: text("slot_title"),
-  
+
   // Content Identification
   contentType: text("content_type").notNull(), // "sentence", "paragraph", "table_row", "table_cell", "calculation", "entry", "chart_point", "conclusion", "list_item"
   contentId: text("content_id").notNull(), // Unique ID for this content element
   contentIndex: integer("content_index").notNull(), // Position within slot (e.g., 3rd paragraph, row 2 cell 5)
   contentPreview: text("content_preview").notNull(), // First 500 chars of actual content
-  
+
   // Decision Rationale
   rationale: text("rationale").notNull(), // Plain English explanation of WHY this content was created
   methodology: text("methodology").notNull(), // HOW the decision was made (e.g., "averaged 3 complaint records", "calculated as (numerator/denominator)*100")
   standardReference: text("standard_reference"), // Regulatory standard or requirement being met (e.g., "MDR Article 86(1)")
-  
+
   // Evidence & Sources
   evidenceType: text("evidence_type"), // Type of evidence used (e.g., "complaint_records", "sales_data", "clinical_observations")
   atomIds: text("atom_ids").array().default(sql`ARRAY[]::text[]`), // Array of evidence atom IDs supporting this content
   sourceDocument: text("source_document"), // Reference to source file/document (e.g., "complaint_data_2024.csv")
   dataSourceId: integer("data_source_id").references(() => dataSources.id, { onDelete: "set null" }),
-  
+
   // Regulatory Linkage
   obligationId: text("obligation_id"), // GRKB obligation this content satisfies
   obligationTitle: text("obligation_title"),
   jurisdictions: text("jurisdictions").array().default(sql`ARRAY[]::text[]`),
-  
+
   // Calculation Details (if applicable)
   calculationType: text("calculation_type"), // "average", "sum", "percentage", "count", "formula", "aggregation", etc.
   calculationFormula: text("calculation_formula"), // Actual formula used (e.g., "(42+38+45)/3")
   calculationInputs: jsonb("calculation_inputs"), // {value1: 42, value2: 38, value3: 45, result: 41.67}
-  
+
   // Agent Information
   agentId: text("agent_id").notNull(), // Which agent made the decision (e.g., "narrative_agent_v1", "table_filler_agent")
   agentName: text("agent_name"), // Human-readable agent name
-  
+
   // Timestamp and Chain
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
   contentHash: text("content_hash").notNull(), // SHA256 of content for integrity
-  
+
   // Queryability Enhancement
   searchableText: text("searchable_text"), // Concatenated text for NL search: rationale + methodology + evidence types
 }, (table) => ({
@@ -1371,7 +1374,7 @@ export const slotObligationLinks = pgTable(
 
     // Whether this link is mandatory for coverage
     mandatory: boolean("mandatory").notNull().default(true),
-    
+
     // SOTA grounding metadata
     confidence: integer("confidence").default(0), // 0-100 confidence score
     matchMethod: text("match_method"), // semantic, evidence_type, regulatory_ref, llm_analysis, manual
@@ -1838,19 +1841,19 @@ export const deviceDossiers = pgTable("device_dossiers", {
   id: serial("id").primaryKey(),
   deviceCode: text("device_code").notNull().unique(),
   deviceId: integer("device_id").references(() => devices.id, { onDelete: "set null" }),
-  
+
   // Identity
   basicUdiDi: text("basic_udi_di"),
   tradeName: text("trade_name").notNull(),
   manufacturerName: text("manufacturer_name"),
-  
+
   // Classification
   classification: jsonb("classification").$type<{
     class: "I" | "IIa" | "IIb" | "III";
     rule: string;
     rationale: string;
   }>(),
-  
+
   // Device variants and accessories
   variants: jsonb("variants").$type<Array<{
     variantId: string;
@@ -1859,14 +1862,14 @@ export const deviceDossiers = pgTable("device_dossiers", {
     description?: string;
   }>>(),
   accessories: text("accessories").array().default(sql`ARRAY[]::text[]`),
-  
+
   // Software info (if applicable)
   software: jsonb("software").$type<{
     version: string;
     significantChanges: string[];
     isSaMD: boolean;
   }>(),
-  
+
   // Market info
   marketEntryDate: timestamp("market_entry_date"),
   cumulativeExposure: jsonb("cumulative_exposure").$type<{
@@ -1874,11 +1877,11 @@ export const deviceDossiers = pgTable("device_dossiers", {
     unitsDistributed?: number;
     asOfDate: string;
   }>(),
-  
+
   // Dossier completeness tracking
   completenessScore: integer("completeness_score").default(0), // 0-100
   lastValidatedAt: timestamp("last_validated_at"),
-  
+
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
   updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 }, (t) => ({
@@ -1899,14 +1902,14 @@ export type InsertDeviceDossier = z.infer<typeof insertDeviceDossierSchema>;
 export const dossierClinicalContext = pgTable("dossier_clinical_context", {
   id: serial("id").primaryKey(),
   deviceCode: text("device_code").notNull().references(() => deviceDossiers.deviceCode, { onDelete: "cascade" }),
-  
+
   // Intended purpose (verbatim from IFU)
   intendedPurpose: text("intended_purpose").notNull(),
-  
+
   // Indications and contraindications
   indications: text("indications").array().default(sql`ARRAY[]::text[]`),
   contraindications: text("contraindications").array().default(sql`ARRAY[]::text[]`),
-  
+
   // Target population
   targetPopulation: jsonb("target_population").$type<{
     description: string;
@@ -1914,7 +1917,7 @@ export const dossierClinicalContext = pgTable("dossier_clinical_context", {
     conditions: string[];
     excludedPopulations: string[];
   }>(),
-  
+
   // Clinical benefits (key for B/R assessment)
   clinicalBenefits: jsonb("clinical_benefits").$type<Array<{
     benefitId: string;
@@ -1923,17 +1926,17 @@ export const dossierClinicalContext = pgTable("dossier_clinical_context", {
     evidenceSource: string;
     quantifiedValue?: string;
   }>>(),
-  
+
   // Alternative treatments (for B/R context)
   alternativeTreatments: text("alternative_treatments").array().default(sql`ARRAY[]::text[]`),
-  
+
   // State of the art
   stateOfTheArt: jsonb("state_of_the_art").$type<{
     description: string;
     benchmarkDevices: string[];
     performanceThresholds: Record<string, number>;
   }>(),
-  
+
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
   updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 }, (t) => ({
@@ -1954,7 +1957,7 @@ export type InsertDossierClinicalContext = z.infer<typeof insertDossierClinicalC
 export const dossierRiskContext = pgTable("dossier_risk_context", {
   id: serial("id").primaryKey(),
   deviceCode: text("device_code").notNull().references(() => deviceDossiers.deviceCode, { onDelete: "cascade" }),
-  
+
   // Principal identified risks (top risks from risk file)
   principalRisks: jsonb("principal_risks").$type<Array<{
     riskId: string;
@@ -1966,23 +1969,23 @@ export const dossierRiskContext = pgTable("dossier_risk_context", {
     mitigations: string[];
     residualRiskAcceptable: boolean;
   }>>(),
-  
+
   // Risk acceptability criteria
   residualRiskAcceptability: jsonb("residual_risk_acceptability").$type<{
     criteria: string;
     afapAnalysisSummary: string;
   }>(),
-  
+
   // Signal detection thresholds
   riskThresholds: jsonb("risk_thresholds").$type<{
     complaintRateThreshold: number;
     seriousIncidentThreshold: number;
     signalDetectionMethod: string;
   }>(),
-  
+
   // Hazard categories for IMDRF mapping
   hazardCategories: text("hazard_categories").array().default(sql`ARRAY[]::text[]`),
-  
+
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
   updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 }, (t) => ({
@@ -2003,16 +2006,16 @@ export type InsertDossierRiskContext = z.infer<typeof insertDossierRiskContextSc
 export const dossierPriorPsurs = pgTable("dossier_prior_psurs", {
   id: serial("id").primaryKey(),
   deviceCode: text("device_code").notNull().references(() => deviceDossiers.deviceCode, { onDelete: "cascade" }),
-  
+
   // Period
   periodStart: timestamp("period_start").notNull(),
   periodEnd: timestamp("period_end").notNull(),
   psurReference: text("psur_reference"),
-  
+
   // Conclusions
   benefitRiskConclusion: text("benefit_risk_conclusion"), // "Favorable" | "Acceptable" | "Unfavorable"
   keyFindings: text("key_findings").array().default(sql`ARRAY[]::text[]`),
-  
+
   // Actions and commitments
   actionsRequired: jsonb("actions_required").$type<Array<{
     actionId: string;
@@ -2021,7 +2024,7 @@ export const dossierPriorPsurs = pgTable("dossier_prior_psurs", {
     completed: boolean;
     completedDate?: string;
   }>>(),
-  
+
   // Key metrics from that period (for trend comparison)
   periodMetrics: jsonb("period_metrics").$type<{
     totalUnits?: number;
@@ -2030,7 +2033,7 @@ export const dossierPriorPsurs = pgTable("dossier_prior_psurs", {
     seriousIncidents?: number;
     fscaCount?: number;
   }>(),
-  
+
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 }, (t) => ({
   deviceCodeIdx: index("dossier_prior_psurs_device_code_idx").on(t.deviceCode),
@@ -2050,27 +2053,27 @@ export type InsertDossierPriorPsur = z.infer<typeof insertDossierPriorPsurSchema
 export const dossierBaselines = pgTable("dossier_baselines", {
   id: serial("id").primaryKey(),
   deviceCode: text("device_code").notNull().references(() => deviceDossiers.deviceCode, { onDelete: "cascade" }),
-  
+
   // Metric identification
   metricType: text("metric_type").notNull(), // complaint_rate, incident_rate, return_rate, etc.
-  
+
   // Period for this baseline
   periodStart: timestamp("period_start").notNull(),
   periodEnd: timestamp("period_end").notNull(),
-  
+
   // Value
   value: text("value").notNull(), // Stored as text for precision
   denominator: integer("denominator"), // Units sold/distributed
   unit: text("unit"), // "per_1000_units", "percent", "count"
-  
+
   // Methodology
   methodology: text("methodology"), // How baseline was calculated
   dataSource: text("data_source"), // Where data came from
-  
+
   // Confidence
   confidence: text("confidence"), // High, Medium, Low
   notes: text("notes"),
-  
+
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 }, (t) => ({
   deviceCodeIdx: index("dossier_baselines_device_code_idx").on(t.deviceCode),
@@ -2090,7 +2093,7 @@ export type InsertDossierBaseline = z.infer<typeof insertDossierBaselineSchema>;
 export const dossierClinicalEvidence = pgTable("dossier_clinical_evidence", {
   id: serial("id").primaryKey(),
   deviceCode: text("device_code").notNull().references(() => deviceDossiers.deviceCode, { onDelete: "cascade" }),
-  
+
   // CER conclusions
   cerConclusions: jsonb("cer_conclusions").$type<{
     lastUpdateDate: string;
@@ -2098,7 +2101,7 @@ export const dossierClinicalEvidence = pgTable("dossier_clinical_evidence", {
     keyFindings: string[];
     dataGapsIdentified: string[];
   }>(),
-  
+
   // PMCF plan
   pmcfPlan: jsonb("pmcf_plan").$type<{
     objectives: string[];
@@ -2112,7 +2115,7 @@ export const dossierClinicalEvidence = pgTable("dossier_clinical_evidence", {
     currentStatus: string;
     studyIds?: string[];
   }>(),
-  
+
   // Literature search protocol
   literatureSearchProtocol: jsonb("literature_search_protocol").$type<{
     databases: string[];
@@ -2121,7 +2124,7 @@ export const dossierClinicalEvidence = pgTable("dossier_clinical_evidence", {
     exclusionCriteria: string[];
     lastSearchDate: string;
   }>(),
-  
+
   // External database search protocol (MDCG 2022-21 Section 10)
   externalDbSearchProtocol: jsonb("external_db_search_protocol").$type<{
     databases: string[];
@@ -2130,7 +2133,7 @@ export const dossierClinicalEvidence = pgTable("dossier_clinical_evidence", {
     lastSearchDate: string;
     relevanceCriteria: string[];
   }>(),
-  
+
   // Equivalent devices (if equivalence route)
   equivalentDevices: jsonb("equivalent_devices").$type<Array<{
     deviceName: string;
@@ -2138,7 +2141,7 @@ export const dossierClinicalEvidence = pgTable("dossier_clinical_evidence", {
     equivalenceType: "Technical" | "Biological" | "Clinical";
     equivalenceJustification: string;
   }>>(),
-  
+
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
   updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 }, (t) => ({
@@ -2159,7 +2162,7 @@ export type InsertDossierClinicalEvidence = z.infer<typeof insertDossierClinical
 export const dossierRegulatoryHistory = pgTable("dossier_regulatory_history", {
   id: serial("id").primaryKey(),
   deviceCode: text("device_code").notNull().references(() => deviceDossiers.deviceCode, { onDelete: "cascade" }),
-  
+
   // Certificates
   certificates: jsonb("certificates").$type<Array<{
     certificateId: string;
@@ -2170,7 +2173,7 @@ export const dossierRegulatoryHistory = pgTable("dossier_regulatory_history", {
     scope: string;
     status: "Active" | "Expired" | "Suspended" | "Withdrawn";
   }>>(),
-  
+
   // NB Commitments/Conditions
   nbCommitments: jsonb("nb_commitments").$type<Array<{
     commitmentId: string;
@@ -2181,7 +2184,7 @@ export const dossierRegulatoryHistory = pgTable("dossier_regulatory_history", {
     completedDate?: string;
     evidence?: string;
   }>>(),
-  
+
   // FSCA History
   fscaHistory: jsonb("fsca_history").$type<Array<{
     fscaId: string;
@@ -2193,7 +2196,7 @@ export const dossierRegulatoryHistory = pgTable("dossier_regulatory_history", {
     status: "Active" | "Completed";
     completionDate?: string;
   }>>(),
-  
+
   // Design changes
   designChanges: jsonb("design_changes").$type<Array<{
     changeId: string;
@@ -2203,7 +2206,7 @@ export const dossierRegulatoryHistory = pgTable("dossier_regulatory_history", {
     significance: "Significant" | "Non-Significant";
     regulatoryImpact: string;
   }>>(),
-  
+
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
   updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 }, (t) => ({

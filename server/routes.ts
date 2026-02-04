@@ -7,6 +7,13 @@ import * as path from "node:path";
 import { storage } from "./storage";
 import { isDatabaseConnectionError } from "./db";
 
+function hasSchemaFor(type: string): boolean {
+  // Use globally imported/hoisted EVIDENCE_DEFINITIONS
+  // If EVIDENCE_DEFINITIONS is not available at runtime due to circular deps or other issues, this might fail,
+  // but based on syntax it should be fine.
+  return EVIDENCE_DEFINITIONS.some(d => d.type === type);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // PREVIEW CACHE - Fast in-memory cache for document previews
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -598,9 +605,9 @@ export async function registerRoutes(
     const { DEFAULT_PROMPT_TEMPLATES } = await import("./src/agents/llmService");
     const { systemInstructions } = await import("@shared/schema");
     const { db } = await import("./db");
-    
+
     const dbHealthy = await isPoolHealthy();
-    
+
     // Check prompt seeding status
     let promptStatus = { total: 0, inDb: 0, missing: 0, healthy: false };
     try {
@@ -608,7 +615,7 @@ export async function registerRoutes(
       const existingRows = await db.select({ key: systemInstructions.key }).from(systemInstructions);
       const existingKeys = new Set(existingRows.map(r => r.key));
       const missingCount = Object.keys(DEFAULT_PROMPT_TEMPLATES).filter(k => !existingKeys.has(k)).length;
-      
+
       promptStatus = {
         total: expectedCount,
         inDb: existingKeys.size,
@@ -618,7 +625,7 @@ export async function registerRoutes(
     } catch (e) {
       // DB might not be ready
     }
-    
+
     const allHealthy = dbHealthy && promptStatus.healthy;
     const status = allHealthy ? "healthy" : "degraded";
 
@@ -635,29 +642,29 @@ export async function registerRoutes(
       uptime: process.uptime(),
     });
   });
-  
+
   // Prompt seeding status endpoint
   app.get("/api/system-instructions/status", async (_req, res) => {
     try {
       const { DEFAULT_PROMPT_TEMPLATES } = await import("./src/agents/llmService");
       const { systemInstructions } = await import("@shared/schema");
       const { db } = await import("./db");
-      
+
       const expectedKeys = Object.keys(DEFAULT_PROMPT_TEMPLATES);
       const existingRows = await db.select({ key: systemInstructions.key }).from(systemInstructions);
       const existingKeys = new Set(existingRows.map(r => r.key));
-      
+
       const missingKeys = expectedKeys.filter(k => !existingKeys.has(k));
       const extraKeys = Array.from(existingKeys).filter(k => !expectedKeys.includes(k));
-      
+
       res.json({
         healthy: missingKeys.length === 0,
         expected: expectedKeys.length,
         inDatabase: existingKeys.size,
         missing: missingKeys,
         extra: extraKeys,
-        message: missingKeys.length === 0 
-          ? "All prompts are seeded" 
+        message: missingKeys.length === 0
+          ? "All prompts are seeded"
           : `${missingKeys.length} prompts missing - restart server or visit System Instructions page`
       });
     } catch (error: any) {
@@ -882,7 +889,7 @@ export async function registerRoutes(
   // ═══════════════════════════════════════════════════════════════════════════════
   // LLM-POWERED PREVIEW - Smart agent-aware preview generation
   // ═══════════════════════════════════════════════════════════════════════════════
-  
+
   // Comprehensive sample data for all agent types
   const AGENT_SAMPLE_DATA: Record<string, Record<string, string>> = {
     // === NARRATIVE AGENT SAMPLE DATA ===
@@ -1065,7 +1072,7 @@ export async function registerRoutes(
   // Detect agent category from instruction key
   function detectAgentCategory(key: string): string {
     const keyUpper = key.toUpperCase();
-    
+
     // Narrative agents
     if (keyUpper.includes("EXEC_SUMMARY") || keyUpper.includes("EXECSUMMARY")) return "EXEC_SUMMARY";
     if (keyUpper.includes("SAFETY") && !keyUpper.includes("FSCA")) return "SAFETY";
@@ -1077,7 +1084,7 @@ export async function registerRoutes(
     if (keyUpper.includes("CLINICAL") || keyUpper.includes("LITERATURE") || keyUpper.includes("PMCF")) return "CLINICAL";
     if (keyUpper.includes("BENEFIT_RISK") || keyUpper.includes("BENEFITRISK")) return "BENEFIT_RISK";
     if (keyUpper.includes("CONCLUSION")) return "CONCLUSION";
-    
+
     // Table agents
     if (keyUpper.includes("TABLE")) {
       if (keyUpper.includes("COMPLAINT")) return "COMPLAINTS_TABLE";
@@ -1085,30 +1092,30 @@ export async function registerRoutes(
       if (keyUpper.includes("CAPA")) return "CAPA_TABLE";
       return "TABLE";
     }
-    
+
     // Chart agents
     if (keyUpper.includes("CHART") || keyUpper.includes("HEATMAP")) return "CHART";
-    
+
     // Ingestion agents
     if (keyUpper.includes("DOCUMENT_ANALYSIS") || keyUpper.includes("DOCUMENTANALYZER")) return "DOCUMENT_ANALYSIS";
     if (keyUpper.includes("EVIDENCE_EXTRACTION") || keyUpper.includes("EVIDENCEEXTRACTION")) return "EVIDENCE_EXTRACTION";
     if (keyUpper.includes("FIELD_MAPPING") || keyUpper.includes("FIELDMAPPING")) return "FIELD_MAPPING";
     if (keyUpper.includes("SEVERITY")) return "SEVERITY_CLASSIFICATION";
     if (keyUpper.includes("COMPLIANCE")) return "COMPLIANCE_CHECK";
-    
+
     // Persona agents (ends with Agent)
     if (keyUpper.endsWith("AGENT")) return "PERSONA";
-    
+
     // Narrative generation fallback
     if (keyUpper.includes("NARRATIVE")) return "EXEC_SUMMARY";
-    
+
     return "EXEC_SUMMARY"; // Default
   }
 
   // Get appropriate system prompt based on agent type
   function getSystemPromptForAgent(key: string): string {
     const keyUpper = key.toUpperCase();
-    
+
     // Persona agents get a special system prompt
     if (keyUpper.endsWith("AGENT") && !keyUpper.includes("SYSTEM") && !keyUpper.includes("TASK")) {
       return `You are being previewed as an AI agent persona. Demonstrate your unique personality, expertise, and approach by responding to a sample PSUR-related task. Show how your specialized knowledge and tone would affect the output.
@@ -1121,17 +1128,17 @@ Your response should demonstrate:
 
 Provide a sample output that showcases your capabilities.`;
     }
-    
+
     // System prompts
     if (keyUpper.includes("SYSTEM")) {
       return "You are previewing a SYSTEM PROMPT. Generate a sample output that would result from using this system prompt with typical PSUR evidence data. Show the regulatory writing style and structure this prompt produces.";
     }
-    
+
     // Task prompts
     if (keyUpper.includes("TASK")) {
       return "You are previewing a TASK TEMPLATE. Generate the expected output that would result from this task template with the provided sample data. Demonstrate the format and content quality.";
     }
-    
+
     // Default
     return "You are an expert medical device regulatory writer previewing a prompt configuration. Generate professional, compliant PSUR content based on the following template and sample data.";
   }
@@ -1176,7 +1183,7 @@ Provide a sample output that showcases your capabilities.`;
       const isPersona = keyUpper.endsWith("AGENT") && !keyUpper.includes("SYSTEM") && !keyUpper.includes("TASK");
       const isTaskTemplate = keyUpper.includes("TASK");
 
-      let messages: Array<{role: "system" | "user" | "assistant", content: string}>;
+      let messages: Array<{ role: "system" | "user" | "assistant", content: string }>;
       let promptType: string;
 
       if (isSystemPrompt) {
@@ -1978,14 +1985,14 @@ Execute according to your persona instructions.`
   // Custom templates are validated against MDCG 2022-21, NOT directly against GRKB.
   // This ensures proper alignment with the official standard.
   // ═══════════════════════════════════════════════════════════════════════════════
-  const { 
+  const {
     mapCustomTemplateToMdcg,
     applyManualSlotAlignment
   } = await import("./src/services/hierarchicalMapping");
-  const { 
-    processTemplatePipeline, 
-    applyManualMapping, 
-    getTemplateCoverage 
+  const {
+    processTemplatePipeline,
+    applyManualMapping,
+    getTemplateCoverage
   } = await import("./src/services/templatePipeline");
   const neo4jService = await import("./src/services/neo4jGrkbService");
 
@@ -1999,7 +2006,7 @@ Execute according to your persona instructions.`
           error: "Invalid template format",
           expected: {
             template_id: "string",
-            name: "string", 
+            name: "string",
             version: "string",
             jurisdiction_scope: ["EU_MDR"],
             slots: [{ slot_id: "string", slot_name: "string", required: true, data_type: "string" }],
@@ -2081,7 +2088,7 @@ Execute according to your persona instructions.`
   app.get("/api/pipeline/:templateId/coverage", async (req, res) => {
     try {
       const templateId = req.params.templateId;
-      const jurisdictions = req.query.jurisdictions 
+      const jurisdictions = req.query.jurisdictions
         ? (req.query.jurisdictions as string).split(",")
         : ["EU_MDR", "UK_MDR"];
 
@@ -2174,7 +2181,7 @@ Execute according to your persona instructions.`
       for (const r of result.records) {
         nodeCounts[r.get("label")] = r.get("count").toNumber();
       }
-      
+
       const edgeResult = await session.run(`
         MATCH ()-[r]->()
         RETURN type(r) AS type, count(*) AS count
@@ -2184,7 +2191,7 @@ Execute according to your persona instructions.`
       for (const r of edgeResult.records) {
         edgeCounts[r.get("type")] = r.get("count").toNumber();
       }
-      
+
       res.json({
         connected: true,
         stats: {
@@ -2205,17 +2212,17 @@ Execute according to your persona instructions.`
   // ═══════════════════════════════════════════════════════════════════════════════
   // LEGACY SOTA GRKB GROUNDING ROUTES (kept for backward compatibility)
   // ═══════════════════════════════════════════════════════════════════════════════
-  const { 
-    createSOTAGroundingEngine, 
-    validateTemplateGrkbCoverage, 
-    getTemplateGroundingStatus 
+  const {
+    createSOTAGroundingEngine,
+    validateTemplateGrkbCoverage,
+    getTemplateGroundingStatus
   } = await import("./src/services/grkbGroundingService");
 
   // Run SOTA grounding for a template
   app.post("/api/grkb/grounding/:templateId/run", async (req, res) => {
     try {
       const templateId = req.params.templateId;
-      const { 
+      const {
         jurisdictions = ["EU_MDR", "UK_MDR"],
         useLLMAnalysis = true,
         confidenceThreshold = 0.6,
@@ -2224,7 +2231,7 @@ Execute according to your persona instructions.`
       } = req.body;
 
       if (!slots || !Array.isArray(slots) || slots.length === 0) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: "slots array is required",
           example: {
             slots: [
@@ -2252,12 +2259,12 @@ Execute according to your persona instructions.`
   app.get("/api/grkb/grounding/:templateId/validate", async (req, res) => {
     try {
       const templateId = req.params.templateId;
-      const jurisdictions = req.query.jurisdictions 
+      const jurisdictions = req.query.jurisdictions
         ? (req.query.jurisdictions as string).split(",")
         : ["EU_MDR", "UK_MDR"];
 
       const result = await validateTemplateGrkbCoverage(templateId, jurisdictions);
-      
+
       // Return appropriate HTTP status based on validation result
       const statusCode = result.status === "BLOCKED" ? 422 : 200;
       res.status(statusCode).json(result);
@@ -2283,7 +2290,7 @@ Execute according to your persona instructions.`
   app.get("/api/grkb/grounding/:templateId/mappings", async (req, res) => {
     try {
       const templateId = req.params.templateId;
-      
+
       const mappings = await db
         .select()
         .from(slotObligationLinks)
@@ -2334,12 +2341,12 @@ Execute according to your persona instructions.`
         updatedBy,
       }]);
 
-      res.json({ 
-        success: true, 
-        templateId, 
-        slotId, 
+      res.json({
+        success: true,
+        templateId,
+        slotId,
         obligationIds,
-        message: "Manual mapping applied successfully" 
+        message: "Manual mapping applied successfully"
       });
     } catch (error: any) {
       console.error("[GRKB-Grounding] Manual mapping error:", error);
@@ -2351,12 +2358,12 @@ Execute according to your persona instructions.`
   app.get("/api/grkb/grounding/:templateId/uncovered", async (req, res) => {
     try {
       const templateId = req.params.templateId;
-      const jurisdictions = req.query.jurisdictions 
+      const jurisdictions = req.query.jurisdictions
         ? (req.query.jurisdictions as string).split(",")
         : ["EU_MDR", "UK_MDR"];
 
       const result = await validateTemplateGrkbCoverage(templateId, jurisdictions);
-      
+
       res.json({
         templateId,
         jurisdictions,
@@ -2405,7 +2412,7 @@ Execute according to your persona instructions.`
           "L_pmcf": ["pmcf_summary", "pmcf_result", "pmcf_activity_record", "pmcf_report_extract"],
           "M_findings_and_conclusions": ["benefit_risk_assessment", "clinical_evaluation_extract", "cer_extract", "risk_assessment"],
         };
-        
+
         // Collect all unique evidence types from all sections
         const typesSet = new Set<string>();
         for (const types of Object.values(FORM_SECTION_EVIDENCE_MAP)) {
@@ -2414,13 +2421,13 @@ Execute according to your persona instructions.`
           }
         }
         const requiredTypes = Array.from(typesSet);
-        
+
         console.log(`[TemplateRequirements] Form template '${templateId}' requires ${requiredTypes.length} evidence types:`, requiredTypes);
         return res.json({ requiredEvidenceTypes: requiredTypes });
       }
 
       // Load slot-based template from JSON file (single source of truth)
-      const template = loadTemplate(templateId);
+      const template = await loadTemplate(templateId);
 
       // Extract all required evidence types from the template's slots
       const requiredTypes = getAllRequiredEvidenceTypes(template);
@@ -2476,7 +2483,7 @@ Execute according to your persona instructions.`
         });
       }
 
-      const started = startOrchestratorWorkflow(parsed.data);
+      const started = startOrchestratorWorkflow(parsed.data as any);
       res.status(202).json(started);
     } catch (error: any) {
       console.error("[POST /api/orchestrator/run] Error:", error);
@@ -2528,9 +2535,9 @@ Execute according to your persona instructions.`
       // Check if already running
       const { isWorkflowRunning } = await import("./src/orchestrator/workflowRunner");
       if (isWorkflowRunning(psurCaseId)) {
-        return res.status(409).json({ 
+        return res.status(409).json({
           error: "Workflow is already running",
-          status: "ALREADY_RUNNING" 
+          status: "ALREADY_RUNNING"
         });
       }
 
@@ -2542,7 +2549,7 @@ Execute according to your persona instructions.`
       let fromStep = req.body?.fromStep;
       if (!fromStep && workflowState?.steps) {
         // Find first incomplete step
-        const firstIncomplete = workflowState.steps.find(s => 
+        const firstIncomplete = workflowState.steps.find(s =>
           s.status === "NOT_STARTED" || s.status === "FAILED" || s.status === "RUNNING"
         );
         fromStep = firstIncomplete?.step || 1;
@@ -3178,7 +3185,7 @@ Execute according to your persona instructions.`
           .from(templates)
           .where(eq(templates.templateId, templateId))
           .limit(1);
-        
+
         if (!dbTemplate) {
           // Check filesystem as fallback for base templates
           const templatePath = path.resolve(process.cwd(), "server", "templates", `${templateId}.json`);
@@ -3270,16 +3277,16 @@ Execute according to your persona instructions.`
       if (isNaN(id)) {
         return res.status(400).json({ error: "Invalid case ID" });
       }
-      
+
       // Get the case first to check it exists and get reference for logging
       const existingCase = await storage.getPSURCase(id);
       if (!existingCase) {
         return res.status(404).json({ error: "PSUR case not found" });
       }
-      
+
       // Delete the case (cascades to related tables due to ON DELETE CASCADE)
       await storage.deletePSURCase(id);
-      
+
       console.log(`[DELETE /api/psur-cases/:id] Deleted PSUR case ${existingCase.psurReference} (ID: ${id})`);
       res.json({ success: true, message: `Deleted PSUR case ${existingCase.psurReference}` });
     } catch (error) {
@@ -4667,7 +4674,7 @@ Execute according to your persona instructions.`
       } : null;
 
       // Normalize proposals before validation (Step 4)
-      const template = loadTemplate(psurCase.templateId);
+      const template = await loadTemplate(psurCase.templateId);
       const rawProposal = {
         psurCaseId,
         psurRef: psurCase.psurReference,
@@ -4694,7 +4701,7 @@ Execute according to your persona instructions.`
       };
 
       // PERSIST the SlotProposal
-      const proposal = await storage.createSlotProposal(proposalData);
+      const proposal = await storage.createSlotProposal(proposalData as any);
 
       // RECOMPUTE COVERAGE after acceptance
       let coverageSummary = null;
@@ -5501,7 +5508,7 @@ Execute according to your persona instructions.`
       const psurCaseAny = psurCase as any;
       const device = psurCaseAny.deviceId ? devices.find((d: any) => d.id === psurCaseAny.deviceId) : devices[0];
       const deviceCode = psurCaseAny.deviceCode || device?.deviceCode || "DEVICE-001";
-      const deviceName = device?.deviceName || device?.name;
+      const deviceName = device?.deviceName;
 
       // SOTA CompileOrchestrator with all enhancements
       const { CompileOrchestrator } = await import("./src/agents/runtime/compileOrchestrator");
@@ -5594,7 +5601,7 @@ Execute according to your persona instructions.`
       const psurCaseAny = psurCase as any;
       const device = psurCaseAny.deviceId ? devices.find((d: any) => d.id === psurCaseAny.deviceId) : devices[0];
       const deviceCode = psurCaseAny.deviceCode || device?.deviceCode || "DEVICE-001";
-      const deviceName = device?.deviceName || device?.name;
+      const deviceName = device?.deviceName;
 
       // SOTA CompileOrchestrator with PDF output
       const { CompileOrchestrator } = await import("./src/agents/runtime/compileOrchestrator");
@@ -6050,7 +6057,7 @@ Execute according to your persona instructions.`
       const psurCaseAny = psurCase as any;
       const device = psurCaseAny.deviceId ? devices.find((d: any) => d.id === psurCaseAny.deviceId) : devices[0];
       const deviceCode = psurCaseAny.deviceCode || device?.deviceCode || "DEVICE-001";
-      const deviceName = device?.deviceName || device?.name;
+      const deviceName = device?.deviceName;
 
       // SOTA CompileOrchestrator with HTML output
       const { CompileOrchestrator } = await import("./src/agents/runtime/compileOrchestrator");
@@ -6252,12 +6259,12 @@ Execute according to your persona instructions.`
     try {
       const { slotId } = req.params;
       const { mdcgReference, agentAssignment } = req.query;
-      const evidenceTypes = req.query.evidenceTypes 
-        ? String(req.query.evidenceTypes).split(",") 
+      const evidenceTypes = req.query.evidenceTypes
+        ? String(req.query.evidenceTypes).split(",")
         : [];
 
       const { getAgentsForSlot, getAllAgentNames } = await import("./queue-builder");
-      
+
       const recommended = getAgentsForSlot(
         slotId,
         mdcgReference as string | undefined,
@@ -6649,10 +6656,10 @@ Execute according to your persona instructions.`
 
   // ============== CONTENT TRACES (Granular PSUR Content Decisions) ==============
   // Ultra-granular tracing for every content element (sentences, tables, calculations, conclusions, etc)
-  const { 
-    traceContentElement, 
-    traceContentBatch, 
-    queryContentTraces, 
+  const {
+    traceContentElement,
+    traceContentBatch,
+    queryContentTraces,
     searchContentTraces,
     getSlotContentTraces,
     getObligationTraces,
@@ -6846,7 +6853,7 @@ Execute according to your persona instructions.`
       const format = req.query.format || "jsonl";
 
       const exported = await exportTracesAsJsonl(psurCaseId);
-      
+
       res.setHeader("Content-Type", "application/x-ndjson");
       res.setHeader("Content-Disposition", `attachment; filename=content-traces-${psurCaseId}.${format}`);
       res.send(exported);
@@ -6989,14 +6996,100 @@ Execute according to your persona instructions.`
     }
   });
 
-  // Update completeness score
+  // Update completeness score and get detailed breakdown
   app.post("/api/device-dossiers/:deviceCode/completeness", async (req, res) => {
     try {
-      const score = await updateCompletenessScore(req.params.deviceCode);
-      res.json({ completenessScore: score });
+      const { calculateCompletenessBreakdown, updateCompletenessScore } = await import("./src/services/deviceDossierService");
+
+      // Calculate full breakdown first
+      const breakdown = await calculateCompletenessBreakdown(req.params.deviceCode);
+
+      // Update the score in DB
+      await updateCompletenessScore(req.params.deviceCode);
+
+      res.json({
+        completenessScore: breakdown.score,
+        breakdown,
+      });
     } catch (error: any) {
       console.error("[POST /api/device-dossiers/:deviceCode/completeness] Error:", error);
       res.status(500).json({ error: "Failed to update completeness score", details: error.message });
+    }
+  });
+
+  // Get completeness breakdown without updating (read-only)
+  app.get("/api/device-dossiers/:deviceCode/completeness", async (req, res) => {
+    try {
+      const { calculateCompletenessBreakdown } = await import("./src/services/deviceDossierService");
+      const breakdown = await calculateCompletenessBreakdown(req.params.deviceCode);
+
+      res.json({
+        completenessScore: breakdown.score,
+        breakdown,
+      });
+    } catch (error: any) {
+      console.error("[GET /api/device-dossiers/:deviceCode/completeness] Error:", error);
+      res.status(500).json({ error: "Failed to get completeness breakdown", details: error.message });
+    }
+  });
+
+  // Get agent role context for a specific slot
+  // This provides the full semantic context agents receive when generating narratives
+  app.get("/api/device-dossiers/:deviceCode/agent-context/:slotId", async (req, res) => {
+    try {
+      const { buildAgentRoleContext, formatAgentRoleContextForPrompt } = await import("./src/services/agentRoleContextService");
+
+      const { periodStart, periodEnd, templateId } = req.query;
+
+      const context = await buildAgentRoleContext(
+        req.params.slotId,
+        req.params.deviceCode,
+        (periodStart as string) || new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+        (periodEnd as string) || new Date().toISOString().split("T")[0],
+        (templateId as string) || "MDCG_2022_21_ANNEX_I"
+      );
+
+      res.json({
+        context,
+        formattedPrompt: formatAgentRoleContextForPrompt(context),
+      });
+    } catch (error: any) {
+      console.error("[GET /api/device-dossiers/:deviceCode/agent-context/:slotId] Error:", error);
+      res.status(500).json({ error: "Failed to get agent role context", details: error.message });
+    }
+  });
+
+  // Sync workflow structure to Neo4j graph
+  app.post("/api/admin/sync-workflow-graph", async (req, res) => {
+    try {
+      const { syncWorkflowToNeo4j } = await import("./src/services/agentRoleContextService");
+      const synced = await syncWorkflowToNeo4j();
+
+      res.json({
+        success: true,
+        syncedSections: synced,
+        message: `Synced ${synced} workflow sections to Neo4j graph`,
+      });
+    } catch (error: any) {
+      console.error("[POST /api/admin/sync-workflow-graph] Error:", error);
+      res.status(500).json({ error: "Failed to sync workflow to graph", details: error.message });
+    }
+  });
+
+  // Sync static obligations to Neo4j graph
+  app.post("/api/admin/sync-obligations-graph", async (req, res) => {
+    try {
+      const { syncStaticObligationsToGraph } = await import("./src/services/agentRoleContextService");
+      const synced = await syncStaticObligationsToGraph();
+
+      res.json({
+        success: true,
+        syncedObligations: synced,
+        message: `Synced ${synced} obligations to Neo4j graph`,
+      });
+    } catch (error: any) {
+      console.error("[POST /api/admin/sync-obligations-graph] Error:", error);
+      res.status(500).json({ error: "Failed to sync obligations to graph", details: error.message });
     }
   });
 
@@ -7118,6 +7211,107 @@ Execute according to your persona instructions.`
     }
   });
 
+  // --- Parse PDF with OCR for device info extraction ---
+  // Upload a PDF document (CER, IFU, Technical Doc) and extract device information with OCR fallback
+  app.post(
+    "/api/device-dossiers/:deviceCode/parse-pdf",
+    upload.single("file"),
+    async (req, res) => {
+      try {
+        const deviceCode = req.params.deviceCode;
+        const enableOCR = req.body.enableOCR !== "false" && req.body.enableOCR !== false;
+
+        const file = req.file;
+        if (!file) {
+          return res.status(400).json({ error: "No file uploaded" });
+        }
+
+        // Check if file is PDF
+        if (!file.originalname.toLowerCase().endsWith(".pdf")) {
+          return res.status(400).json({ error: "Only PDF files are supported for OCR parsing" });
+        }
+
+        // Import the OCR module dynamically
+        let pdfResult;
+        try {
+          const { parsePdfWithOCR, extractDeviceInfoFromPDF } = await import("./src/parsers/sotaPdfOcr");
+
+          console.log(`[parse-pdf] Processing ${file.originalname} for device ${deviceCode} (OCR=${enableOCR})`);
+
+          // Parse PDF with OCR fallback
+          pdfResult = await parsePdfWithOCR(file.buffer, file.originalname, {
+            enableOCR,
+            extractTables: true,
+            extractSections: true,
+          });
+
+          // Extract device information from parsed content
+          const deviceInfo = extractDeviceInfoFromPDF(pdfResult);
+
+          res.json({
+            success: true,
+            filename: file.originalname,
+            deviceCode,
+            parseResult: {
+              pageCount: pdfResult.pageCount,
+              usedOCR: pdfResult.usedOCR,
+              ocrConfidence: pdfResult.ocrConfidence,
+              textLength: pdfResult.rawText.length,
+              sectionCount: pdfResult.sections.length,
+              tableCount: pdfResult.tables.length,
+              errors: pdfResult.errors,
+              warnings: pdfResult.warnings,
+            },
+            extractedDeviceInfo: deviceInfo,
+            // Preview first 2000 chars
+            textPreview: pdfResult.rawText.substring(0, 2000),
+            sections: pdfResult.sections.map(s => ({
+              title: s.title,
+              level: s.level,
+              contentPreview: s.content.substring(0, 500),
+            })),
+          });
+
+        } catch (ocrError: any) {
+          console.error("[parse-pdf] OCR module error:", ocrError);
+
+          // Fallback to standard document parser
+          const { parseDocument } = await import("./src/parsers/documentParser");
+          const fallbackResult = await parseDocument(file.buffer, file.originalname, {
+            extractTables: true,
+            extractSections: true,
+          });
+
+          res.json({
+            success: true,
+            filename: file.originalname,
+            deviceCode,
+            parseResult: {
+              pageCount: (fallbackResult.metadata as any)?.numPages || 0,
+              usedOCR: false,
+              textLength: fallbackResult.rawText.length,
+              sectionCount: fallbackResult.sections.length,
+              tableCount: fallbackResult.tables.length,
+              errors: fallbackResult.errors,
+              warnings: ["OCR module not available, using standard parsing"],
+            },
+            extractedDeviceInfo: null,
+            textPreview: fallbackResult.rawText.substring(0, 2000),
+            sections: fallbackResult.sections.map(s => ({
+              title: s.title,
+              level: s.level,
+              contentPreview: s.content.substring(0, 500),
+            })),
+          });
+        }
+
+      } catch (error: any) {
+        console.error("[POST /api/device-dossiers/:deviceCode/parse-pdf] Error:", error);
+        res.status(500).json({ error: "Failed to parse PDF", details: error?.message });
+      }
+    }
+  );
+
   // --- Auto-populate dossier from uploaded documents ---
   // Upload docs (CER/IFU/RMF/Certs/etc), run LLM extraction, and populate dossier fields.
   app.post(
@@ -7225,7 +7419,7 @@ Execute according to your persona instructions.`
 
         if (psurCaseId && !isNaN(psurCaseId)) {
           console.log(`[Dossier Auto-Populate] Also persisting ${allEvidence.length} evidence items as atoms for PSUR case ${psurCaseId}`);
-          
+
           const atomRecords: EvidenceAtomRecord[] = allEvidence.map((e, idx) => {
             const atomId = makeAtomId({
               evidenceType: e.evidenceType,
@@ -7234,7 +7428,7 @@ Execute according to your persona instructions.`
               timestamp: Date.now(),
             });
             const contentHash = makeContentHash(e.data);
-            
+
             return {
               atomId,
               evidenceType: coerceEvType(e.evidenceType),

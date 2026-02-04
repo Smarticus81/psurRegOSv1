@@ -298,13 +298,16 @@ export default function DeviceDossiersPage() {
                       <button
                         key={dossier.deviceCode}
                         onClick={() => setSelectedDeviceCode(dossier.deviceCode)}
-                        className={`w-full text-left p-4 hover:bg-muted/50 transition-colors ${
-                          selectedDeviceCode === dossier.deviceCode ? "bg-muted" : ""
-                        }`}
+                        className={`w-full text-left p-4 hover:bg-muted/50 transition-colors ${selectedDeviceCode === dossier.deviceCode ? "bg-muted" : ""
+                          }`}
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex-1 min-w-0">
-                            <p className="font-medium truncate">{dossier.tradeName}</p>
+                            <p className="font-medium truncate">
+                              {(dossier.tradeName?.includes(',') && dossier.tradeName?.length > 20)
+                                ? "Device Group"
+                                : dossier.tradeName}
+                            </p>
                             <p className="text-sm text-muted-foreground truncate">
                               {dossier.deviceCode}
                             </p>
@@ -336,7 +339,7 @@ export default function DeviceDossiersPage() {
                 <FileBox className="w-16 h-16 text-muted-foreground/50 mb-4" />
                 <h3 className="text-lg font-medium mb-2">Select a Device</h3>
                 <p className="text-muted-foreground text-center max-w-md">
-                  Choose a device from the list to view and edit its dossier context, 
+                  Choose a device from the list to view and edit its dossier context,
                   or create a new dossier to get started.
                 </p>
               </CardContent>
@@ -533,7 +536,7 @@ function DossierEditor({
   const queryClient = useQueryClient();
   const [autoFiles, setAutoFiles] = useState<File[]>([]);
   const [autoOverwrite, setAutoOverwrite] = useState(false);
-  const [autoPsurCaseId, setAutoPsurCaseId] = useState<string>(""); // Empty = no PSUR case
+  const [autoPsurCaseId, setAutoPsurCaseId] = useState<string>("none"); // "none" = no PSUR case
   const [autoResultOpen, setAutoResultOpen] = useState(false);
   const [autoResult, setAutoResult] = useState<any>(null);
   const autoFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -592,7 +595,11 @@ function DossierEditor({
       <CardHeader className="border-b">
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle className="text-2xl">{dossier.core.tradeName}</CardTitle>
+            <CardTitle className="text-2xl">
+              {(dossier.core.tradeName?.includes(',') && dossier.core.tradeName?.length > 20)
+                ? "Device Dossier"
+                : dossier.core.tradeName}
+            </CardTitle>
             <CardDescription className="flex items-center gap-2 mt-1">
               <span>{dossier.core.deviceCode}</span>
               {dossier.core.classification && (
@@ -649,10 +656,10 @@ function DossierEditor({
                 <Button
                   variant="default"
                   size="sm"
-                  onClick={() => autoPopulateMutation.mutate({ 
-                    files: autoFiles, 
+                  onClick={() => autoPopulateMutation.mutate({
+                    files: autoFiles,
                     overwrite: autoOverwrite,
-                    psurCaseId: autoPsurCaseId ? Number(autoPsurCaseId) : undefined,
+                    psurCaseId: (autoPsurCaseId && autoPsurCaseId !== "none") ? Number(autoPsurCaseId) : undefined,
                   })}
                   disabled={autoFiles.length === 0 || autoPopulateMutation.isPending || isUpdating}
                 >
@@ -678,7 +685,7 @@ function DossierEditor({
                     <SelectValue placeholder="None (dossier only)" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None (dossier only)</SelectItem>
+                    <SelectItem value="none">None (dossier only)</SelectItem>
                     {psurCases?.filter((c: any) => c.status !== "exported")
                       .slice(0, 20)
                       .map((c: any) => (

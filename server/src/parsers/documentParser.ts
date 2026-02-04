@@ -12,18 +12,31 @@ import { createHash } from "crypto";
 let pdfjsLib: any = null;
 let pdfParserReady = false;
 
+// OCR fallback support
+let ocrModule: any = null;
+const OCR_THRESHOLD_CHARS_PER_PAGE = 100; // If avg chars/page < this, try OCR
+
 async function initPDFParser() {
   if (pdfParserReady) return true;
-  
+
   try {
     const pdfjs = await import("pdfjs-dist");
     pdfjsLib = pdfjs;
-    
+
     // Disable worker for Node.js environment (runs synchronously)
     pdfjsLib.GlobalWorkerOptions.workerSrc = "";
-    
+
     pdfParserReady = true;
     console.log("[documentParser] SOTA PDF parser (pdfjs-dist) initialized");
+
+    // Try to initialize OCR module
+    try {
+      ocrModule = await import("./sotaPdfOcr");
+      console.log("[documentParser] OCR fallback module loaded");
+    } catch {
+      console.log("[documentParser] OCR fallback not available");
+    }
+
     return true;
   } catch (err: any) {
     console.error("[documentParser] Failed to load pdfjs-dist:", err?.message);
@@ -33,6 +46,7 @@ async function initPDFParser() {
 
 // Initialize PDF parser on module load
 initPDFParser();
+
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -83,7 +97,7 @@ export async function parseDocument(
 ): Promise<ParsedDocument> {
   const docType = detectDocumentType(filename, buffer);
   const contentHash = createHash("sha256").update(buffer).digest("hex");
-  
+
   const result: ParsedDocument = {
     filename,
     documentType: docType,
@@ -125,7 +139,7 @@ export async function parseDocument(
 
 export function detectDocumentType(filename: string, buffer?: Buffer): DocumentType {
   const ext = filename.toLowerCase().split(".").pop();
-  
+
   switch (ext) {
     case "xlsx":
     case "xls":
@@ -177,7 +191,7 @@ function normalizeExcelValue(value: unknown): unknown {
   if (value === null || value === undefined || value === "") {
     return "";
   }
-  
+
   // Handle Date objects (from cellDates: true)
   if (value instanceof Date) {
     if (!isNaN(value.getTime())) {
@@ -191,7 +205,7 @@ function normalizeExcelValue(value: unknown): unknown {
     }
     return String(value);
   }
-  
+
   // Handle numbers that might be Excel serial dates
   if (typeof value === "number") {
     // Excel serial date range: ~1 (Jan 1, 1900) to ~60000+ (year 2064)
@@ -207,11 +221,11 @@ function normalizeExcelValue(value: unknown): unknown {
     }
     return value;
   }
-  
+
   // Handle strings
   if (typeof value === "string") {
     const trimmed = value.trim();
-    
+
     // Check if it's a numeric string that looks like an Excel serial date
     const num = parseFloat(trimmed);
     if (!isNaN(num) && /^\d+$/.test(trimmed) && num >= 25569 && num <= 73415) {
@@ -220,10 +234,10 @@ function normalizeExcelValue(value: unknown): unknown {
         return date.toISOString().split("T")[0];
       }
     }
-    
+
     return trimmed;
   }
-  
+
   return value;
 }
 
@@ -233,24 +247,24 @@ function normalizeExcelValue(value: unknown): unknown {
  */
 function excelSerialToDate(serial: number): Date | null {
   if (serial < 1 || serial > 100000) return null;
-  
+
   // Excel's epoch is December 30, 1899 (not Jan 1, 1900)
   // This accounts for Excel's off-by-one and leap year bug
   const excelEpoch = Date.UTC(1899, 11, 30);
   const msPerDay = 24 * 60 * 60 * 1000;
-  
+
   // For dates after Feb 28, 1900 (serial 60), Excel has a leap year bug
   // We need to subtract 1 day for serials > 60
   const adjustedSerial = serial > 60 ? serial - 1 : serial;
-  
+
   const date = new Date(excelEpoch + adjustedSerial * msPerDay);
-  
+
   // Validate the result is reasonable
   const year = date.getUTCFullYear();
   if (year >= 1990 && year <= 2100) {
     return date;
   }
-  
+
   return null;
 }
 
@@ -280,12 +294,12 @@ function parseExcelDocument(
     // SOTA Excel parsing with comprehensive date handling
     // - cellDates: true converts serial dates to JS Date objects
     // - dateNF: standard ISO format for consistent output
-    const workbook = xlsx.read(buffer, { 
-      type: "buffer", 
+    const workbook = xlsx.read(buffer, {
+      type: "buffer",
       cellDates: true,
       dateNF: "yyyy-mm-dd",
     });
-    
+
     result.metadata.sheetNames = workbook.SheetNames;
     result.metadata.sheetCount = workbook.SheetNames.length;
 
@@ -293,14 +307,14 @@ function parseExcelDocument(
 
     for (const sheetName of workbook.SheetNames) {
       const sheet = workbook.Sheets[sheetName];
-      
+
       // Parse with raw: false to get formatted values, defval for empty cells
-      const jsonData = xlsx.utils.sheet_to_json<Record<string, unknown>>(sheet, { 
+      const jsonData = xlsx.utils.sheet_to_json<Record<string, unknown>>(sheet, {
         defval: "",
         raw: false, // Get formatted strings instead of raw values
         dateNF: "yyyy-mm-dd", // ISO date format
       });
-      
+
       if (jsonData.length === 0) continue;
 
       // Post-process: normalize dates and clean values
@@ -314,7 +328,7 @@ function parseExcelDocument(
 
       // Extract headers from first row keys
       const headers = Object.keys(processedRows[0] || {});
-      
+
       // Create table
       const table: ParsedTable = {
         name: sheetName,
@@ -333,7 +347,7 @@ function parseExcelDocument(
     }
 
     result.rawText = textParts.join("\n");
-    
+
     // Create a section for each sheet
     for (const table of result.tables) {
       result.sections.push({
@@ -378,7 +392,7 @@ async function parseDocxDocument(
     // Extract text and HTML
     const textResult = await mammoth.extractRawText({ buffer });
     const htmlResult = await mammoth.convertToHtml({ buffer });
-    
+
     result.rawText = textResult.value;
     result.metadata.warnings = textResult.messages;
 
@@ -389,17 +403,17 @@ async function parseDocxDocument(
 
     for (const line of lines) {
       const trimmed = line.trim();
-      
+
       // Detect section headers (lines that look like titles)
       const isHeader = detectSectionHeader(trimmed);
-      
+
       if (isHeader) {
         // Save previous section
         if (currentSection) {
           currentSection.content = contentLines.join("\n");
           result.sections.push(currentSection);
         }
-        
+
         currentSection = {
           title: trimmed,
           content: "",
@@ -454,25 +468,25 @@ async function parseDocxDocument(
 function detectSectionHeader(line: string): { level: number; confidence: number } | null {
   const trimmed = line.trim();
   if (!trimmed || trimmed.length < 2 || trimmed.length > 200) return null;
-  
+
   // Track confidence for the detection
   let confidence = 0;
   let detectedLevel = 1;
-  
+
   // HEURISTIC 1: Numbered sections like "1. Introduction" or "1.1 Scope" or "Section 1.2.3"
   const numberedMatch = trimmed.match(/^(?:section\s+)?(\d+(?:\.\d+)*)[.:\s]+(.+)/i);
   if (numberedMatch) {
     const numParts = numberedMatch[1].split(".").length;
     detectedLevel = Math.min(numParts, 4);
     confidence += 0.7;
-    
+
     // Boost if rest is title-like (starts with capital, not too long)
     const rest = numberedMatch[2];
     if (/^[A-Z]/.test(rest) && rest.length < 80) {
       confidence += 0.2;
     }
   }
-  
+
   // HEURISTIC 2: Roman numeral sections like "I. Executive Summary" or "III.2 Methods"
   const romanMatch = trimmed.match(/^([IVXivx]+)(?:\.\d+)?[.:\s]+(.+)/);
   if (romanMatch && /^[IVXivx]+$/.test(romanMatch[1])) {
@@ -483,7 +497,7 @@ function detectSectionHeader(line: string): { level: number; confidence: number 
       confidence = Math.max(confidence, 0.6);
     }
   }
-  
+
   // HEURISTIC 3: All caps lines (likely headers) - but be more careful
   if (trimmed === trimmed.toUpperCase() && /^[A-Z]/.test(trimmed)) {
     const wordCount = trimmed.split(/\s+/).length;
@@ -493,71 +507,71 @@ function detectSectionHeader(line: string): { level: number; confidence: number 
       detectedLevel = 1;
     }
   }
-  
+
   // HEURISTIC 4: Known CER/regulatory document section patterns
   const cerPatterns: { pattern: RegExp; level: number; boost: number }[] = [
     // Executive/Overview sections
     { pattern: /^(?:\d+\.?\s*)?executive\s+summary/i, level: 1, boost: 0.9 },
     { pattern: /^(?:\d+\.?\s*)?management\s+summary/i, level: 1, boost: 0.8 },
     { pattern: /^(?:\d+\.?\s*)?overview/i, level: 1, boost: 0.6 },
-    
+
     // Scope and Introduction
     { pattern: /^(?:\d+\.?\s*)?(?:scope|introduction|background)/i, level: 1, boost: 0.8 },
     { pattern: /^(?:\d+\.?\s*)?purpose\s+(?:of|and)/i, level: 1, boost: 0.7 },
-    
+
     // Device sections
     { pattern: /^(?:\d+\.?\s*)?device\s+(?:description|identification|under\s+evaluation)/i, level: 1, boost: 0.9 },
     { pattern: /^(?:\d+\.?\s*)?product\s+description/i, level: 1, boost: 0.8 },
     { pattern: /^(?:\d+\.?\s*)?intended\s+(?:purpose|use)/i, level: 2, boost: 0.9 },
     { pattern: /^(?:\d+\.?\s*)?indications?\s+for\s+use/i, level: 2, boost: 0.8 },
-    
+
     // Regulatory sections
     { pattern: /^(?:\d+\.?\s*)?regulatory\s+(?:status|history|background)/i, level: 1, boost: 0.9 },
     { pattern: /^(?:\d+\.?\s*)?ce\s+mark/i, level: 2, boost: 0.7 },
     { pattern: /^(?:\d+\.?\s*)?certification/i, level: 2, boost: 0.6 },
-    
+
     // Clinical sections
     { pattern: /^(?:\d+\.?\s*)?clinical\s+(?:evaluation|background|data|evidence|performance|safety)/i, level: 1, boost: 0.9 },
     { pattern: /^(?:\d+\.?\s*)?state\s+of\s+(?:the\s+)?art/i, level: 2, boost: 0.9 },
     { pattern: /^(?:\d+\.?\s*)?equivalen(?:ce|t)/i, level: 2, boost: 0.8 },
-    
+
     // Literature sections
     { pattern: /^(?:\d+\.?\s*)?literature\s+(?:search|review|analysis)/i, level: 1, boost: 0.9 },
     { pattern: /^(?:\d+\.?\s*)?search\s+(?:strategy|protocol|results)/i, level: 2, boost: 0.8 },
     { pattern: /^(?:\d+\.?\s*)?(?:inclusion|exclusion)\s+criteria/i, level: 3, boost: 0.7 },
     { pattern: /^(?:\d+\.?\s*)?appraisal/i, level: 2, boost: 0.7 },
-    
+
     // PMCF/PMS sections
     { pattern: /^(?:\d+\.?\s*)?(?:pmcf|post.?market\s+clinical)/i, level: 1, boost: 0.9 },
     { pattern: /^(?:\d+\.?\s*)?(?:pms|post.?market\s+surveillance)/i, level: 1, boost: 0.9 },
     { pattern: /^(?:\d+\.?\s*)?vigilance/i, level: 2, boost: 0.8 },
-    
+
     // Complaints and incidents
     { pattern: /^(?:\d+\.?\s*)?complaint(?:s|\s+(?:summary|analysis|data))/i, level: 2, boost: 0.9 },
     { pattern: /^(?:\d+\.?\s*)?(?:serious\s+)?incident(?:s|\s+(?:summary|analysis))/i, level: 2, boost: 0.9 },
     { pattern: /^(?:\d+\.?\s*)?adverse\s+event/i, level: 2, boost: 0.8 },
-    
+
     // Sales and distribution
     { pattern: /^(?:\d+\.?\s*)?(?:sales|distribution|market)\s+(?:data|summary|analysis)/i, level: 2, boost: 0.8 },
     { pattern: /^(?:\d+\.?\s*)?(?:units?\s+)?(?:sold|distributed)/i, level: 2, boost: 0.7 },
-    
+
     // Risk and benefit
     { pattern: /^(?:\d+\.?\s*)?benefit.?risk/i, level: 1, boost: 0.9 },
     { pattern: /^(?:\d+\.?\s*)?risk.?benefit/i, level: 1, boost: 0.9 },
     { pattern: /^(?:\d+\.?\s*)?risk\s+(?:analysis|assessment|management)/i, level: 2, boost: 0.8 },
     { pattern: /^(?:\d+\.?\s*)?(?:clinical\s+)?benefit(?:s|\s+analysis)?/i, level: 2, boost: 0.7 },
     { pattern: /^(?:\d+\.?\s*)?residual\s+risk/i, level: 3, boost: 0.7 },
-    
+
     // Conclusions
     { pattern: /^(?:\d+\.?\s*)?conclusion(?:s)?/i, level: 1, boost: 0.9 },
     { pattern: /^(?:\d+\.?\s*)?(?:final\s+)?(?:summary|assessment|recommendation)/i, level: 1, boost: 0.8 },
-    
+
     // References and appendices
     { pattern: /^(?:\d+\.?\s*)?(?:references?|bibliography)/i, level: 1, boost: 0.8 },
     { pattern: /^(?:\d+\.?\s*)?append(?:ix|ices)/i, level: 1, boost: 0.8 },
     { pattern: /^(?:\d+\.?\s*)?annex(?:es)?/i, level: 1, boost: 0.8 },
   ];
-  
+
   for (const { pattern, level, boost } of cerPatterns) {
     if (pattern.test(trimmed)) {
       if (boost > confidence) {
@@ -566,7 +580,7 @@ function detectSectionHeader(line: string): { level: number; confidence: number 
       }
     }
   }
-  
+
   // HEURISTIC 5: Title case with specific length (2-8 words, each starting capital)
   const words = trimmed.split(/\s+/);
   if (words.length >= 2 && words.length <= 8) {
@@ -576,12 +590,12 @@ function detectSectionHeader(line: string): { level: number; confidence: number 
       confidence = Math.max(confidence, 0.4);
     }
   }
-  
+
   // Return only if confidence threshold met
   if (confidence >= 0.4) {
     return { level: detectedLevel, confidence };
   }
-  
+
   return null;
 }
 
@@ -605,17 +619,17 @@ function romanToInt(roman: string): number {
 
 function extractTablesFromHtml(html: string): ParsedTable[] {
   const tables: ParsedTable[] = [];
-  
+
   // Simple regex-based table extraction
   const tableRegex = /<table[^>]*>([\s\S]*?)<\/table>/gi;
   let match;
   let tableIndex = 0;
-  
+
   while ((match = tableRegex.exec(html)) !== null) {
     const tableHtml = match[1];
     const rows: Record<string, unknown>[] = [];
     let headers: string[] = [];
-    
+
     // Extract header row
     const headerMatch = /<tr[^>]*>([\s\S]*?)<\/tr>/i.exec(tableHtml);
     if (headerMatch) {
@@ -625,30 +639,30 @@ function extractTablesFromHtml(html: string): ParsedTable[] {
         headers.push(stripHtml(thMatch[1]).trim());
       }
     }
-    
+
     if (headers.length === 0) {
       headers = [`Column_${tableIndex}_1`, `Column_${tableIndex}_2`, `Column_${tableIndex}_3`];
     }
-    
+
     // Extract data rows
     const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
     let rowMatch;
     let isFirst = true;
-    
+
     while ((rowMatch = rowRegex.exec(tableHtml)) !== null) {
       if (isFirst) {
         isFirst = false;
         continue; // Skip header row
       }
-      
+
       const cells: string[] = [];
       const cellRegex = /<td[^>]*>([\s\S]*?)<\/td>/gi;
       let cellMatch;
-      
+
       while ((cellMatch = cellRegex.exec(rowMatch[1])) !== null) {
         cells.push(stripHtml(cellMatch[1]).trim());
       }
-      
+
       if (cells.length > 0) {
         const row: Record<string, unknown> = {};
         for (let i = 0; i < cells.length && i < headers.length; i++) {
@@ -657,7 +671,7 @@ function extractTablesFromHtml(html: string): ParsedTable[] {
         rows.push(row);
       }
     }
-    
+
     if (rows.length > 0 || headers.length > 0) {
       tables.push({
         name: `Table_${tableIndex + 1}`,
@@ -665,10 +679,10 @@ function extractTablesFromHtml(html: string): ParsedTable[] {
         rows,
       });
     }
-    
+
     tableIndex++;
   }
-  
+
   return tables;
 }
 
@@ -717,7 +731,7 @@ async function parsePdfDocument(
 
     // Convert Buffer to Uint8Array for pdfjs
     const uint8Array = new Uint8Array(buffer);
-    
+
     // Load the PDF document
     const loadingTask = pdfjsLib.getDocument({
       data: uint8Array,
@@ -725,12 +739,12 @@ async function parsePdfDocument(
       disableFontFace: true,
       verbosity: 0,
     });
-    
+
     const pdfDoc = await loadingTask.promise;
-    
+
     // Extract metadata
     result.metadata.numPages = pdfDoc.numPages;
-    
+
     try {
       const metadata = await pdfDoc.getMetadata();
       result.metadata.info = metadata?.info || {};
@@ -747,14 +761,14 @@ async function parsePdfDocument(
       const page = await pdfDoc.getPage(pageNum);
       const textContent = await page.getTextContent();
       const viewport = page.getViewport({ scale: 1.0 });
-      
+
       // Extract items with full metadata
       const items = textContent.items as any[];
       const enrichedItems: PDFTextItem[] = [];
-      
+
       for (const item of items) {
         if (item.str === undefined || item.str.trim() === "") continue;
-        
+
         const transform = item.transform || [1, 0, 0, 1, 0, 0];
         enrichedItems.push({
           text: item.str,
@@ -766,13 +780,13 @@ async function parsePdfDocument(
           fontSize: Math.abs(transform[0]) || 12,
         });
       }
-      
+
       // SOTA line reconstruction with paragraph detection
       const pageLines = reconstructLinesSOTA(enrichedItems, viewport);
       const fullPageText = pageLines.map(l => l.text).join("\n");
-      
+
       textParts.push(`=== Page ${pageNum} ===\n${fullPageText}`);
-      
+
       pageStructures.push({
         pageNum,
         width: viewport.width,
@@ -792,13 +806,13 @@ async function parsePdfDocument(
 
     // SOTA PASS 3: Extract tables using spatial clustering
     result.tables = extractTablesSOTA(pageStructures);
-    
+
     // SOTA PASS 4: Try pattern-based table extraction as supplement
     const textTables = extractTablesFromTextSOTA(result.rawText);
     for (const table of textTables) {
       // Avoid duplicates by checking for similar content
-      const isDuplicate = result.tables.some(t => 
-        t.rows.length === table.rows.length && 
+      const isDuplicate = result.tables.some(t =>
+        t.rows.length === table.rows.length &&
         t.headers.length === table.headers.length
       );
       if (!isDuplicate) {
@@ -861,11 +875,11 @@ interface PDFPageStructure {
  */
 function reconstructLinesSOTA(items: PDFTextItem[], viewport: any): PDFLine[] {
   if (items.length === 0) return [];
-  
+
   // Group items by Y position with tolerance
   const lineGroups = new Map<number, PDFTextItem[]>();
   const yTolerance = 3; // pixels
-  
+
   for (const item of items) {
     const y = Math.round(item.y / yTolerance) * yTolerance;
     if (!lineGroups.has(y)) {
@@ -873,24 +887,24 @@ function reconstructLinesSOTA(items: PDFTextItem[], viewport: any): PDFLine[] {
     }
     lineGroups.get(y)!.push(item);
   }
-  
+
   // Sort and process each line group
   const lines: PDFLine[] = [];
   const sortedYs = Array.from(lineGroups.keys()).sort((a, b) => b - a); // Top to bottom (PDF Y is inverted)
-  
+
   // Calculate document-wide font statistics for header detection
   const allFontSizes = items.map(i => i.fontSize);
   const avgFontSize = allFontSizes.reduce((a, b) => a + b, 0) / allFontSizes.length;
   const maxFontSize = Math.max(...allFontSizes);
-  
+
   for (const y of sortedYs) {
     const lineItems = lineGroups.get(y)!.sort((a, b) => a.x - b.x);
-    
+
     // Reconstruct text with proper spacing
     let lineText = "";
     let lastX = 0;
     let lastWidth = 0;
-    
+
     for (const item of lineItems) {
       // Add space if there's a gap between items
       if (lineText.length > 0) {
@@ -903,24 +917,24 @@ function reconstructLinesSOTA(items: PDFTextItem[], viewport: any): PDFLine[] {
       lastX = item.x;
       lastWidth = item.width;
     }
-    
+
     lineText = lineText.trim();
     if (!lineText) continue;
-    
+
     // Calculate line properties
     const lineFontSizes = lineItems.map(i => i.fontSize);
     const lineAvgFontSize = lineFontSizes.reduce((a, b) => a + b, 0) / lineFontSizes.length;
-    
+
     // Detect if line is bold (heuristic: font name contains "Bold" or "Heavy")
-    const isBold = lineItems.some(i => 
+    const isBold = lineItems.some(i =>
       /bold|heavy|black|medium/i.test(i.fontName)
     );
-    
+
     // Detect header using multiple signals
     const headerDetection = detectSectionHeader(lineText);
     const isFontSizeHeader = lineAvgFontSize > avgFontSize * 1.15 || lineAvgFontSize >= maxFontSize * 0.9;
     const isHeader = headerDetection !== null || (isFontSizeHeader && lineText.length < 150 && !lineText.endsWith("."));
-    
+
     lines.push({
       text: lineText,
       y,
@@ -931,7 +945,7 @@ function reconstructLinesSOTA(items: PDFTextItem[], viewport: any): PDFLine[] {
       avgFontSize: lineAvgFontSize,
     });
   }
-  
+
   return lines;
 }
 
@@ -946,7 +960,7 @@ function extractSectionsSOTA(pageStructures: PDFPageStructure[]): ParsedSection[
   const sections: ParsedSection[] = [];
   let currentSection: ParsedSection | null = null;
   let contentBuffer: string[] = [];
-  
+
   // Collect all lines across pages
   const allLines: (PDFLine & { pageNum: number })[] = [];
   for (const page of pageStructures) {
@@ -954,14 +968,14 @@ function extractSectionsSOTA(pageStructures: PDFPageStructure[]): ParsedSection[
       allLines.push({ ...line, pageNum: page.pageNum });
     }
   }
-  
+
   // Calculate global statistics for header detection refinement
   const headerCandidates = allLines.filter(l => l.isHeader);
   const nonHeaders = allLines.filter(l => !l.isHeader);
-  const avgNonHeaderSize = nonHeaders.length > 0 
-    ? nonHeaders.reduce((a, b) => a + b.avgFontSize, 0) / nonHeaders.length 
+  const avgNonHeaderSize = nonHeaders.length > 0
+    ? nonHeaders.reduce((a, b) => a + b.avgFontSize, 0) / nonHeaders.length
     : 12;
-  
+
   for (const line of allLines) {
     // Enhanced header detection
     const isDefiniteHeader = line.isHeader && (
@@ -970,10 +984,10 @@ function extractSectionsSOTA(pageStructures: PDFPageStructure[]): ParsedSection[
       line.isBold ||
       detectSectionHeader(line.text) !== null
     );
-    
+
     // Skip page markers
     if (line.text.startsWith("=== Page")) continue;
-    
+
     if (isDefiniteHeader && line.text.length >= 3) {
       // Save current section
       if (currentSection) {
@@ -982,7 +996,7 @@ function extractSectionsSOTA(pageStructures: PDFPageStructure[]): ParsedSection[
           sections.push(currentSection);
         }
       }
-      
+
       // Start new section
       const headerInfo = detectSectionHeader(line.text);
       currentSection = {
@@ -1000,7 +1014,7 @@ function extractSectionsSOTA(pageStructures: PDFPageStructure[]): ParsedSection[
       contentBuffer.push(line.text);
     }
   }
-  
+
   // Save final section
   if (currentSection) {
     currentSection.content = contentBuffer.join("\n").trim();
@@ -1017,7 +1031,7 @@ function extractSectionsSOTA(pageStructures: PDFPageStructure[]): ParsedSection[
       lists: [],
     });
   }
-  
+
   // Post-process: merge very short sections or split very long ones
   return postProcessSections(sections);
 }
@@ -1027,13 +1041,13 @@ function extractSectionsSOTA(pageStructures: PDFPageStructure[]): ParsedSection[
  */
 function postProcessSections(sections: ParsedSection[]): ParsedSection[] {
   const processed: ParsedSection[] = [];
-  
+
   for (let i = 0; i < sections.length; i++) {
     const section = sections[i];
-    
+
     // Skip empty sections
     if (!section.content && section.tables.length === 0) continue;
-    
+
     // Merge very short sections (< 50 chars) with next section if same level
     if (section.content.length < 50 && i < sections.length - 1) {
       const nextSection = sections[i + 1];
@@ -1047,10 +1061,10 @@ function postProcessSections(sections: ParsedSection[]): ParsedSection[] {
         continue;
       }
     }
-    
+
     processed.push(section);
   }
-  
+
   return processed;
 }
 
@@ -1072,9 +1086,9 @@ function extractTablesSOTA(pageStructures: PDFPageStructure[]): ParsedTable[] {
     // Group items by Y position (rows) with dynamic tolerance
     const avgHeight = items.reduce((a, b) => a + b.height, 0) / items.length;
     const rowTolerance = Math.max(avgHeight * 0.5, 3);
-    
+
     const rowMap = new Map<number, PDFTextItem[]>();
-    
+
     for (const item of items) {
       const y = Math.round(item.y / rowTolerance) * rowTolerance;
       if (!rowMap.has(y)) {
@@ -1090,13 +1104,13 @@ function extractTablesSOTA(pageStructures: PDFPageStructure[]): ParsedTable[] {
 
     // SOTA: Detect table regions using column alignment analysis
     const tableRegions = detectTableRegions(sortedRows, width);
-    
+
     for (const region of tableRegions) {
       const { startRow, endRow, columns } = region;
       if (endRow - startRow < 2) continue; // Need at least header + 1 row
-      
+
       const regionRows = sortedRows.slice(startRow, endRow + 1);
-      
+
       // Extract table using detected columns
       const table = extractTableFromRegion(regionRows, columns, tableIndex++, pageNum);
       if (table && table.rows.length > 0) {
@@ -1117,44 +1131,44 @@ function detectTableRegions(sortedRows: PDFTextItem[][], pageWidth: number): {
   columns: number[];
 }[] {
   const regions: { startRow: number; endRow: number; columns: number[] }[] = [];
-  
+
   // Analyze column positions across rows
   const columnBuckets = new Map<number, number>(); // X position -> count
   const bucketSize = pageWidth / 50; // 50 potential column positions
-  
+
   for (const row of sortedRows) {
     for (const item of row) {
       const bucket = Math.round(item.x / bucketSize) * bucketSize;
       columnBuckets.set(bucket, (columnBuckets.get(bucket) || 0) + 1);
     }
   }
-  
+
   // Find significant column positions (appear in many rows)
   const threshold = sortedRows.length * 0.3;
   const columnPositions = Array.from(columnBuckets.entries())
     .filter(([_, count]) => count >= threshold)
     .map(([pos]) => pos)
     .sort((a, b) => a - b);
-  
+
   if (columnPositions.length < 2) return regions;
-  
+
   // Find continuous table regions
   let tableStartRow = -1;
   let consecutiveTableRows = 0;
-  
+
   for (let i = 0; i < sortedRows.length; i++) {
     const row = sortedRows[i];
     const colCount = row.length;
-    
+
     // Check if this row aligns with detected columns
     let alignedCells = 0;
     for (const item of row) {
       const nearestCol = columnPositions.find(c => Math.abs(c - item.x) < bucketSize * 1.5);
       if (nearestCol !== undefined) alignedCells++;
     }
-    
+
     const isTableRow = colCount >= 2 && alignedCells >= Math.min(colCount, columnPositions.length) * 0.5;
-    
+
     if (isTableRow) {
       if (tableStartRow === -1) {
         tableStartRow = i;
@@ -1172,7 +1186,7 @@ function detectTableRegions(sortedRows: PDFTextItem[][], pageWidth: number): {
       consecutiveTableRows = 0;
     }
   }
-  
+
   // Handle table at end of page
   if (consecutiveTableRows >= 3) {
     regions.push({
@@ -1181,7 +1195,7 @@ function detectTableRegions(sortedRows: PDFTextItem[][], pageWidth: number): {
       columns: columnPositions,
     });
   }
-  
+
   return regions;
 }
 
@@ -1195,14 +1209,14 @@ function extractTableFromRegion(
   pageNum: number
 ): ParsedTable | null {
   if (rows.length < 2) return null;
-  
+
   // Build table with proper column assignment
   const tableData: string[][] = [];
   const bucketSize = columns.length > 1 ? (columns[1] - columns[0]) * 0.75 : 50;
-  
+
   for (const row of rows) {
     const cells: string[] = new Array(columns.length).fill("");
-    
+
     for (const item of row) {
       // Find best matching column
       let bestColIdx = 0;
@@ -1214,25 +1228,25 @@ function extractTableFromRegion(
           bestColIdx = c;
         }
       }
-      
+
       if (bestDist < bucketSize * 2) {
-        cells[bestColIdx] = cells[bestColIdx] 
-          ? cells[bestColIdx] + " " + item.text 
+        cells[bestColIdx] = cells[bestColIdx]
+          ? cells[bestColIdx] + " " + item.text
           : item.text;
       }
     }
-    
+
     // Only include rows with actual content
     if (cells.some(c => c.trim())) {
       tableData.push(cells.map(c => c.trim()));
     }
   }
-  
+
   if (tableData.length < 2) return null;
-  
+
   // First row as headers
   const headers = tableData[0].map((h, i) => h || `Column_${i + 1}`);
-  
+
   // Data rows
   const dataRows: Record<string, unknown>[] = [];
   for (let i = 1; i < tableData.length; i++) {
@@ -1246,9 +1260,9 @@ function extractTableFromRegion(
       dataRows.push(record);
     }
   }
-  
+
   if (dataRows.length === 0) return null;
-  
+
   return {
     name: `Table_Page${pageNum}_${index + 1}`,
     headers,
@@ -1262,22 +1276,22 @@ function extractTableFromRegion(
 function extractTablesFromTextSOTA(text: string): ParsedTable[] {
   const tables: ParsedTable[] = [];
   const lines = text.split("\n");
-  
+
   let tableLines: string[] = [];
   let inTable = false;
   let tableIndex = 0;
-  
+
   // Detect tables by looking for consistent delimiters
   const delimiters = ["\t", "|", "  ", ";"];
-  
+
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("=== Page")) continue;
-    
+
     // Check for table-like structure
     let bestDelimiter: string | null = null;
     let maxCells = 0;
-    
+
     for (const delim of delimiters) {
       const parts = trimmed.split(delim).filter(p => p.trim());
       if (parts.length > maxCells) {
@@ -1285,9 +1299,9 @@ function extractTablesFromTextSOTA(text: string): ParsedTable[] {
         bestDelimiter = delim;
       }
     }
-    
+
     const isTableLine = maxCells >= 2 && bestDelimiter !== null;
-    
+
     if (isTableLine) {
       inTable = true;
       tableLines.push(trimmed);
@@ -1302,7 +1316,7 @@ function extractTablesFromTextSOTA(text: string): ParsedTable[] {
       inTable = false;
     }
   }
-  
+
   // Handle last table
   if (tableLines.length > 0) {
     const table = parseTextTableSOTA(tableLines, tableIndex);
@@ -1310,7 +1324,7 @@ function extractTablesFromTextSOTA(text: string): ParsedTable[] {
       tables.push(table);
     }
   }
-  
+
   return tables;
 }
 
@@ -1319,12 +1333,12 @@ function extractTablesFromTextSOTA(text: string): ParsedTable[] {
  */
 function parseTextTableSOTA(lines: string[], index: number): ParsedTable | null {
   if (lines.length < 2) return null;
-  
+
   // Detect best delimiter
   const delimiters = ["|", "\t", ";", "  "];
   let bestDelimiter = "\t";
   let maxConsistency = 0;
-  
+
   for (const delim of delimiters) {
     const counts = lines.map(l => l.split(delim).filter(p => p.trim()).length);
     const mode = counts.sort()[Math.floor(counts.length / 2)];
@@ -1334,28 +1348,28 @@ function parseTextTableSOTA(lines: string[], index: number): ParsedTable | null 
       bestDelimiter = delim;
     }
   }
-  
+
   const headers = lines[0].split(bestDelimiter).map(h => h.trim()).filter(h => h);
-  
+
   if (headers.length < 2) return null;
-  
+
   const rows: Record<string, unknown>[] = [];
-  
+
   for (let i = 1; i < lines.length; i++) {
     const cells = lines[i].split(bestDelimiter).map(c => c.trim());
     const row: Record<string, unknown> = {};
-    
+
     for (let j = 0; j < headers.length; j++) {
       row[headers[j]] = cells[j] || "";
     }
-    
+
     if (Object.values(row).some(v => v && String(v).trim())) {
       rows.push(row);
     }
   }
-  
+
   if (rows.length === 0) return null;
-  
+
   return {
     name: `TextTable_${index + 1}`,
     headers,
@@ -1375,26 +1389,26 @@ function assignTablesToSections(
   for (const table of tables) {
     const tableNameWords = table.name.toLowerCase().split(/[_\s]+/);
     const headerWords = table.headers.map(h => h.toLowerCase());
-    
+
     for (const section of sections) {
       const sectionContent = (section.title + " " + section.content).toLowerCase();
-      
+
       // Check if section mentions table headers or table name
       const mentionsTable = headerWords.some(h => sectionContent.includes(h)) ||
         tableNameWords.some(w => w.length > 3 && sectionContent.includes(w));
-      
+
       if (mentionsTable) {
         section.tables.push(table);
         break; // Assign to first matching section
       }
     }
   }
-  
+
   // Assign remaining tables to the first section (or create one)
-  const unassignedTables = tables.filter(t => 
+  const unassignedTables = tables.filter(t =>
     !sections.some(s => s.tables.includes(t))
   );
-  
+
   if (unassignedTables.length > 0 && sections.length > 0) {
     sections[0].tables.push(...unassignedTables);
   }
@@ -1436,7 +1450,7 @@ function parseJsonDocument(
         headers,
         rows: data,
       });
-      
+
       result.sections.push({
         title: "JSON Data",
         content: `Array with ${data.length} records`,
@@ -1456,7 +1470,7 @@ function parseJsonDocument(
           });
         }
       }
-      
+
       result.sections.push({
         title: "JSON Object",
         content: JSON.stringify(data, null, 2),
@@ -1506,7 +1520,7 @@ function parseTxtDocument(
       try {
         const data = JSON.parse(trimmed);
         result.metadata.detectedFormat = "json";
-        
+
         // If array of objects, treat as table
         if (Array.isArray(data) && data.length > 0 && typeof data[0] === "object") {
           const headers = Object.keys(data[0] || {});
@@ -1541,13 +1555,13 @@ function parseTxtDocument(
     for (const line of lines) {
       const trimmedLine = line.trim();
       const isHeader = detectSectionHeader(trimmedLine);
-      
+
       if (isHeader) {
         if (currentSection) {
           currentSection.content = contentLines.join("\n");
           result.sections.push(currentSection);
         }
-        
+
         currentSection = {
           title: trimmedLine,
           content: "",
@@ -1576,7 +1590,7 @@ function parseTxtDocument(
     }
 
     // Try to detect tables from text (tab-separated or pipe-separated)
-    const textTables = extractTablesFromText(text);
+    const textTables = extractTablesFromTextSOTA(text);
     for (const table of textTables) {
       result.tables.push(table);
     }

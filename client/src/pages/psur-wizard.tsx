@@ -25,11 +25,11 @@ function updateUrlParams(params: Record<string, string | null>) {
 // Calculate wizard step from workflow state
 function calculateStepFromWorkflow(workflowSteps: WorkflowStep[] | undefined): WizardStep {
     if (!workflowSteps || workflowSteps.length === 0) return 2;
-    
+
     // Find the furthest completed or running step
     let maxCompletedStep = 0;
     let hasRunningStep = false;
-    
+
     for (const ws of workflowSteps) {
         if (ws.status === "RUNNING") {
             hasRunningStep = true;
@@ -38,12 +38,12 @@ function calculateStepFromWorkflow(workflowSteps: WorkflowStep[] | undefined): W
             maxCompletedStep = Math.max(maxCompletedStep, ws.step);
         }
     }
-    
+
     // Map workflow steps to wizard steps:
     // Workflow 1-3 (Validate, Create, Load) -> Wizard step 3 (Review)
     // Workflow 4-5 (Map, Adjudicate) -> Wizard step 4 (Compile) 
     // Workflow 6-8 (Coverage, Generate, Export) -> Wizard step 5 (Results)
-    
+
     if (maxCompletedStep >= 6 || workflowSteps.some(s => s.step >= 6 && s.status === "RUNNING")) {
         return 5; // Results
     }
@@ -1740,11 +1740,11 @@ export default function PsurWizard() {
     const { toast } = useToast();
     const [, setLocation] = useLocation();
     const searchString = useSearch();
-    
+
     // Parse URL params on mount
     const urlParams = useMemo(() => new URLSearchParams(searchString), [searchString]);
     const urlCaseId = urlParams.get('caseId');
-    
+
     const [step, setStep] = useState<WizardStep>(1);
     const [isResumingFromUrl, setIsResumingFromUrl] = useState(false);
 
@@ -1765,7 +1765,7 @@ export default function PsurWizard() {
     const [psurRef, setPsurRef] = useState<string | null>(null);
     const [createBusy, setCreateBusy] = useState(false);
     const [createError, setCreateError] = useState("");
-    
+
     // Wrapper to update URL when psurCaseId changes
     const setPsurCaseId = useCallback((id: number | null) => {
         setPsurCaseIdInternal(id);
@@ -1807,7 +1807,7 @@ export default function PsurWizard() {
     });
     const customTemplates = templatesData?.templates || [];
     const defaultTemplateInfo = templatesData?.defaultTemplate;
-    
+
     // availableTemplates now only contains custom templates
     // The default MDCG template is shown separately
     const availableTemplates = customTemplates;
@@ -1825,7 +1825,7 @@ export default function PsurWizard() {
     // Selected dossier for linking
     const [selectedDossierId, setSelectedDossierId] = useState<number | null>(null);
     const selectedDossier = useMemo(() => dossiers?.find(d => d.id === selectedDossierId), [dossiers, selectedDossierId]);
-    
+
     // Import from dossier state
     const [importingFromDossier, setImportingFromDossier] = useState(false);
 
@@ -1838,7 +1838,7 @@ export default function PsurWizard() {
     const [runtimeEvents, setRuntimeEvents] = useState<any[]>([]);
     const [runtimeConnected, setRuntimeConnected] = useState(false);
     const runtimeEsRef = useRef<EventSource | null>(null);
-    
+
     // Live sections for generation progress display
     const [liveSections, setLiveSections] = useState<LiveSection[]>([]);
 
@@ -1847,7 +1847,7 @@ export default function PsurWizard() {
         if (!psurCaseId || !pollingActive) {
             return;
         }
-        
+
         const fetchLiveSections = async () => {
             try {
                 const res = await fetch(`/api/psur-cases/${psurCaseId}/live-content`);
@@ -1861,7 +1861,7 @@ export default function PsurWizard() {
                 // Silently fail - this is non-critical UI feedback
             }
         };
-        
+
         fetchLiveSections();
         const interval = setInterval(fetchLiveSections, 2000);
         return () => clearInterval(interval);
@@ -2390,13 +2390,13 @@ export default function PsurWizard() {
                                             <Icon className="w-4 h-4" />
                                         )}
                                     </div>
-                                    
+
                                     {/* Label */}
                                     <span className="text-sm font-medium whitespace-nowrap">
                                         {labels[n - 1]}
                                     </span>
                                 </button>
-                                
+
                                 {/* Chevron Separator */}
                                 {idx < 4 && (
                                     <ChevronRight className={cn(
@@ -2436,8 +2436,8 @@ export default function PsurWizard() {
                                             <FolderOpen className="w-4 h-4" />
                                             Link to Device Dossier
                                         </div>
-                                        <a 
-                                            href="/dossiers" 
+                                        <a
+                                            href="/dossiers"
                                             className="text-xs text-primary hover:underline flex items-center gap-1"
                                         >
                                             Manage Dossiers
@@ -2446,10 +2446,10 @@ export default function PsurWizard() {
                                     </div>
                                     {dossiers && dossiers.length > 0 ? (
                                         <>
-                                            <Select 
-                                                value={selectedDossierId?.toString() || ""} 
+                                            <Select
+                                                value={selectedDossierId?.toString() || "none"}
                                                 onValueChange={(v) => {
-                                                    const id = v ? parseInt(v) : null;
+                                                    const id = (v && v !== "none") ? parseInt(v) : null;
                                                     setSelectedDossierId(id);
                                                     if (id) {
                                                         const dossier = dossiers.find(d => d.id === id);
@@ -2476,11 +2476,13 @@ export default function PsurWizard() {
                                                     <SelectValue placeholder="Select a dossier to auto-fill device info" />
                                                 </SelectTrigger>
                                                 <SelectContent>
-                                                    <SelectItem value="">None (enter manually)</SelectItem>
+                                                    <SelectItem value="none">None (enter manually)</SelectItem>
                                                     {dossiers.map(d => (
                                                         <SelectItem key={d.id} value={d.id.toString()}>
                                                             <div className="flex items-center gap-2">
-                                                                <span className="font-medium">{d.tradeName || d.deviceCode}</span>
+                                                                <span className="font-medium truncate max-w-[350px]">
+                                                                    {d.tradeName || (d.deviceCode?.includes(',') ? `${d.deviceCode.split(',')[0].trim()}...` : d.deviceCode) || "Unnamed Dossier"}
+                                                                </span>
                                                                 {d.completenessScore && (
                                                                     <Badge variant="outline" className="text-[10px]">{d.completenessScore}%</Badge>
                                                                 )}
@@ -2576,30 +2578,28 @@ export default function PsurWizard() {
 
                                 <div className="space-y-2">
                                     <label className="text-sm text-muted-foreground">Template Selection</label>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <button
-                                            onClick={() => setTemplateType("standard")}
-                                            className={cn(
-                                                "h-12 rounded-lg font-medium transition-all border",
-                                                templateType === "standard"
-                                                    ? "bg-primary text-primary-foreground border-primary"
-                                                    : "bg-muted/50 text-muted-foreground border-border hover:bg-muted hover:text-foreground"
-                                            )}
-                                        >
-                                            Standard
-                                        </button>
-                                        <button
-                                            onClick={() => setTemplateType("custom")}
-                                            className={cn(
-                                                "h-12 rounded-lg font-medium transition-all border",
-                                                templateType === "custom"
-                                                    ? "bg-primary text-primary-foreground border-primary"
-                                                    : "bg-muted/50 text-muted-foreground border-border hover:bg-muted hover:text-foreground"
-                                            )}
-                                        >
-                                            Custom
-                                        </button>
-                                    </div>
+                                    <Select
+                                        value={templateId}
+                                        onValueChange={(val) => {
+                                            setTemplateId(val);
+                                            setTemplateType(val === "MDCG_2022_21_ANNEX_I" ? "standard" : "custom");
+                                        }}
+                                    >
+                                        <SelectTrigger className="w-full h-12">
+                                            <SelectValue placeholder="Select template..." />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="MDCG_2022_21_ANNEX_I">Standard (MDCG 2022-21)</SelectItem>
+                                            {availableTemplates.map((t: any, idx: number) => {
+                                                const id = t.templateId || t.template_id || `custom_${idx}`;
+                                                return (
+                                                    <SelectItem key={id} value={id}>
+                                                        {t.name || id}
+                                                    </SelectItem>
+                                                );
+                                            })}
+                                        </SelectContent>
+                                    </Select>
                                 </div>
 
                                 <div className="space-y-2">
@@ -2634,7 +2634,7 @@ export default function PsurWizard() {
                                     )}
                                     <button
                                         onClick={createDraft}
-                                        disabled={createBusy || !deviceName || !deviceCode || (templateType === 'custom' && !templateValidation.valid) || existingDrafts.length > 0}
+                                        disabled={createBusy || !deviceName || !deviceCode || (templateType === 'custom' && customTemplate && !templateValidation.valid) || existingDrafts.length > 0}
                                         className="w-full h-12 rounded-full bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                                     >
                                         {createBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
@@ -2710,7 +2710,7 @@ export default function PsurWizard() {
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                 {/* Import from Dossier - if dossier is linked */}
                                 {selectedDossier && (
-                                    <button 
+                                    <button
                                         onClick={async () => {
                                             if (!psurCaseId || !selectedDossier) return;
                                             setImportingFromDossier(true);
@@ -2747,7 +2747,7 @@ export default function PsurWizard() {
                                             } finally {
                                                 setImportingFromDossier(false);
                                             }
-                                        }} 
+                                        }}
                                         disabled={importingFromDossier}
                                         className="bg-gradient-to-br from-violet-500/10 to-violet-600/5 border border-violet-500/20 shadow-sm rounded-lg p-8 text-left space-y-6 group active:scale-95 hover:border-violet-500/40 transition-all"
                                     >
@@ -2919,7 +2919,7 @@ export default function PsurWizard() {
                                             <div className="text-sm font-medium text-foreground">Smart Narrative</div>
                                             <div className="text-xs text-muted-foreground">AI-generated contextual summaries</div>
                                         </div>
-                                        <div 
+                                        <div
                                             onClick={() => setEnableAIGeneration(!enableAIGeneration)}
                                             className={`relative w-11 h-6 rounded-full transition-all cursor-pointer ${enableAIGeneration ? "bg-primary" : "bg-border"}`}
                                         >
@@ -2932,7 +2932,7 @@ export default function PsurWizard() {
                                             <div className="text-sm font-medium text-foreground">Visual Charts</div>
                                             <div className="text-xs text-muted-foreground">Include trend visualizations</div>
                                         </div>
-                                        <div 
+                                        <div
                                             onClick={() => setEnableCharts(!enableCharts)}
                                             className={`relative w-11 h-6 rounded-full transition-all cursor-pointer ${enableCharts ? "bg-primary" : "bg-border"}`}
                                         >
@@ -3046,14 +3046,14 @@ export default function PsurWizard() {
                                                 </button>
                                             </div>
                                         </div>
-                                        
+
                                         {/* Visual Pipeline Nodes */}
                                         <div className="flex items-center gap-1">
                                             {runResult.steps.map((s, idx) => {
                                                 const isComplete = s.status === "COMPLETED";
                                                 const isRunning = s.status === "RUNNING";
                                                 const isFailed = s.status === "FAILED";
-                                                
+
                                                 return (
                                                     <div key={s.step} className="flex items-center flex-1">
                                                         {/* Node */}
@@ -3070,7 +3070,7 @@ export default function PsurWizard() {
                                                                 {isRunning && <div className="w-4 h-4"><Loader2 className="w-4 h-4 text-primary animate-spin" /></div>}
                                                                 {isFailed && <div className="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center"><svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg></div>}
                                                                 {!isComplete && !isRunning && !isFailed && <div className="w-4 h-4 rounded-full bg-muted-foreground/30 flex items-center justify-center"><span className="text-[8px] font-bold text-slate-600 dark:text-slate-300">{s.step}</span></div>}
-                                                                
+
                                                                 {/* Label */}
                                                                 <span className={cn(
                                                                     "text-[10px] font-medium truncate",
@@ -3083,7 +3083,7 @@ export default function PsurWizard() {
                                                                 </span>
                                                             </div>
                                                         </div>
-                                                        
+
                                                         {/* Connector */}
                                                         {idx < runResult.steps.length - 1 && (
                                                             <div className={cn(
@@ -3130,7 +3130,7 @@ export default function PsurWizard() {
                                                         </button>
                                                     </div>
                                                 </div>
-                                                
+
                                                 {/* Document Preview */}
                                                 <div className="flex-1 p-3 bg-muted/50">
                                                     <iframe
@@ -3154,12 +3154,12 @@ export default function PsurWizard() {
                                                             {liveSections.filter(s => s.status === "done").length} / {liveSections.length} sections
                                                         </span>
                                                     </div>
-                                                    
+
                                                     {/* Scrollable Live Sections */}
                                                     <div className="flex-1 overflow-y-auto p-3 space-y-2">
                                                         {liveSections.filter(s => s.status === "done" || s.status === "generating").slice(0, 10).map(section => (
-                                                            <div 
-                                                                key={section.slotId} 
+                                                            <div
+                                                                key={section.slotId}
                                                                 className={cn(
                                                                     "p-3 rounded-lg border transition-all",
                                                                     section.status === "generating" && "bg-primary/5 border-primary/30 shadow-md animate-pulse",
@@ -3183,7 +3183,7 @@ export default function PsurWizard() {
                                                                 </div>
                                                             </div>
                                                         ))}
-                                                        
+
                                                         {/* Pending sections */}
                                                         {liveSections.filter(s => s.status === "pending").slice(0, 5).map(section => (
                                                             <div key={section.slotId} className="p-2.5 rounded-lg border border-dashed border-border/50 bg-muted/30">
@@ -3195,7 +3195,7 @@ export default function PsurWizard() {
                                                         ))}
                                                     </div>
                                                 </div>
-                                                
+
                                                 {/* Right: Stats & Trace Summary */}
                                                 <div className="w-64 flex-shrink-0 flex flex-col gap-3">
                                                     {/* Stats Card */}
@@ -3224,7 +3224,7 @@ export default function PsurWizard() {
                                                             </div>
                                                         )}
                                                     </div>
-                                                    
+
                                                     {/* Current Step Detail */}
                                                     <div className="border rounded-xl bg-card p-4 flex-1">
                                                         <div className="text-xs font-semibold text-muted-foreground mb-2">Current Step</div>

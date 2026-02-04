@@ -59,7 +59,7 @@ export async function closeNeo4j(): Promise<void> {
   }
 }
 
-function getSession(): Session | null {
+export function getSession(): Session | null {
   const d = getDriver();
   if (!d) return null;
   return d.session();
@@ -1046,7 +1046,7 @@ export async function validatePSURAgainstMDCG(
       : [];
 
     // Dedupe missing evidence types
-    const uniqueMissingEvidence = [...new Set(missingEvidenceTypes)];
+    const uniqueMissingEvidence = Array.from(new Set(missingEvidenceTypes));
 
     const valid = missingTables.length === 0 && uniqueMissingEvidence.length === 0;
 

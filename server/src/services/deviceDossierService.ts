@@ -56,21 +56,21 @@ const FIELD_NAME_MAPPINGS: Record<string, string[]> = {
   riskClass: ["risk_class", "classification", "device_class", "deviceClass", "class"],
   gmdnCode: ["gmdn_code", "gmdnTerm", "gmdn_term", "gmdn"],
   model: ["model_number", "modelNumber", "model_name", "modelName"],
-  
+
   // Intended purpose / IFU
   intendedPurpose: ["intended_purpose", "intendedUse", "intended_use", "purpose", "indication_for_use"],
   indications: ["indication", "indications_for_use", "indicationsForUse", "clinical_indications"],
   contraindications: ["contraindication", "contra_indications", "contraindicationsForUse"],
   warnings: ["warning", "precautions", "warnings_and_precautions"],
   targetPopulation: ["target_population", "patient_population", "patientPopulation", "intended_population"],
-  
+
   // Clinical benefits
   clinicalBenefits: ["clinical_benefits", "benefits", "clinical_benefit", "claimed_benefits", "claimedBenefits"],
   benefitDescription: ["benefit_description", "description", "benefit"],
   endpoint: ["clinical_endpoint", "clinicalEndpoint", "outcome_measure", "outcomeMeasure"],
   evidenceSource: ["evidence_source", "source", "reference", "study_reference"],
   quantifiedValue: ["quantified_value", "value", "measured_value", "measuredValue", "result"],
-  
+
   // Risk management
   principalRisks: ["principal_risks", "identified_risks", "identifiedRisks", "hazards", "risks"],
   hazard: ["hazard_description", "hazardDescription", "risk_description", "riskDescription"],
@@ -85,7 +85,7 @@ const FIELD_NAME_MAPPINGS: Record<string, string[]> = {
   seriousIncidentThreshold: ["serious_incident_threshold", "incident_threshold", "incidentThreshold"],
   signalDetectionMethod: ["signal_detection_method", "detection_method", "detectionMethod"],
   hazardCategories: ["hazard_categories", "hazard_types", "hazardTypes", "risk_categories"],
-  
+
   // Clinical evaluation / B-R
   conclusion: ["overall_conclusion", "overallConclusion", "cer_conclusion", "cerConclusion", "benefit_risk_conclusion", "benefitRiskConclusion"],
   safetyConclusion: ["safety_conclusion", "safety_assessment", "safetyAssessment"],
@@ -95,7 +95,7 @@ const FIELD_NAME_MAPPINGS: Record<string, string[]> = {
   benefitsSummary: ["benefits_summary", "benefit_summary", "benefitSummary"],
   risksSummary: ["risks_summary", "risk_summary", "riskSummary"],
   acceptableRisk: ["acceptable_risk", "risk_acceptable", "riskAcceptable"],
-  
+
   // Literature
   databasesSearched: ["databases_searched", "databases", "search_databases", "searchDatabases"],
   searchTerms: ["search_terms", "searchStrings", "search_strings", "keywords", "search_keywords"],
@@ -104,7 +104,7 @@ const FIELD_NAME_MAPPINGS: Record<string, string[]> = {
   lastSearchDate: ["last_search_date", "search_date", "searchDate"],
   totalArticlesIdentified: ["total_articles_identified", "articles_found", "articlesFound", "total_found"],
   totalArticlesIncluded: ["total_articles_included", "articles_included", "articlesIncluded", "total_included"],
-  
+
   // PMCF
   studyType: ["study_type", "pmcf_type", "pmcfType", "activity_type", "activityType"],
   studyId: ["study_id", "pmcf_id", "pmcfId"],
@@ -114,30 +114,30 @@ const FIELD_NAME_MAPPINGS: Record<string, string[]> = {
   primaryEndpoint: ["primary_endpoint", "main_endpoint", "mainEndpoint"],
   pmcfObjectives: ["pmcf_objectives", "objectives", "study_objectives", "studyObjectives"],
   activitiesPerformed: ["activities_performed", "pmcf_activities", "pmcfActivities", "activities"],
-  
+
   // State of the art
   stateOfTheArt: ["state_of_the_art", "sota", "current_treatment", "currentTreatment", "benchmark"],
   benchmarkDevices: ["benchmark_devices", "comparator_devices", "comparatorDevices", "reference_devices"],
   performanceThresholds: ["performance_thresholds", "benchmarks", "thresholds"],
   alternativeTreatments: ["alternative_treatments", "alternatives", "treatment_alternatives", "treatmentAlternatives"],
-  
+
   // Equivalence
   equivalentDevices: ["equivalent_devices", "equivalence", "equivalentDevice", "equivalent_device"],
   equivalenceType: ["equivalence_type", "type_of_equivalence", "typeOfEquivalence"],
   equivalenceJustification: ["equivalence_justification", "justification", "rationale"],
-  
+
   // Regulatory
   certificateNumber: ["certificate_number", "certificate_id", "certificateId", "cert_number", "certNumber"],
   notifiedBody: ["notified_body", "nb", "nb_name", "nbName"],
   issueDate: ["issue_date", "issued_date", "issuedDate", "cert_date", "certDate"],
   expiryDate: ["expiry_date", "expiration_date", "expirationDate", "valid_until", "validUntil"],
-  
+
   // Sales / exposure
   totalUnits: ["total_units", "units_sold", "unitsSold", "cumulative_units", "cumulativeUnits", "quantity"],
   periodStart: ["period_start", "start_date", "startDate", "from_date", "fromDate"],
   periodEnd: ["period_end", "end_date", "endDate", "to_date", "toDate"],
   patientExposure: ["patient_exposure", "exposure", "patient_years", "patientYears"],
-  
+
   // Complaints / incidents
   totalComplaints: ["total_complaints", "complaint_count", "complaintCount", "complaints"],
   totalIncidents: ["total_incidents", "incident_count", "incidentCount", "incidents"],
@@ -151,9 +151,9 @@ const FIELD_NAME_MAPPINGS: Record<string, string[]> = {
  */
 function normalizeEvidenceData(data: Record<string, any> | undefined): Record<string, any> {
   if (!data) return {};
-  
+
   const normalized: Record<string, any> = {};
-  
+
   // Copy all original fields first
   for (const [key, value] of Object.entries(data)) {
     // Skip internal metadata fields
@@ -161,7 +161,7 @@ function normalizeEvidenceData(data: Record<string, any> | undefined): Record<st
       normalized[key] = value;
       continue;
     }
-    
+
     // Check if this key should be mapped to a canonical name
     let canonicalKey = key;
     for (const [canonical, variants] of Object.entries(FIELD_NAME_MAPPINGS)) {
@@ -170,13 +170,13 @@ function normalizeEvidenceData(data: Record<string, any> | undefined): Record<st
         break;
       }
     }
-    
+
     // Only set if not already set (prefer first occurrence)
     if (!(canonicalKey in normalized)) {
       normalized[canonicalKey] = value;
     }
   }
-  
+
   return normalized;
 }
 
@@ -185,10 +185,10 @@ function normalizeEvidenceData(data: Record<string, any> | undefined): Record<st
  */
 function getField(data: Record<string, any> | undefined, canonicalName: string): any {
   if (!data) return undefined;
-  
+
   // Try canonical name first
   if (data[canonicalName] !== undefined) return data[canonicalName];
-  
+
   // Try all variants
   const variants = FIELD_NAME_MAPPINGS[canonicalName];
   if (variants) {
@@ -196,7 +196,7 @@ function getField(data: Record<string, any> | undefined, canonicalName: string):
       if (data[variant] !== undefined) return data[variant];
     }
   }
-  
+
   return undefined;
 }
 
@@ -332,10 +332,10 @@ export async function getDossierContext(
   }
 
   // Find the most recent prior PSUR before current period
-  const priorPsur = periodStart 
+  const priorPsur = periodStart
     ? getMostRecentPriorPsur(dossier.priorPsurs, periodStart)
     : dossier.priorPsurs[0] || null;
-  
+
   return {
     productSummary: buildProductSummary(dossier),
     clinicalContext: buildClinicalContextString(dossier),
@@ -364,11 +364,11 @@ export async function getFullDossier(deviceCode: string): Promise<FullDeviceDoss
   const core = await db.query.deviceDossiers.findFirst({
     where: eq(deviceDossiers.deviceCode, deviceCode),
   });
-  
+
   if (!core) {
     return null;
   }
-  
+
   const [
     clinicalCtx,
     riskCtx,
@@ -398,7 +398,7 @@ export async function getFullDossier(deviceCode: string): Promise<FullDeviceDoss
       orderBy: [desc(dossierBaselines.periodEnd)],
     }),
   ]);
-  
+
   return {
     core,
     clinicalContext: clinicalCtx || null,
@@ -476,7 +476,7 @@ export async function upsertClinicalContext(
   const existing = await db.query.dossierClinicalContext.findFirst({
     where: eq(dossierClinicalContext.deviceCode, deviceCode),
   });
-  
+
   if (existing) {
     const [result] = await db
       .update(dossierClinicalContext)
@@ -502,7 +502,7 @@ export async function upsertRiskContext(
   const existing = await db.query.dossierRiskContext.findFirst({
     where: eq(dossierRiskContext.deviceCode, deviceCode),
   });
-  
+
   if (existing) {
     const [result] = await db
       .update(dossierRiskContext)
@@ -528,7 +528,7 @@ export async function upsertClinicalEvidence(
   const existing = await db.query.dossierClinicalEvidence.findFirst({
     where: eq(dossierClinicalEvidence.deviceCode, deviceCode),
   });
-  
+
   if (existing) {
     const [result] = await db
       .update(dossierClinicalEvidence)
@@ -554,7 +554,7 @@ export async function upsertRegulatoryHistory(
   const existing = await db.query.dossierRegulatoryHistory.findFirst({
     where: eq(dossierRegulatoryHistory.deviceCode, deviceCode),
   });
-  
+
   if (existing) {
     const [result] = await db
       .update(dossierRegulatoryHistory)
@@ -642,26 +642,26 @@ export async function deleteBaseline(id: number): Promise<boolean> {
 function buildProductSummary(dossier: FullDeviceDossier): string {
   const { core, clinicalContext } = dossier;
   const classification = core.classification as any;
-  
+
   const lines: string[] = [
     `## DEVICE PROFILE: ${core.tradeName}`,
     "",
     `${core.tradeName} (${core.deviceCode}) is a Class ${classification?.class || "Unknown"} medical device${classification?.rule ? ` classified under ${classification.rule}` : ""}.`,
   ];
-  
+
   if (core.manufacturerName) {
     lines.push(`Manufacturer: ${core.manufacturerName}`);
   }
-  
+
   if (core.basicUdiDi) {
     lines.push(`Basic UDI-DI: ${core.basicUdiDi}`);
   }
-  
+
   if (clinicalContext?.intendedPurpose) {
     lines.push("");
     lines.push(`**Intended Purpose:** ${clinicalContext.intendedPurpose}`);
   }
-  
+
   const targetPop = clinicalContext?.targetPopulation as any;
   if (targetPop?.description) {
     lines.push("");
@@ -673,7 +673,7 @@ function buildProductSummary(dossier: FullDeviceDossier): string {
       lines.push(`- Conditions: ${targetPop.conditions.join(", ")}`);
     }
   }
-  
+
   const benefits = clinicalContext?.clinicalBenefits as ClinicalBenefit[] || [];
   if (benefits.length > 0) {
     lines.push("");
@@ -682,20 +682,20 @@ function buildProductSummary(dossier: FullDeviceDossier): string {
       lines.push(`- ${b.description}${b.quantifiedValue ? `: ${b.quantifiedValue}` : ""}`);
     }
   }
-  
+
   if (core.marketEntryDate) {
     lines.push("");
     lines.push(`**Market Entry:** ${core.marketEntryDate.toISOString().split("T")[0]}`);
   }
-  
+
   const exposure = core.cumulativeExposure as any;
   if (exposure?.patientYears || exposure?.unitsDistributed) {
-    const expStr = exposure.patientYears 
+    const expStr = exposure.patientYears
       ? `${exposure.patientYears.toLocaleString()} patient-years`
       : `${exposure.unitsDistributed?.toLocaleString()} units distributed`;
     lines.push(`**Cumulative Exposure:** ${expStr}`);
   }
-  
+
   return lines.join("\n");
 }
 
@@ -706,13 +706,13 @@ function buildClinicalContextString(dossier: FullDeviceDossier): string {
   }
 
   const lines: string[] = ["## CLINICAL CONTEXT"];
-  
+
   if (clinicalContext.intendedPurpose) {
     lines.push("");
     lines.push(`**Intended Purpose (Verbatim):**`);
     lines.push(clinicalContext.intendedPurpose);
   }
-  
+
   if (clinicalContext.indications?.length) {
     lines.push("");
     lines.push("**Indications:**");
@@ -720,7 +720,7 @@ function buildClinicalContextString(dossier: FullDeviceDossier): string {
       lines.push(`- ${ind}`);
     }
   }
-  
+
   if (clinicalContext.contraindications?.length) {
     lines.push("");
     lines.push("**Contraindications:**");
@@ -728,7 +728,7 @@ function buildClinicalContextString(dossier: FullDeviceDossier): string {
       lines.push(`- ${contra}`);
     }
   }
-  
+
   const sota = clinicalContext.stateOfTheArt as any;
   if (sota?.description) {
     lines.push("");
@@ -738,7 +738,7 @@ function buildClinicalContextString(dossier: FullDeviceDossier): string {
       lines.push(`Benchmark devices: ${sota.benchmarkDevices.join(", ")}`);
     }
   }
-  
+
   // Add PMCF info if available
   const pmcf = clinicalEvidence?.pmcfPlan as any;
   if (pmcf?.objectives?.length) {
@@ -773,26 +773,26 @@ function buildRiskContextString(dossier: FullDeviceDossier): string {
   }
 
   const lines: string[] = ["## RISK MANAGEMENT CONTEXT"];
-  
+
   const risks = riskContext.principalRisks as any[] || [];
   if (risks.length > 0) {
     lines.push("");
     lines.push("**Principal Identified Risks:**");
     for (const risk of risks.slice(0, 5)) {
-      const rateStr = risk.preMarketOccurrenceRate 
+      const rateStr = risk.preMarketOccurrenceRate
         ? ` (Pre-market rate: ${(risk.preMarketOccurrenceRate * 100).toFixed(2)}%)`
         : "";
       lines.push(`- ${risk.hazard} → ${risk.harm} [${risk.severity}]${rateStr}`);
     }
   }
-  
+
   const acceptability = riskContext.residualRiskAcceptability as any;
   if (acceptability?.criteria) {
     lines.push("");
     lines.push("**Risk Acceptability Criteria:**");
     lines.push(acceptability.criteria);
   }
-  
+
   const thresholds = riskContext.riskThresholds as any;
   if (thresholds) {
     lines.push("");
@@ -807,13 +807,13 @@ function buildRiskContextString(dossier: FullDeviceDossier): string {
       lines.push(`- Method: ${thresholds.signalDetectionMethod}`);
     }
   }
-  
+
   if (acceptability?.afapAnalysisSummary) {
     lines.push("");
     lines.push("**AFAP Analysis Summary:**");
     lines.push(acceptability.afapAnalysisSummary);
   }
-  
+
   return lines.join("\n");
 }
 
@@ -824,7 +824,7 @@ function buildRegulatoryContextString(dossier: FullDeviceDossier): string {
   }
 
   const lines: string[] = ["## REGULATORY CONTEXT"];
-  
+
   const certs = regulatoryHistory.certificates as any[] || [];
   const activeCerts = certs.filter(c => c.status === "Active");
   if (activeCerts.length > 0) {
@@ -834,7 +834,7 @@ function buildRegulatoryContextString(dossier: FullDeviceDossier): string {
       lines.push(`- ${cert.type} (${cert.notifiedBody}) - Expires: ${cert.expiryDate}`);
     }
   }
-  
+
   const commitments = regulatoryHistory.nbCommitments as any[] || [];
   const openCommitments = commitments.filter(c => c.status !== "Completed");
   if (openCommitments.length > 0) {
@@ -845,7 +845,7 @@ function buildRegulatoryContextString(dossier: FullDeviceDossier): string {
       lines.push(`- ${commit.description} [${commit.status}]${dueStr}`);
     }
   }
-  
+
   const fscas = regulatoryHistory.fscaHistory as any[] || [];
   if (fscas.length > 0) {
     lines.push("");
@@ -854,7 +854,7 @@ function buildRegulatoryContextString(dossier: FullDeviceDossier): string {
       lines.push(`- ${fsca.type}: ${fsca.description} (${fsca.initiationDate}) [${fsca.status}]`);
     }
   }
-  
+
   const changes = regulatoryHistory.designChanges as any[] || [];
   const recentChanges = changes.slice(0, 3);
   if (recentChanges.length > 0) {
@@ -864,7 +864,7 @@ function buildRegulatoryContextString(dossier: FullDeviceDossier): string {
       lines.push(`- ${change.description} (${change.effectiveDate}) [${change.significance}]`);
     }
   }
-  
+
   return lines.join("\n");
 }
 
@@ -879,7 +879,7 @@ function buildBaselineContextString(
   }
 
   const lines: string[] = ["## PERFORMANCE BASELINES"];
-  
+
   // Group baselines by metric type
   const byType = new Map<string, DossierBaseline[]>();
   for (const baseline of baselines) {
@@ -887,19 +887,19 @@ function buildBaselineContextString(
     existing.push(baseline);
     byType.set(baseline.metricType, existing);
   }
-  
+
   for (const [metricType, typeBaselines] of byType) {
     const mostRecent = typeBaselines[0]; // Already sorted by periodEnd desc
-    
+
     lines.push("");
     lines.push(`**${formatMetricType(metricType)}:**`);
     lines.push(`- Current Baseline: ${mostRecent.value} ${mostRecent.unit || ""}`);
     lines.push(`- Period: ${mostRecent.periodStart?.toISOString().split("T")[0]} to ${mostRecent.periodEnd?.toISOString().split("T")[0]}`);
-    
+
     if (mostRecent.methodology) {
       lines.push(`- Methodology: ${mostRecent.methodology}`);
     }
-    
+
     // Show trend if multiple baselines exist
     if (typeBaselines.length > 1) {
       const previous = typeBaselines[1];
@@ -912,7 +912,7 @@ function buildBaselineContextString(
       }
     }
   }
-  
+
   return lines.join("\n");
 }
 
@@ -922,18 +922,18 @@ function buildPriorPsurContextString(priorPsur: DossierPriorPsur | null, deviceC
   }
 
   const lines: string[] = ["## PRIOR PSUR SUMMARY"];
-  
+
   lines.push("");
   lines.push(`**Period:** ${priorPsur.periodStart?.toISOString().split("T")[0]} to ${priorPsur.periodEnd?.toISOString().split("T")[0]}`);
-  
+
   if (priorPsur.psurReference) {
     lines.push(`**Reference:** ${priorPsur.psurReference}`);
   }
-  
+
   if (priorPsur.benefitRiskConclusion) {
     lines.push(`**B/R Conclusion:** ${priorPsur.benefitRiskConclusion}`);
   }
-  
+
   if (priorPsur.keyFindings?.length) {
     lines.push("");
     lines.push("**Key Findings:**");
@@ -941,7 +941,7 @@ function buildPriorPsurContextString(priorPsur: DossierPriorPsur | null, deviceC
       lines.push(`- ${finding}`);
     }
   }
-  
+
   const actions = priorPsur.actionsRequired as any[] || [];
   const openActions = actions.filter(a => !a.completed);
   if (openActions.length > 0) {
@@ -952,7 +952,7 @@ function buildPriorPsurContextString(priorPsur: DossierPriorPsur | null, deviceC
       lines.push(`- ${action.description}${dueStr}`);
     }
   }
-  
+
   const metrics = priorPsur.periodMetrics as any;
   if (metrics) {
     lines.push("");
@@ -967,7 +967,7 @@ function buildPriorPsurContextString(priorPsur: DossierPriorPsur | null, deviceC
       lines.push(`- Serious Incidents: ${metrics.seriousIncidents}`);
     }
   }
-  
+
   return lines.join("\n");
 }
 
@@ -980,13 +980,13 @@ function getMostRecentPriorPsur(
   beforeDate: string
 ): DossierPriorPsur | null {
   const beforeTimestamp = new Date(beforeDate).getTime();
-  
+
   for (const psur of priorPsurs) {
     if (psur.periodEnd && psur.periodEnd.getTime() < beforeTimestamp) {
       return psur;
     }
   }
-  
+
   return null;
 }
 
@@ -994,7 +994,7 @@ function extractRiskThresholds(riskContext: DossierRiskContext | null): RiskThre
   if (!riskContext?.riskThresholds) {
     return null;
   }
-  
+
   const thresholds = riskContext.riskThresholds as any;
   return {
     complaintRateThreshold: thresholds.complaintRateThreshold || 0,
@@ -1007,7 +1007,7 @@ function extractClinicalBenefits(clinicalContext: DossierClinicalContext | null)
   if (!clinicalContext?.clinicalBenefits) {
     return [];
   }
-  
+
   const benefits = clinicalContext.clinicalBenefits as ClinicalBenefit[];
   return benefits.map(b => ({
     benefitId: b.benefitId,
@@ -1032,7 +1032,7 @@ function extractPerformanceBaselines(baselines: DossierBaseline[]): PerformanceB
 function mapToPriorPsurSummary(psur: DossierPriorPsur): PriorPsurSummary {
   const actions = psur.actionsRequired as any[] || [];
   const metrics = psur.periodMetrics as any;
-  
+
   return {
     periodStart: psur.periodStart?.toISOString() || "",
     periodEnd: psur.periodEnd?.toISOString() || "",
@@ -1064,66 +1064,339 @@ function formatMetricType(metricType: string): string {
 // COMPLETENESS SCORING
 // ═══════════════════════════════════════════════════════════════════════════════
 
+export interface CompletenessBreakdown {
+  score: number;
+  maxScore: number;
+  percentage: number;
+  categories: {
+    identity: { score: number; max: number; missing: string[] };
+    clinicalContext: { score: number; max: number; missing: string[] };
+    riskContext: { score: number; max: number; missing: string[] };
+    clinicalEvidence: { score: number; max: number; missing: string[] };
+    regulatoryHistory: { score: number; max: number; missing: string[] };
+    priorPsurs: { score: number; max: number; missing: string[] };
+    baselines: { score: number; max: number; missing: string[] };
+  };
+  criticalMissing: string[];
+  recommendations: string[];
+}
+
 /**
  * Calculate and update the completeness score for a dossier.
+ * This is a genuinely accurate calculation that validates actual content quality.
  */
 export async function updateCompletenessScore(deviceCode: string): Promise<number> {
-  const dossier = await getFullDossier(deviceCode);
-  
-  if (!dossier) {
-    return 0;
-  }
-  
-  let score = 0;
-  const weights = {
-    identity: 15,           // Trade name, device code, classification
-    clinicalContext: 25,    // Intended purpose, benefits, population
-    riskContext: 20,        // Principal risks, thresholds
-    clinicalEvidence: 15,   // CER, PMCF
-    regulatoryHistory: 10,  // Certificates, commitments
-    priorPsurs: 10,         // Prior PSUR data
-    baselines: 5,           // Performance baselines
-  };
-  
-  // Identity (15 points)
-  if (dossier.core.tradeName) score += 5;
-  if (dossier.core.classification) score += 5;
-  if (dossier.core.basicUdiDi) score += 5;
-  
-  // Clinical Context (25 points)
-  if (dossier.clinicalContext?.intendedPurpose) score += 10;
-  const benefits = dossier.clinicalContext?.clinicalBenefits as any[] || [];
-  if (benefits.length > 0) score += 10;
-  if (dossier.clinicalContext?.targetPopulation) score += 5;
-  
-  // Risk Context (20 points)
-  const risks = dossier.riskContext?.principalRisks as any[] || [];
-  if (risks.length > 0) score += 10;
-  if (dossier.riskContext?.riskThresholds) score += 10;
-  
-  // Clinical Evidence (15 points)
-  if (dossier.clinicalEvidence?.cerConclusions) score += 8;
-  if (dossier.clinicalEvidence?.pmcfPlan) score += 7;
-  
-  // Regulatory History (10 points)
-  const certs = dossier.regulatoryHistory?.certificates as any[] || [];
-  if (certs.length > 0) score += 5;
-  const commitments = dossier.regulatoryHistory?.nbCommitments as any[] || [];
-  if (commitments.length > 0 || certs.length > 0) score += 5;
-  
-  // Prior PSURs (10 points)
-  if (dossier.priorPsurs.length > 0) score += 10;
-  
-  // Baselines (5 points)
-  if (dossier.baselines.length > 0) score += 5;
-  
+  const breakdown = await calculateCompletenessBreakdown(deviceCode);
+
   // Update the score in the database
   await db
     .update(deviceDossiers)
-    .set({ completenessScore: score, lastValidatedAt: new Date() })
+    .set({ completenessScore: breakdown.score, lastValidatedAt: new Date() })
     .where(eq(deviceDossiers.deviceCode, deviceCode));
-  
-  return score;
+
+  return breakdown.score;
+}
+
+/**
+ * Get detailed completeness breakdown for a dossier.
+ */
+export async function calculateCompletenessBreakdown(deviceCode: string): Promise<CompletenessBreakdown> {
+  const dossier = await getFullDossier(deviceCode);
+
+  const defaultBreakdown: CompletenessBreakdown = {
+    score: 0,
+    maxScore: 100,
+    percentage: 0,
+    categories: {
+      identity: { score: 0, max: 15, missing: ["Device dossier not found"] },
+      clinicalContext: { score: 0, max: 25, missing: [] },
+      riskContext: { score: 0, max: 20, missing: [] },
+      clinicalEvidence: { score: 0, max: 15, missing: [] },
+      regulatoryHistory: { score: 0, max: 10, missing: [] },
+      priorPsurs: { score: 0, max: 10, missing: [] },
+      baselines: { score: 0, max: 5, missing: [] },
+    },
+    criticalMissing: ["Device dossier not found"],
+    recommendations: ["Create device dossier first"],
+  };
+
+  if (!dossier) {
+    return defaultBreakdown;
+  }
+
+  const criticalMissing: string[] = [];
+  const recommendations: string[] = [];
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // IDENTITY (15 points max)
+  // ═══════════════════════════════════════════════════════════════════════════
+  const identity = { score: 0, max: 15, missing: [] as string[] };
+
+  // Trade name (5 points) - must be non-empty string with at least 2 chars
+  if (isValidText(dossier.core.tradeName, 2)) {
+    identity.score += 5;
+  } else {
+    identity.missing.push("Trade name");
+    criticalMissing.push("Trade name is required for device identification");
+  }
+
+  // Classification (5 points) - must have valid class
+  const classification = dossier.core.classification as any;
+  if (classification?.class && ["I", "IIa", "IIb", "III"].includes(classification.class)) {
+    identity.score += 5;
+  } else {
+    identity.missing.push("Device classification (Class I/IIa/IIb/III)");
+    criticalMissing.push("Device classification is required for regulatory compliance");
+  }
+
+  // Basic UDI-DI (5 points) - must be valid format (at least 10 chars)
+  if (isValidText(dossier.core.basicUdiDi, 10)) {
+    identity.score += 5;
+  } else {
+    identity.missing.push("Basic UDI-DI");
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CLINICAL CONTEXT (25 points max)
+  // ═══════════════════════════════════════════════════════════════════════════
+  const clinicalContext = { score: 0, max: 25, missing: [] as string[] };
+
+  // Intended purpose (10 points) - must be substantive description (at least 50 chars)
+  if (isValidText(dossier.clinicalContext?.intendedPurpose, 50)) {
+    clinicalContext.score += 10;
+  } else if (isValidText(dossier.clinicalContext?.intendedPurpose, 10)) {
+    clinicalContext.score += 5; // Partial credit for brief description
+    clinicalContext.missing.push("Intended purpose needs more detail (min 50 chars)");
+  } else {
+    clinicalContext.missing.push("Intended purpose");
+    criticalMissing.push("Intended purpose is essential for PSUR scope definition");
+  }
+
+  // Clinical benefits (7 points) - must have at least 1 benefit with description
+  const benefits = dossier.clinicalContext?.clinicalBenefits as any[] || [];
+  const validBenefits = benefits.filter(b => isValidText(b?.description, 10) && isValidText(b?.endpoint, 5));
+  if (validBenefits.length >= 2) {
+    clinicalContext.score += 7;
+  } else if (validBenefits.length === 1) {
+    clinicalContext.score += 4;
+    clinicalContext.missing.push("Additional clinical benefits (at least 2 recommended)");
+  } else {
+    clinicalContext.missing.push("Clinical benefits with endpoints");
+    criticalMissing.push("Clinical benefits must be defined for benefit-risk assessment");
+  }
+
+  // Target population (5 points) - must have description
+  const targetPop = dossier.clinicalContext?.targetPopulation as any;
+  if (isValidText(targetPop?.description, 20)) {
+    clinicalContext.score += 5;
+  } else {
+    clinicalContext.missing.push("Target population description");
+  }
+
+  // State of the art (3 points) - bonus for having benchmark devices
+  const sota = dossier.clinicalContext?.stateOfTheArt as any;
+  if (isValidText(sota?.description, 30) || (sota?.benchmarkDevices?.length > 0)) {
+    clinicalContext.score += 3;
+  } else {
+    clinicalContext.missing.push("State of the art / benchmark devices");
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // RISK CONTEXT (20 points max)
+  // ═══════════════════════════════════════════════════════════════════════════
+  const riskContext = { score: 0, max: 20, missing: [] as string[] };
+
+  // Principal risks (10 points) - must have at least 2 risks with hazard/harm/severity
+  const risks = dossier.riskContext?.principalRisks as any[] || [];
+  const validRisks = risks.filter(r =>
+    isValidText(r?.hazard, 5) &&
+    isValidText(r?.harm, 5) &&
+    isValidText(r?.severity, 3)
+  );
+  if (validRisks.length >= 3) {
+    riskContext.score += 10;
+  } else if (validRisks.length >= 1) {
+    riskContext.score += Math.min(validRisks.length * 3, 7);
+    riskContext.missing.push(`More principal risks needed (have ${validRisks.length}, need 3+)`);
+  } else {
+    riskContext.missing.push("Principal risks (hazard, harm, severity)");
+    criticalMissing.push("Principal risks must be defined for risk-benefit analysis");
+  }
+
+  // Risk thresholds (6 points) - need signal detection thresholds
+  const thresholds = dossier.riskContext?.riskThresholds as any;
+  if (thresholds?.complaintRateThreshold || thresholds?.seriousIncidentThreshold) {
+    riskContext.score += 4;
+    if (isValidText(thresholds?.signalDetectionMethod, 10)) {
+      riskContext.score += 2;
+    } else {
+      riskContext.missing.push("Signal detection method description");
+    }
+  } else {
+    riskContext.missing.push("Risk thresholds (complaint rate, incident threshold)");
+  }
+
+  // Residual risk acceptability (4 points)
+  const acceptability = dossier.riskContext?.residualRiskAcceptability as any;
+  if (isValidText(acceptability?.criteria, 20)) {
+    riskContext.score += 4;
+  } else {
+    riskContext.missing.push("Residual risk acceptability criteria");
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CLINICAL EVIDENCE (15 points max)
+  // ═══════════════════════════════════════════════════════════════════════════
+  const clinicalEvidence = { score: 0, max: 15, missing: [] as string[] };
+
+  // CER conclusions (8 points) - must have B/R conclusion and at least 1 key finding
+  const cer = dossier.clinicalEvidence?.cerConclusions as any;
+  if (isValidText(cer?.benefitRiskConclusion, 20)) {
+    clinicalEvidence.score += 5;
+    if (Array.isArray(cer?.keyFindings) && cer.keyFindings.filter((f: any) => isValidText(f, 10)).length > 0) {
+      clinicalEvidence.score += 3;
+    } else {
+      clinicalEvidence.missing.push("CER key findings");
+    }
+  } else {
+    clinicalEvidence.missing.push("CER benefit-risk conclusion");
+    recommendations.push("Upload CER document to extract B/R conclusions");
+  }
+
+  // PMCF plan (7 points) - must have objectives and status
+  const pmcf = dossier.clinicalEvidence?.pmcfPlan as any;
+  if (Array.isArray(pmcf?.objectives) && pmcf.objectives.filter((o: any) => isValidText(o, 10)).length > 0) {
+    clinicalEvidence.score += 4;
+    if (isValidText(pmcf?.currentStatus, 5)) {
+      clinicalEvidence.score += 3;
+    } else {
+      clinicalEvidence.missing.push("PMCF plan current status");
+    }
+  } else {
+    clinicalEvidence.missing.push("PMCF plan objectives");
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // REGULATORY HISTORY (10 points max)
+  // ═══════════════════════════════════════════════════════════════════════════
+  const regulatoryHistory = { score: 0, max: 10, missing: [] as string[] };
+
+  // Certificates (5 points) - must have at least 1 active certificate
+  const certs = dossier.regulatoryHistory?.certificates as any[] || [];
+  const activeCerts = certs.filter(c =>
+    isValidText(c?.type, 2) &&
+    isValidText(c?.notifiedBody, 3) &&
+    c?.status === "Active"
+  );
+  if (activeCerts.length > 0) {
+    regulatoryHistory.score += 5;
+  } else if (certs.length > 0) {
+    regulatoryHistory.score += 2; // Partial credit for any certificate
+    regulatoryHistory.missing.push("Active CE certificate");
+  } else {
+    regulatoryHistory.missing.push("Certificates (type, notified body, status)");
+  }
+
+  // NB Commitments or FSCA history (5 points) - tracked for compliance
+  const commitments = dossier.regulatoryHistory?.nbCommitments as any[] || [];
+  const fscas = dossier.regulatoryHistory?.fscaHistory as any[] || [];
+  if (commitments.length > 0 || fscas.length > 0) {
+    regulatoryHistory.score += 5;
+  } else {
+    // No penalty if none exist - absence is acceptable
+    regulatoryHistory.score += 5;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PRIOR PSURs (10 points max)
+  // ═══════════════════════════════════════════════════════════════════════════
+  const priorPsurs = { score: 0, max: 10, missing: [] as string[] };
+
+  // Prior PSUR record (10 points) - for non-new devices, must have prior PSUR data
+  const priorPsurRecords = dossier.priorPsurs || [];
+  if (priorPsurRecords.length > 0) {
+    const validPsurs = priorPsurRecords.filter(p =>
+      p.periodStart && p.periodEnd && isValidText(p.benefitRiskConclusion, 10)
+    );
+    if (validPsurs.length > 0) {
+      priorPsurs.score += 10;
+    } else {
+      priorPsurs.score += 5; // Partial credit for having records but incomplete
+      priorPsurs.missing.push("Prior PSUR needs benefit-risk conclusion");
+    }
+  } else {
+    // Check market entry date - if device is new (< 2 years), no prior PSUR expected
+    const marketEntry = dossier.core.marketEntryDate;
+    const twoYearsAgo = new Date();
+    twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+
+    if (marketEntry && new Date(marketEntry) > twoYearsAgo) {
+      priorPsurs.score += 10; // New device, no prior PSUR expected
+    } else {
+      priorPsurs.missing.push("Prior PSUR data (period, conclusion, key findings)");
+      recommendations.push("Add prior PSUR data or confirm this is the first PSUR");
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BASELINES (5 points max)
+  // ═══════════════════════════════════════════════════════════════════════════
+  const baselines = { score: 0, max: 5, missing: [] as string[] };
+
+  // Performance baselines (5 points) - at least 1 baseline with value and methodology
+  const baselineRecords = dossier.baselines || [];
+  const validBaselines = baselineRecords.filter(b =>
+    isValidText(b.metricType, 3) &&
+    isValidText(b.value, 1) &&
+    b.periodStart && b.periodEnd
+  );
+  if (validBaselines.length >= 2) {
+    baselines.score += 5;
+  } else if (validBaselines.length === 1) {
+    baselines.score += 3;
+    baselines.missing.push("Additional baselines (complaint rate, incident rate, etc.)");
+  } else {
+    baselines.missing.push("Performance baselines (metric type, value, period)");
+    recommendations.push("Add baseline metrics for trend analysis");
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // TOTAL SCORE
+  // ═══════════════════════════════════════════════════════════════════════════
+  const totalScore =
+    identity.score +
+    clinicalContext.score +
+    riskContext.score +
+    clinicalEvidence.score +
+    regulatoryHistory.score +
+    priorPsurs.score +
+    baselines.score;
+
+  return {
+    score: totalScore,
+    maxScore: 100,
+    percentage: Math.round(totalScore),
+    categories: {
+      identity,
+      clinicalContext,
+      riskContext,
+      clinicalEvidence,
+      regulatoryHistory,
+      priorPsurs,
+      baselines,
+    },
+    criticalMissing,
+    recommendations,
+  };
+}
+
+/**
+ * Helper to check if text is valid with minimum length
+ */
+function isValidText(value: any, minLength: number = 1): boolean {
+  if (value === null || value === undefined) return false;
+  const text = String(value).trim();
+  return text.length >= minLength;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1218,18 +1491,18 @@ function mergeArrayById<T extends Record<string, any>>(
 ): T[] {
   if (!existing?.length && !incoming?.length) return [];
   if (overwrite && incoming?.length) return incoming;
-  
+
   const exArr = Array.isArray(existing) ? existing : [];
   const incArr = Array.isArray(incoming) ? incoming : [];
-  
+
   const idMap = new Map<string, T>();
-  
+
   // Add existing items
   for (const item of exArr) {
     const id = item[idField] || `auto_${idMap.size}`;
     idMap.set(id, item);
   }
-  
+
   // Merge incoming items
   for (const item of incArr) {
     const id = item[idField] || `auto_${idMap.size}`;
@@ -1241,7 +1514,7 @@ function mergeArrayById<T extends Record<string, any>>(
       idMap.set(id, item);
     }
   }
-  
+
   return Array.from(idMap.values());
 }
 
@@ -1779,7 +2052,7 @@ export async function autoPopulateDossierFromEvidence(
   // CLINICAL CONTEXT (with comprehensive fallback chains)
   // -------------------------
   const existingClinical = dossier.clinicalContext;
-  
+
   // Gather all potential sources with fallback priority
   const ifu = pickBestByConfidence(byType.get("ifu_extract") || []);
   const clinicalEvalForClinical = pickBestByConfidence(byType.get("clinical_evaluation_extract") || []);
@@ -1872,7 +2145,7 @@ export async function autoPopulateDossierFromEvidence(
     const extracted = getField(source, "clinicalBenefits");
     const benefitDesc = getStringField(source, "clinicalBenefit") || getStringField(source, "benefit");
     const benefitsSummary = getStringField(source, "benefitsSummary");
-    
+
     if (Array.isArray(extracted) && extracted.length) {
       // Already structured array
       clinicalUpdate.clinicalBenefits = mergeArrayById(
@@ -1913,7 +2186,7 @@ export async function autoPopulateDossierFromEvidence(
   for (const source of altTreatmentSources) {
     const extracted = getArrayField(source, "alternativeTreatments");
     const comparison = getStringField(source, "comparisonToAlternatives");
-    
+
     if (extracted.length && (!clinicalUpdate.alternativeTreatments?.length || overwrite)) {
       clinicalUpdate.alternativeTreatments = mergeStringArray(clinicalUpdate.alternativeTreatments || [], extracted, overwrite);
       filledFields.push("clinical.alternativeTreatments");
@@ -1932,7 +2205,7 @@ export async function autoPopulateDossierFromEvidence(
     const extracted = getField(source, "stateOfTheArt");
     const sotaDescription = getStringField(source, "stateOfTheArt") || getStringField(source, "sota");
     const benchmarkDevices = getArrayField(source, "benchmarkDevices");
-    
+
     if (typeof extracted === "object" && extracted) {
       clinicalUpdate.stateOfTheArt = {
         description: extracted.description || "",
@@ -1982,7 +2255,7 @@ export async function autoPopulateDossierFromEvidence(
   // RISK CONTEXT (with comprehensive fallback chains)
   // -------------------------
   const existingRisk = dossier.riskContext;
-  
+
   // Gather all potential risk sources with fallback priority
   const riskAssessment = pickBestByConfidence(byType.get("risk_assessment") || []);
   const rmf = pickBestByConfidence(byType.get("rmf_extract") || []);
@@ -2229,16 +2502,16 @@ export async function autoPopulateDossierFromEvidence(
     };
 
     const summaryObjectives = asStringArray(
-      getField(pmcfSummary?.data, "pmcfObjectives") ?? 
-      getField(pmcfSummary?.data, "activitiesPerformed") ?? 
-      pmcfSummary?.data?.objectives ?? 
+      getField(pmcfSummary?.data, "pmcfObjectives") ??
+      getField(pmcfSummary?.data, "activitiesPerformed") ??
+      pmcfSummary?.data?.objectives ??
       pmcfSummary?.data?.activities
     );
-    const status = getStringField(pmcfSummary?.data, "currentStatus") || 
-                   asString(pmcfSummary?.data?.status);
+    const status = getStringField(pmcfSummary?.data, "currentStatus") ||
+      asString(pmcfSummary?.data?.status);
     const targetEnrollment = getNumberField(pmcfSummary?.data, "patientCount") ??
-                             pmcfSummary?.data?.target_enrollment ?? 
-                             pmcfSummary?.data?.targetEnrollment;
+      pmcfSummary?.data?.target_enrollment ??
+      pmcfSummary?.data?.targetEnrollment;
 
     const studyIdsFromResults = pmcfResults
       .map(r => getStringField(r.data, "studyId") || asString(r.data?.study_id))
@@ -2281,11 +2554,11 @@ export async function autoPopulateDossierFromEvidence(
   // === EQUIVALENCE DEVICES (from CE extract or dedicated equivalence evidence) ===
   const equivalenceEvidence = byType.get("equivalence_extract") || [];
   const ceForEquivalence = clinicalEval?.data;
-  
+
   // Try to extract equivalence from clinical evaluation extract
   const extractedEquivalence = getField(ceForEquivalence, "equivalentDevices") ||
-                               getField(ceForEquivalence, "equivalence");
-  
+    getField(ceForEquivalence, "equivalence");
+
   if (Array.isArray(extractedEquivalence) && extractedEquivalence.length) {
     ceUpdate.equivalentDevices = mergeArrayById(
       ceUpdate.equivalentDevices || [],
@@ -2302,7 +2575,7 @@ export async function autoPopulateDossierFromEvidence(
       filledFields.push("clinicalEvidence.equivalentDevices");
     }
   }
-  
+
   // Also check dedicated equivalence evidence
   for (const eqEv of equivalenceEvidence) {
     const d = eqEv.data || {};

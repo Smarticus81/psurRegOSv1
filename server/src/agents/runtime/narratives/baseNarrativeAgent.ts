@@ -4,11 +4,12 @@
  * Foundation for all section-specific narrative agents.
  * Provides common functionality for PSUR narrative generation.
  * 
- * Uses 4-layer prompt architecture:
+ * Uses 5-layer prompt architecture:
  * - Layer 1: Agent Persona (WHO)
  * - Layer 2: System Prompt (WHAT) - loaded from DATABASE ONLY
  * - Layer 3: Template Field Instructions (HOW)
- * - Layer 4: Device Dossier Context (SPECIFICS) - rich device context for non-generic content
+ * - Layer 4: Agent Role Context (SEMANTIC) - workflow position, relationships, GRKB obligations
+ * - Layer 5: Device Dossier Context (SPECIFICS) - rich device context for non-generic content
  * 
  * SINGLE SOURCE OF TRUTH: All prompts come from the database.
  * Visit System Instructions page to manage prompts.
@@ -19,6 +20,7 @@ import { createTraceBuilder } from "../../../services/compileTraceRepository";
 import { composeSystemMessage } from "../../promptLayers";
 import { getPromptTemplate } from "../../llmService";
 import { getDossierContext, type DossierContext } from "../../../services/deviceDossierService";
+import { buildAgentRoleContext, formatAgentRoleContextForPrompt, type AgentRoleContext } from "../../../services/agentRoleContextService";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -75,7 +77,7 @@ export interface NarrativeAgentContext extends AgentContext {
 
 export abstract class BaseNarrativeAgent extends BaseAgent<NarrativeInput, NarrativeOutput> {
   protected abstract readonly sectionType: string;
-  
+
   // Subclasses can override to provide a prompt key for DB lookup
   protected get promptKey(): string {
     return `${this.sectionType}_SYSTEM`;
@@ -111,14 +113,14 @@ export abstract class BaseNarrativeAgent extends BaseAgent<NarrativeInput, Narra
   protected async getComposedSystemMessage(): Promise<string> {
     // Get prompt from database - this is the ONLY source
     const systemPrompt = await getPromptTemplate(this.promptKey);
-    
+
     if (!systemPrompt) {
       throw new Error(
         `[${this.config.agentType}] Prompt '${this.promptKey}' not found in database. ` +
         `Visit System Instructions page to seed prompts, or ensure the prompt exists.`
       );
     }
-    
+
     // Compose with persona and field instructions
     return composeSystemMessage(this.config.agentType, systemPrompt, this.sectionType);
   }
@@ -148,12 +150,23 @@ export abstract class BaseNarrativeAgent extends BaseAgent<NarrativeInput, Narra
 
     // Fetch device dossier context for non-generic content generation
     const dossierContext = await this.fetchDossierContext(input);
-    
+
     await this.logTrace("DOSSIER_CONTEXT_LOADED", "INFO", "SLOT", input.slot.slotId, {
       completenessScore: dossierContext.completenessScore,
       hasClinicalBenefits: dossierContext.clinicalBenefits.length > 0,
       hasRiskThresholds: !!dossierContext.riskThresholds,
       hasPriorPsur: !!dossierContext.priorPsurConclusion,
+    });
+
+    // Fetch Agent Role Context for semantic understanding
+    const agentRoleContext = await this.fetchAgentRoleContext(input);
+
+    await this.logTrace("AGENT_ROLE_CONTEXT_LOADED", "INFO", "SLOT", input.slot.slotId, {
+      workflowPosition: agentRoleContext.workflowPosition.sectionNumber,
+      phase: agentRoleContext.workflowPosition.phase,
+      criticalPath: agentRoleContext.workflowPosition.criticalPath,
+      grkbObligations: agentRoleContext.grkbObligations.length,
+      upstreamSections: agentRoleContext.sectionRelationships.filter(r => r.relationship === "upstream").length,
     });
 
     // Check for data gaps
@@ -166,8 +179,8 @@ export abstract class BaseNarrativeAgent extends BaseAgent<NarrativeInput, Narra
     const evidenceSummary = this.generateEvidenceSummary(input.evidenceAtoms);
     const evidenceRecords = this.formatEvidenceRecords(input.evidenceAtoms);
 
-    // Build the prompt with dossier context
-    const userPrompt = this.buildUserPrompt(input, evidenceSummary, evidenceRecords, dossierContext);
+    // Build the prompt with dossier context AND agent role context
+    const userPrompt = this.buildUserPrompt(input, evidenceSummary, evidenceRecords, dossierContext, agentRoleContext);
 
     // Get composed system message (3-layer architecture)
     const systemMessage = await this.getComposedSystemMessage();
@@ -250,6 +263,20 @@ export abstract class BaseNarrativeAgent extends BaseAgent<NarrativeInput, Narra
     );
   }
 
+  /**
+   * Fetch agent role context for semantic understanding.
+   * Provides workflow position, section relationships, GRKB obligations, etc.
+   */
+  protected async fetchAgentRoleContext(input: NarrativeInput): Promise<AgentRoleContext> {
+    return buildAgentRoleContext(
+      input.slot.slotId,
+      input.context.deviceCode,
+      input.context.periodStart,
+      input.context.periodEnd,
+      input.context.templateId
+    );
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════════
   // ABSTRACT METHODS - Must be implemented by subclasses
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -260,17 +287,19 @@ export abstract class BaseNarrativeAgent extends BaseAgent<NarrativeInput, Narra
   protected abstract identifyGaps(input: NarrativeInput): string[];
 
   /**
-   * Build section-specific user prompt with dossier context.
+   * Build section-specific user prompt with dossier context and agent role context.
    * 
    * Subclasses should override this to include section-specific context.
    * The dossierContext parameter provides rich device-specific information
    * that should be used to generate non-generic, device-appropriate content.
+   * The agentRoleContext provides semantic understanding of workflow position.
    */
   protected buildUserPrompt(
     input: NarrativeInput,
     evidenceSummary: string,
     evidenceRecords: string,
-    dossierContext?: DossierContext
+    dossierContext?: DossierContext,
+    agentRoleContext?: AgentRoleContext
   ): string {
     // Build list of actual atom IDs for reference
     const atomIdList = input.evidenceAtoms.slice(0, 20).map(a => a.atomId).join(", ");
@@ -280,9 +309,16 @@ export abstract class BaseNarrativeAgent extends BaseAgent<NarrativeInput, Narra
     }
     const dossierSection = this.formatDossierContextForPrompt(dossierContext);
 
+    // Format agent role context for semantic understanding
+    const agentRoleSection = agentRoleContext
+      ? formatAgentRoleContextForPrompt(agentRoleContext)
+      : "";
+
     return `## Section: ${input.slot.title}
 ## Section Requirements: ${input.slot.requirements || "Generate appropriate content based on evidence"}
 ## Template Guidance: ${input.slot.guidance || "Follow regulatory best practices"}
+
+${agentRoleSection}
 
 ${dossierSection}
 
@@ -300,8 +336,10 @@ ${evidenceRecords}
 - ONLY cite actual atom IDs that appear in the evidence records above
 - Available atom IDs: ${atomIdList || "None provided"}
 - If no relevant evidence, write the narrative WITHOUT citations
+- USE THE AGENT ROLE CONTEXT to understand your position in the workflow
 - USE THE DOSSIER CONTEXT to write device-specific, non-generic content
 - Reference specific clinical benefits, risk thresholds, and prior PSUR conclusions where relevant
+- FOLLOW CITATION GUIDANCE from the agent role context
 - Focus on content quality and regulatory compliance`;
   }
 

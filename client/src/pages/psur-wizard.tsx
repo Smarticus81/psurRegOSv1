@@ -1410,7 +1410,7 @@ function ReconcileStep({
 
             {/* Action Bar */}
             {missingTypes.length > 0 && (
-                <div className="bg-card border border-border shadow-sm rounded-lg p-4 flex items-center justify-between shadow-xl">
+                <div className="bg-card border border-border rounded-lg p-4 flex items-center justify-between shadow-xl">
                     <div className="flex items-center gap-2">
                         <button
                             onClick={selectAllMissing}
@@ -2692,15 +2692,15 @@ export default function PsurWizard() {
 
                             {/* Top Stats Cards */}
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                                <div className="bg-card border border-border shadow-sm rounded-lg p-8 bg-primary/5 border-primary/10 shadow-xl group hover:scale-105">
+                                <div className="bg-card border border-border rounded-lg p-8 bg-primary/5 border-primary/10 shadow-xl group hover:scale-105">
                                     <div className="text-sm font-black text-primary uppercase tracking-[0.2em] mb-4">Data Records</div>
                                     <div className="text-6xl font-black text-primary tracking-tighter group-hover:scale-110 transition-transform">{totalAtoms}</div>
                                 </div>
-                                <div className="bg-card border border-border shadow-sm rounded-lg p-8 bg-emerald-500/5 border-emerald-500/10 shadow-xl group hover:scale-105">
+                                <div className="bg-card border border-border rounded-lg p-8 bg-emerald-500/5 border-emerald-500/10 shadow-xl group hover:scale-105">
                                     <div className="text-sm font-black text-emerald-600 uppercase tracking-[0.2em] mb-4">Requirements Status</div>
                                     <div className="text-6xl font-black text-emerald-600 tracking-tighter group-hover:scale-110 transition-transform">{((requiredTypes.length - missingTypes.length) / requiredTypes.length * 100).toFixed(0)}%</div>
                                 </div>
-                                <div className="bg-card border border-border shadow-sm rounded-lg p-8 bg-amber-500/5 border-amber-500/10 shadow-xl group hover:scale-105">
+                                <div className="bg-card border border-border rounded-lg p-8 bg-amber-500/5 border-amber-500/10 shadow-xl group hover:scale-105">
                                     <div className="text-sm font-black text-amber-600 uppercase tracking-[0.2em] mb-4">Verification Gaps</div>
                                     <div className="text-6xl font-black text-amber-600 tracking-tighter group-hover:scale-110 transition-transform">{missingTypes.length}</div>
                                 </div>
@@ -2790,7 +2790,7 @@ export default function PsurWizard() {
                             </div>
 
                             {/* Evidence Status Grid */}
-                            <div className="bg-card border border-border shadow-sm rounded-lg p-10 space-y-10 shadow-2xl">
+                            <div className="bg-card border border-border rounded-lg p-10 space-y-10 shadow-2xl">
                                 <div className="flex items-center justify-between cursor-pointer group" onClick={() => setIsEvidenceGridOpen(!isEvidenceGridOpen)}>
                                     <div className="flex items-center gap-4">
                                         <h3 className="text-2xl font-black tracking-tighter text-foreground">Compliance Matrix</h3>
@@ -3257,7 +3257,7 @@ export default function PsurWizard() {
             {
                 step > 1 && (
                     <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50">
-                        <div className="bg-card border border-border shadow-sm rounded-lg px-4 py-3 flex items-center gap-6 shadow-2xl rounded-full">
+                        <div className="bg-card border border-border px-4 py-3 flex items-center gap-6 shadow-2xl rounded-full">
                             <button
                                 onClick={() => setStep((step - 1) as WizardStep)}
                                 disabled={step === 1}
@@ -3357,7 +3357,7 @@ function ManualUploadForm({ psurCaseId, deviceCode, periodStart, periodEnd, requ
                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                         onChange={e => setFile(e.target.files?.[0] || null)}
                     />
-                    <div className="bg-card border border-border shadow-sm rounded-lg p-8 border-2 border-dashed border-border/50 group-hover:border-primary/50 transition-all flex flex-col items-center justify-center text-center gap-4">
+                    <div className="bg-card shadow-sm rounded-lg p-8 border-2 border-dashed border-border/50 group-hover:border-primary/50 transition-all flex flex-col items-center justify-center text-center gap-4">
                         <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
                             <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
                         </div>

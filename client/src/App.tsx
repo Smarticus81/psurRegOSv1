@@ -7,7 +7,6 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/lib/auth-context";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
-import Demo from "@/pages/demo";
 import PsurWizard from "@/pages/psur-wizard";
 import Admin from "@/pages/admin";
 import Instructions from "@/pages/instructions";
@@ -25,9 +24,6 @@ function Router() {
       <Switch>
         {/* Landing Page */}
         <Route path="/" component={Home} />
-        
-        {/* Interactive Demo */}
-        <Route path="/demo" component={Demo} />
 
         {/* WORKFLOW */}
         <Route path="/psur" component={PsurWizard} />

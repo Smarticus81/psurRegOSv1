@@ -6,6 +6,7 @@
  */
 
 import { BaseNarrativeAgent, NarrativeInput } from "./baseNarrativeAgent";
+import { getCanonicalMetrics } from "../../../services/canonicalMetricsService";
 
 export class ConclusionNarrativeAgent extends BaseNarrativeAgent {
   protected readonly sectionType = "CONCLUSION";
@@ -34,30 +35,25 @@ export class ConclusionNarrativeAgent extends BaseNarrativeAgent {
     evidenceSummary: string,
     evidenceRecords: string
   ): string {
-    // Summarize all evidence for conclusions
-    const complaintAtoms = input.evidenceAtoms.filter(a =>
-      a.evidenceType.includes("complaint")
+    // Use CANONICAL METRICS for ALL statistics - ensures cross-section consistency
+    const ctx = input.context as typeof input.context & { psurCaseId?: number };
+    const metrics = getCanonicalMetrics(
+      ctx.psurCaseId || 0,
+      input.evidenceAtoms.map(a => ({
+        atomId: a.atomId,
+        evidenceType: a.evidenceType,
+        normalizedData: a.normalizedData as Record<string, unknown>,
+      })),
+      input.context.periodStart,
+      input.context.periodEnd
     );
-    const incidentAtoms = input.evidenceAtoms.filter(a =>
-      a.evidenceType.includes("incident")
-    );
-    const fscaAtoms = input.evidenceAtoms.filter(a =>
-      a.evidenceType.includes("fsca") || a.evidenceType.includes("recall")
-    );
+
     const capaAtoms = input.evidenceAtoms.filter(a =>
       a.evidenceType.includes("capa")
-    );
-    const salesAtoms = input.evidenceAtoms.filter(a =>
-      a.evidenceType.includes("sales")
     );
     const trendAtoms = input.evidenceAtoms.filter(a =>
       a.evidenceType.includes("trend")
     );
-
-    const totalSales = salesAtoms.reduce((sum, a) => {
-      const qty = Number(a.normalizedData.quantity || a.normalizedData.units_sold || 0);
-      return sum + qty;
-    }, 0);
 
     // Check for signals
     const signalsDetected = trendAtoms.some(a =>
@@ -69,9 +65,6 @@ export class ConclusionNarrativeAgent extends BaseNarrativeAgent {
     const openCAPAs = capaAtoms.filter(a =>
       !a.normalizedData.close_date && a.normalizedData.status !== "CLOSED"
     );
-    const openFSCAs = fscaAtoms.filter(a =>
-      !a.normalizedData.date_closed && a.normalizedData.status !== "CLOSED"
-    );
 
     return `## Section: ${input.slot.title}
 ## Section Path: ${input.slot.sectionPath}
@@ -81,11 +74,11 @@ export class ConclusionNarrativeAgent extends BaseNarrativeAgent {
 - Device Code: ${input.context.deviceCode}
 - Reporting Period: ${input.context.periodStart} to ${input.context.periodEnd}
 
-## PERIOD SUMMARY:
-- Total Units: ${totalSales.toLocaleString()}
-- Total Complaints: ${complaintAtoms.length}
-- Serious Incidents: ${incidentAtoms.length}
-- FSCAs: ${fscaAtoms.length} (${openFSCAs.length} ongoing)
+## PERIOD SUMMARY (Canonical - Validated & Consistent):
+- Total Units: ${metrics.sales.totalUnits.formatted}
+- Total Complaints: ${metrics.complaints.totalCount.formatted}
+- Serious Incidents: ${metrics.incidents.seriousCount.formatted}
+- FSCAs: ${metrics.incidents.fscaCount.formatted}
 - CAPAs: ${capaAtoms.length} (${openCAPAs.length} open)
 - Signals Detected: ${signalsDetected ? "YES - REQUIRES ACTION" : "None"}
 

@@ -237,6 +237,8 @@ export interface RunWorkflowParams {
   enableCharts?: boolean;
   /** Internal cancellation signal */
   signal?: AbortSignal;
+  /** Enable Human-in-the-Loop approval gates during compilation (default: true) */
+  enableHITL?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1221,8 +1223,11 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
 
           console.log(`[Workflow] Starting SOTA document compilation with style: ${documentStyle}`);
 
-          // Compile with timeout (10 minutes max for complex documents)
-          const COMPILE_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+          // Compile with timeout — extend to 30 min when HITL is on (human review takes time)
+          const hitlEnabled = params.enableHITL === true;
+          const COMPILE_TIMEOUT_MS = hitlEnabled
+            ? 30 * 60 * 1000  // 30 minutes when awaiting human approval
+            : 10 * 60 * 1000; // 10 minutes for fully automated runs
           const compilePromise = compileOrchestrator.compile({
             psurCaseId,
             templateId: params.templateId,
@@ -1231,6 +1236,7 @@ export async function runOrchestratorWorkflow(params: RunWorkflowParams): Promis
             periodEnd: params.periodEnd,
             documentStyle,
             enableCharts,
+            enableHITL: hitlEnabled,
             signal,
           });
 

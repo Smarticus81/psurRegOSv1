@@ -30,7 +30,9 @@ async function main() {
         upsertClinicalContext,
         upsertRiskContext,
         upsertRegulatoryHistory,
-        upsertClinicalEvidence
+        upsertClinicalEvidence,
+        addBaseline,
+        addPriorPsur
     } = await import("../src/services/deviceDossierService");
 
     console.log("Seeding LG Device Dossier...");
@@ -178,6 +180,107 @@ async function main() {
         }
     });
     console.log("Clinical evidence seeded.");
+
+    // 6. Performance Baselines
+    // Clear existing baselines first
+    const { dossierBaselines: dossierBaselinesTable } = await import("@shared/schema");
+    await db.delete(dossierBaselinesTable).where(eq(dossierBaselinesTable.deviceCode, deviceCode));
+
+    await addBaseline(deviceCode, {
+        metricType: "complaint_rate",
+        periodStart: new Date("2023-01-01"),
+        periodEnd: new Date("2023-12-31"),
+        value: "2.85",
+        denominator: 5270,
+        unit: "per_1000_units",
+        methodology: "Complaints received / units distributed × 1000",
+        dataSource: "Quality Management System",
+        confidence: "High",
+        notes: "Baseline complaint rate for LG Device prior reporting period"
+    });
+
+    await addBaseline(deviceCode, {
+        metricType: "incident_rate",
+        periodStart: new Date("2023-01-01"),
+        periodEnd: new Date("2023-12-31"),
+        value: "0.00",
+        denominator: 5270,
+        unit: "per_1000_units",
+        methodology: "Serious incidents / units distributed × 1000",
+        dataSource: "Vigilance reporting system",
+        confidence: "High",
+        notes: "No serious incidents reported in baseline period"
+    });
+
+    await addBaseline(deviceCode, {
+        metricType: "return_rate",
+        periodStart: new Date("2023-01-01"),
+        periodEnd: new Date("2023-12-31"),
+        value: "0.50",
+        denominator: 5270,
+        unit: "per_1000_units",
+        methodology: "Product returns / units distributed × 1000",
+        dataSource: "Distribution records",
+        confidence: "Medium",
+        notes: "Baseline return rate across all markets"
+    });
+
+    await addBaseline(deviceCode, {
+        metricType: "clinical_success_rate",
+        periodStart: new Date("2023-01-01"),
+        periodEnd: new Date("2023-12-31"),
+        value: "95.0",
+        denominator: 5270,
+        unit: "percent",
+        methodology: "Successful procedures / total procedures × 100",
+        dataSource: "Clinical Study 001 and post-market follow-up",
+        confidence: "High",
+        notes: "Clinical success rate consistent with pre-market data"
+    });
+
+    console.log("Performance baselines seeded.");
+
+    // 7. Prior PSUR Record
+    const { dossierPriorPsurs: dossierPriorPsursTable } = await import("@shared/schema");
+    await db.delete(dossierPriorPsursTable).where(eq(dossierPriorPsursTable.deviceCode, deviceCode));
+
+    await addPriorPsur(deviceCode, {
+        periodStart: new Date("2022-01-01"),
+        periodEnd: new Date("2022-12-31"),
+        psurReference: "PSUR-LG-Device-2022-01-01-2022-12-31",
+        benefitRiskConclusion: "Favorable",
+        keyFindings: [
+            "No serious incidents reported during the period",
+            "Complaint rate remained within acceptable thresholds (2.1 per 1,000 units)",
+            "Post-market clinical follow-up confirmed long-term safety profile",
+            "No new or emerging risks identified"
+        ],
+        actionsRequired: [
+            {
+                actionId: "ACT-2022-01",
+                description: "Continue PMCF activities per approved plan",
+                dueDate: "2023-12-31",
+                completed: true,
+                completedDate: "2023-06-15"
+            },
+            {
+                actionId: "ACT-2022-02",
+                description: "Update IFU with clarified cleaning instructions",
+                dueDate: "2023-06-30",
+                completed: true,
+                completedDate: "2023-03-20"
+            }
+        ],
+        periodMetrics: {
+            totalUnits: 4200,
+            totalComplaints: 9,
+            complaintRate: 2.14,
+            seriousIncidents: 0,
+            fscaCount: 0
+        }
+    });
+
+    console.log("Prior PSUR record seeded.");
 
     console.log("LG Device Dossier seeding complete.");
     process.exit(0);

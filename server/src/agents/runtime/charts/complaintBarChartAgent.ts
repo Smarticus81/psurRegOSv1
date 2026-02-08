@@ -7,6 +7,7 @@
 
 import { BaseChartAgent, ChartInput, CHART_THEMES, DocumentStyle } from "./baseChartAgent";
 import { ChartConfig, DataSeries } from "./svgChartGenerator";
+import { getCanonicalMetrics } from "../../../services/canonicalMetricsService";
 
 export class ComplaintBarChartAgent extends BaseChartAgent {
   protected readonly chartType = "COMPLAINT_BAR";
@@ -22,7 +23,20 @@ export class ComplaintBarChartAgent extends BaseChartAgent {
     input: ChartInput,
     theme: typeof CHART_THEMES[DocumentStyle]
   ): Promise<Omit<ChartConfig, "width" | "height" | "style">> {
-    // Group complaints by category/type
+    // Use CANONICAL METRICS for the overall total so chart subtitle matches narratives
+    const metrics = getCanonicalMetrics(
+      0,
+      input.atoms.map(a => ({
+        atomId: a.atomId,
+        evidenceType: a.evidenceType,
+        normalizedData: a.normalizedData as Record<string, unknown>,
+      })),
+      "",
+      ""
+    );
+    const canonicalTotal = metrics.complaints.totalCount.value;
+
+    // Group complaints by category/type (still use atoms for breakdown)
     const byCategory: Record<string, number> = {};
 
     for (const atom of input.atoms) {
@@ -51,6 +65,7 @@ export class ComplaintBarChartAgent extends BaseChartAgent {
     return {
       type: "bar",
       title: input.chartTitle || "Complaint Distribution by Category",
+      subtitle: `Total Complaints: ${canonicalTotal}`,
       series,
       showLegend: false,
       showGrid: true,

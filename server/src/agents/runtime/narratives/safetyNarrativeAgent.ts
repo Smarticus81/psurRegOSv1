@@ -13,6 +13,7 @@
 
 import { BaseNarrativeAgent, NarrativeInput } from "./baseNarrativeAgent";
 import { type DossierContext } from "../../../services/deviceDossierService";
+import { getCanonicalMetrics } from "../../../services/canonicalMetricsService";
 
 export class SafetyNarrativeAgent extends BaseNarrativeAgent {
   protected readonly sectionType = "SAFETY";
@@ -64,23 +65,37 @@ export class SafetyNarrativeAgent extends BaseNarrativeAgent {
     evidenceRecords: string,
     dossierContext?: DossierContext
   ): string {
-    // Calculate safety statistics
+    // Use CANONICAL METRICS for ALL statistics - ensures cross-section consistency
+    const ctx = input.context as typeof input.context & { psurCaseId?: number };
+    const metrics = getCanonicalMetrics(
+      ctx.psurCaseId || 0,
+      input.evidenceAtoms.map(a => ({
+        atomId: a.atomId,
+        evidenceType: a.evidenceType,
+        normalizedData: a.normalizedData as Record<string, unknown>,
+      })),
+      input.context.periodStart,
+      input.context.periodEnd
+    );
+
+    // Use canonical values
+    const totalSales = metrics.sales.totalUnits.value;
+    const complaintCount = metrics.complaints.totalCount.value;
+    const incidentCount = metrics.incidents.seriousCount.value;
+    const complaintRate = metrics.complaints.ratePerThousand?.value ?? 0;
+    const complaintRateStr = metrics.complaints.ratePerThousand
+      ? metrics.complaints.ratePerThousand.formatted
+      : "N/A";
+
+    // Use local atoms for severity breakdown (detailed analysis)
     const complaintAtoms = input.evidenceAtoms.filter(a =>
       a.evidenceType.includes("complaint")
     );
     const incidentAtoms = input.evidenceAtoms.filter(a =>
       a.evidenceType.includes("incident") || a.evidenceType.includes("vigilance")
     );
-    const salesAtoms = input.evidenceAtoms.filter(a =>
-      a.evidenceType.includes("sales")
-    );
 
-    const totalSales = salesAtoms.reduce((sum, a) => {
-      const qty = Number(a.normalizedData.quantity || a.normalizedData.units_sold || 0);
-      return sum + qty;
-    }, 0);
-
-    // Severity breakdown
+    // Severity breakdown from local atoms
     const bySeverity: Record<string, number> = {};
     for (const atom of complaintAtoms) {
       const severity = String(atom.normalizedData.severity || "UNKNOWN");
@@ -91,11 +106,6 @@ export class SafetyNarrativeAgent extends BaseNarrativeAgent {
     const outcomes = complaintAtoms
       .map(a => a.normalizedData.patient_outcome || a.normalizedData.patientOutcome)
       .filter(Boolean);
-
-    const complaintRate = totalSales > 0
-      ? (complaintAtoms.length / totalSales) * 1000
-      : 0;
-    const complaintRateStr = totalSales > 0 ? complaintRate.toFixed(2) : "N/A";
 
     // Build dossier context section for safety
     let riskContextSection = "";
@@ -175,10 +185,10 @@ ${riskContextSection}
 
 ---
 
-## SAFETY STATISTICS (Current Period):
-- Total Complaints: ${complaintAtoms.length}
-- Serious Incidents: ${incidentAtoms.length}
-- Units Sold (denominator): ${totalSales.toLocaleString()}
+## SAFETY STATISTICS (Canonical - Current Period):
+- Total Complaints: ${metrics.complaints.totalCount.formatted}
+- Serious Incidents: ${metrics.incidents.seriousCount.formatted}
+- Units Sold (denominator): ${metrics.sales.totalUnits.formatted}
 - Complaint Rate: ${complaintRateStr} per 1,000 units
 
 ## SEVERITY BREAKDOWN:

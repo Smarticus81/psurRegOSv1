@@ -6,6 +6,9 @@
  */
 
 import { BaseNarrativeAgent, NarrativeInput } from "./baseNarrativeAgent";
+import { type DossierContext } from "../../../services/deviceDossierService";
+import { type AgentRoleContext } from "../../../services/agentRoleService";
+import { getCanonicalMetrics } from "../../../services/canonicalMetricsService";
 
 export class FSCANarrativeAgent extends BaseNarrativeAgent {
   protected readonly sectionType = "FSCA";
@@ -42,9 +45,26 @@ export class FSCANarrativeAgent extends BaseNarrativeAgent {
   protected buildUserPrompt(
     input: NarrativeInput,
     evidenceSummary: string,
-    evidenceRecords: string
+    evidenceRecords: string,
+    dossierContext?: DossierContext,
+    agentRoleContext?: AgentRoleContext
   ): string {
-    // Extract FSCA-specific data
+    // Use CANONICAL METRICS for FSCA counts — ensures consistency with FSCA table
+    const ctx = input.context as typeof input.context & { psurCaseId?: number };
+    const metrics = getCanonicalMetrics(
+      ctx.psurCaseId || 0,
+      input.evidenceAtoms.map(a => ({
+        atomId: a.atomId,
+        evidenceType: a.evidenceType,
+        normalizedData: a.normalizedData as Record<string, unknown>,
+      })),
+      input.context.periodStart,
+      input.context.periodEnd
+    );
+
+    const canonicalFscaCount = metrics.incidents.fscaCount.value;
+
+    // Extract FSCA-specific data for detail breakdown
     const fscaAtoms = input.evidenceAtoms.filter(a =>
       a.evidenceType.includes("fsca") || a.evidenceType.includes("recall")
     );
@@ -66,6 +86,9 @@ export class FSCANarrativeAgent extends BaseNarrativeAgent {
       a.normalizedData.isNegativeEvidence === true
     );
 
+    // Use canonical count as the authoritative total
+    const totalFSCAs = Math.max(canonicalFscaCount, fscaAtoms.length);
+
     return `## Section: ${input.slot.title}
 ## Section Path: ${input.slot.sectionPath}
 ## Purpose: Document all Field Safety Corrective Actions during the reporting period
@@ -74,8 +97,8 @@ export class FSCANarrativeAgent extends BaseNarrativeAgent {
 - Device Code: ${input.context.deviceCode}
 - Reporting Period: ${input.context.periodStart} to ${input.context.periodEnd}
 
-## FSCA STATISTICS:
-- Total FSCAs: ${fscaAtoms.length}
+## FSCA STATISTICS (Canonical):
+- Total FSCAs: ${totalFSCAs}
 - Open/Ongoing: ${openFSCAs.length}
 - Closed: ${closedFSCAs.length}
 - Confirmed No FSCAs: ${isNegativeEvidence ? "YES" : "No"}
@@ -88,10 +111,11 @@ ${evidenceRecords}
 
 ## CRITICAL INSTRUCTIONS:
 1. FSCAs are MANDATORY to report - completeness is essential
-2. Include ALL FSCAs even if closed before period start (if relevant)
-3. Document reason, scope, actions, and effectiveness for each
-4. If ZERO FSCAs, explicitly state this is confirmed (not a gap)
-5. Reference specific evidence atoms [ATOM-xxx]
-6. Include any regulatory notifications made (Competent Authority reports)`;
+2. Use the EXACT statistics above — do NOT recalculate from evidence records
+3. Include ALL FSCAs even if closed before period start (if relevant)
+4. Document reason, scope, actions, and effectiveness for each
+5. If ZERO FSCAs, explicitly state this is confirmed (not a gap)
+6. Reference specific evidence atoms [ATOM-xxx]
+7. Include any regulatory notifications made (Competent Authority reports)`;
   }
 }

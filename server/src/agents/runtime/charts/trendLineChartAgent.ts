@@ -7,6 +7,7 @@
 
 import { BaseChartAgent, ChartInput, CHART_THEMES, DocumentStyle } from "./baseChartAgent";
 import { ChartConfig, DataSeries } from "./svgChartGenerator";
+import { getCanonicalMetrics } from "../../../services/canonicalMetricsService";
 
 export class TrendLineChartAgent extends BaseChartAgent {
   protected readonly chartType = "TREND_LINE";
@@ -22,12 +23,12 @@ export class TrendLineChartAgent extends BaseChartAgent {
     input: ChartInput,
     theme: typeof CHART_THEMES[DocumentStyle]
   ): Promise<Omit<ChartConfig, "width" | "height" | "style">> {
-    // Extract trend data from atoms
+    // Extract trend data from atoms for period-level breakdown
     const trendAtoms = input.atoms.filter(a => 
       ["trend_analysis", "complaint_record", "sales_volume"].includes(a.evidenceType)
     );
 
-    // Group complaints by month/period
+    // Group complaints by month/period (for the line chart data points)
     const complaintsByPeriod: Record<string, number> = {};
     const salesByPeriod: Record<string, number> = {};
 
@@ -50,7 +51,7 @@ export class TrendLineChartAgent extends BaseChartAgent {
       }
     }
 
-    // Calculate rates
+    // Calculate per-period rates for the line chart
     const periodSet = new Set([...Object.keys(complaintsByPeriod), ...Object.keys(salesByPeriod)]);
     const periods = Array.from(periodSet).sort();
     
@@ -63,11 +64,25 @@ export class TrendLineChartAgent extends BaseChartAgent {
       rateData.push({ label: period, value: rate });
     }
 
-    // Calculate threshold (2x average baseline)
+    // Use CANONICAL METRICS for the overall threshold calculation
+    // This ensures the threshold line is consistent with narrative sections
+    const metrics = getCanonicalMetrics(
+      0, // Charts don't have psurCaseId in their input; cache will be warm from prior phases
+      input.atoms.map(a => ({
+        atomId: a.atomId,
+        evidenceType: a.evidenceType,
+        normalizedData: a.normalizedData as Record<string, unknown>,
+      })),
+      "", // Period info not available in chart input; metrics cached from phase 1
+      ""
+    );
+
+    const canonicalRate = metrics.complaints.ratePerThousand?.value ?? 0;
+    // Threshold: 2x the canonical overall complaint rate, or 2x average if canonical unavailable
     const avgRate = rateData.length > 0 
       ? rateData.reduce((a, b) => a + b.value, 0) / rateData.length 
       : 1;
-    const threshold = avgRate * 2;
+    const threshold = canonicalRate > 0 ? canonicalRate * 2 : avgRate * 2;
 
     const series: DataSeries[] = [
       {
@@ -80,7 +95,7 @@ export class TrendLineChartAgent extends BaseChartAgent {
     return {
       type: "line",
       title: input.chartTitle || "Complaint Rate Trend Analysis",
-      subtitle: "Per 1,000 units sold",
+      subtitle: `Per 1,000 units sold (Overall: ${canonicalRate > 0 ? canonicalRate.toFixed(2) : avgRate.toFixed(2)})`,
       series,
       showLegend: true,
       showGrid: true,

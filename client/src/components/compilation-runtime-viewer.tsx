@@ -8,7 +8,7 @@
  * - Performance metrics and timing
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import {
     FileText,
@@ -25,6 +25,11 @@ import {
     Sparkles,
     Database,
     Eye,
+    ShieldCheck,
+    MessageSquare,
+    Send,
+    PauseCircle,
+    XCircle,
 } from "lucide-react";
 
 interface CompilationPhase {
@@ -56,6 +61,25 @@ interface LiveSection {
     status: "pending" | "generating" | "done";
 }
 
+// ── HITL approval gate types ────────────────────────────────────────────────
+interface HITLGate {
+    gateId: string;
+    slotId: string;
+    slotTitle: string;
+    type: "narrative" | "table";
+    preview: string;
+    confidence?: number;
+    wordCount?: number;
+    receivedAt: number;
+}
+
+interface HITLDecision {
+    gateId: string;
+    status: "approved" | "revision_requested";
+    feedback?: string;
+    decidedAt: number;
+}
+
 interface CompilationRuntimeViewerProps {
     psurCaseId: number;
     isGenerating: boolean;
@@ -74,6 +98,35 @@ export function CompilationRuntimeViewer({ psurCaseId, isGenerating }: Compilati
     const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
     const [runtimeEvents, setRuntimeEvents] = useState<any[]>([]);
     const [totalStartTime, setTotalStartTime] = useState<number | null>(null);
+
+    // ── HITL state ──────────────────────────────────────────────────────────
+    const [pendingGates, setPendingGates] = useState<HITLGate[]>([]);
+    const [decisions, setDecisions] = useState<HITLDecision[]>([]);
+    const [revisionFeedback, setRevisionFeedback] = useState<Record<string, string>>({});
+    const [submittingGate, setSubmittingGate] = useState<string | null>(null);
+
+    /** Submit an approval or revision request for a HITL gate */
+    const submitDecision = useCallback(async (
+        gateId: string,
+        status: "approved" | "revision_requested",
+        feedback?: string
+    ) => {
+        setSubmittingGate(gateId);
+        try {
+            const res = await fetch(`/api/compilation/${psurCaseId}/approve`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ gateId, status, feedback }),
+            });
+            if (!res.ok) {
+                console.error("Failed to submit HITL decision:", await res.text());
+            }
+        } catch (e) {
+            console.error("HITL decision submission error:", e);
+        } finally {
+            setSubmittingGate(null);
+        }
+    }, [psurCaseId]);
     
     // Connect to real-time runtime events (SSE)
     useEffect(() => {
@@ -154,6 +207,41 @@ export function CompilationRuntimeViewer({ psurCaseId, isGenerating }: Compilati
                 
                 if (event.kind === "workflow.started") {
                     setTotalStartTime(event.ts);
+                }
+
+                // ── HITL events ─────────────────────────────────────────
+                if (event.kind === "hitl.await_approval") {
+                    setPendingGates(prev => {
+                        // Avoid duplicates
+                        if (prev.some(g => g.gateId === event.gateId)) return prev;
+                        return [...prev, {
+                            gateId: event.gateId,
+                            slotId: event.slotId,
+                            slotTitle: event.sectionTitle || event.slotId?.replace(/MDCG\.ANNEXI\./g, "").replace(/_/g, " ") || "Unknown Section",
+                            type: event.slotKind === "TABLE" ? "table" : "narrative",
+                            preview: event.content || "",
+                            confidence: event.confidence != null ? Math.round(event.confidence * 100) : undefined,
+                            wordCount: event.wordCount,
+                            receivedAt: event.ts || Date.now(),
+                        }];
+                    });
+                }
+
+                if (event.kind === "hitl.decision_received") {
+                    // Remove from pending, add to decisions
+                    setPendingGates(prev => prev.filter(g => g.gateId !== event.gateId));
+                    setDecisions(prev => [...prev, {
+                        gateId: event.gateId,
+                        status: event.status,
+                        feedback: event.feedback,
+                        decidedAt: event.ts || Date.now(),
+                    }]);
+                    // Clear feedback input for this gate
+                    setRevisionFeedback(prev => {
+                        const next = { ...prev };
+                        delete next[event.gateId];
+                        return next;
+                    });
                 }
             } catch (e) {
                 console.error("Failed to parse runtime event:", e);
@@ -430,6 +518,147 @@ export function CompilationRuntimeViewer({ psurCaseId, isGenerating }: Compilati
                 </div>
             )}
             
+            {/* ── HITL Approval Panel ─────────────────────────────────────── */}
+            {pendingGates.length > 0 && (
+                <div className="p-6 border-b border-amber-500/30 bg-amber-50/50 dark:bg-amber-950/20">
+                    <div className="flex items-center gap-2 mb-4">
+                        <PauseCircle className="w-4 h-4 text-amber-600 animate-pulse" />
+                        <div className="text-sm font-semibold text-amber-900 dark:text-amber-300">
+                            Awaiting Your Approval
+                        </div>
+                        <div className="text-xs text-amber-600 dark:text-amber-400 ml-auto">
+                            {pendingGates.length} section{pendingGates.length > 1 ? "s" : ""} pending
+                        </div>
+                    </div>
+
+                    <div className="space-y-4">
+                        {pendingGates.map(gate => (
+                            <div
+                                key={gate.gateId}
+                                className="border-2 border-amber-400/60 rounded-xl overflow-hidden bg-white dark:bg-background shadow-lg shadow-amber-500/10"
+                            >
+                                {/* Gate header */}
+                                <div className="px-4 py-3 bg-amber-100/60 dark:bg-amber-900/30 border-b border-amber-200 dark:border-amber-800">
+                                    <div className="flex items-center gap-3">
+                                        {gate.type === "narrative" ? (
+                                            <Sparkles className="w-4 h-4 text-amber-700 dark:text-amber-400" />
+                                        ) : (
+                                            <Table2 className="w-4 h-4 text-amber-700 dark:text-amber-400" />
+                                        )}
+                                        <div className="flex-1">
+                                            <div className="text-sm font-semibold text-foreground">
+                                                {gate.slotTitle}
+                                            </div>
+                                            <div className="text-xs text-muted-foreground mt-0.5">
+                                                {gate.type === "narrative" ? "Narrative" : "Table"} section
+                                                {gate.wordCount ? ` · ${gate.wordCount} words` : ""}
+                                                {gate.confidence ? ` · ${gate.confidence}% confidence` : ""}
+                                            </div>
+                                        </div>
+                                        {gate.confidence !== undefined && (
+                                            <div className={cn(
+                                                "text-xs font-bold px-2 py-1 rounded",
+                                                gate.confidence >= 90 ? "bg-emerald-100 text-emerald-700" :
+                                                gate.confidence >= 70 ? "bg-amber-100 text-amber-700" :
+                                                "bg-red-100 text-red-700"
+                                            )}>
+                                                {gate.confidence}%
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Content preview */}
+                                {gate.preview && (
+                                    <div className="px-4 py-3 bg-secondary/10 border-b border-border/30 max-h-[200px] overflow-y-auto">
+                                        <div className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
+                                            {gate.preview.substring(0, 800)}
+                                            {gate.preview.length > 800 && (
+                                                <span className="text-muted-foreground"> ...truncated</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Feedback textarea */}
+                                <div className="px-4 py-3 space-y-3">
+                                    <textarea
+                                        className="w-full rounded-lg border border-border/50 bg-secondary/20 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
+                                        placeholder="Optional: provide revision feedback or notes..."
+                                        rows={2}
+                                        value={revisionFeedback[gate.gateId] || ""}
+                                        onChange={(e) =>
+                                            setRevisionFeedback(prev => ({
+                                                ...prev,
+                                                [gate.gateId]: e.target.value,
+                                            }))
+                                        }
+                                        disabled={submittingGate === gate.gateId}
+                                    />
+
+                                    {/* Action buttons */}
+                                    <div className="flex items-center gap-3">
+                                        <button
+                                            onClick={() => submitDecision(gate.gateId, "approved", revisionFeedback[gate.gateId])}
+                                            disabled={submittingGate === gate.gateId}
+                                            className={cn(
+                                                "flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all",
+                                                "bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20",
+                                                "disabled:opacity-50 disabled:cursor-not-allowed"
+                                            )}
+                                        >
+                                            {submittingGate === gate.gateId ? (
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                            ) : (
+                                                <ShieldCheck className="w-4 h-4" />
+                                            )}
+                                            Approve Section
+                                        </button>
+                                        <button
+                                            onClick={() =>
+                                                submitDecision(
+                                                    gate.gateId,
+                                                    "revision_requested",
+                                                    revisionFeedback[gate.gateId] || "Please revise this section."
+                                                )
+                                            }
+                                            disabled={submittingGate === gate.gateId}
+                                            className={cn(
+                                                "flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all",
+                                                "bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300",
+                                                "dark:bg-amber-900/30 dark:hover:bg-amber-900/50 dark:text-amber-300 dark:border-amber-700",
+                                                "disabled:opacity-50 disabled:cursor-not-allowed"
+                                            )}
+                                        >
+                                            {submittingGate === gate.gateId ? (
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                            ) : (
+                                                <MessageSquare className="w-4 h-4" />
+                                            )}
+                                            Request Revision
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Decision history (collapsed summary) */}
+            {decisions.length > 0 && pendingGates.length === 0 && (
+                <div className="px-6 py-3 border-b border-border/30 bg-secondary/10">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <ShieldCheck className="w-3 h-3 text-emerald-500" />
+                        <span>
+                            {decisions.filter(d => d.status === "approved").length} approved
+                            {decisions.some(d => d.status === "revision_requested") &&
+                                ` · ${decisions.filter(d => d.status === "revision_requested").length} revised`}
+                        </span>
+                    </div>
+                </div>
+            )}
+
             {/* Live Section Preview */}
             {sections.length > 0 && (
                 <div className="p-6">

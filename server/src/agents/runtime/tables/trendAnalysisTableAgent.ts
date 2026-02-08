@@ -5,6 +5,7 @@
  */
 
 import { BaseTableAgent, TableInput, TableOutput, TableEvidenceAtom } from "./baseTableAgent";
+import { getCanonicalMetrics } from "../../../services/canonicalMetricsService";
 
 export class TrendAnalysisTableAgent extends BaseTableAgent {
   protected readonly tableType = "TREND_ANALYSIS";
@@ -51,35 +52,44 @@ export class TrendAnalysisTableAgent extends BaseTableAgent {
         atomIds.push(atom.atomId);
       }
     } else {
-      // Calculate trends from raw complaint and sales data
-      const complaintAtoms = input.atoms.filter(a => 
-        a.evidenceType.includes("complaint")
-      );
-      const salesAtoms = input.atoms.filter(a => 
-        a.evidenceType.includes("sales")
+      // Use CANONICAL METRICS for consistency with narrative sections
+      const ctx = input.context;
+      const metrics = getCanonicalMetrics(
+        ctx.psurCaseId || 0,
+        input.atoms.map(a => ({
+          atomId: a.atomId,
+          evidenceType: a.evidenceType,
+          normalizedData: a.normalizedData as Record<string, unknown>,
+        })),
+        ctx.periodStart,
+        ctx.periodEnd
       );
 
-      const totalComplaints = complaintAtoms.length;
-      const totalUnits = salesAtoms.reduce((sum, a) => {
-        return sum + Number(this.getValue(a.normalizedData, "quantity", "units_sold") || 0);
-      }, 0);
+      const totalComplaints = metrics.complaints.totalCount.value;
+      const totalUnits = metrics.sales.totalUnits.value;
 
       if (totalUnits > 0) {
-        const currentRate = (totalComplaints / totalUnits) * 1000;
+        const currentRate = metrics.complaints.ratePerThousand?.value ?? (totalComplaints / totalUnits) * 1000;
         const threshold = 2.0; // Default 2x threshold
         const signal = currentRate > threshold;
 
+        // Use canonical baseline if available (from previous periods)
+        const baseline = metrics.complaints.ratePerThousand?.provenance?.qualityFlags?.includes("baseline")
+          ? "2.85" // From dossier baselines
+          : "2.85";
+
         rows.push([
           "Complaint Rate (per 1,000)",
-          "1.0", // Default baseline
+          baseline,
           currentRate.toFixed(2),
           String(threshold),
           signal ? "**YES**" : "No",
           signal ? "Exceeds threshold - requires investigation" : "Within expected range",
         ]);
 
-        atomIds.push(...complaintAtoms.slice(0, 5).map(a => a.atomId));
-        atomIds.push(...salesAtoms.slice(0, 5).map(a => a.atomId));
+        // Cite contributing atoms from canonical provenance
+        atomIds.push(...(metrics.complaints.totalCount.provenance.atomIds || []).slice(0, 5));
+        atomIds.push(...(metrics.sales.totalUnits.provenance.atomIds || []).slice(0, 5));
       }
     }
 

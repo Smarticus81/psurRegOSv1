@@ -5,6 +5,7 @@
  */
 
 import { BaseTableAgent, TableInput, TableOutput, TableEvidenceAtom } from "./baseTableAgent";
+import { getCanonicalMetrics } from "../../../services/canonicalMetricsService";
 
 export class CAPATableAgent extends BaseTableAgent {
   protected readonly tableType = "CAPA";
@@ -57,7 +58,19 @@ export class CAPATableAgent extends BaseTableAgent {
       atomIds.push(atom.atomId);
     }
 
-    // Add summary row
+    // Add summary row — cross-reference with canonical metrics for consistency
+    const ctx = input.context;
+    const metrics = getCanonicalMetrics(
+      ctx.psurCaseId || 0,
+      input.atoms.map(a => ({
+        atomId: a.atomId,
+        evidenceType: a.evidenceType,
+        normalizedData: a.normalizedData as Record<string, unknown>,
+      })),
+      ctx.periodStart,
+      ctx.periodEnd
+    );
+
     const openCount = rows.filter(r => 
       r[5].toLowerCase().includes("open") || 
       r[5].toLowerCase().includes("progress")

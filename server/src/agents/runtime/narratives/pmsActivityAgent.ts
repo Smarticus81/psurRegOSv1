@@ -6,6 +6,7 @@
  */
 
 import { BaseNarrativeAgent, NarrativeInput } from "./baseNarrativeAgent";
+import { getCanonicalMetrics } from "../../../services/canonicalMetricsService";
 
 export class PMSActivityNarrativeAgent extends BaseNarrativeAgent {
   protected readonly sectionType = "PMS_ACTIVITY";
@@ -47,15 +48,23 @@ export class PMSActivityNarrativeAgent extends BaseNarrativeAgent {
     evidenceSummary: string,
     evidenceRecords: string
   ): string {
-    // Calculate sales metrics
+    // Use CANONICAL METRICS for ALL statistics - ensures cross-section consistency
+    const ctx = input.context as typeof input.context & { psurCaseId?: number };
+    const metrics = getCanonicalMetrics(
+      ctx.psurCaseId || 0,
+      input.evidenceAtoms.map(a => ({
+        atomId: a.atomId,
+        evidenceType: a.evidenceType,
+        normalizedData: a.normalizedData as Record<string, unknown>,
+      })),
+      input.context.periodStart,
+      input.context.periodEnd
+    );
+
+    // Calculate region data from local atoms for detail
     const salesAtoms = input.evidenceAtoms.filter(a =>
       a.evidenceType.includes("sales") || a.evidenceType.includes("volume")
     );
-
-    const totalUnits = salesAtoms.reduce((sum, a) => {
-      const qty = Number(a.normalizedData.quantity || a.normalizedData.units_sold || 0);
-      return sum + qty;
-    }, 0);
 
     const regionSet = new Set(salesAtoms.map(a =>
       a.normalizedData.region || a.normalizedData.country || "Unknown"
@@ -70,8 +79,8 @@ export class PMSActivityNarrativeAgent extends BaseNarrativeAgent {
 - Device Code: ${input.context.deviceCode}
 - Reporting Period: ${input.context.periodStart} to ${input.context.periodEnd}
 
-## SALES/EXPOSURE METRICS:
-- Total Units Sold/Distributed: ${totalUnits.toLocaleString()}
+## SALES/EXPOSURE METRICS (Canonical - Validated & Consistent):
+- Total Units Sold/Distributed: ${metrics.sales.totalUnits.formatted}
 - Markets/Regions: ${regions.join(", ") || "Not specified"}
 - Data Records: ${salesAtoms.length}
 

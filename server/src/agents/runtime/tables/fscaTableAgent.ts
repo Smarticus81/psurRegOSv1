@@ -5,6 +5,7 @@
  */
 
 import { BaseTableAgent, TableInput, TableOutput, TableEvidenceAtom } from "./baseTableAgent";
+import { getCanonicalMetrics } from "../../../services/canonicalMetricsService";
 
 export class FSCATableAgent extends BaseTableAgent {
   protected readonly tableType = "FSCA";
@@ -57,13 +58,28 @@ export class FSCATableAgent extends BaseTableAgent {
       atomIds.push(atom.atomId);
     }
 
-    // Add summary row
+    // Add summary row — use canonical metrics for the total count to ensure
+    // consistency with narrative sections
+    const ctx = input.context;
+    const metrics = getCanonicalMetrics(
+      ctx.psurCaseId || 0,
+      input.atoms.map(a => ({
+        atomId: a.atomId,
+        evidenceType: a.evidenceType,
+        normalizedData: a.normalizedData as Record<string, unknown>,
+      })),
+      ctx.periodStart,
+      ctx.periodEnd
+    );
+
+    const canonicalFscaCount = metrics.incidents.fscaCount.value;
     const openCount = rows.filter(r => r[5].toLowerCase().includes("open")).length;
     const closedCount = rows.filter(r => r[5].toLowerCase().includes("closed")).length;
+    const displayTotal = Math.max(rows.length, canonicalFscaCount);
     
     if (rows.length > 0) {
       rows.push([
-        `**TOTAL: ${rows.length}**`,
+        `**TOTAL: ${displayTotal}**`,
         "-",
         "-",
         "-",
@@ -84,7 +100,7 @@ export class FSCATableAgent extends BaseTableAgent {
       evidenceAtomIds: Array.from(new Set(atomIds)),
       rowCount: rows.length - 1,
       columns,
-      dataSourceFooter: `Data Source: ${atomIds.length} FSCA/recall records.`,
+      dataSourceFooter: `Data Source: ${atomIds.length} FSCA/recall records (canonical total: ${canonicalFscaCount}).`,
       docxTable: {
         headers: columns,
         rows,

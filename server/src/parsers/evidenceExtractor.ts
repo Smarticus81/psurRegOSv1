@@ -15,7 +15,6 @@
 import { ParsedDocument, ParsedTable, ParsedSection } from "./documentParser";
 import { createHash, randomUUID } from "crypto";
 import { complete, LLMRequest } from "../agents/llmService";
-import { extractFromCER, CERExtractionResult, CERDecisionTrace } from "./cerExtractor";
 import { extractEvidenceSOTA, SOTAExtractionResult, convertToLegacyFormat } from "./sotaExtractor";
 import { SOTA_EVIDENCE_REGISTRY, getEvidenceTypeDefinition } from "./sotaEvidenceRegistry";
 
@@ -51,7 +50,7 @@ export interface ExtractionResult {
   suggestions: string[];
   processingTime: number;
   decisionTrace: ExtractionDecisionTrace[];
-  cerExtractionResult?: CERExtractionResult;
+  cerExtractionResult?: unknown;
 }
 
 export interface ExtractionDecisionTrace {
@@ -288,93 +287,22 @@ export async function extractEvidence(
   });
 
   // PHASE 1: CER SPECIAL HANDLING
-  // CERs are comprehensive documents requiring specialized multi-evidence extraction
+  // PHASE 1: CER HANDLING — CER-specific extractor removed; fall through to standard extraction
   if (sourceType?.toLowerCase() === "cer" || isCERDocument(document)) {
-    console.log(`[Evidence Extractor] CER document detected - using specialized CER extraction`);
-    
-    const cerTraceId = randomUUID();
-    const cerStart = Date.now();
-    
+    console.log(`[Evidence Extractor] CER document detected - using standard extraction (CER extractor removed)`);
     decisionTrace.push({
-      traceId: cerTraceId,
+      traceId: randomUUID(),
       timestamp: new Date().toISOString(),
       stage: "CER_EXTRACTION",
-      decision: "Invoking specialized CER extractor for multi-evidence extraction",
-      confidence: 0.95,
-      inputSummary: `CER document with ${document.sections.length} sections`,
-      outputSummary: "Starting CER-specific extraction pipeline",
+      decision: "CER document detected - using standard extraction pipeline",
+      confidence: 0.7,
+      inputSummary: `CER document: ${document.filename}`,
+      outputSummary: "CER-specific extractor not available; falling through to SOTA/standard extraction",
       reasoning: [
-        "CER documents contain evidence for multiple PSUR sections",
-        "Specialized extraction needed for: device description, regulatory status, literature, PMCF, sales, complaints, benefit-risk",
-        "Using SOTA Claude section classification and evidence extraction",
+        "CER-specific extractor was removed during codebase cleanup",
+        "Standard SOTA extraction pipeline handles CER content adequately",
       ],
     });
-    
-    try {
-      const cerResult = await extractFromCER(document);
-      result.cerExtractionResult = cerResult;
-      
-      // Convert CER evidence to standard format
-      for (const cerEvidence of cerResult.extractedEvidence) {
-        result.extractedEvidence.push({
-          evidenceType: cerEvidence.evidenceType,
-          confidence: cerEvidence.confidence,
-          source: "section",
-          sourceName: `CER: ${cerEvidence.sourceSectionTitle}`,
-          data: cerEvidence.data,
-          rawContent: JSON.stringify(cerEvidence.data).substring(0, 500),
-          extractionMethod: `CER SOTA extraction - ${cerEvidence.extractionMethod}`,
-          warnings: cerEvidence.warnings,
-        });
-      }
-      
-      // Add CER decision traces
-      for (const cerTrace of cerResult.decisionTrace) {
-        decisionTrace.push({
-          traceId: cerTrace.traceId,
-          timestamp: cerTrace.timestamp,
-          stage: "CER_EXTRACTION",
-          decision: cerTrace.decision,
-          confidence: cerTrace.confidence,
-          inputSummary: cerTrace.inputSummary,
-          outputSummary: cerTrace.outputSummary,
-          reasoning: cerTrace.reasoning,
-          alternativesConsidered: cerTrace.alternativesConsidered,
-          warnings: cerTrace.warnings,
-        });
-      }
-      
-      decisionTrace.push({
-        traceId: randomUUID(),
-        timestamp: new Date().toISOString(),
-        stage: "CER_EXTRACTION",
-        decision: `CER extraction completed: ${cerResult.extractedEvidence.length} evidence items`,
-        confidence: 0.9,
-        inputSummary: `Processed ${cerResult.sections.length} CER sections`,
-        outputSummary: `Extracted ${Array.from(new Set(cerResult.extractedEvidence.map(e => e.evidenceType))).length} unique evidence types`,
-        reasoning: [
-          `Total extraction time: ${cerResult.processingTimeMs}ms`,
-          `Evidence types: ${Array.from(new Set(cerResult.extractedEvidence.map(e => e.evidenceType))).join(", ")}`,
-        ],
-        durationMs: Date.now() - cerStart,
-      });
-      
-      console.log(`[Evidence Extractor] CER extraction completed: ${cerResult.extractedEvidence.length} evidence items`);
-    } catch (error: any) {
-      console.error(`[Evidence Extractor] CER extraction failed: ${error?.message || error}`);
-      decisionTrace.push({
-        traceId: randomUUID(),
-        timestamp: new Date().toISOString(),
-        stage: "CER_EXTRACTION",
-        decision: "CER extraction failed - falling back to standard extraction",
-        confidence: 0.3,
-        inputSummary: document.filename,
-        outputSummary: "Error during CER extraction",
-        reasoning: [`Error: ${error?.message || String(error)}`],
-        warnings: ["CER-specific extraction failed - using standard extraction methods"],
-      });
-      // Fall through to standard extraction
-    }
   }
 
   // PHASE 2: Legacy table extraction ONLY for CER documents without tabular data

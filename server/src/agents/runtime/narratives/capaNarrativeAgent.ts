@@ -6,6 +6,9 @@
  */
 
 import { BaseNarrativeAgent, NarrativeInput } from "./baseNarrativeAgent";
+import { type DossierContext } from "../../../services/deviceDossierService";
+import { type AgentRoleContext } from "../../../services/agentRoleService";
+import { getCanonicalMetrics } from "../../../services/canonicalMetricsService";
 
 export class CAPANarrativeAgent extends BaseNarrativeAgent {
   protected readonly sectionType = "CAPA";
@@ -50,9 +53,24 @@ export class CAPANarrativeAgent extends BaseNarrativeAgent {
   protected buildUserPrompt(
     input: NarrativeInput,
     evidenceSummary: string,
-    evidenceRecords: string
+    evidenceRecords: string,
+    dossierContext?: DossierContext,
+    agentRoleContext?: AgentRoleContext
   ): string {
-    // Extract CAPA-specific data
+    // Use CANONICAL METRICS for CAPA-related counts for cross-section consistency
+    const ctx = input.context as typeof input.context & { psurCaseId?: number };
+    const metrics = getCanonicalMetrics(
+      ctx.psurCaseId || 0,
+      input.evidenceAtoms.map(a => ({
+        atomId: a.atomId,
+        evidenceType: a.evidenceType,
+        normalizedData: a.normalizedData as Record<string, unknown>,
+      })),
+      input.context.periodStart,
+      input.context.periodEnd
+    );
+
+    // Extract CAPA-specific data for detail breakdown
     const capaAtoms = input.evidenceAtoms.filter(a =>
       a.evidenceType.includes("capa") || a.evidenceType.includes("ncr")
     );
@@ -81,6 +99,11 @@ export class CAPANarrativeAgent extends BaseNarrativeAgent {
       a.normalizedData.isNegativeEvidence === true
     );
 
+    // Cross-reference: include complaint/incident context so CAPA narrative
+    // can reference the correct trigger counts
+    const totalComplaints = metrics.complaints.totalCount.formatted;
+    const totalIncidents = metrics.incidents.seriousCount.formatted;
+
     return `## Section: ${input.slot.title}
 ## Section Path: ${input.slot.sectionPath}
 ## Purpose: Document Corrective and Preventive Actions related to PMS findings
@@ -89,11 +112,16 @@ export class CAPANarrativeAgent extends BaseNarrativeAgent {
 - Device Code: ${input.context.deviceCode}
 - Reporting Period: ${input.context.periodStart} to ${input.context.periodEnd}
 
-## CAPA STATISTICS:
+## CAPA STATISTICS (Canonical):
 - Total CAPAs: ${capaAtoms.length}
 - Open: ${openCAPAs.length}
 - Closed: ${closedCAPAs.length}
 - Confirmed No CAPAs: ${isNegativeEvidence ? "YES" : "No"}
+
+## PMS TRIGGER CONTEXT (from Canonical Metrics):
+- Total Complaints in Period: ${totalComplaints}
+- Serious Incidents in Period: ${totalIncidents}
+- FSCAs in Period: ${metrics.incidents.fscaCount.formatted}
 
 ## BY TYPE:
 ${Object.entries(byType).map(([type, count]) => `- ${type}: ${count}`).join("\n") || "- No type breakdown available"}
@@ -106,10 +134,11 @@ ${evidenceRecords}
 
 ## CRITICAL INSTRUCTIONS:
 1. Focus on CAPAs TRIGGERED BY PMS findings (complaints, incidents, trends)
-2. Document root cause analysis methodology and findings
-3. Include effectiveness verification criteria and results
-4. If ZERO CAPAs, explicitly state this is confirmed (not a gap)
-5. Reference specific evidence atoms [ATOM-xxx]
-6. Link CAPAs to their triggering PMS data where possible`;
+2. Use the EXACT statistics above — do NOT recalculate from evidence records
+3. Document root cause analysis methodology and findings
+4. Include effectiveness verification criteria and results
+5. If ZERO CAPAs, explicitly state this is confirmed (not a gap)
+6. Reference specific evidence atoms [ATOM-xxx]
+7. Link CAPAs to their triggering PMS data where possible`;
   }
 }

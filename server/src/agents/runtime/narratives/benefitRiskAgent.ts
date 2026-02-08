@@ -14,6 +14,7 @@
 
 import { BaseNarrativeAgent, NarrativeInput } from "./baseNarrativeAgent";
 import { type DossierContext } from "../../../services/deviceDossierService";
+import { getCanonicalMetrics } from "../../../services/canonicalMetricsService";
 
 export class BenefitRiskNarrativeAgent extends BaseNarrativeAgent {
   protected readonly sectionType = "BENEFIT_RISK";
@@ -56,42 +57,33 @@ export class BenefitRiskNarrativeAgent extends BaseNarrativeAgent {
     evidenceRecords: string,
     dossierContext?: DossierContext
   ): string {
-    // Calculate risk metrics
-    const complaintAtoms = input.evidenceAtoms.filter(a =>
-      a.evidenceType.includes("complaint")
+    // Use CANONICAL METRICS for ALL statistics - ensures cross-section consistency
+    const ctx = input.context as typeof input.context & { psurCaseId?: number };
+    const metrics = getCanonicalMetrics(
+      ctx.psurCaseId || 0,
+      input.evidenceAtoms.map(a => ({
+        atomId: a.atomId,
+        evidenceType: a.evidenceType,
+        normalizedData: a.normalizedData as Record<string, unknown>,
+      })),
+      input.context.periodStart,
+      input.context.periodEnd
     );
-    const incidentAtoms = input.evidenceAtoms.filter(a =>
-      a.evidenceType.includes("incident")
-    );
-    const salesAtoms = input.evidenceAtoms.filter(a =>
-      a.evidenceType.includes("sales")
-    );
+
+    const totalSales = metrics.sales.totalUnits.value;
+    const complaintRate = metrics.complaints.ratePerThousand?.value ?? 0;
+    const complaintRateStr = metrics.complaints.ratePerThousand
+      ? metrics.complaints.ratePerThousand.formatted
+      : "N/A";
+    const seriousRate = totalSales > 0
+      ? ((metrics.incidents.seriousCount.value / totalSales) * 1000).toFixed(4)
+      : "N/A";
+
     const clinicalAtoms = input.evidenceAtoms.filter(a =>
       a.evidenceType.includes("clinical") ||
       a.evidenceType.includes("pmcf") ||
       a.evidenceType.includes("benefit")
     );
-
-    const totalSales = salesAtoms.reduce((sum, a) => {
-      const qty = Number(a.normalizedData.quantity || a.normalizedData.units_sold || 0);
-      return sum + qty;
-    }, 0);
-
-    // Severity breakdown
-    const seriousComplaints = complaintAtoms.filter(a =>
-      a.normalizedData.severity === "HIGH" ||
-      a.normalizedData.severity === "CRITICAL" ||
-      a.normalizedData.serious === true
-    );
-
-    const complaintRate = totalSales > 0
-      ? (complaintAtoms.length / totalSales) * 1000
-      : 0;
-    const complaintRateStr = totalSales > 0 ? complaintRate.toFixed(2) : "N/A";
-
-    const seriousRate = totalSales > 0
-      ? ((seriousComplaints.length / totalSales) * 1000).toFixed(4)
-      : "N/A";
 
     // Build dossier context section - critical for non-generic B/R assessment
     let benefitRiskContextSection = "";
@@ -199,11 +191,11 @@ ${benefitRiskContextSection}
 
 ---
 
-## CURRENT PERIOD RISK METRICS:
-- Total Complaints: ${complaintAtoms.length}
-- Serious Incidents: ${incidentAtoms.length}
-- Serious/High Severity Complaints: ${seriousComplaints.length}
-- Units Distributed: ${totalSales.toLocaleString()}
+## CURRENT PERIOD RISK METRICS (Canonical - Validated & Consistent):
+- Total Complaints: ${metrics.complaints.totalCount.formatted}
+- Serious Incidents: ${metrics.incidents.seriousCount.formatted}
+- Serious/High Severity Complaints: ${metrics.complaints.seriousCount.formatted}
+- Units Distributed: ${metrics.sales.totalUnits.formatted}
 - Complaint Rate: ${complaintRateStr} per 1,000 units
 - Serious Event Rate: ${seriousRate} per 1,000 units
 

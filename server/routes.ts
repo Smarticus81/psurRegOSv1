@@ -468,10 +468,6 @@ import {
 import { db } from "./db";
 import { eq } from "drizzle-orm";
 import { parseFileBuffer, detectColumnMappings, applyColumnMapping } from "./file-parser";
-import {
-  normalizeComplaintRecordRow,
-  normalizeSalesVolumeRow,
-} from "./evidence/normalize";
 import { EVIDENCE_DEFINITIONS, grkbObligations } from "@shared/schema";
 import { loadTemplate, loadFormTemplate, isTemplateFormBased, listTemplates, getTemplateDirsDebugInfo, getAllRequiredEvidenceTypes } from "./src/templateStore";
 import { type EvidenceAtomData } from "./src/orchestrator/render/psurTableGenerator";
@@ -589,6 +585,10 @@ export async function registerRoutes(
 
   // Mount template routes (validation, upload)
   app.use("/api/templates", templateRoutes);
+
+  // Mount HITL approval & provenance routes
+  const { registerHITLRoutes } = await import("./src/hitlRoutes");
+  registerHITLRoutes(app);
 
   // Client error reporting (from frontend)
   app.post("/api/client-errors", (req, res) => {
@@ -6498,7 +6498,7 @@ Execute according to your persona instructions.`
         psurCaseId,
         templateId: psurCase.templateId,
         slots,
-        deviceCode: psurCase.deviceCode,
+        deviceCode: (psurCase as any).deviceCode,
         periodStart: new Date(psurCase.startPeriod).toISOString().split("T")[0],
         periodEnd: new Date(psurCase.endPeriod).toISOString().split("T")[0],
       });

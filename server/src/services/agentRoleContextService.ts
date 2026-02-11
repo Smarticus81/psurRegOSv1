@@ -21,6 +21,7 @@
 import { getSession, getDriver, syncObligationsToNeo4j, type Neo4jObligation } from "./neo4jGrkbService";
 import { calculateCompletenessBreakdown, getDossierContext, type DossierContext, type CompletenessBreakdown } from "./deviceDossierService";
 import { PSUR_REGULATORY_CONTEXT_SECTIONS } from "../constants/psurRegulatoryContext";
+import { getAnnexIIIRulesForSection } from "../constants/grkbMdcgAlignment";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES - Agent Role Context
@@ -789,10 +790,29 @@ export function formatAgentRoleContextForPrompt(context: AgentRoleContext): stri
     // GRKB obligations
     if (context.grkbObligations.length > 0) {
         lines.push("");
-        lines.push("## REGULATORY OBLIGATIONS (GRKB)");
-        for (const obl of context.grkbObligations.slice(0, 3)) {
-            lines.push(`**${obl.title}** (${obl.sourceCitation})`);
-            lines.push(`  ${obl.satisfactionGuidance}`);
+        lines.push("## REGULATORY OBLIGATIONS YOU MUST SATISFY (GRKB)");
+        lines.push("You MUST produce content that fully satisfies each obligation below.");
+        lines.push("However, do NOT cite or name any regulation, article, or standard in your output text.");
+        lines.push("Comply with the SUBSTANCE of each obligation through your content structure and completeness.");
+        lines.push("");
+        for (const obl of context.grkbObligations.slice(0, 5)) {
+            lines.push(`**${obl.title}**`);
+            lines.push(`  Requirement: ${obl.text || obl.satisfactionGuidance}`);
+            if (obl.requiredEvidenceTypes.length > 0) {
+                lines.push(`  Evidence needed: ${obl.requiredEvidenceTypes.join(", ")}`);
+            }
+        }
+    }
+
+    // Annex III assessment rules for this section type
+    const annexIIIRules = getAnnexIIIRulesForSection(context.agentRole.sectionType);
+    if (annexIIIRules.length > 0) {
+        lines.push("");
+        lines.push("## MANDATORY PRESENTATION & ASSESSMENT RULES (Annex III)");
+        lines.push("Your output MUST satisfy ALL of the following data presentation and assessment requirements:");
+        lines.push("");
+        for (const rule of annexIIIRules) {
+            lines.push(`**${rule.title}:** ${rule.requirement}`);
         }
     }
 

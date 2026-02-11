@@ -114,35 +114,37 @@ export class DeviceScopeNarrativeAgent extends BaseNarrativeAgent {
       manufacturerSection = `\n- Manufacturer: ${manufacturerName}`;
     }
 
-    return `## Section: ${input.slot.title}
-## Section Path: ${input.slot.sectionPath}
-## Purpose: Describe devices covered by this PSUR and their intended purpose
+    return `Generate the Scope and Device Description section. Be factual and structured.
 
-## Device Context:
-- Device Code: ${input.context.deviceCode}
+## DEVICE INFORMATION:
 - Device Name: ${deviceName}${manufacturerSection}
-- Reporting Period: ${input.context.periodStart} to ${input.context.periodEnd}
-
-## KNOWN DEVICE INFORMATION:
-- UDI-DI: ${udiDi}
+- Basic UDI-DI: ${udiDi}
 - Classification: ${classification}${classificationRationale ? ` — ${classificationRationale}` : ""}
 - Intended Purpose: ${intendedPurpose}
+- Reporting Period: ${input.context.periodStart} to ${input.context.periodEnd}
 ${clinicalBenefitsSection}
 
-## Evidence Summary:
-${evidenceSummary}
+## REQUIRED OUTPUT FORMAT:
 
-## Detailed Evidence Records:
-${evidenceRecords}
+1. **Device Information**: State device name, Basic UDI-DI, and whether it is implantable (Yes/No).
 
-## IMPORTANT INSTRUCTIONS:
-1. Focus on TECHNICAL ACCURACY - this establishes the scope of the PSUR
-2. Use ONLY the device identity information provided above (Device Name, UDI-DI, Classification)
-3. DO NOT substitute device names or identifiers from evidence records if they differ from the dossier
-4. Include UDI-DI breakdown if multiple device variants exist
-5. Clearly state the intended purpose verbatim from IFU if available
-6. DO NOT include [ATOM-xxx] citations - they will be tracked via metadata
-7. If this is a "changes" section, compare to previous PSUR explicitly
-8. Write clean, professional prose without markdown symbols`;
+2. **Device Classification**: State the EU-MDR classification (Class IIa/IIb/III) and classification rule.
+
+3. **PSUR Obligation Status**: State market status ("On Market"), certificate status, and confirm ongoing PSUR obligation.
+
+4. **Device Description**: Write a concise technical description of the device from the evidence records. Include materials, dimensions, and variants if available.
+
+5. **Intended Purpose**: State the intended purpose verbatim from the IFU or dossier.
+
+6. **Indications and Contraindications**: List if available from evidence.
+
+7. **UDI-DI Table**: If multiple device variants, include a table with columns: Basic UDI-DI | Device Trade Name | EMDN Code | Changes from Previous PSUR.
+
+8. **Data Collection Period**: State the date range.
+
+Keep each subsection short. Do not elaborate beyond what the evidence provides.
+
+## Evidence Records:
+${evidenceRecords}`;
   }
 }

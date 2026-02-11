@@ -236,30 +236,51 @@ export async function extractEvidence(
         result.suggestions.push(`Low extraction quality score (${sotaResult.quality.overallScore}%) - manual review recommended`);
       }
       
+      // If SOTA succeeded but extracted nothing, try basic fallback
+      if (result.extractedEvidence.length === 0 && document.tables.length > 0) {
+        console.warn(`[Evidence Extractor] SOTA returned 0 evidence from ${document.tables.length} tables — trying basic fallback`);
+        const fallbackEvidence = extractFromTables(document.tables, document.filename);
+        if (fallbackEvidence.length > 0) {
+          result.extractedEvidence = fallbackEvidence;
+          result.suggestions.push(`SOTA returned no results — basic fallback extracted ${fallbackEvidence.length} items`);
+        }
+      }
+
       // Add SOTA-specific metadata
       (result as any).sotaResult = sotaResult;
-      
+
       result.processingTime = Date.now() - startTime;
       return result;
       
     } catch (sotaError: any) {
-      console.error(`[Evidence Extractor] SOTA extraction failed, error: ${sotaError?.message}`);
-      
-      // NO FALLBACKS - Return error result with full details, don't silently fall back
-      result.suggestions.push(`EXTRACTION FAILED: ${sotaError?.message}`);
-      result.suggestions.push("HUMAN REVIEW REQUIRED: SOTA extraction encountered an error");
+      console.error(`[Evidence Extractor] SOTA extraction failed, falling back to basic table extraction. Error: ${sotaError?.message}`);
+
+      // FALLBACK: Use basic table extraction so we don't lose all data
+      const fallbackEvidence = extractFromTables(document.tables, document.filename);
+      result.extractedEvidence = fallbackEvidence;
+
+      result.suggestions.push(`SOTA extraction failed (${sotaError?.message}) — used basic table fallback`);
+      if (fallbackEvidence.length > 0) {
+        result.suggestions.push(`Basic fallback extracted ${fallbackEvidence.length} items — review for accuracy`);
+      } else {
+        result.suggestions.push("HUMAN REVIEW REQUIRED: Both SOTA and basic extraction produced no results");
+      }
       result.decisionTrace = [{
         traceId: randomUUID(),
         timestamp: new Date().toISOString(),
         stage: "VALIDATION",
-        decision: `SOTA extraction failed: ${sotaError?.message}`,
-        confidence: 0,
+        decision: `SOTA failed, basic fallback extracted ${fallbackEvidence.length} items`,
+        confidence: fallbackEvidence.length > 0 ? 0.5 : 0,
         inputSummary: document.filename,
-        outputSummary: "ERROR - No fallback used per SOTA policy",
-        reasoning: [`Error: ${sotaError?.message}`, "NO FALLBACK - flagging for human review"]
+        outputSummary: `Fallback: ${fallbackEvidence.length} evidence items from ${document.tables.length} tables`,
+        reasoning: [
+          `SOTA error: ${sotaError?.message}`,
+          `Fallback: basic table header matching against ${document.tables.length} tables`,
+          `Recovered ${fallbackEvidence.length} evidence items`,
+        ]
       }];
       result.processingTime = Date.now() - startTime;
-      return result;  // Return empty result with error, don't fall back
+      return result;
     }
   }
 
@@ -460,9 +481,90 @@ function isCERDocument(document: ParsedDocument): boolean {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// NOTE: Legacy table extraction functions removed - SOTA pipeline is now mandatory
-// For tabular data, use extractEvidenceSOTA() from sotaExtractor.ts
+// BASIC TABLE EXTRACTION (Fallback when SOTA fails)
 // ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Basic table extraction fallback. Classifies each table by matching column
+ * headers against EVIDENCE_TYPES indicators, then emits one ExtractedEvidence
+ * per row with column values mapped to data fields.
+ */
+function extractFromTables(tables: ParsedTable[], filename: string): ExtractedEvidence[] {
+  const evidence: ExtractedEvidence[] = [];
+
+  for (const table of tables) {
+    if (!table.headers || table.headers.length === 0 || table.rows.length === 0) continue;
+
+    const headersLower = table.headers.map(h => (h || "").toLowerCase());
+    const headerStr = headersLower.join(" ");
+
+    // Score each evidence type against the table headers
+    let bestType: EvidenceType | null = null;
+    let bestScore = 0;
+
+    for (const evidenceType of EVIDENCE_TYPES) {
+      let score = 0;
+      for (const indicator of evidenceType.indicators) {
+        if (headerStr.includes(indicator.toLowerCase())) {
+          score += 2;
+        }
+        // Also check individual headers
+        for (const h of headersLower) {
+          if (h.includes(indicator.toLowerCase())) {
+            score += 1;
+          }
+        }
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        bestType = evidenceType;
+      }
+    }
+
+    if (!bestType || bestScore < 2) {
+      // Cannot classify this table — skip
+      continue;
+    }
+
+    // Extract each row as an evidence item
+    for (let rowIdx = 0; rowIdx < table.rows.length; rowIdx++) {
+      const row = table.rows[rowIdx];
+      if (!row) continue;
+
+      // Build data object mapping headers to values
+      const data: Record<string, unknown> = {};
+      for (const header of table.headers) {
+        const val = row[header];
+        if (val !== null && val !== undefined && val !== "") {
+          // Normalize header to snake_case field name
+          const fieldName = header.toLowerCase()
+            .replace(/[^a-z0-9]+/g, "_")
+            .replace(/^_|_$/g, "");
+          data[fieldName] = val;
+        }
+      }
+
+      // Skip empty rows
+      if (Object.keys(data).length === 0) continue;
+
+      const rawContent = JSON.stringify(data).substring(0, 1000);
+      const confidence = Math.min(0.7, bestScore / 10); // Cap at 0.7 for basic extraction
+
+      evidence.push({
+        evidenceType: bestType.type,
+        confidence,
+        source: "table",
+        sourceName: table.name || `Table ${tables.indexOf(table) + 1}`,
+        data,
+        rawContent,
+        extractionMethod: `Basic table fallback (header score: ${bestScore})`,
+        warnings: ["Extracted via basic fallback — SOTA extraction failed. Review data quality."],
+      });
+    }
+  }
+
+  return evidence;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SECTION EXTRACTION

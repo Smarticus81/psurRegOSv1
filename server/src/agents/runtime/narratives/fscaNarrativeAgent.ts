@@ -89,33 +89,27 @@ export class FSCANarrativeAgent extends BaseNarrativeAgent {
     // Use canonical count as the authoritative total
     const totalFSCAs = Math.max(canonicalFscaCount, fscaAtoms.length);
 
-    return `## Section: ${input.slot.title}
-## Section Path: ${input.slot.sectionPath}
-## Purpose: Document all Field Safety Corrective Actions during the reporting period
+    const deviceName = input.context.deviceName || input.context.deviceCode;
 
-## Device Context:
-- Device Code: ${input.context.deviceCode}
+    return `Generate the FSCA section. Be concise.
+
+## DATA:
+- Device: ${deviceName}
 - Reporting Period: ${input.context.periodStart} to ${input.context.periodEnd}
-
-## FSCA STATISTICS (Canonical):
 - Total FSCAs: ${totalFSCAs}
-- Open/Ongoing: ${openFSCAs.length}
+- Open: ${openFSCAs.length}
 - Closed: ${closedFSCAs.length}
-- Confirmed No FSCAs: ${isNegativeEvidence ? "YES" : "No"}
 
-## Evidence Summary:
-${evidenceSummary}
+## REQUIRED OUTPUT FORMAT:
+${totalFSCAs === 0
+      ? `Include a table with columns: Type of action | Manufacturer Reference number | Issuing Date | Scope of FSCA | Status | Rationale | Impacted regions
+Put a single row: "N/A – There were no FSCAs initiated or closed during the data collection period for ${deviceName}"`
+      : `For each FSCA, provide a table with columns: Type of action | Manufacturer Reference number | Issuing Date / Date of Final FSN | Scope of FSCA/Device models | Status | Rationale and description of action taken | Impacted regions
+Then add a brief paragraph describing the actions and their outcomes.`}
 
-## Detailed Evidence Records:
-${evidenceRecords}
+Do NOT write lengthy analysis. If zero FSCAs, the entire section output should be just the table.
 
-## CRITICAL INSTRUCTIONS:
-1. FSCAs are MANDATORY to report - completeness is essential
-2. Use the EXACT statistics above — do NOT recalculate from evidence records
-3. Include ALL FSCAs even if closed before period start (if relevant)
-4. Document reason, scope, actions, and effectiveness for each
-5. If ZERO FSCAs, explicitly state this is confirmed (not a gap)
-6. Reference specific evidence atoms [ATOM-xxx]
-7. Include any regulatory notifications made (Competent Authority reports)`;
+## Evidence Records:
+${evidenceRecords}`;
   }
 }

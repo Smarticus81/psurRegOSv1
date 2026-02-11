@@ -10,7 +10,7 @@
  * Synthesizes ALL PSUR data into high-level conclusions.
  * 
  * CRITICAL: Uses CanonicalMetricsService for ALL statistics to ensure
- * consistency with other sections per EU MDR Article 86.
+ * consistency with other sections.
  * 
  * CRITICAL: Uses DeviceDossierService for device-specific context to
  * generate non-generic, device-appropriate content.
@@ -159,48 +159,41 @@ device-specific context including:
 - Performance baselines for trend analysis`;
     }
 
-    return `## Section: ${input.slot.title}
-## Section Path: ${input.slot.sectionPath}
-## Purpose: Provide a high-level synthesis of ALL post-market surveillance data
+    // Determine B/R conclusion text
+    const hasSeriousIssues = seriousIncidents.value > 0;
+    const brText = hasSeriousIssues
+      ? "has been adversely impacted"
+      : "has NOT been adversely impacted and remains UNCHANGED";
 
-## REPORTING PERIOD: ${input.context.periodStart} to ${input.context.periodEnd}
+    return `Generate the Executive Summary section. Use ONLY the data below — do not invent numbers.
+
+## DATA:
+- Reporting Period: ${input.context.periodStart} to ${input.context.periodEnd}
+- Device: ${input.context.deviceName || input.context.deviceCode}
+- Units Distributed: ${totalUnits.formatted}
+- Total Complaints: ${totalComplaints.formatted}
+- Serious Incidents: ${seriousIncidents.formatted}
+- FSCAs: ${fscaCount.formatted}
+${complaintRate ? `- Complaint Rate: ${complaintRate.formatted} per 1,000 units` : ""}
 
 ${deviceContextSection}
 
----
+## REQUIRED OUTPUT FORMAT:
+Write the following subsections in this exact order. Be concise — the entire section should be under 250 words.
 
-## CANONICAL STATISTICS (Validated & Consistent):
-- Total Units Distributed: ${totalUnits.formatted} [Confidence: ${(totalUnits.provenance.confidence * 100).toFixed(0)}%]
-- Total Complaints: ${totalComplaints.formatted} [Confidence: ${(totalComplaints.provenance.confidence * 100).toFixed(0)}%]
-- Serious Complaints: ${seriousComplaints.formatted}
-- Total Incidents: ${totalIncidents.formatted}
-- Serious Incidents: ${seriousIncidents.formatted}
-- FSCAs/Recalls: ${fscaCount.formatted}
-${complaintRate ? `- Complaint Rate: ${complaintRate.formatted} per 1,000 units` : "- Complaint Rate: N/A (no denominator)"}
-${validationNotes}
+**Previous PSUR Actions Status**
+State any actions from the previous PSUR and their status. If none, write: "There are no actions taken from previous PSUR."
 
-## Data Quality:
-- Sales Data Quality: ${metrics.sales.dataQuality}%
-- Complaints Data Quality: ${metrics.complaints.dataQuality}%
-- Cross-Section Consistent: ${metrics.validation.crossSectionConsistent ? "YES" : "NO - See warnings above"}
+**Notified Body Review Status**
+State whether the previous PSUR was reviewed by the Notified Body and any actions taken. If unknown, write "N/A".
 
-## Evidence Summary:
-${evidenceSummary}
+**Benefit-Risk Assessment Conclusion**
+Write: "Based on the analysis of the collected data, it is concluded that the benefit-risk profile of the device(s) ${brText}."
+Then write ONE paragraph summarizing the key numbers: units distributed, complaints, serious incidents, FSCAs, and the overall conclusion. Model it after this example:
 
-## Detailed Evidence Records:
-${evidenceRecords}
+"During the data collection period, ${totalUnits.formatted} units were distributed globally. There were ${totalComplaints.formatted} complaints, ${seriousIncidents.formatted} serious incidents, and ${fscaCount.formatted} Field Safety Corrective Actions (FSCAs) during the reporting period. Based on the comprehensive analysis of all collected post-market surveillance data during this reporting period, the benefit-risk profile has not been adversely impacted and remains unchanged."
 
-## CRITICAL INSTRUCTIONS FOR EXECUTIVE SUMMARY:
-1. This is the EXECUTIVE SUMMARY - synthesize, don't just list
-2. Use ONLY the CANONICAL STATISTICS above - these are validated for consistency
-3. START with the overall benefit-risk conclusion
-4. REFERENCE the specific clinical benefits from the dossier context
-5. COMPARE current metrics against the defined thresholds if available
-6. COMPARE to prior PSUR period if data available
-7. Highlight ANY safety signals or trends
-8. Reference any outstanding actions from prior PSUR
-9. END with recommended actions or confirmation of continued favorable B/R
-10. If data quality is low or cross-section consistency is NO, acknowledge limitations
-11. DO NOT use placeholder citations - only cite actual atom IDs from the evidence`;
+## Evidence Records (for reference):
+${evidenceRecords}`;
   }
 }

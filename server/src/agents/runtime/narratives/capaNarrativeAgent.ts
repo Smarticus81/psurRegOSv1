@@ -104,41 +104,28 @@ export class CAPANarrativeAgent extends BaseNarrativeAgent {
     const totalComplaints = metrics.complaints.totalCount.formatted;
     const totalIncidents = metrics.incidents.seriousCount.formatted;
 
-    return `## Section: ${input.slot.title}
-## Section Path: ${input.slot.sectionPath}
-## Purpose: Document Corrective and Preventive Actions related to PMS findings
+    const deviceName = input.context.deviceName || input.context.deviceCode;
 
-## Device Context:
-- Device Code: ${input.context.deviceCode}
+    return `Generate the CAPA section. Be concise.
+
+## DATA:
+- Device: ${deviceName}
 - Reporting Period: ${input.context.periodStart} to ${input.context.periodEnd}
-
-## CAPA STATISTICS (Canonical):
 - Total CAPAs: ${capaAtoms.length}
 - Open: ${openCAPAs.length}
 - Closed: ${closedCAPAs.length}
-- Confirmed No CAPAs: ${isNegativeEvidence ? "YES" : "No"}
 
-## PMS TRIGGER CONTEXT (from Canonical Metrics):
-- Total Complaints in Period: ${totalComplaints}
-- Serious Incidents in Period: ${totalIncidents}
-- FSCAs in Period: ${metrics.incidents.fscaCount.formatted}
+## REQUIRED OUTPUT FORMAT:
+Start with ONE sentence: "During the surveillance period (${input.context.periodStart} – ${input.context.periodEnd}), there ${capaAtoms.length === 0 ? "were no CAPAs" : `${capaAtoms.length === 1 ? "was 1 CAPA" : `were ${capaAtoms.length} CAPAs`}`} associated with ${deviceName}."
 
-## BY TYPE:
-${Object.entries(byType).map(([type, count]) => `- ${type}: ${count}`).join("\n") || "- No type breakdown available"}
+${capaAtoms.length > 0
+      ? `Then include a table with columns: CAPA Number | Initiation Date | Status (Open/Closed + Date) | CAPA Description | Root Cause | Effectiveness | Target Date
+Populate from the evidence records below. Include the actual CAPA reference numbers.`
+      : `If zero CAPAs, the section is complete after that one sentence. Do not add anything else.`}
 
-## Evidence Summary:
-${evidenceSummary}
+Do NOT write lengthy analysis. Keep it factual and tabular.
 
-## Detailed Evidence Records:
-${evidenceRecords}
-
-## CRITICAL INSTRUCTIONS:
-1. Focus on CAPAs TRIGGERED BY PMS findings (complaints, incidents, trends)
-2. Use the EXACT statistics above — do NOT recalculate from evidence records
-3. Document root cause analysis methodology and findings
-4. Include effectiveness verification criteria and results
-5. If ZERO CAPAs, explicitly state this is confirmed (not a gap)
-6. Reference specific evidence atoms [ATOM-xxx]
-7. Link CAPAs to their triggering PMS data where possible`;
+## Evidence Records:
+${evidenceRecords}`;
   }
 }

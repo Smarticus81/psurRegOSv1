@@ -62,8 +62,8 @@ const NUMBER_PATTERNS = {
   complaints: /(\d{1,3}(?:,\d{3})*|\d+)\s*complaints?/gi,
   seriousIncidents: /(\d{1,3}(?:,\d{3})*|\d+)\s*(?:serious\s+)?incidents?/gi,
   fscas: /(\d{1,3}(?:,\d{3})*|\d+)\s*(?:FSCAs?|recalls?|field\s+safety)/gi,
-  noData: /no\s+(?:complaints?|incidents?|FSCAs?|data)/gi,
-  zeroReported: /(?:zero|0|none)\s+(?:were\s+)?reported/gi,
+  noData: /\bno\s+(?:complaints?|incidents?|FSCAs?|data)\s+(?:were\s+)?(?:reported|recorded|received|identified|observed|found|detected)/i,
+  zeroReported: /(?:zero|0|none)\s+(?:were\s+)?(?:reported|recorded|received|identified|observed|found|detected)/i,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -187,9 +187,19 @@ export class CrossSectionValidator {
     );
     
     for (const section of sectionsWithComplaints) {
+      // Reset lastIndex on all patterns to prevent stateful regex bugs
+      NUMBER_PATTERNS.complaints.lastIndex = 0;
+      NUMBER_PATTERNS.noData.lastIndex = 0;
+      NUMBER_PATTERNS.zeroReported.lastIndex = 0;
+      
       const complaintCount = this.extractNumber(section.content, NUMBER_PATTERNS.complaints);
       const hasNoComplaints = NUMBER_PATTERNS.noData.test(section.content) || 
                              NUMBER_PATTERNS.zeroReported.test(section.content);
+      
+      // Skip false positives: if section also mentions the actual complaint count, it's not claiming zero
+      if (hasNoComplaints && complaintCount !== null && complaintCount > 0) {
+        continue; // Section mentions both "no complaints [qualifier]" and actual count — not a true contradiction
+      }
       
       // Check for contradiction: text says "no complaints" but canonical shows complaints
       if (hasNoComplaints && canonicalComplaints > 0) {
@@ -233,8 +243,11 @@ export class CrossSectionValidator {
     );
     
     for (const section of sectionsWithIncidents) {
+      // Reset lastIndex on patterns to prevent stateful regex bugs
+      NUMBER_PATTERNS.seriousIncidents.lastIndex = 0;
+      
       const incidentCount = this.extractNumber(section.content, NUMBER_PATTERNS.seriousIncidents);
-      const hasNoIncidents = /no\s+(?:serious\s+)?incidents?\s+(?:were\s+)?reported/i.test(section.content);
+      const hasNoIncidents = /no\s+(?:serious\s+)?incidents?\s+(?:were\s+)?(?:reported|recorded|received|identified|observed|found|detected)/i.test(section.content);
       
       // Check for contradiction
       if (hasNoIncidents && canonicalSerious > 0) {

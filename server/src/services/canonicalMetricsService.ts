@@ -244,10 +244,11 @@ export class CanonicalMetricsService {
       const periodStart = String(this.getValue(data, "period_start", "periodStart", "start_date") || "");
       const periodEnd = String(this.getValue(data, "period_end", "periodEnd", "end_date") || "");
       
-      // Deduplication key
+      // Deduplication key — skip exact duplicates regardless of units value
+      // Only dedup when we have meaningful key components (not all empty)
       const comboKey = `${region}|${units}|${periodStart}|${periodEnd}`;
-      if (seenCombos.has(comboKey) && units > 0) {
-        // Skip duplicate
+      const hasKeyData = region !== "Global" || units > 0 || periodStart || periodEnd;
+      if (hasKeyData && seenCombos.has(comboKey)) {
         continue;
       }
       seenCombos.add(comboKey);

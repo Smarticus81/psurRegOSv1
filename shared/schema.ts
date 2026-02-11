@@ -732,6 +732,8 @@ export const decisionTraceEventTypeEnum = [
   // Context loading events
   "DOSSIER_CONTEXT_LOADED",
   "AGENT_ROLE_CONTEXT_LOADED",
+  // Analytics engine events
+  "ANALYTICS_INJECTED",
 ] as const;
 
 export type DecisionTraceEventType = typeof decisionTraceEventTypeEnum[number];

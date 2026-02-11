@@ -21,6 +21,7 @@ import { composeSystemMessage } from "../../promptLayers";
 import { getPromptTemplate } from "../../llmService";
 import { getDossierContext, type DossierContext } from "../../../services/deviceDossierService";
 import { buildAgentRoleContext, formatAgentRoleContextForPrompt, type AgentRoleContext } from "../../../services/agentRoleContextService";
+import { formatAnalyticsForSlot, type PSURAnalyticsContext } from "../../../psur/psurAnalyticsContext";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -55,6 +56,8 @@ export interface NarrativeInput {
     slotId: string;
     summary: string;
   }[];
+  /** Pre-computed analytics from deterministic PSUR engines */
+  analyticsContext?: PSURAnalyticsContext;
 }
 
 export interface NarrativeOutput {
@@ -180,7 +183,23 @@ export abstract class BaseNarrativeAgent extends BaseAgent<NarrativeInput, Narra
     const evidenceRecords = this.formatEvidenceRecords(input.evidenceAtoms);
 
     // Build the prompt with dossier context AND agent role context
-    const userPrompt = this.buildUserPrompt(input, evidenceSummary, evidenceRecords, dossierContext, agentRoleContext);
+    let userPrompt = this.buildUserPrompt(input, evidenceSummary, evidenceRecords, dossierContext, agentRoleContext);
+
+    // Inject pre-computed analytics from deterministic engines
+    if (input.analyticsContext) {
+      const analyticsBlock = formatAnalyticsForSlot(input.slot.slotId, input.analyticsContext);
+      if (analyticsBlock.length > 50) {
+        userPrompt += `\n\n${analyticsBlock}`;
+        await this.logTrace("ANALYTICS_INJECTED", "INFO", "SLOT", input.slot.slotId, {
+          analyticsLength: analyticsBlock.length,
+          hasComplaint: !!input.analyticsContext.complaintAnalysis,
+          hasVigilance: !!input.analyticsContext.vigilanceAnalysis,
+          hasSales: !!input.analyticsContext.salesExposure,
+          hasLiterature: !!input.analyticsContext.literatureAnalysis,
+          hasPMCF: !!input.analyticsContext.pmcfDecision,
+        });
+      }
+    }
 
     // Get composed system message (3-layer architecture)
     const systemMessage = await this.getComposedSystemMessage();
@@ -304,43 +323,65 @@ export abstract class BaseNarrativeAgent extends BaseAgent<NarrativeInput, Narra
     // Build list of actual atom IDs for reference
     const atomIdList = input.evidenceAtoms.slice(0, 20).map(a => a.atomId).join(", ");
 
-    if (!dossierContext?.dossierExists) {
-      throw new Error("Device dossier required for narrative generation. Create and complete a device dossier first.");
+    // Build dossier section - use dossier if available, otherwise rely on canonical evidence
+    let dossierSection = "";
+    if (dossierContext?.dossierExists) {
+      dossierSection = this.formatDossierContextForPrompt(dossierContext);
+    } else {
+      // Generate context from canonical evidence data
+      const evidenceTypeCounts = input.evidenceAtoms.reduce((acc, atom) => {
+        acc[atom.evidenceType] = (acc[atom.evidenceType] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      const typeBreakdown = Object.entries(evidenceTypeCounts)
+        .map(([type, count]) => `- ${type}: ${count} records`)
+        .join("\n");
+
+      dossierSection = `## CANONICAL EVIDENCE DATA ANALYSIS
+
+No device dossier is configured. Generate this narrative section based ENTIRELY 
+on the canonical evidence data provided below.
+
+### Evidence Summary (${input.evidenceAtoms.length} total records):
+${typeBreakdown}
+
+### Analysis Instructions:
+1. READ AND ANALYZE ALL EVIDENCE RECORDS THOROUGHLY
+2. Extract key findings, trends, and metrics from the normalizedData fields
+3. Cite specific evidence by atomId when making claims
+4. Report actual numbers and statistics from the data
+5. Do not fabricate data - only report what is present in the evidence
+6. If data is missing for a required topic, explicitly state the gap
+
+The evidence data below is AUTHORITATIVE and COMPLETE for this reporting period.`;
     }
-    const dossierSection = this.formatDossierContextForPrompt(dossierContext);
 
     // Format agent role context for semantic understanding
     const agentRoleSection = agentRoleContext
       ? formatAgentRoleContextForPrompt(agentRoleContext)
       : "";
 
-    return `## Section: ${input.slot.title}
-## Section Requirements: ${input.slot.requirements || "Generate appropriate content based on evidence"}
-## Template Guidance: ${input.slot.guidance || "Follow regulatory best practices"}
+    const deviceName = input.context.deviceName || input.context.deviceCode;
+
+    return `Generate the "${input.slot.title}" section for the PSUR.
+
+## DATA:
+- Device: ${deviceName}
+- Reporting Period: ${input.context.periodStart} to ${input.context.periodEnd}
+- Requirements: ${input.slot.requirements || "Generate appropriate content based on evidence"}
 
 ${agentRoleSection}
 
 ${dossierSection}
 
-## REPORTING PERIOD:
-- Period: ${input.context.periodStart} to ${input.context.periodEnd}
-
 ## Evidence Summary:
 ${evidenceSummary}
 
-## Detailed Evidence Records:
+## Evidence Records:
 ${evidenceRecords}
 
-## CRITICAL INSTRUCTIONS:
-- DO NOT use placeholder citations like [ATOM-001], [ATOM-002], [ATOM-xxx]
-- ONLY cite actual atom IDs that appear in the evidence records above
-- Available atom IDs: ${atomIdList || "None provided"}
-- If no relevant evidence, write the narrative WITHOUT citations
-- USE THE AGENT ROLE CONTEXT to understand your position in the workflow
-- USE THE DOSSIER CONTEXT to write device-specific, non-generic content
-- Reference specific clinical benefits, risk thresholds, and prior PSUR conclusions where relevant
-- FOLLOW CITATION GUIDANCE from the agent role context
-- Focus on content quality and regulatory compliance`;
+Be concise and factual. State data directly. Use tables for structured data. Do not cite regulations.`;
   }
 
   /**
@@ -350,44 +391,11 @@ ${evidenceRecords}
   protected formatDossierContextForPrompt(dossier: DossierContext): string {
     const sections: string[] = [];
 
-    if (dossier.regulatoryAlignment) {
-      sections.push(dossier.regulatoryAlignment);
-    }
-
-    if (dossier.regulatoryKnowledgeContext) {
-      sections.push("---");
-      sections.push(dossier.regulatoryKnowledgeContext);
-    }
-
-    if (dossier.productSummary) {
-      sections.push("---");
-      sections.push(dossier.productSummary);
-    }
-
-    if (dossier.clinicalContext) {
-      sections.push("---");
-      sections.push(dossier.clinicalContext);
-    }
-
-    if (dossier.riskContext) {
-      sections.push("---");
-      sections.push(dossier.riskContext);
-    }
-
-    if (dossier.regulatoryContext) {
-      sections.push("---");
-      sections.push(dossier.regulatoryContext);
-    }
-
-    if (dossier.priorPsurContext) {
-      sections.push("---");
-      sections.push(dossier.priorPsurContext);
-    }
-
-    if (dossier.baselineContext) {
-      sections.push("---");
-      sections.push(dossier.baselineContext);
-    }
+    if (dossier.productSummary) sections.push(dossier.productSummary);
+    if (dossier.clinicalContext) sections.push(dossier.clinicalContext);
+    if (dossier.riskContext) sections.push(dossier.riskContext);
+    if (dossier.priorPsurContext) sections.push(dossier.priorPsurContext);
+    if (dossier.baselineContext) sections.push(dossier.baselineContext);
 
     return sections.join("\n\n");
   }
@@ -418,7 +426,7 @@ ${evidenceRecords}
 
   protected formatEvidenceRecords(atoms: NarrativeEvidenceAtom[]): string {
     const lines: string[] = [];
-    const limitedAtoms = atoms.slice(0, 50);
+    const limitedAtoms = atoms.slice(0, 100);
 
     for (const atom of limitedAtoms) {
       // Make atom ID prominent - this is the ID to cite
@@ -428,14 +436,14 @@ ${evidenceRecords}
       const keyFields = Object.entries(atom.normalizedData)
         .filter(([k, v]) => v && !["raw_data"].includes(k))
         .slice(0, 8)
-        .map(([k, v]) => `  ${k}: ${String(v).substring(0, 100)}`);
+        .map(([k, v]) => `  ${k}: ${String(v).substring(0, 200)}`);
 
       lines.push(...keyFields);
       lines.push("---");
     }
 
-    if (atoms.length > 50) {
-      lines.push(`... and ${atoms.length - 50} more records`);
+    if (atoms.length > 100) {
+      lines.push(`... and ${atoms.length - 100} more records`);
     }
 
     return lines.join("\n");

@@ -13,6 +13,7 @@
 
 import { BaseNarrativeAgent, NarrativeInput } from "./baseNarrativeAgent";
 import { type DossierContext } from "../../../services/deviceDossierService";
+import { type AgentRoleContext } from "../../../services/agentRoleContextService";
 import { getCanonicalMetrics } from "../../../services/canonicalMetricsService";
 
 export class SafetyNarrativeAgent extends BaseNarrativeAgent {
@@ -63,7 +64,8 @@ export class SafetyNarrativeAgent extends BaseNarrativeAgent {
     input: NarrativeInput,
     evidenceSummary: string,
     evidenceRecords: string,
-    dossierContext?: DossierContext
+    dossierContext?: DossierContext,
+    agentRoleContext?: AgentRoleContext
   ): string {
     // Use CANONICAL METRICS for ALL statistics - ensures cross-section consistency
     const ctx = input.context as typeof input.context & { psurCaseId?: number };
@@ -80,32 +82,74 @@ export class SafetyNarrativeAgent extends BaseNarrativeAgent {
 
     // Use canonical values
     const totalSales = metrics.sales.totalUnits.value;
-    const complaintCount = metrics.complaints.totalCount.value;
-    const incidentCount = metrics.incidents.seriousCount.value;
     const complaintRate = metrics.complaints.ratePerThousand?.value ?? 0;
     const complaintRateStr = metrics.complaints.ratePerThousand
       ? metrics.complaints.ratePerThousand.formatted
       : "N/A";
 
-    // Use local atoms for severity breakdown (detailed analysis)
-    const complaintAtoms = input.evidenceAtoms.filter(a =>
-      a.evidenceType.includes("complaint")
-    );
-    const incidentAtoms = input.evidenceAtoms.filter(a =>
-      a.evidenceType.includes("incident") || a.evidenceType.includes("vigilance")
-    );
+    // Use engine data for harm-level classification if available
+    const analytics = input.analyticsContext;
+    const ca = analytics?.complaintAnalysis;
+    const va = analytics?.vigilanceAnalysis;
 
-    // Severity breakdown from local atoms
-    const bySeverity: Record<string, number> = {};
-    for (const atom of complaintAtoms) {
-      const severity = String(atom.normalizedData.severity || "UNKNOWN");
-      bySeverity[severity] = (bySeverity[severity] || 0) + 1;
+    // Harm breakdown from engine (replaces ad-hoc severity breakdown)
+    let harmBreakdownSection = "";
+    if (ca && ca.metrics.byHarm.length > 0) {
+      harmBreakdownSection = "## HARM CLASSIFICATION (Engine-Computed, ISO 14971):\n";
+      for (const h of ca.metrics.byHarm.filter(h => h.count > 0)) {
+        harmBreakdownSection += `- ${h.harmLevel}: ${h.count} (${h.percentage.toFixed(1)}%)\n`;
+      }
+    } else {
+      // Fallback to ad-hoc severity breakdown from raw atoms
+      const complaintAtoms = input.evidenceAtoms.filter(a => a.evidenceType.includes("complaint"));
+      const bySeverity: Record<string, number> = {};
+      for (const atom of complaintAtoms) {
+        const severity = String(atom.normalizedData.severity || "UNKNOWN");
+        bySeverity[severity] = (bySeverity[severity] || 0) + 1;
+      }
+      harmBreakdownSection = "## SEVERITY BREAKDOWN:\n";
+      harmBreakdownSection += Object.entries(bySeverity).map(([sev, count]) => `- ${sev}: ${count}`).join("\n") || "- No severity data available";
     }
 
-    // Patient outcomes
-    const outcomes = complaintAtoms
-      .map(a => a.normalizedData.patient_outcome || a.normalizedData.patientOutcome)
-      .filter(Boolean);
+    // Vigilance engine data (IMDRF tables, outcomes)
+    let vigilanceSection = "";
+    if (va) {
+      vigilanceSection = `
+## VIGILANCE ANALYSIS (Engine-Computed):
+- Total Serious Incidents: ${va.metrics.totalSeriousIncidents}
+- Total Non-Serious Incidents: ${va.metrics.totalNonSeriousIncidents}
+- Active FSCAs: ${va.metrics.activeFscas}
+- Open CAPAs: ${va.metrics.openCapas}
+
+### Incident Outcomes:
+- Deaths: ${va.metrics.incidentsByOutcome.DEATH}
+- Hospitalization: ${va.metrics.incidentsByOutcome.HOSPITALIZATION}
+- Disability: ${va.metrics.incidentsByOutcome.DISABILITY}
+- Required Medical Intervention: ${va.metrics.incidentsByOutcome.INTERVENTION_REQUIRED}
+
+### Pre-Computed Narrative Blocks:
+- Incidents: ${va.narrativeBlocks.seriousIncidentStatement}
+- FSCAs: ${va.narrativeBlocks.fscaStatement}
+- CAPAs: ${va.narrativeBlocks.capaStatement}`;
+    }
+
+    // Complaint engine narrative blocks
+    let complaintNarrativeSection = "";
+    if (ca) {
+      complaintNarrativeSection = `
+## COMPLAINT ANALYSIS (Engine-Computed):
+- Total Complaints: ${ca.metrics.totalComplaints}
+- Device-Related: ${ca.metrics.totalDeviceRelated}
+- Patient Injury: ${ca.metrics.totalPatientInjury}
+- Complaint Rate: ${ca.metrics.complaintRate.toFixed(2)} per 1,000 units`;
+
+      if (ca.metrics.byCategory.length > 0) {
+        complaintNarrativeSection += "\n- Top Categories:";
+        for (const cat of ca.metrics.byCategory.slice(0, 5)) {
+          complaintNarrativeSection += `\n  - ${cat.category}: ${cat.count} (${cat.percentage.toFixed(1)}%)`;
+        }
+      }
+    }
 
     // Build dossier context section for safety
     let riskContextSection = "";
@@ -119,99 +163,51 @@ ${dossierContext.riskContext}
 
 ## THRESHOLD ANALYSIS:`;
 
-      // Add threshold comparison
       if (dossierContext.riskThresholds && totalSales > 0) {
         const threshold = dossierContext.riskThresholds.complaintRateThreshold;
-        const status = complaintRate > threshold 
-          ? "ABOVE THRESHOLD - SIGNAL INVESTIGATION REQUIRED" 
+        const status = complaintRate > threshold
+          ? "ABOVE THRESHOLD - SIGNAL INVESTIGATION REQUIRED"
           : "Within acceptable limits";
         riskContextSection += `
 - Current Complaint Rate: ${complaintRateStr} per 1,000 units
 - Defined Threshold: ${threshold} per 1,000 units
-- Status: ${status}
-- Signal Detection Method: ${dossierContext.riskThresholds.signalDetectionMethod}`;
-
-        if (dossierContext.riskThresholds.seriousIncidentThreshold) {
-          const incidentStatus = incidentAtoms.length > dossierContext.riskThresholds.seriousIncidentThreshold
-            ? "ABOVE THRESHOLD - INVESTIGATION REQUIRED"
-            : "Within acceptable limits";
-          riskContextSection += `
-
-- Serious Incidents This Period: ${incidentAtoms.length}
-- Serious Incident Threshold: ${dossierContext.riskThresholds.seriousIncidentThreshold}
-- Status: ${incidentStatus}`;
-        }
+- Status: ${status}`;
       }
-
-      // Add prior period comparison if available
-      if (dossierContext.priorPsurConclusion?.periodMetrics) {
-        const priorRate = dossierContext.priorPsurConclusion.periodMetrics.complaintRate;
-        const priorIncidents = dossierContext.priorPsurConclusion.periodMetrics.seriousIncidents;
-        
-        if (priorRate !== undefined && totalSales > 0) {
-          const change = ((complaintRate - priorRate) / priorRate * 100);
-          const direction = change > 0 ? "increase" : "decrease";
-          riskContextSection += `
-
-## COMPARISON TO PRIOR PERIOD:
-- Prior Period Complaint Rate: ${priorRate} per 1,000 units
-- Change: ${Math.abs(change).toFixed(1)}% ${direction}`;
-        }
-        
-        if (priorIncidents !== undefined) {
-          riskContextSection += `
-- Prior Period Serious Incidents: ${priorIncidents}
-- Current Period Serious Incidents: ${incidentAtoms.length}`;
-        }
-      }
-    } else {
-      riskContextSection = `
-## DEVICE RISK CONTEXT: Not Available
-NOTE: No device dossier found. Cannot compare against defined risk thresholds.
-Consider creating a device dossier to enable:
-- Comparison against pre-market identified risks
-- Signal detection against defined thresholds
-- Trend analysis against prior periods`;
     }
 
-    return `## Section: ${input.slot.title}
-## Section Path: ${input.slot.sectionPath}
-## Purpose: Analyze safety data including serious incidents and complaints
+    const deviceName = input.context.deviceName || input.context.deviceCode;
+    const totalComplaints = metrics.complaints.totalCount.formatted;
+    const seriousIncidents = metrics.incidents.seriousCount.formatted;
 
-## REPORTING PERIOD: ${input.context.periodStart} to ${input.context.periodEnd}
-## DEVICE: ${input.context.deviceCode}
+    return `Generate the Serious Incidents section. Be concise — state facts directly.
+
+## DATA:
+- Device: ${deviceName}
+- Reporting Period: ${input.context.periodStart} to ${input.context.periodEnd}
+- Total Complaints: ${totalComplaints}
+- Serious Incidents: ${seriousIncidents}
+- Units Sold: ${metrics.sales.totalUnits.formatted}
+- Complaint Rate: ${complaintRateStr} per 1,000 units
+
+${harmBreakdownSection}
+
+${vigilanceSection}
+
+${complaintNarrativeSection}
 
 ${riskContextSection}
 
----
+## REQUIRED OUTPUT FORMAT:
+1. Start with ONE sentence stating the total complaints and how they were evaluated: "During the data collection period [dates], [N] product complaints were reported. All reported complaints were evaluated for Serious Incidents and there are [N] serious incidents."
 
-## SAFETY STATISTICS (Canonical - Current Period):
-- Total Complaints: ${metrics.complaints.totalCount.formatted}
-- Serious Incidents: ${metrics.incidents.seriousCount.formatted}
-- Units Sold (denominator): ${metrics.sales.totalUnits.formatted}
-- Complaint Rate: ${complaintRateStr} per 1,000 units
+2. Then include three IMDRF tables by region. If zero incidents, each cell should read "N/A-No serious incident" with count 0 and rate 0%:
+   - Table: Serious incidents by IMDRF Annex A (Medical Device Problem) by region
+   - Table: Serious incidents by IMDRF Annex C (Cause Investigation) by region
+   - Table: Serious incidents by IMDRF Annex F (Health Impact) by region
 
-## SEVERITY BREAKDOWN:
-${Object.entries(bySeverity).map(([sev, count]) => `- ${sev}: ${count}`).join("\n") || "- No severity data available"}
+3. If there ARE incidents, list them with IMDRF codes, complaint numbers, regions, and outcomes.
 
-## PATIENT OUTCOMES MENTIONED:
-${outcomes.length > 0 ? outcomes.slice(0, 10).join(", ") : "No patient outcomes documented"}
-
-## Evidence Summary:
-${evidenceSummary}
-
-## Detailed Evidence Records:
-${evidenceRecords}
-
-## CRITICAL INSTRUCTIONS:
-1. SAFETY IS PARAMOUNT - do not minimize or omit adverse events
-2. Include ALL serious incidents with outcomes
-3. COMPARE current rates to thresholds if available from dossier
-4. COMPARE to prior period if baseline data available
-5. Reference principal identified risks from dossier context where relevant
-6. Use IMDRF codes if available in the evidence
-7. If zero incidents/complaints, explicitly state this is confirmed data (not a gap)
-8. If rates exceed thresholds, clearly flag as safety signal requiring investigation
-9. DO NOT use placeholder citations - only cite actual atom IDs from evidence`;
+## Evidence Records:
+${evidenceRecords}`;
   }
 }

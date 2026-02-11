@@ -71,31 +71,29 @@ export class PMSActivityNarrativeAgent extends BaseNarrativeAgent {
     ));
     const regions = Array.from(regionSet);
 
-    return `## Section: ${input.slot.title}
-## Section Path: ${input.slot.sectionPath}
-## Purpose: Describe PMS activities and data sources used during the reporting period
+    const deviceName = input.context.deviceName || input.context.deviceCode;
 
-## Device Context:
-- Device Code: ${input.context.deviceCode}
+    return `Generate the Volume of Sales and Population Exposure section. Be concise and data-driven.
+
+## DATA:
+- Device: ${deviceName}
 - Reporting Period: ${input.context.periodStart} to ${input.context.periodEnd}
+- Total Units: ${metrics.sales.totalUnits.formatted}
+- Regions: ${regions.join(", ") || "Not specified"}
 
-## SALES/EXPOSURE METRICS (Canonical - Validated & Consistent):
-- Total Units Sold/Distributed: ${metrics.sales.totalUnits.formatted}
-- Markets/Regions: ${regions.join(", ") || "Not specified"}
-- Data Records: ${salesAtoms.length}
+## REQUIRED OUTPUT FORMAT:
 
-## Evidence Summary:
-${evidenceSummary}
+1. **Sales Methodology** (1-2 sentences): State the criteria used for sales data (e.g., "devices placed on the market" or "units distributed").
 
-## Detailed Evidence Records:
-${evidenceRecords}
+2. **Sales Summary** (1-2 sentences): State total units sold during the period and list main markets.
 
-## IMPORTANT INSTRUCTIONS:
-1. Describe the METHODOLOGY used for PMS, not just results
-2. List all data sources consulted (complaints, literature, registries, etc.)
-3. Include collection frequency and responsible parties
-4. For sales/exposure, provide denominator data quality assessment
-5. DO NOT include [ATOM-xxx] citations - they will be tracked via metadata
-6. Write clean, professional prose without markdown symbols`;
+3. **Sales Table**: Include a table with columns: Region | [12-month periods] | Period Total | % of Global Sales. Use data from evidence records. End with a Worldwide total row.
+
+4. **Population Exposure** (2-3 sentences): State whether the device is single-use, the estimated patient population, and target demographics.
+
+Do NOT write lengthy market analysis. Keep to facts and tables.
+
+## Evidence Records:
+${evidenceRecords}`;
   }
 }

@@ -76,6 +76,10 @@ import { TimeSeriesChartAgent } from "./charts/timeSeriesChartAgent";
 import { DocumentFormatterAgent, DocumentStyle, FormattedDocument } from "./documentFormatterAgent";
 import { emitRuntimeEvent } from "../../orchestrator/workflowRunner";
 
+// Import PSUR analytics context and constraint validator
+import { buildPSURAnalyticsContext, formatAnalyticsForSlot, type PSURAnalyticsContext } from "../../psur/psurAnalyticsContext";
+import { validateNarrativeConstraints } from "../../psur/narrativeConstraintValidator";
+
 // Import live content functions for incremental preview
 let initLiveContent: (psurCaseId: number, slotIds: string[]) => void;
 let updateLiveContent: (psurCaseId: number, slotId: string, title: string, content: string, status: "pending" | "generating" | "done") => void;
@@ -163,6 +167,7 @@ export interface CompiledChart {
   width: number;
   height: number;
   mimeType?: string;
+  sectionId?: string;  // Associates chart with a section for inline placement
 }
 
 export interface CompileOrchestratorResult {
@@ -538,6 +543,51 @@ export class CompileOrchestrator {
       console.log(`[${this.orchestratorId}] Processing ${templateSlots.length} template slots`);
 
       // ═══════════════════════════════════════════════════════════════════════
+      // PHASE 0: ANALYTICS PRE-COMPUTATION (All 5 engines + obligations)
+      // ═══════════════════════════════════════════════════════════════════════
+      console.log(`[${this.orchestratorId}] Phase 0: Running deterministic PSUR engines...`);
+      emitRuntimeEvent(input.psurCaseId, { kind: "analytics.computing", ts: Date.now(), psurCaseId: input.psurCaseId });
+
+      const analyticsAtoms = allAtoms.map(a => ({
+        atomId: a.atomId,
+        evidenceType: a.evidenceType,
+        normalizedData: (a.normalizedData || {}) as Record<string, unknown>,
+      }));
+
+      let analyticsContext: PSURAnalyticsContext | null = null;
+      try {
+        analyticsContext = await buildPSURAnalyticsContext(analyticsAtoms, {
+          psurCaseId: input.psurCaseId,
+          deviceCode: input.deviceCode,
+          deviceName: input.deviceName,
+          periodStart: input.periodStart,
+          periodEnd: input.periodEnd,
+        });
+
+        emitRuntimeEvent(input.psurCaseId, {
+          kind: "analytics.computed",
+          ts: Date.now(),
+          psurCaseId: input.psurCaseId,
+          engines: {
+            complaint: !!analyticsContext.complaintAnalysis,
+            vigilance: !!analyticsContext.vigilanceAnalysis,
+            sales: !!analyticsContext.salesExposure,
+            literature: !!analyticsContext.literatureAnalysis,
+            pmcf: !!analyticsContext.pmcfDecision,
+          },
+          warnings: analyticsContext.engineWarnings,
+        });
+
+        console.log(`[${this.orchestratorId}] Phase 0 complete: analytics context built`);
+        for (const w of analyticsContext.engineWarnings) {
+          warnings.push(`[ENGINE] ${w}`);
+        }
+      } catch (err: any) {
+        console.warn(`[${this.orchestratorId}] Phase 0 failed (non-fatal): ${err.message}`);
+        warnings.push(`[ENGINE] Analytics pre-computation failed: ${err.message}. Agents will use raw evidence only.`);
+      }
+
+      // ═══════════════════════════════════════════════════════════════════════
       // PHASE 1: SEQUENTIAL GENERATION (Narratives & Tables)
       // ═══════════════════════════════════════════════════════════════════════
       console.log(`[${this.orchestratorId}] Phase 1: Generating document sections sequentially...`);
@@ -576,10 +626,11 @@ export class CompileOrchestrator {
             const requiredTypes = this.getRequiredEvidenceTypes(slot);
             const slotAtoms = this.filterAtomsForSlot(allAtoms, requiredTypes);
 
-            // CRITICAL: Synthesis slots (exec summary, benefit-risk, conclusions)
-            // need ALL atoms so canonical metrics can compute from complete dataset.
-            // These agents use getCanonicalMetrics() which needs complaint_record,
-            // sales_volume, etc. that may be filtered out by filterAtomsForSlot.
+            // CRITICAL: Synthesis slots and data-dependent slots need ALL atoms 
+            // so canonical metrics can compute from complete dataset.
+            // These agents use getCanonicalMetrics() or compute counts from evidence
+            // which needs complaint_record, sales_volume, etc. that may be filtered 
+            // out by filterAtomsForSlot.
             const slotId = (slot.slot_id || "").toLowerCase();
             const isSynthesisSlot = 
               slotId.includes("exec") || slotId.includes("summary") ||
@@ -587,7 +638,13 @@ export class CompileOrchestrator {
               slotId.includes("actions_taken") || slotId.includes("conclusion") ||
               slotId.includes("safety") || slotId.includes("pms") ||
               slotId.includes("fsca") || slotId.includes("capa") ||
-              slotId.includes("device") || slotId.includes("scope");
+              slotId.includes("device") || slotId.includes("scope") ||
+              // Add trend (section_g), complaint (section_f), and sales (section_c)
+              // These sections compute metrics from all evidence atoms
+              slotId.includes("trend") || slotId.includes("section_g") ||
+              slotId.includes("complaint") || slotId.includes("section_f") ||
+              slotId.includes("sales") || slotId.includes("section_c") ||
+              slotId.includes("section_d") || slotId.includes("incident");
             const atomsForAgent = isSynthesisSlot ? allAtoms : slotAtoms;
 
             emitRuntimeEvent(input.psurCaseId, { kind: "agent.started", ts: Date.now(), psurCaseId: input.psurCaseId, phase: "narrative", slotId: slot.slot_id, agent: agentName, runId });
@@ -612,6 +669,7 @@ export class CompileOrchestrator {
                 templateId: input.templateId,
                 psurCaseId: input.psurCaseId, // Required for canonical metrics
               },
+              analyticsContext: analyticsContext ?? undefined,
             }, this.createAgentContext(input.psurCaseId, slot.slot_id, {
               deviceCode: input.deviceCode,
               periodStart: input.periodStart,
@@ -619,6 +677,29 @@ export class CompileOrchestrator {
             }));
 
             if (result.success && result.data) {
+              // ── CONSTRAINT VALIDATION: Check MUST_STATE/MUST_CONCLUDE ──
+              if (analyticsContext) {
+                const slotObligations = analyticsContext.slotObligations.get(slot.slot_id);
+                const constraintResult = validateNarrativeConstraints(
+                  slot.slot_id,
+                  result.data.content,
+                  slotObligations
+                );
+                if (!constraintResult.overallPassed) {
+                  for (const mc of constraintResult.missingConstraints) {
+                    warnings.push(
+                      `[CONSTRAINT] ${slot.slot_id}: Missing ${mc.type} - "${mc.requiredText.substring(0, 80)}..."`
+                    );
+                  }
+                }
+                if (constraintResult.score < 100) {
+                  console.log(
+                    `[${this.orchestratorId}] Constraint validation for ${slot.slot_id}: ` +
+                    `${constraintResult.satisfiedConstraints}/${constraintResult.totalConstraints} ` +
+                    `(score: ${constraintResult.score}%)`
+                  );
+                }
+              }
               const sectionData = {
                 slotId: slot.slot_id,
                 title: slot.title,
@@ -839,12 +920,13 @@ export class CompileOrchestrator {
           const allAtomsForCharts = allAtoms.map(a => ({ atomId: a.atomId, evidenceType: a.evidenceType, normalizedData: (a.normalizedData || {}) as Record<string, unknown> }));
 
           // Launch all chart generations in parallel
+          // Each chart is associated with a sectionId for inline placement
           if (trendAtoms.length > 0) {
             chartPromises.push((async () => {
               const agent = new TrendLineChartAgent();
               const result = await agent.run({ atoms: trendAtoms, chartTitle: "Complaint Rate Trend Analysis", style: input.documentStyle }, this.createAgentContext(input.psurCaseId));
               if (result.success && result.data) {
-                return { chartId: `trend-${input.psurCaseId}`, chartType: "trend_line", title: "Complaint Rate Trend Analysis", imageBuffer: result.data.imageBuffer, svg: result.data.svg, width: result.data.width, height: result.data.height, mimeType: result.data.mimeType };
+                return { chartId: `trend-${input.psurCaseId}`, chartType: "trend_line", title: "Complaint Rate Trend Analysis", imageBuffer: result.data.imageBuffer, svg: result.data.svg, width: result.data.width, height: result.data.height, mimeType: result.data.mimeType, sectionId: "trend" };
               }
               return null;
             })());
@@ -855,7 +937,7 @@ export class CompileOrchestrator {
               const agent = new ComplaintBarChartAgent();
               const result = await agent.run({ atoms: complaintAtoms, chartTitle: "Complaint Distribution by Category", style: input.documentStyle }, this.createAgentContext(input.psurCaseId));
               if (result.success && result.data) {
-                return { chartId: `complaints-bar-${input.psurCaseId}`, chartType: "bar_chart", title: "Complaint Distribution by Category", imageBuffer: result.data.imageBuffer, svg: result.data.svg, width: result.data.width, height: result.data.height, mimeType: result.data.mimeType };
+                return { chartId: `complaints-bar-${input.psurCaseId}`, chartType: "bar_chart", title: "Complaint Distribution by Category", imageBuffer: result.data.imageBuffer, svg: result.data.svg, width: result.data.width, height: result.data.height, mimeType: result.data.mimeType, sectionId: "complaint" };
               }
               return null;
             })());
@@ -866,7 +948,7 @@ export class CompileOrchestrator {
               const agent = new DistributionPieChartAgent();
               const result = await agent.run({ atoms: allAtomsForCharts, chartTitle: "Event Severity Distribution", style: input.documentStyle }, this.createAgentContext(input.psurCaseId));
               if (result.success && result.data) {
-                return { chartId: `distribution-pie-${input.psurCaseId}`, chartType: "pie_chart", title: "Event Severity Distribution", imageBuffer: result.data.imageBuffer, svg: result.data.svg, width: result.data.width, height: result.data.height, mimeType: result.data.mimeType };
+                return { chartId: `distribution-pie-${input.psurCaseId}`, chartType: "pie_chart", title: "Event Severity Distribution", imageBuffer: result.data.imageBuffer, svg: result.data.svg, width: result.data.width, height: result.data.height, mimeType: result.data.mimeType, sectionId: "safety" };
               }
               return null;
             })());
@@ -877,7 +959,7 @@ export class CompileOrchestrator {
               const agent = new TimeSeriesChartAgent();
               const result = await agent.run({ atoms: allAtomsForCharts, chartTitle: "Event Timeline", style: input.documentStyle }, this.createAgentContext(input.psurCaseId));
               if (result.success && result.data) {
-                return { chartId: `timeline-${input.psurCaseId}`, chartType: "area_chart", title: "Event Timeline", imageBuffer: result.data.imageBuffer, svg: result.data.svg, width: result.data.width, height: result.data.height, mimeType: result.data.mimeType };
+                return { chartId: `timeline-${input.psurCaseId}`, chartType: "area_chart", title: "Event Timeline", imageBuffer: result.data.imageBuffer, svg: result.data.svg, width: result.data.width, height: result.data.height, mimeType: result.data.mimeType, sectionId: "trend" };
               }
               return null;
             })());
@@ -958,12 +1040,15 @@ export class CompileOrchestrator {
         input.periodEnd
       );
       
-      // Add validation issues to warnings
+      // Add validation issues — only block compilation if score drops critically low (<40%)
+      const validationIsBlocking = validationResult.overallScore < 40;
       for (const issue of validationResult.issues) {
-        if (issue.severity === "ERROR") {
-          errors.push(`[DATA CONSISTENCY] ${issue.description}`);
-        } else if (issue.severity === "WARNING") {
-          warnings.push(`[DATA CONSISTENCY] ${issue.description}`);
+        const sectionLabel = issue.section1 ? `[${issue.section1}] ` : "";
+        if (issue.severity === "ERROR" && validationIsBlocking) {
+          errors.push(`[DATA CONSISTENCY] ${sectionLabel}${issue.description}`);
+        } else {
+          // Downgrade to warning — flag for review but don't block export
+          warnings.push(`[DATA CONSISTENCY] ${sectionLabel}${issue.description}`);
         }
       }
       
@@ -1355,6 +1440,35 @@ IMPORTANT: Do NOT include [ATOM-xxx] citations in the text. Write clean prose.`;
       console.log(`[${this.orchestratorId}] Loaded ${allAtoms.length} evidence atoms for form compilation`);
 
       // ═══════════════════════════════════════════════════════════════════════
+      // PHASE 0: ANALYTICS PRE-COMPUTATION (Form-based path)
+      // ═══════════════════════════════════════════════════════════════════════
+      console.log(`[${this.orchestratorId}] Phase 0 (Form): Running deterministic PSUR engines...`);
+
+      const formAnalyticsAtoms = allAtoms.map((a: any) => ({
+        atomId: a.atomId,
+        evidenceType: a.evidenceType,
+        normalizedData: (a.normalizedData || {}) as Record<string, unknown>,
+      }));
+
+      let formAnalyticsContext: PSURAnalyticsContext | null = null;
+      try {
+        formAnalyticsContext = await buildPSURAnalyticsContext(formAnalyticsAtoms, {
+          psurCaseId: input.psurCaseId,
+          deviceCode: input.deviceCode,
+          deviceName: input.deviceName,
+          periodStart: input.periodStart,
+          periodEnd: input.periodEnd,
+        });
+        console.log(`[${this.orchestratorId}] Phase 0 (Form) complete: analytics context built`);
+        for (const w of formAnalyticsContext.engineWarnings) {
+          warnings.push(`[ENGINE] ${w}`);
+        }
+      } catch (err: any) {
+        console.warn(`[${this.orchestratorId}] Phase 0 (Form) failed (non-fatal): ${err.message}`);
+        warnings.push(`[ENGINE] Analytics pre-computation failed: ${err.message}`);
+      }
+
+      // ═══════════════════════════════════════════════════════════════════════
       // PHASE 1: GENERATE FORM SECTIONS SEQUENTIALLY
       // ═══════════════════════════════════════════════════════════════════════
 
@@ -1402,6 +1516,7 @@ IMPORTANT: Do NOT include [ATOM-xxx] citations in the text. Write clean prose.`;
               templateId: input.templateId,
               psurCaseId: input.psurCaseId, // Required for canonical metrics
             },
+            analyticsContext: formAnalyticsContext ?? undefined,
           }, this.createAgentContext(input.psurCaseId, sectionId, {
             deviceCode: input.deviceCode,
             periodStart: input.periodStart,
@@ -1669,6 +1784,7 @@ ${sectionConfig.requiredTypes.map(t => `- ${t}`).join("\n")}
               width: result.data.width,
               height: result.data.height,
               mimeType: result.data.mimeType,
+              sectionId: "trend",
             });
           }
         } catch (err) {
@@ -1695,6 +1811,7 @@ ${sectionConfig.requiredTypes.map(t => `- ${t}`).join("\n")}
               width: result.data.width,
               height: result.data.height,
               mimeType: result.data.mimeType,
+              sectionId: "complaint",
             });
           }
         } catch (err) {

@@ -326,9 +326,81 @@ export async function getDossierContext(
   periodStart?: string,
   periodEnd?: string
 ): Promise<DossierContext> {
-  const dossier = await getFullDossier(deviceCode);
+  // Handle multi-device codes (comma-separated) - try to find dossier for first device
+  const deviceCodes = deviceCode.split(",").map(c => c.trim()).filter(Boolean);
+  let dossier: FullDeviceDossier | null = null;
+  
+  for (const code of deviceCodes) {
+    dossier = await getFullDossier(code);
+    if (dossier) break;
+  }
+  
   if (!dossier) {
-    throw new Error(`Device dossier required for PSUR generation. No dossier found for device: ${deviceCode}. Create and complete a device dossier first.`);
+    // Return a minimal context that allows generation to proceed without a dossier
+    // This enables analysis based purely on uploaded evidence
+    console.log(`[DossierService] No dossier found for device(s): ${deviceCode}. Proceeding with evidence-only analysis.`);
+    
+    return {
+      productSummary: `Device: ${deviceCode}\n\nNote: No device dossier available. Analysis based on uploaded evidence only.`,
+      clinicalContext: [
+        "## CLINICAL CONTEXT",
+        "",
+        `**Status:** No device dossier available for: ${deviceCode}`,
+        "",
+        "Analysis will proceed using uploaded evidence to derive:",
+        "- Device description from device_registry_record atoms",
+        "- Clinical claims from CER evidence",
+        "- Risk profile from complaint and incident data",
+      ].join("\n"),
+      riskContext: [
+        "## RISK MANAGEMENT CONTEXT",
+        "",
+        `**Status:** No device dossier available for: ${deviceCode}`,
+        "",
+        "**Default Thresholds Applied:**",
+        "- Complaint Rate Alert: >5.0 per 1,000 units",
+        "- Serious Incident Alert: >0 events",
+        "- Signal detection: Standard statistical analysis",
+      ].join("\n"),
+      regulatoryContext: [
+        "## REGULATORY CONTEXT",
+        "",
+        `**Status:** No device dossier available for: ${deviceCode}`,
+        "",
+        "Assumptions:",
+        "- Device subject to EU MDR requirements",
+        "- PSUR format per MDCG 2022/21",
+      ].join("\n"),
+      baselineContext: [
+        "## PERFORMANCE BASELINES",
+        "",
+        "**Status:** No historical baselines available.",
+        "",
+        "This PSUR will establish initial baselines from current period data.",
+      ].join("\n"),
+      priorPsurContext: [
+        "## PRIOR PSUR SUMMARY",
+        "",
+        "**Status:** No prior PSUR on record.",
+        "",
+        "This appears to be the first PSUR for this device family.",
+      ].join("\n"),
+      regulatoryAlignment: buildRegulatoryAlignmentBlock("MDCG_2022_21_ANNEX_I"),
+      regulatoryKnowledgeContext: buildRegulatoryContextForAgents(),
+
+      riskThresholds: {
+        complaintRateThreshold: 5.0,
+        seriousIncidentThreshold: 0,
+        signalDetectionMethod: "Statistical analysis of complaint rates",
+      },
+      clinicalBenefits: [],
+      priorPsurConclusion: null,
+      performanceBaselines: [],
+
+      dossierExists: false,
+      completenessScore: 0,
+      lastUpdated: null,
+    };
   }
 
   // Find the most recent prior PSUR before current period
@@ -702,7 +774,19 @@ function buildProductSummary(dossier: FullDeviceDossier): string {
 function buildClinicalContextString(dossier: FullDeviceDossier): string {
   const { clinicalContext, clinicalEvidence } = dossier;
   if (!clinicalContext) {
-    throw new Error(`Dossier clinical context required for device: ${dossier.core.deviceCode}. Add clinical context in the device dossier.`);
+    // Return informative context instead of throwing
+    return [
+      "## CLINICAL CONTEXT",
+      "",
+      `**Status:** No clinical context record available for device: ${dossier.core.deviceCode}`,
+      "",
+      "**Impact on Analysis:**",
+      "- Intended purpose will be derived from device registry data if available",
+      "- Clinical benefits will be inferred from complaint/incident data",
+      "- State of the art comparisons cannot be performed",
+      "",
+      "**Recommendation:** Add clinical context (intended purpose, indications, PMCF plan) to the device dossier for complete PSUR generation."
+    ].join("\n");
   }
 
   const lines: string[] = ["## CLINICAL CONTEXT"];
@@ -769,7 +853,23 @@ function buildClinicalContextString(dossier: FullDeviceDossier): string {
 function buildRiskContextString(dossier: FullDeviceDossier): string {
   const { riskContext } = dossier;
   if (!riskContext) {
-    throw new Error(`Dossier risk context required for device: ${dossier.core.deviceCode}. Add risk context in the device dossier.`);
+    // Return informative context instead of throwing
+    return [
+      "## RISK MANAGEMENT CONTEXT",
+      "",
+      `**Status:** No risk context record available for device: ${dossier.core.deviceCode}`,
+      "",
+      "**Impact on Analysis:**",
+      "- Principal risks will be inferred from complaint data and literature",
+      "- Risk thresholds will use industry standard values",
+      "- Pre-market occurrence rates not available for comparison",
+      "",
+      "**Default Thresholds Applied:**",
+      "- Complaint Rate Alert: >5.0 per 1,000 units (industry standard)",
+      "- Serious Incident Alert: >0 events (any serious incident flagged)",
+      "",
+      "**Recommendation:** Add risk context (principal risks, thresholds, acceptability criteria) to the device dossier."
+    ].join("\n");
   }
 
   const lines: string[] = ["## RISK MANAGEMENT CONTEXT"];
@@ -820,7 +920,24 @@ function buildRiskContextString(dossier: FullDeviceDossier): string {
 function buildRegulatoryContextString(dossier: FullDeviceDossier): string {
   const { regulatoryHistory } = dossier;
   if (!regulatoryHistory) {
-    throw new Error(`Dossier regulatory history required for device: ${dossier.core.deviceCode}. Add regulatory history in the device dossier.`);
+    // Return informative context instead of throwing
+    return [
+      "## REGULATORY CONTEXT",
+      "",
+      `**Status:** No regulatory history record available for device: ${dossier.core.deviceCode}`,
+      "",
+      "**Impact on Analysis:**",
+      "- Certificate status will be marked as unknown",
+      "- NB commitments cannot be tracked",
+      "- FSCA history cannot be cross-referenced",
+      "",
+      "**Assumptions for this PSUR:**",
+      "- Device is assumed to be CE marked under EU MDR",
+      "- No outstanding NB commitments known",
+      "- FSCA section will rely on uploaded evidence only",
+      "",
+      "**Recommendation:** Add regulatory history (certificates, NB commitments, FSCA history) to the device dossier."
+    ].join("\n");
   }
 
   const lines: string[] = ["## REGULATORY CONTEXT"];
@@ -875,7 +992,19 @@ function buildBaselineContextString(
 ): string {
   const { baselines } = dossier;
   if (!baselines || baselines.length === 0) {
-    throw new Error(`Dossier performance baselines required for device: ${dossier.core.deviceCode}. Add at least one baseline in the device dossier.`);
+    // Return informative context instead of throwing - analysis should proceed without baselines
+    return [
+      "## PERFORMANCE BASELINES",
+      "",
+      "**Status:** No historical baselines available for this device.",
+      "",
+      "**Impact on Analysis:**",
+      "- Trend analysis will use current period data only",
+      "- Complaint rate thresholds will be derived from industry standards",
+      "- Statistical comparisons to prior periods cannot be performed",
+      "",
+      "**Recommendation:** For future PSURs, add performance baselines (complaint rate, incident rate, return rate) to enable trend analysis."
+    ].join("\n");
   }
 
   const lines: string[] = ["## PERFORMANCE BASELINES"];
@@ -918,7 +1047,22 @@ function buildBaselineContextString(
 
 function buildPriorPsurContextString(priorPsur: DossierPriorPsur | null, deviceCode: string): string {
   if (!priorPsur) {
-    throw new Error(`Prior PSUR record required for device: ${deviceCode}. Add prior PSUR period and conclusion in the device dossier.`);
+    // Return informative context instead of throwing - this may be the first PSUR
+    return [
+      "## PRIOR PSUR SUMMARY",
+      "",
+      `**Status:** No prior PSUR record available for device: ${deviceCode}`,
+      "",
+      "**Interpretation:**",
+      "- This may be the first PSUR for this device",
+      "- No prior benefit-risk conclusions available for comparison",
+      "- Baseline metrics should be established from this reporting period",
+      "",
+      "**This PSUR will establish:**",
+      "- Initial complaint rate baseline",
+      "- Initial incident rate baseline",
+      "- First benefit-risk assessment on record"
+    ].join("\n");
   }
 
   const lines: string[] = ["## PRIOR PSUR SUMMARY"];

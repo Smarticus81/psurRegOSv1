@@ -70,7 +70,9 @@ type RuntimeEvent =
   | { kind: "agent.started"; ts: number; psurCaseId: number; phase: string; slotId: string; agent: string; runId: string }
   | { kind: "agent.completed"; ts: number; psurCaseId: number; phase: string; slotId: string; agent: string; runId: string; durationMs: number }
   | { kind: "agent.failed"; ts: number; psurCaseId: number; phase: string; slotId: string; agent: string; runId: string; error: string }
-  | { kind: "agent.destroyed"; ts: number; psurCaseId: number; phase: string; slotId: string; agent: string; runId: string };
+  | { kind: "agent.destroyed"; ts: number; psurCaseId: number; phase: string; slotId: string; agent: string; runId: string }
+  | { kind: "analytics.computing"; ts: number; psurCaseId: number }
+  | { kind: "analytics.computed"; ts: number; psurCaseId: number; engines: Record<string, boolean>; warnings: string[] };
 
 const runtimeStreams = new Map<number, Set<Response>>();
 

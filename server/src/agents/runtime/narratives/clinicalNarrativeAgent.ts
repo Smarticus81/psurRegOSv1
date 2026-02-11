@@ -72,18 +72,38 @@ export class ClinicalNarrativeAgent extends BaseNarrativeAgent {
     let dossierSection = "";
     let sectionGuidance = "";
 
-    if (dossierContext?.dossierExists) {
-      // Get clinical evidence data from dossier (need to fetch from full dossier)
-      // For now, use the clinical context which contains PMCF/literature info
-
-      if (isLiterature) {
-        sectionGuidance = `
+    // Build section guidance based on canonical evidence data
+    if (isLiterature) {
+      sectionGuidance = `
 ## LITERATURE REVIEW FOCUS:
 - Total publications found in evidence: ${literatureAtoms.length}
 - Focus on search methodology and relevant findings
-- Identify any safety signals from literature`;
+- Identify any safety signals from literature
+- Summarize key findings by topic/theme`;
+    } else if (isPMCF) {
+      sectionGuidance = `
+## PMCF FOCUS:
+- Total PMCF records in evidence: ${pmcfAtoms.length}
+- Focus on PMCF activities and data collected
+- Report on clinical endpoints and outcomes
+- Identify any trends or signals requiring attention`;
+    } else if (isExternalDB) {
+      sectionGuidance = `
+## EXTERNAL DATABASE FOCUS:
+- Total external DB records in evidence: ${externalDBAtoms.length}
+- Report on databases searched (MAUDE, EUDAMED, etc.)
+- Summarize search criteria and date ranges
+- Report any relevant events or signals found`;
+    } else {
+      sectionGuidance = `
+## CLINICAL SECTION FOCUS:
+- Synthesize clinical evidence from uploaded data
+- Focus on safety and performance findings`;
+    }
 
-        // Add dossier literature protocol context
+    // Include dossier context if available for richer content
+    if (dossierContext?.dossierExists) {
+      if (isLiterature) {
         dossierSection = `
 ## LITERATURE SEARCH CONTEXT (From Dossier):
 
@@ -91,15 +111,7 @@ ${dossierContext.clinicalContext}
 
 NOTE: Use the search protocol from the dossier to validate that the evidence 
 covers the required databases and search criteria. Document any deviations.`;
-
       } else if (isPMCF) {
-        sectionGuidance = `
-## PMCF FOCUS:
-- Total PMCF records in evidence: ${pmcfAtoms.length}
-- Focus on PMCF plan objectives and activities
-- Report against defined endpoints`;
-
-        // Add dossier PMCF context
         dossierSection = `
 ## PMCF PLAN CONTEXT (From Dossier):
 
@@ -107,14 +119,7 @@ ${dossierContext.clinicalContext}
 
 IMPORTANT: The narrative must address progress against the PMCF plan objectives 
 listed above. Report on each defined endpoint where data is available.`;
-
       } else if (isExternalDB) {
-        sectionGuidance = `
-## EXTERNAL DATABASE FOCUS:
-- Total external DB records in evidence: ${externalDBAtoms.length}
-- Focus on databases searched and search criteria
-- Include any relevant events found`;
-
         dossierSection = `
 ## DEVICE CONTEXT FOR DATABASE SEARCH:
 
@@ -122,9 +127,7 @@ ${dossierContext.productSummary}
 
 Use the device identifiers and intended purpose to ensure external database 
 searches are appropriately scoped.`;
-
       } else {
-        // General clinical section
         dossierSection = `
 ## CLINICAL CONTEXT (From Dossier):
 
@@ -136,8 +139,8 @@ ${dossierContext.clinicalContext}`;
       }
 
       // Add CER conclusions if relevant
-      if (dossierContext.clinicalContext.includes("CER") || 
-          dossierContext.clinicalContext.includes("Clinical Evaluation")) {
+      if (dossierContext.clinicalContext?.includes("CER") || 
+          dossierContext.clinicalContext?.includes("Clinical Evaluation")) {
         dossierSection += `
 
 ---
@@ -146,39 +149,62 @@ ${dossierContext.clinicalContext}`;
 The content should be consistent with conclusions from the most recent 
 Clinical Evaluation Report. Reference the CER where appropriate.`;
       }
-
     } else {
-      throw new Error("Device dossier required for clinical narrative. Create and complete a device dossier first.");
+      // No dossier - rely entirely on canonical evidence data
+      dossierSection = `
+## CANONICAL EVIDENCE DATA ANALYSIS:
+
+No device dossier is configured. Generate the clinical narrative based ENTIRELY 
+on the canonical evidence data provided below. This includes:
+
+- Literature records: ${literatureAtoms.length} items
+- PMCF records: ${pmcfAtoms.length} items  
+- External database records: ${externalDBAtoms.length} items
+
+Analyze ALL evidence records thoroughly and synthesize findings. The evidence 
+data is authoritative and complete for this reporting period.`;
     }
 
-    return `## Section: ${input.slot.title}
-## Section Path: ${input.slot.sectionPath}
-## Purpose: Clinical evidence review and analysis
+    const deviceName = input.context.deviceName || input.context.deviceCode;
 
-## REPORTING PERIOD: ${input.context.periodStart} to ${input.context.periodEnd}
-## DEVICE: ${input.context.deviceCode}
+    let sectionInstruction = "";
+    if (isLiterature) {
+      sectionInstruction = `Generate the Scientific Literature Review section.
+
+Start with: "The literature searches for ${deviceName} resulted in [N] articles specific to the subject devices."
+Then summarize the key findings by topic (complications, outcomes, etc.) referencing studies by Author et al. (Year).
+End with a conclusion about whether the device performance is aligned with state of the art.
+If no literature was found, state that clearly.`;
+    } else if (isPMCF) {
+      sectionInstruction = `Generate the PMCF section.
+
+If no PMCF studies were performed, state: "No clinical investigations or Post Market Clinical Follow-up (PMCF) studies have been performed since the last update of the CER." Then provide a brief list of reasons why no PMCF was needed.
+If PMCF was performed, summarize findings against the defined endpoints.`;
+    } else if (isExternalDB) {
+      sectionInstruction = `Generate the External Databases Review section.
+
+List the databases searched (MAUDE, MHRA, TGA, etc.) with search criteria.
+Include a table of search results showing: Database | Results for Subject Device | Results for Similar Devices.
+Summarize whether any new failure modes or risks were identified.
+If similar devices are mentioned in evidence, list them in a table with: Manufacturer | Location | Device Types.`;
+    } else {
+      sectionInstruction = `Generate the clinical evidence section based on the evidence provided.`;
+    }
+
+    return `${sectionInstruction}
+
+## DATA:
+- Device: ${deviceName}
+- Reporting Period: ${input.context.periodStart} to ${input.context.periodEnd}
+- Literature Records: ${literatureAtoms.length}
+- PMCF Records: ${pmcfAtoms.length}
+- External DB Records: ${externalDBAtoms.length}
 
 ${dossierSection}
 
----
-${sectionGuidance}
+Be concise and factual. Cite studies as "Author et al. (Year)". Do not write verbose introductions.
 
-## Evidence Summary:
-${evidenceSummary}
-
-## Detailed Evidence Records:
-${evidenceRecords}
-
-## CRITICAL INSTRUCTIONS:
-1. Use appropriate scientific/clinical language
-2. Document methodology (search strings, databases, dates) from both evidence AND dossier
-3. If PMCF: Report against the specific endpoints defined in the dossier
-4. If Literature: Validate coverage against the search protocol in dossier
-5. Include specific counts and metrics
-6. Cite publications properly where available (Author, Year)
-7. Clearly identify any safety signals found
-8. Reference CER conclusions where relevant
-9. Write clean, professional prose without markdown symbols
-10. DO NOT use placeholder citations - only cite actual atom IDs from evidence`;
+## Evidence Records:
+${evidenceRecords}`;
   }
 }

@@ -30,12 +30,13 @@ function sha256Hex(input: string): string {
 }
 
 export function makeAtomId(evidenceType: EvidenceType, normalizedData: any): string {
-  const content = JSON.stringify(normalizedData);
+  // Sort keys for deterministic hashing (matches normalize.ts)
+  const content = JSON.stringify(normalizedData, Object.keys(normalizedData || {}).sort());
   return `${evidenceType}:${sha256Hex(content).slice(0, 12)}`;
 }
 
 export function makeContentHash(normalizedData: any): string {
-  return sha256Hex(JSON.stringify(normalizedData));
+  return sha256Hex(JSON.stringify(normalizedData, Object.keys(normalizedData || {}).sort()));
 }
 
 export function coerceEvidenceType(raw: string): EvidenceType {

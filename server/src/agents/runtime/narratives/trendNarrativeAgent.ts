@@ -1,7 +1,7 @@
 /**
  * Trend Narrative Agent
  * 
- * SOTA agent for generating Trend Reporting sections (Article 88).
+ * SOTA agent for generating Trend Reporting sections.
  * Specializes in statistical interpretation and signal detection reasoning.
  * 
  * Uses Device Dossier Context for:
@@ -13,6 +13,7 @@
 
 import { BaseNarrativeAgent, NarrativeInput } from "./baseNarrativeAgent";
 import { type DossierContext } from "../../../services/deviceDossierService";
+import { type AgentRoleContext } from "../../../services/agentRoleContextService";
 
 export class TrendNarrativeAgent extends BaseNarrativeAgent {
   protected readonly sectionType = "TREND";
@@ -59,193 +60,131 @@ export class TrendNarrativeAgent extends BaseNarrativeAgent {
     input: NarrativeInput,
     evidenceSummary: string,
     evidenceRecords: string,
-    dossierContext?: DossierContext
+    dossierContext?: DossierContext,
+    agentRoleContext?: AgentRoleContext
   ): string {
-    // Extract trend-specific data
+    // Use engine-computed data if available, falling back to raw atom counts
+    const analytics = input.analyticsContext;
+    const ca = analytics?.complaintAnalysis;
+    const se = analytics?.salesExposure;
+
+    // Engine-computed values (deterministic, consistent across sections)
+    const currentRate = ca ? ca.metrics.complaintRate : 0;
+    const totalComplaints = ca ? ca.metrics.totalComplaints : input.evidenceAtoms.filter(a => a.evidenceType.includes("complaint")).length;
+    const totalSales = se ? se.metrics.totalUnitsSoldInPeriod : 0;
+    const article88Required = ca ? ca.article88Required : false;
+    const article88Justification = ca ? ca.article88Justification : "No engine data";
+
+    // Trend analysis from engine
+    let trendDataSection = "";
+    if (ca) {
+      const ta = ca.trendAnalysis;
+      trendDataSection = `
+## PRE-COMPUTED STATISTICAL ANALYSIS (Deterministic Engine Output):
+- Mean Rate: ${ta.mean.toFixed(4)} per 1,000 units
+- Standard Deviation: ${ta.stdDev.toFixed(4)}
+- UCL (3-sigma): ${ta.ucl.toFixed(4)}
+- LCL (3-sigma): ${ta.lcl.toFixed(4)}
+- Trend Slope: ${ta.slope.toFixed(6)} (${ta.isIncreasing ? "INCREASING" : "DECREASING"})
+- Statistically Significant: ${ta.isStatisticallySignificant ? "YES" : "NO"}
+- UCL Excursions: ${ta.excursions.length}
+- Article 88 Reporting Required: ${article88Required ? "YES" : "NO"}
+- Article 88 Justification: ${article88Justification}`;
+
+      if (ta.excursions.length > 0) {
+        trendDataSection += "\n- UCL Breach Data Points:";
+        for (const ex of ta.excursions) {
+          trendDataSection += `\n  - ${ex.period}: rate ${ex.observedRate.toFixed(4)} > ${ex.excursionType} threshold ${ex.threshold.toFixed(4)}`;
+        }
+      }
+
+      trendDataSection += "\n- Monthly Data Points:";
+      for (const dp of ta.dataPoints) {
+        const status = dp.rate > ta.ucl ? " [ABOVE UCL]" : "";
+        trendDataSection += `\n  - ${dp.period}: ${dp.count} complaints, rate ${dp.rate.toFixed(4)}${status}`;
+      }
+    } else {
+      trendDataSection = `
+## TREND DATA: No Engine Data Available
+NOTE: Deterministic engines did not produce trend analysis.
+The agent should use raw evidence data for basic trend observations.`;
+    }
+
+    // Check for signals in evidence
     const trendAtoms = input.evidenceAtoms.filter(a =>
       a.evidenceType === "trend_analysis" || a.evidenceType === "signal_log"
     );
-    const complaintAtoms = input.evidenceAtoms.filter(a =>
-      a.evidenceType.includes("complaint")
-    );
-    const incidentAtoms = input.evidenceAtoms.filter(a =>
-      a.evidenceType.includes("incident")
-    );
-    const salesAtoms = input.evidenceAtoms.filter(a =>
-      a.evidenceType.includes("sales")
-    );
+    const signalsDetected = ca
+      ? ca.trendAnalysis.isStatisticallySignificant
+      : trendAtoms.some(a => a.normalizedData.signal_detected === true);
 
-    const totalSales = salesAtoms.reduce((sum, a) => {
-      const qty = Number(a.normalizedData.quantity || a.normalizedData.units_sold || 0);
-      return sum + qty;
-    }, 0);
-
-    const currentRate = totalSales > 0
-      ? (complaintAtoms.length / totalSales) * 1000
-      : 0;
-
-    // Check for signals in evidence
-    const signalsDetected = trendAtoms.some(a =>
-      a.normalizedData.signal_detected === true ||
-      a.normalizedData.significant === true
-    );
-
-    // Build dossier context section for trends
-    let trendContextSection = "";
-    let baselineData = "";
-    let signalAnalysis = "";
-
-    if (dossierContext?.dossierExists) {
-      // Performance baselines from dossier
-      if (dossierContext.performanceBaselines.length > 0) {
-        baselineData = `
-## HISTORICAL BASELINES (From Dossier):`;
-        
-        // Find complaint rate baseline
-        const complaintBaseline = dossierContext.performanceBaselines.find(
-          b => b.metricType === "complaint_rate"
-        );
-        if (complaintBaseline) {
-          const change = complaintBaseline.value !== 0 
-            ? ((currentRate - complaintBaseline.value) / complaintBaseline.value * 100)
-            : 0;
-          const direction = change > 0 ? "INCREASE" : "DECREASE";
-          baselineData += `
-
-### Complaint Rate Baseline:
+    // Build dossier baseline comparison (still uses dossier for historical context)
+    let baselineSection = "";
+    if (dossierContext?.dossierExists && dossierContext.performanceBaselines.length > 0) {
+      baselineSection = "\n## HISTORICAL BASELINES (From Dossier):";
+      const complaintBaseline = dossierContext.performanceBaselines.find(
+        b => b.metricType === "complaint_rate"
+      );
+      if (complaintBaseline) {
+        const change = complaintBaseline.value !== 0
+          ? ((currentRate - complaintBaseline.value) / complaintBaseline.value * 100)
+          : 0;
+        const direction = change > 0 ? "INCREASE" : "DECREASE";
+        baselineSection += `
 - Baseline Period: ${complaintBaseline.periodStart?.split("T")[0]} to ${complaintBaseline.periodEnd?.split("T")[0]}
 - Baseline Rate: ${complaintBaseline.value} per 1,000 units
-- Current Rate: ${currentRate.toFixed(2)} per 1,000 units
-- Change: ${Math.abs(change).toFixed(1)}% ${direction}
-${complaintBaseline.methodology ? `- Methodology: ${complaintBaseline.methodology}` : ""}`;
-        }
-
-        // Find incident rate baseline
-        const incidentBaseline = dossierContext.performanceBaselines.find(
-          b => b.metricType === "incident_rate"
-        );
-        if (incidentBaseline) {
-          const currentIncidentRate = totalSales > 0 
-            ? (incidentAtoms.length / totalSales) * 1000 
-            : 0;
-          const change = incidentBaseline.value !== 0
-            ? ((currentIncidentRate - incidentBaseline.value) / incidentBaseline.value * 100)
-            : 0;
-          const direction = change > 0 ? "INCREASE" : "DECREASE";
-          baselineData += `
-
-### Incident Rate Baseline:
-- Baseline Rate: ${incidentBaseline.value} per 1,000 units
-- Current Rate: ${currentIncidentRate.toFixed(4)} per 1,000 units
+- Current Rate (Engine): ${currentRate.toFixed(2)} per 1,000 units
 - Change: ${Math.abs(change).toFixed(1)}% ${direction}`;
-        }
       }
 
-      // Signal detection thresholds
       if (dossierContext.riskThresholds) {
         const threshold = dossierContext.riskThresholds.complaintRateThreshold;
-        const complaintBaseline = dossierContext.performanceBaselines.find(
-          b => b.metricType === "complaint_rate"
-        );
-        
-        // Determine signal status
-        let signalStatus = "NO SIGNAL DETECTED";
-        let signalReason = "";
-        
-        if (totalSales > 0) {
-          // Check against threshold
-          if (currentRate > threshold) {
-            signalStatus = "SIGNAL DETECTED - Above Threshold";
-            signalReason = `Current rate (${currentRate.toFixed(2)}) exceeds threshold (${threshold})`;
-          }
-          // Check against 2x baseline if available
-          else if (complaintBaseline && currentRate > complaintBaseline.value * 2) {
-            signalStatus = "SIGNAL DETECTED - >2x Baseline";
-            signalReason = `Current rate (${currentRate.toFixed(2)}) exceeds 2x baseline (${(complaintBaseline.value * 2).toFixed(2)})`;
-          }
-        }
+        const status = currentRate > threshold
+          ? "SIGNAL DETECTED - Above Threshold"
+          : "NO SIGNAL DETECTED";
+        baselineSection += `
 
-        signalAnalysis = `
-
-## SIGNAL DETECTION ANALYSIS:
-- Detection Method: ${dossierContext.riskThresholds.signalDetectionMethod}
+## SIGNAL DETECTION (Dossier Thresholds):
 - Defined Threshold: ${threshold} per 1,000 units
-${complaintBaseline ? `- 2x Baseline Threshold: ${(complaintBaseline.value * 2).toFixed(2)} per 1,000 units` : ""}
-- Current Rate: ${currentRate.toFixed(2)} per 1,000 units
-
-### SIGNAL STATUS: ${signalStatus}
-${signalReason ? `Reason: ${signalReason}` : "Current rates are within acceptable limits based on defined thresholds."}`;
+- Current Rate (Engine): ${currentRate.toFixed(2)} per 1,000 units
+- Status: ${status}
+- Method: ${dossierContext.riskThresholds.signalDetectionMethod}`;
       }
-
-      // Prior period comparison
-      if (dossierContext.priorPsurConclusion?.periodMetrics) {
-        const priorRate = dossierContext.priorPsurConclusion.periodMetrics.complaintRate;
-        if (priorRate !== undefined) {
-          const priorChange = priorRate !== 0 
-            ? ((currentRate - priorRate) / priorRate * 100)
-            : 0;
-          const priorDirection = priorChange > 0 ? "INCREASE" : "DECREASE";
-          trendContextSection += `
-
-## PRIOR PSUR PERIOD COMPARISON:
-- Prior Period: ${dossierContext.priorPsurConclusion.periodStart?.split("T")[0]} to ${dossierContext.priorPsurConclusion.periodEnd?.split("T")[0]}
-- Prior Complaint Rate: ${priorRate} per 1,000 units
-- Current Complaint Rate: ${currentRate.toFixed(2)} per 1,000 units
-- Period-over-Period Change: ${Math.abs(priorChange).toFixed(1)}% ${priorDirection}`;
-        }
-      }
-    } else {
-      trendContextSection = `
-## TREND CONTEXT: Limited Baseline Data
-
-NOTE: No device dossier found with historical baselines.
-Trend analysis is limited to evidence data only.
-
-Consider creating a device dossier with performance baselines to enable:
-- Multi-period trend comparison
-- Statistical signal detection against defined thresholds
-- Proper Article 88 compliance with documented methodology`;
     }
 
-    return `## Section: ${input.slot.title}
-## Section Path: ${input.slot.sectionPath}
-## Purpose: Article 88 trend reporting and signal detection analysis
+    const deviceName = input.context.deviceName || input.context.deviceCode;
+    const noExcursions = !ca || ca.trendAnalysis.excursions.length === 0;
 
-## REPORTING PERIOD: ${input.context.periodStart} to ${input.context.periodEnd}
-## DEVICE: ${input.context.deviceCode}
+    return `Generate the Trend Reporting section. Be concise and factual.
 
-${baselineData}
-${signalAnalysis}
-${trendContextSection}
+## DATA:
+- Device: ${deviceName}
+- Reporting Period: ${input.context.periodStart} to ${input.context.periodEnd}
+- Total Complaints: ${totalComplaints}
+- Total Units Sold: ${totalSales.toLocaleString()}
+- Current Complaint Rate: ${currentRate.toFixed(4)} per 1,000 units
+- Signal Detected: ${signalsDetected ? "YES" : "No"}
 
----
+${trendDataSection}
 
-## CURRENT PERIOD DATA:
-- Current Complaint Rate: ${currentRate.toFixed(2)} per 1,000 units
-- Total Complaints: ${complaintAtoms.length}
-- Total Incidents: ${incidentAtoms.length}
-- Total Units (denominator): ${totalSales.toLocaleString()}
-- Pre-computed Trend Records: ${trendAtoms.length}
-- Signals in Evidence Data: ${signalsDetected ? "YES" : "No"}
+${baselineSection}
 
-## Evidence Summary:
-${evidenceSummary}
+## REQUIRED OUTPUT FORMAT:
+Write 2-3 short paragraphs maximum:
 
-## Detailed Evidence Records:
-${evidenceRecords}
+1. **Methodology** (1-2 sentences): State that complaint rate trending was performed monthly. The UCL was established at three standard deviations above the average.
 
-## CRITICAL INSTRUCTIONS FOR TREND REPORTING:
-1. Article 88 REQUIRES trend reporting - this is MANDATORY compliance
-2. USE the baseline data from dossier as the comparison reference
-3. APPLY the signal detection method specified in the dossier
-4. COMPARE current rates against both thresholds AND baselines
-5. Calculate percentage change with proper direction (increase/decrease)
-6. CLEARLY STATE the signal detection outcome:
-   - "No statistically significant trend detected" OR
-   - "Signal detected: [describe what was found]"
-7. If signal detected, specify required follow-up actions
-8. If NO baseline data available, explicitly state this is a compliance gap
-9. Reference the methodology used (from dossier or state if none defined)
-10. DO NOT use placeholder citations - only cite actual atom IDs from evidence`;
+2. **Analysis** (1-2 sentences): ${noExcursions
+      ? "State that no monthly complaint rate exceeded the UCL during the reporting period."
+      : "Describe each month where the complaint rate exceeded the UCL, state the rate and UCL values, describe the device problems, and note whether the rate returned to normal."}
+
+3. **Conclusion** (1-2 sentences): ${signalsDetected
+      ? "State that a statistically significant trend was detected and describe what action is being taken."
+      : "State: 'Because there is no indication of a significant increase in the frequency or severity of incidents that are expected to have a significant impact on the benefit-risk profile, a trend report is not needed. The monthly complaint rate will continue to be monitored through monthly complaint trending activities.'"}
+
+Do NOT write more than 3 paragraphs. Do NOT repeat data as bullet lists.
+
+## Evidence Records:
+${evidenceRecords}`;
   }
 }

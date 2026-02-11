@@ -1296,6 +1296,17 @@ export class DocumentFormatterAgent extends BaseAgent<DocumentFormatterInput, Fo
   ): (Paragraph | Table)[] {
     const content: (Paragraph | Table)[] = [];
     let lastMajorSection = "";
+    let figureCounter = 1;
+
+    // Build chart lookup by sectionId for inline placement
+    const chartsBySectionId = new Map<string, CompiledChart[]>();
+    for (const chart of charts) {
+      if (chart.sectionId) {
+        const existing = chartsBySectionId.get(chart.sectionId) || [];
+        existing.push(chart);
+        chartsBySectionId.set(chart.sectionId, existing);
+      }
+    }
 
     for (const section of sections) {
       // Parse section path for hierarchy - use " > " as delimiter
@@ -1330,8 +1341,8 @@ export class DocumentFormatterAgent extends BaseAgent<DocumentFormatterInput, Fo
               font: this.style.fonts.heading,
               size: this.style.sizes[`h${headingLevel}` as keyof typeof this.style.sizes] * 2,
               bold: true,
-              color: headingLevel === 1 ? this.style.colors.primary : 
-                     headingLevel === 2 ? this.style.colors.secondary : 
+              color: headingLevel === 1 ? this.style.colors.primary :
+                     headingLevel === 2 ? this.style.colors.secondary :
                      this.style.colors.text,
             }),
             new BookmarkEnd(bookmarkId),
@@ -1372,8 +1383,58 @@ export class DocumentFormatterAgent extends BaseAgent<DocumentFormatterInput, Fo
         content.push(...paragraphs);
       }
 
+      // Insert inline charts that belong to this section
+      const slotLower = (section.slotId || "").toLowerCase();
+      const titleLower = (section.title || "").toLowerCase();
+      const sectionKeywords = [slotLower, titleLower].join(" ");
+
+      // Match charts to sections by sectionId keyword matching
+      for (const [sectionId, sectionCharts] of Array.from(chartsBySectionId.entries())) {
+        const matches = sectionKeywords.includes(sectionId);
+        if (matches) {
+          for (const chart of sectionCharts) {
+            content.push(
+              new Paragraph({
+                spacing: { before: 200 },
+                children: [
+                  new TextRun({
+                    text: `Figure ${figureCounter}: ${chart.title}`,
+                    bold: true,
+                    font: this.style.fonts.body,
+                    size: this.style.sizes.body * 2,
+                  }),
+                ],
+              })
+            );
+            content.push(
+              new Paragraph({
+                alignment: AlignmentType.CENTER,
+                children: [
+                  new ImageRun({
+                    data: chart.imageBuffer,
+                    transformation: {
+                      width: Math.min(chart.width, 550),
+                      height: Math.min(chart.height, 380),
+                    },
+                    type: "png",
+                    altText: {
+                      title: chart.title,
+                      description: `Figure ${figureCounter}: ${chart.title}`,
+                      name: `chart_${figureCounter}`,
+                    },
+                  }),
+                ],
+              })
+            );
+            figureCounter++;
+          }
+          // Remove from map so they don't appear in appendix
+          chartsBySectionId.delete(sectionId);
+        }
+      }
+
       // Evidence citation footnote - only if we have valid atom IDs
-      const validAtomIds = section.evidenceAtomIds.filter(id => 
+      const validAtomIds = section.evidenceAtomIds.filter(id =>
         id && id.length > 8 && !id.includes("xxx") && !id.startsWith("ATOM-00")
       );
       if (validAtomIds.length > 0) {
@@ -1439,10 +1500,20 @@ export class DocumentFormatterAgent extends BaseAgent<DocumentFormatterInput, Fo
 
     for (const block of blocks) {
       let trimmed = block.trim();
-      
+
       // Skip empty blocks
       if (!trimmed) continue;
-      
+
+      // Handle markdown tables embedded in narrative content
+      if (trimmed.includes("|") && trimmed.split("\n").filter(l => l.trim().startsWith("|")).length >= 2) {
+        const table = this.buildTableFromMarkdown(trimmed, "");
+        if (table) {
+          // Cast to any to push Table into Paragraph[] — DOCX builder accepts both
+          paragraphs.push(table as any);
+          continue;
+        }
+      }
+
       // Handle markdown sub-headings within content (### Heading)
       if (/^#{2,4}\s+/.test(trimmed)) {
         const headingMatch = trimmed.match(/^(#{2,4})\s+(.+)/);
@@ -1601,7 +1672,9 @@ export class DocumentFormatterAgent extends BaseAgent<DocumentFormatterInput, Fo
 
     const rows: string[][] = [];
     for (const line of lines) {
-      if (line.includes("---")) continue;
+      // Skip separator rows (e.g., |---|---|---|)
+      if (/^[\s|:-]+$/.test(line.replace(/-/g, ""))) continue;
+      if (line.replace(/[|\s-]/g, "").length === 0) continue;
       const cells = line.split("|").map(c => c.trim()).filter(c => c !== "");
       if (cells.length > 0) {
         rows.push(cells);
@@ -1613,6 +1686,17 @@ export class DocumentFormatterAgent extends BaseAgent<DocumentFormatterInput, Fo
     const headers = rows[0];
     const dataRows = rows.slice(1);
     const columnCount = headers.length;
+
+    // Pad rows with fewer columns to match header count
+    for (const row of dataRows) {
+      while (row.length < columnCount) {
+        row.push("-");
+      }
+      // Truncate rows with more columns than headers
+      if (row.length > columnCount) {
+        row.length = columnCount;
+      }
+    }
 
     return new Table({
       width: { size: 100, type: WidthType.PERCENTAGE },
@@ -1686,7 +1770,9 @@ export class DocumentFormatterAgent extends BaseAgent<DocumentFormatterInput, Fo
   private buildAppendices(charts: CompiledChart[], metadata: DocumentMetadata): (Paragraph | Table)[] {
     const content: (Paragraph | Table)[] = [];
 
-    if (charts.length === 0) return content;
+    // Only include charts that weren't placed inline (those without sectionId)
+    const unplacedCharts = charts.filter(c => !c.sectionId);
+    if (unplacedCharts.length === 0) return content;
 
     content.push(new Paragraph({ children: [new PageBreak()] }));
     content.push(
@@ -1696,17 +1782,16 @@ export class DocumentFormatterAgent extends BaseAgent<DocumentFormatterInput, Fo
       })
     );
 
-    for (let i = 0; i < charts.length; i++) {
-      const chart = charts[i];
-      
+    for (let i = 0; i < unplacedCharts.length; i++) {
+      const chart = unplacedCharts[i];
+
       content.push(
         new Paragraph({
-          text: `Figure ${i + 1}: ${chart.title}`,
+          text: `Figure: ${chart.title}`,
           heading: HeadingLevel.HEADING_3,
         })
       );
 
-      // Chart image with alt text for accessibility
       const altText = `Chart showing ${chart.title} for device ${metadata.deviceCode} during period ${metadata.periodStart} to ${metadata.periodEnd}`;
       this.accessibilityReport.altTextCount++;
 
@@ -1724,20 +1809,19 @@ export class DocumentFormatterAgent extends BaseAgent<DocumentFormatterInput, Fo
               altText: {
                 title: chart.title,
                 description: altText,
-                name: `chart_${i + 1}`,
+                name: `chart_appendix_${i + 1}`,
               },
             }),
           ],
         })
       );
 
-      // Caption
       content.push(
         new Paragraph({
           style: "Caption",
           children: [
             new TextRun({
-              text: `Figure ${i + 1}: ${chart.title}`,
+              text: `Figure: ${chart.title}`,
               italics: true,
             }),
           ],

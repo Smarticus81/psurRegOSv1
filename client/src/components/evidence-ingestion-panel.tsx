@@ -398,13 +398,13 @@ export function EvidenceIngestionPanel({
           const typesArray = Array.from(selectedTypes);
           const filteredEvidence = data.evidence
             .filter((e: ExtractedEvidence) => typesArray.includes(e.evidenceType))
-            .map((e: ExtractedEvidence) => ({ 
-              ...e, 
-              selected: e.confidence >= 0.6 
+            .map((e: ExtractedEvidence) => ({
+              ...e,
+              selected: true // Select ALL extracted evidence by default
             }));
-          
+
           console.log(`[Extract] Got ${data.evidence.length} total, filtered to ${filteredEvidence.length} for selected types`);
-          
+
           const result: ExtractionResult = {
             filename: file.name,
             success: true,
@@ -418,11 +418,10 @@ export function EvidenceIngestionPanel({
             },
           };
           newResults.push(result);
-          
-          // Auto-select high confidence evidence
-          const selected = result.evidence.filter((e: ExtractedEvidence) => e.confidence >= 0.6);
-          if (selected.length > 0) {
-            setSelectedEvidence(prev => new Map(prev.set(file.name, selected)));
+
+          // Auto-select ALL extracted evidence (user can deselect if needed)
+          if (filteredEvidence.length > 0) {
+            setSelectedEvidence(prev => new Map(prev.set(file.name, filteredEvidence)));
           }
         } else {
           const error = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
@@ -510,16 +509,15 @@ export function EvidenceIngestionPanel({
             filename: file.name,
             success: true,
             evidenceCount: data.evidenceCount,
-            evidence: data.evidence.map((e: ExtractedEvidence) => ({ ...e, selected: e.confidence >= 0.6 })),
+            evidence: data.evidence.map((e: ExtractedEvidence) => ({ ...e, selected: true })),
             suggestions: data.suggestions,
             documentInfo: data.documentInfo,
           };
           newResults.push(result);
-          
-          // Auto-select high confidence evidence
-          const selected = result.evidence.filter(e => e.confidence >= 0.6);
-          if (selected.length > 0) {
-            setSelectedEvidence(prev => new Map(prev.set(file.name, selected)));
+
+          // Auto-select ALL extracted evidence (user can deselect if needed)
+          if (result.evidence.length > 0) {
+            setSelectedEvidence(prev => new Map(prev.set(file.name, result.evidence)));
           }
         } else {
           const error = await res.json();

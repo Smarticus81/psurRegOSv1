@@ -133,7 +133,7 @@ export class SafetyNarrativeAgent extends BaseNarrativeAgent {
 - CAPAs: ${va.narrativeBlocks.capaStatement}`;
     }
 
-    // Complaint engine narrative blocks
+    // Complaint engine narrative blocks + confirmed/unconfirmed
     let complaintNarrativeSection = "";
     if (ca) {
       complaintNarrativeSection = `
@@ -141,12 +141,56 @@ export class SafetyNarrativeAgent extends BaseNarrativeAgent {
 - Total Complaints: ${ca.metrics.totalComplaints}
 - Device-Related: ${ca.metrics.totalDeviceRelated}
 - Patient Injury: ${ca.metrics.totalPatientInjury}
-- Complaint Rate: ${ca.metrics.complaintRate.toFixed(2)} per 1,000 units`;
+- Combined Complaint Rate: ${ca.metrics.complaintRate.toFixed(2)} per 1,000 units`;
+
+      // Confirmed/unconfirmed breakdown
+      const cm = ca.confirmedMetrics;
+      if (cm) {
+        complaintNarrativeSection += `
+
+## CONFIRMED vs. UNCONFIRMED BREAKDOWN:
+- Confirmed Product Defects: ${cm.confirmedComplaints} (${cm.confirmedPercentage.toFixed(1)}%)
+- Confirmed Defect Rate: ${cm.confirmedRate.toFixed(4)} per 1,000 units (PRIMARY SAFETY METRIC)
+- Unconfirmed (Inconclusive): ${cm.unconfirmedComplaints} (${cm.unconfirmedPercentage.toFixed(1)}%)
+- External Cause (Shipping/User): ${cm.externalCauseComplaints} (${cm.externalCausePercentage.toFixed(1)}%)
+NOTE: Use confirmed defect rate for safety assessment. Combined rate is for regulatory comparison only.`;
+      }
 
       if (ca.metrics.byCategory.length > 0) {
         complaintNarrativeSection += "\n- Top Categories:";
         for (const cat of ca.metrics.byCategory.slice(0, 5)) {
           complaintNarrativeSection += `\n  - ${cat.category}: ${cat.count} (${cat.percentage.toFixed(1)}%)`;
+        }
+      }
+    }
+
+    // Segmentation analysis
+    let segmentationSection = "";
+    const seg = analytics?.segmentationAnalysis;
+    if (seg && seg.significantSegments.length > 0) {
+      segmentationSection = `
+## SEGMENTATION ALERTS (Engine-Computed):`;
+      for (const alert of seg.significantSegments) {
+        segmentationSection += `\n- [${alert.segmentType.toUpperCase()}] ${alert.segmentId}: ${alert.alertReason}`;
+        segmentationSection += `\n  Action: ${alert.recommendedAction}`;
+      }
+    }
+
+    // Root cause clusters
+    let rootCauseSection = "";
+    const rc = analytics?.rootCauseClusters;
+    if (rc && rc.clusters.length > 0) {
+      rootCauseSection = `
+## ROOT CAUSE PATTERN CLUSTERS:`;
+      for (const cluster of rc.clusters) {
+        rootCauseSection += `\n- Cluster: "${cluster.theme}" (${cluster.complaintCount} complaints)`;
+        rootCauseSection += `\n  Hypothesis: ${cluster.rootCauseHypothesis}`;
+        rootCauseSection += `\n  Recommended Action: ${cluster.recommendedAction}`;
+      }
+      if (rc.insights.length > 0) {
+        rootCauseSection += "\n- Insights:";
+        for (const insight of rc.insights) {
+          rootCauseSection += `\n  - ${insight}`;
         }
       }
     }
@@ -179,7 +223,7 @@ ${dossierContext.riskContext}
     const totalComplaints = metrics.complaints.totalCount.formatted;
     const seriousIncidents = metrics.incidents.seriousCount.formatted;
 
-    return `Generate the Serious Incidents section. Be concise — state facts directly.
+    return `Generate the Safety Analysis section. Be concise — state facts directly with exact numbers.
 
 ## DATA:
 - Device: ${deviceName}
@@ -195,17 +239,35 @@ ${vigilanceSection}
 
 ${complaintNarrativeSection}
 
+${segmentationSection}
+
+${rootCauseSection}
+
 ${riskContextSection}
 
 ## REQUIRED OUTPUT FORMAT:
-1. Start with ONE sentence stating the total complaints and how they were evaluated: "During the data collection period [dates], [N] product complaints were reported. All reported complaints were evaluated for Serious Incidents and there are [N] serious incidents."
 
-2. Then include three IMDRF tables by region. If zero incidents, each cell should read "N/A-No serious incident" with count 0 and rate 0%:
+1. **Complaint Summary Paragraph:**
+   State total complaints, sales volume, and combined complaint rate. Then distinguish confirmed vs. unconfirmed. State the confirmed defect rate as the primary safety metric.
+
+2. **Serious Incidents:**
+   Start with: "All reported complaints were evaluated for Serious Incidents. There are [N] serious incidents."
+   Include three IMDRF tables by region. If zero incidents, each cell should read "N/A-No serious incident" with count 0 and rate 0%.
    - Table: Serious incidents by IMDRF Annex A (Medical Device Problem) by region
    - Table: Serious incidents by IMDRF Annex C (Cause Investigation) by region
    - Table: Serious incidents by IMDRF Annex F (Health Impact) by region
 
-3. If there ARE incidents, list them with IMDRF codes, complaint numbers, regions, and outcomes.
+3. **Segmentation Findings (if alerts exist):**
+   Discuss any regional, product, or lot-specific patterns that were flagged. Explain significance and actions taken.
+
+4. **Root Cause Pattern Analysis (if clusters identified):**
+   Describe identified clusters even when individual root causes are inconclusive. Link to CAPAs.
+
+5. **Statistical Trending:**
+   Reference UCL analysis. State whether complaint rate is "In Control".
+
+6. **Conclusion:**
+   State overall safety assessment. Reference confirmed defect rate vs. RMF threshold.
 
 ## Evidence Records:
 ${evidenceRecords}`;

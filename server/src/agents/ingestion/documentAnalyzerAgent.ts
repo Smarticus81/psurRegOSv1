@@ -111,17 +111,20 @@ const EVIDENCE_SIGNATURES: Record<string, {
   semanticIndicators: string[];
   minConfidenceThreshold: number;
 }> = {
-  sales_volume: {
+  // ── Category 1: Device Master Data ──
+  device_identification: {
     headerPatterns: [
-      /sales|sold|units|quantity|volume|revenue/i,
-      /region|country|market|territory/i,
-      /period|quarter|month|year/i,
+      /device|product|model/i,
+      /udi|gmdn|classification/i,
+      /manufacturer|registration/i,
     ],
-    contentKeywords: ["sales", "units sold", "volume", "revenue", "distribution", "shipped", "market share"],
-    structurePatterns: ["table with regional breakdown", "sales summary", "distribution data"],
-    semanticIndicators: ["commercial data", "sales figures", "market penetration", "usage statistics"],
+    contentKeywords: ["device", "model", "udi", "catalog", "registration", "manufacturer", "classification", "gmdn"],
+    structurePatterns: ["device registry", "product catalog", "registration data"],
+    semanticIndicators: ["device identification", "product registration", "regulatory status"],
     minConfidenceThreshold: 0.5,
   },
+
+  // ── Category 2: Complaints ──
   complaint_record: {
     headerPatterns: [
       /complaint|issue|feedback|problem/i,
@@ -133,6 +136,19 @@ const EVIDENCE_SIGNATURES: Record<string, {
     semanticIndicators: ["customer complaint", "quality issue", "product concern", "user feedback"],
     minConfidenceThreshold: 0.5,
   },
+  complaint_investigation: {
+    headerPatterns: [
+      /investigation|root.?cause|findings/i,
+      /confirmed|determination/i,
+      /corrective.?action|resolution/i,
+    ],
+    contentKeywords: ["investigation", "root cause", "confirmed", "findings", "determination", "corrective action"],
+    structurePatterns: ["investigation report", "root cause analysis", "complaint investigation"],
+    semanticIndicators: ["complaint investigation", "root cause determination", "investigation findings"],
+    minConfidenceThreshold: 0.5,
+  },
+
+  // ── Category 3: Vigilance ──
   serious_incident_record: {
     headerPatterns: [
       /incident|adverse|mdr|vigilance/i,
@@ -144,6 +160,43 @@ const EVIDENCE_SIGNATURES: Record<string, {
     semanticIndicators: ["medical device incident", "patient harm", "serious adverse event", "reportable event"],
     minConfidenceThreshold: 0.4,
   },
+  serious_incident_investigation: {
+    headerPatterns: [
+      /investigation|root.?cause|analysis/i,
+      /actions.?taken|outcome/i,
+      /incident.?investigation/i,
+    ],
+    contentKeywords: ["investigation", "root cause", "analysis", "actions taken", "incident investigation"],
+    structurePatterns: ["incident investigation report", "root cause analysis", "investigation summary"],
+    semanticIndicators: ["incident root cause analysis", "investigation outcome", "actions taken"],
+    minConfidenceThreshold: 0.5,
+  },
+  vigilance_submission_log: {
+    headerPatterns: [
+      /submission|eudamed|competent.?authority/i,
+      /notification|timeline|regulatory/i,
+      /report.?status/i,
+    ],
+    contentKeywords: ["submission", "eudamed", "competent authority", "notification", "timeline", "regulatory report"],
+    structurePatterns: ["submission log", "vigilance reporting", "regulatory notification"],
+    semanticIndicators: ["vigilance submission", "regulatory notification", "eudamed report"],
+    minConfidenceThreshold: 0.5,
+  },
+
+  // ── Category 4: Sales ──
+  sales_transactions: {
+    headerPatterns: [
+      /sales|sold|units|quantity|volume|revenue/i,
+      /region|country|market|territory/i,
+      /period|quarter|month|year/i,
+    ],
+    contentKeywords: ["sales", "units sold", "volume", "revenue", "distribution", "shipped", "market share", "transaction"],
+    structurePatterns: ["table with regional breakdown", "sales summary", "distribution data"],
+    semanticIndicators: ["commercial data", "sales figures", "market penetration", "usage statistics"],
+    minConfidenceThreshold: 0.5,
+  },
+
+  // ── Category 5: FSCA ──
   fsca_record: {
     headerPatterns: [
       /fsca|field.?safety|corrective.?action|recall/i,
@@ -155,18 +208,43 @@ const EVIDENCE_SIGNATURES: Record<string, {
     semanticIndicators: ["field safety corrective action", "product recall", "safety advisory"],
     minConfidenceThreshold: 0.5,
   },
+  fsca_effectiveness: {
+    headerPatterns: [
+      /effectiveness|completion|retrieved/i,
+      /verification|percent|progress/i,
+      /fsca.*effect/i,
+    ],
+    contentKeywords: ["effectiveness", "completion", "retrieved", "verification", "fsca effectiveness"],
+    structurePatterns: ["effectiveness check", "fsca completion", "retrieval status"],
+    semanticIndicators: ["fsca effectiveness verification", "retrieval progress", "completion tracking"],
+    minConfidenceThreshold: 0.5,
+  },
+
+  // ── Category 6: CAPA ──
   capa_record: {
     headerPatterns: [
       /capa|corrective|preventive/i,
       /root.?cause|investigation/i,
       /effectiveness|verification/i,
     ],
-    contentKeywords: ["capa", "corrective action", "preventive action", "root cause", "ncr", "non-conformance"],
+    contentKeywords: ["capa", "corrective action", "preventive action", "root cause", "improvement"],
     structurePatterns: ["capa log", "corrective action tracker", "improvement register"],
-    semanticIndicators: ["corrective and preventive action", "quality improvement", "non-conformance resolution"],
+    semanticIndicators: ["corrective and preventive action", "quality improvement"],
     minConfidenceThreshold: 0.5,
   },
-  pmcf_result: {
+  ncr_record: {
+    headerPatterns: [
+      /ncr|non.?conform|deviation/i,
+      /nonconformity|non.?conformity/i,
+    ],
+    contentKeywords: ["ncr", "non-conformance", "deviation", "nonconformity", "non-conformity"],
+    structurePatterns: ["ncr log", "deviation register", "non-conformance tracker"],
+    semanticIndicators: ["non-conformance report", "quality deviation", "process deviation"],
+    minConfidenceThreshold: 0.5,
+  },
+
+  // ── Category 9: PMCF ──
+  pmcf_results: {
     headerPatterns: [
       /pmcf|post.?market|clinical.?follow/i,
       /study|registry|survey/i,
@@ -177,7 +255,9 @@ const EVIDENCE_SIGNATURES: Record<string, {
     semanticIndicators: ["post-market clinical follow-up", "real-world evidence", "clinical registry"],
     minConfidenceThreshold: 0.5,
   },
-  literature_result: {
+
+  // ── Category 10: Literature ──
+  literature_findings: {
     headerPatterns: [
       /literature|publication|article|journal/i,
       /pubmed|embase|cochrane|medline/i,
@@ -188,29 +268,22 @@ const EVIDENCE_SIGNATURES: Record<string, {
     semanticIndicators: ["systematic literature review", "scientific publication", "peer-reviewed article"],
     minConfidenceThreshold: 0.5,
   },
-  device_registry_record: {
+
+  // ── Category 11: PMS ──
+  pms_activity_log: {
     headerPatterns: [
-      /device|product|model/i,
-      /udi|gmdn|classification/i,
-      /manufacturer|registration/i,
+      /pms|surveillance|monitoring/i,
+      /activity|planned|actual/i,
+      /post.?market/i,
     ],
-    contentKeywords: ["device", "model", "udi", "catalog", "registration", "manufacturer", "classification"],
-    structurePatterns: ["device registry", "product catalog", "registration data"],
-    semanticIndicators: ["device identification", "product registration", "regulatory status"],
+    contentKeywords: ["pms", "surveillance", "activity", "monitoring", "post-market surveillance"],
+    structurePatterns: ["pms activity log", "surveillance tracker", "activity register"],
+    semanticIndicators: ["post-market surveillance activity", "pms monitoring", "surveillance plan execution"],
     minConfidenceThreshold: 0.5,
   },
-  benefit_risk_assessment: {
-    headerPatterns: [
-      /benefit|risk|assessment/i,
-      /acceptable|residual|mitigation/i,
-      /conclusion|determination/i,
-    ],
-    contentKeywords: ["benefit", "risk", "assessment", "acceptable", "residual", "mitigation", "favorable"],
-    structurePatterns: ["benefit-risk analysis", "risk assessment summary", "bra conclusion"],
-    semanticIndicators: ["benefit-risk determination", "risk acceptability", "safety profile"],
-    minConfidenceThreshold: 0.5,
-  },
-  trend_analysis: {
+
+  // ── Calculated / Analysis types ──
+  statistical_trending: {
     headerPatterns: [
       /trend|analysis|pattern/i,
       /statistical|significance|rate/i,
@@ -221,26 +294,15 @@ const EVIDENCE_SIGNATURES: Record<string, {
     semanticIndicators: ["trend identification", "statistical significance", "rate analysis"],
     minConfidenceThreshold: 0.5,
   },
-  clinical_data: {
+  benefit_risk_quantification: {
     headerPatterns: [
-      /clinical|trial|study/i,
-      /efficacy|safety|outcome/i,
-      /patient|subject/i,
+      /benefit|risk|assessment/i,
+      /acceptable|residual|mitigation/i,
+      /conclusion|determination/i,
     ],
-    contentKeywords: ["clinical", "trial", "study", "efficacy", "safety", "outcome", "patient", "endpoint"],
-    structurePatterns: ["clinical data summary", "study results", "efficacy analysis"],
-    semanticIndicators: ["clinical investigation", "study outcome", "therapeutic efficacy"],
-    minConfidenceThreshold: 0.5,
-  },
-  regulatory_submission: {
-    headerPatterns: [
-      /regulatory|submission|certificate/i,
-      /approval|clearance|registration/i,
-      /notified.?body|competent.?authority/i,
-    ],
-    contentKeywords: ["regulatory", "submission", "certificate", "approval", "ce mark", "510k", "notified body"],
-    structurePatterns: ["regulatory status", "approval history", "certification record"],
-    semanticIndicators: ["regulatory approval", "market authorization", "conformity assessment"],
+    contentKeywords: ["benefit", "risk", "assessment", "acceptable", "residual", "mitigation", "favorable"],
+    structurePatterns: ["benefit-risk analysis", "risk assessment summary", "bra conclusion"],
+    semanticIndicators: ["benefit-risk determination", "risk acceptability", "safety profile"],
     minConfidenceThreshold: 0.5,
   },
 };

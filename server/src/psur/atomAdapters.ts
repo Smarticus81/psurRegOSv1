@@ -87,6 +87,15 @@ export function toComplaintAtoms(atoms: GenericAtom[]): ComplaintEvidenceAtom[] 
         rootCause: str(d.root_cause || d.rootCause || undefined) || undefined,
         imdrfProblemCode: str(d.imdrf_code || d.imdrfCode || d.problem_code || undefined) || undefined,
         country: str(d.country || d.region || undefined) || undefined,
+        // Confirmed/unconfirmed fields
+        complaintConfirmed: str(d.complaint_confirmed || d.complaintConfirmed || d.confirmed || undefined) || undefined,
+        investigationFindings: str(d.investigation_findings || d.investigationFindings || d.findings || undefined) || undefined,
+        correctiveActions: str(d.corrective_actions || d.correctiveActions || d.corrective_action || undefined) || undefined,
+        productNumber: str(d.product_number || d.productNumber || d.catalog_number || d.part_number || undefined) || undefined,
+        lotNumber: str(d.lot_number || d.lotNumber || d.batch_number || d.lot || undefined) || undefined,
+        additionalMedicalAttention: str(d.additional_medical_attention || d.additionalMedicalAttention || undefined) || undefined,
+        patientInvolvement: str(d.patient_involvement || d.patientInvolvement || undefined) || undefined,
+        symptomCode: str(d.symptom_code || d.symptomCode || d.symptom || undefined) || undefined,
       };
     });
 }
@@ -119,7 +128,7 @@ export function toSalesAtoms(atoms: GenericAtom[]): SalesEvidenceAtom[] {
   return atoms
     .filter(a => {
       const t = a.evidenceType.toLowerCase();
-      return t.includes("sales") || t.includes("distribution") || t.includes("volume") || t.includes("usage_estimate");
+      return t === "sales_transactions" || t === "sales_volume" || t.includes("sales") || t.includes("distribution") || t.includes("volume") || t.includes("usage_estimate");
     })
     .map(a => {
       const d = a.normalizedData;
@@ -146,7 +155,7 @@ export function toIncidentAtoms(atoms: GenericAtom[]): SeriousIncidentAtom[] {
   return atoms
     .filter(a => {
       const t = a.evidenceType.toLowerCase();
-      return t.includes("incident") || t.includes("adverse") || t.includes("vigilance");
+      return (t.includes("incident") || t.includes("adverse") || t.includes("vigilance")) && t !== "vigilance_submission_log";
     })
     .map(a => {
       const d = a.normalizedData;
@@ -251,7 +260,7 @@ export function toCAPARecords(atoms: GenericAtom[]): CAPARecord[] {
   return atoms
     .filter(a => {
       const t = a.evidenceType.toLowerCase();
-      return t.includes("capa") || t.includes("corrective") || t.includes("preventive");
+      return t === "capa_record" || t === "ncr_record" || t.includes("capa") || t.includes("corrective") || t.includes("preventive");
     })
     .map(a => {
       const d = a.normalizedData;
@@ -306,7 +315,7 @@ export function toLiteratureAtoms(atoms: GenericAtom[]): LiteratureEvidenceAtom[
   return atoms
     .filter(a => {
       const t = a.evidenceType.toLowerCase();
-      return t.includes("literature") || t.includes("publication") || t.includes("reference");
+      return t === "literature_findings" || t === "literature_result" || t.includes("literature") || t.includes("publication") || t.includes("reference");
     })
     .map(a => {
       const d = a.normalizedData;
@@ -351,7 +360,7 @@ export function toPMCFAtoms(atoms: GenericAtom[]): PMCFEvidenceAtom[] {
   return atoms
     .filter(a => {
       const t = a.evidenceType.toLowerCase();
-      return t.includes("pmcf") || t.includes("clinical_follow");
+      return t === "pmcf_results" || t === "pmcf_result" || t.includes("pmcf") || t.includes("clinical_follow");
     })
     .map(a => {
       const d = a.normalizedData;

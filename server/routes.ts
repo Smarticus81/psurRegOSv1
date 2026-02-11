@@ -3767,7 +3767,7 @@ Execute according to your persona instructions.`
       }
 
       const mandatoryTypes = EVIDENCE_DEFINITIONS
-        .filter(d => d.tier <= 2 && !d.isAggregated)
+        .filter(d => d.processingPriority <= 2 && !d.isAggregated)
         .map(d => d.type);
 
       const typeCoverage: Record<string, {
@@ -3777,7 +3777,7 @@ Execute according to your persona instructions.`
         periodStart: Date | null;
         periodEnd: Date | null;
         label: string;
-        tier: number;
+        processingPriority: number;
       }> = {};
 
       for (const def of EVIDENCE_DEFINITIONS) {
@@ -3788,7 +3788,7 @@ Execute according to your persona instructions.`
           periodStart: null,
           periodEnd: null,
           label: def.label,
-          tier: def.tier
+          processingPriority: def.processingPriority
         };
       }
 
@@ -3802,7 +3802,7 @@ Execute according to your persona instructions.`
             periodStart: null,
             periodEnd: null,
             label: def?.label || atom.evidenceType,
-            tier: def?.tier || 0
+            processingPriority: def?.processingPriority || 0
           };
         }
         typeCoverage[atom.evidenceType].count++;

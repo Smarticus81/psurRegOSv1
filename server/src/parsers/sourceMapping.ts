@@ -10,14 +10,18 @@ import { z } from "zod";
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const SourceTypeSchema = z.enum([
-  "cer",
-  "sales",
-  "complaints", 
-  "fsca",
-  "pmcf",
-  "risk",
-  "capa",
-  "admin"
+  "device_master",     // Category 1
+  "complaints",        // Category 2
+  "vigilance",         // Category 3
+  "sales",             // Category 4
+  "fsca",              // Category 5
+  "capa",              // Category 6
+  "cer",               // Category 7
+  "rmf",               // Category 8
+  "pmcf",              // Category 9
+  "literature",        // Category 10
+  "pms",               // Category 11
+  "previous_psur",     // Category 12
 ]);
 
 export const FileFormatSchema = z.enum([
@@ -69,124 +73,42 @@ export type SourceConfig = z.infer<typeof SourceConfigSchema>;
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const DEFAULT_SOURCE_CONFIGS: SourceConfig[] = [
+  // ── Category 1: Device Master Data ──
   {
-    id: "source_cer",
-    name: "CER",
-    description: "Clinical Evaluation Report - comprehensive document containing device, clinical, safety, and regulatory evidence",
-    sourceType: "cer",
-    acceptedFormats: ["docx", "pdf"],
-    // CER is a comprehensive document that can be the source of many evidence types
-    primaryEvidenceTypes: [
-      "clinical_evaluation_extract", 
-      "cer_extract", 
-      "benefit_risk_assessment",
-      "device_registry_record",
-    ],
-    secondaryEvidenceTypes: [
-      // Literature
-      "literature_review_summary", 
-      "literature_search_strategy", 
-      "literature_result",
-      // Clinical & PMCF
-      "pmcf_result",
-      "pmcf_summary",
-      "pmcf_activity_record",
-      // Risk
-      "risk_assessment",
-      "rmf_extract",
-      // IFU & Device
-      "ifu_extract",
-      // Regulatory & Admin
-      "regulatory_certificate_record",
-      "manufacturer_profile",
-      // Historical PMS data (from previous PSUR in CER)
-      "sales_summary",
-      "sales_by_region",
-      "complaint_summary",
-      "complaints_by_region",
-      "serious_incident_summary",
-      "vigilance_report",
-      "previous_psur_extract",
-      // PMS
-      "pms_plan_extract",
-      "pms_activity_log",
-      // Misc
-      "cer_change_log",
-    ],
+    id: "source_device_master",
+    name: "Device Master Data",
+    description: "Device identification, classification, intended use, manufacturer details, regulatory certificates",
+    sourceType: "device_master",
+    acceptedFormats: ["excel", "csv", "json"],
+    primaryEvidenceTypes: ["device_identification", "device_classification", "device_intended_use", "device_technical_specs", "manufacturer_details", "regulatory_certificates"],
+    secondaryEvidenceTypes: [],
     evidenceTypeMappings: [
       {
-        evidenceType: "cer_extract",
+        evidenceType: "device_identification",
         enabled: true,
-        confidence: 0.8,
+        confidence: 0.85,
         fieldMappings: [
-          { sourceField: "content", targetField: "content", transformation: "direct" },
-          { sourceField: "section", targetField: "section", transformation: "direct" },
-          { sourceField: "findings", targetField: "key_findings", transformation: "direct" },
+          { sourceField: "device_name", targetField: "deviceName", transformation: "direct" },
+          { sourceField: "model", targetField: "model", transformation: "direct" },
+          { sourceField: "udi", targetField: "udiDi", transformation: "direct" },
+          { sourceField: "udi_di", targetField: "udiDi", transformation: "direct" },
+          { sourceField: "gmdn", targetField: "gmdnCode", transformation: "direct" },
         ],
-      },
-      {
-        evidenceType: "clinical_evaluation_extract",
-        enabled: true,
-        confidence: 0.85,
-        fieldMappings: [],
-      },
-      {
-        evidenceType: "benefit_risk_assessment",
-        enabled: true,
-        confidence: 0.9,
-        fieldMappings: [],
-      },
-      {
-        evidenceType: "device_registry_record",
-        enabled: true,
-        confidence: 0.85,
-        fieldMappings: [],
       },
     ],
     autoExtract: true,
     requiresReview: true,
   },
-  {
-    id: "source_sales",
-    name: "Sales",
-    description: "Sales volume, distribution data, and usage estimates",
-    sourceType: "sales",
-    acceptedFormats: ["excel", "json", "csv"],
-    primaryEvidenceTypes: ["sales_volume"],
-    secondaryEvidenceTypes: ["sales_summary", "sales_by_region", "distribution_summary", "usage_estimate"],
-    evidenceTypeMappings: [
-      {
-        evidenceType: "sales_volume",
-        enabled: true,
-        confidence: 0.9,
-        fieldMappings: [
-          { sourceField: "region", targetField: "region", transformation: "direct" },
-          { sourceField: "country", targetField: "country", transformation: "direct" },
-          { sourceField: "quantity", targetField: "quantity", transformation: "number" },
-          { sourceField: "units", targetField: "quantity", transformation: "number" },
-          { sourceField: "sold", targetField: "quantity", transformation: "number" },
-          { sourceField: "volume", targetField: "quantity", transformation: "number" },
-          { sourceField: "date", targetField: "saleDate", transformation: "date" },
-          { sourceField: "period_start", targetField: "periodStart", transformation: "date" },
-          { sourceField: "period_end", targetField: "periodEnd", transformation: "date" },
-          { sourceField: "device_code", targetField: "deviceCode", transformation: "direct" },
-          { sourceField: "sku", targetField: "deviceCode", transformation: "direct" },
-          { sourceField: "product_code", targetField: "deviceCode", transformation: "direct" },
-          { sourceField: "part_number", targetField: "deviceCode", transformation: "direct" }
-        ],
-      }
-    ],
-    autoExtract: true,
-    requiresReview: false,
-  },
+
+  // ── Category 2: Complaints (Non-Serious) ──
   {
     id: "source_complaints",
     name: "Complaints",
-    description: "Product complaints, feedback, and adverse event logs",
+    description: "Product complaints, investigations, and non-serious event records",
     sourceType: "complaints",
-    acceptedFormats: ["excel", "json", "docx", "csv"],
-    primaryEvidenceTypes: ["complaint_record"],
-    secondaryEvidenceTypes: ["trend_analysis", "signal_log", "customer_feedback_summary", "complaint_summary", "complaints_by_region", "serious_incident_record", "serious_incident_summary", "serious_incident_records_imdrf", "vigilance_report"],
+    acceptedFormats: ["excel", "csv", "json"],
+    primaryEvidenceTypes: ["complaint_record", "complaint_investigation"],
+    secondaryEvidenceTypes: ["complaint_metrics", "imdrf_classification_complaints", "complaint_control_chart", "complaint_segmentation", "root_cause_clusters"],
     evidenceTypeMappings: [
       {
         evidenceType: "complaint_record",
@@ -207,21 +129,89 @@ export const DEFAULT_SOURCE_CONFIGS: SourceConfig[] = [
           { sourceField: "complaint_id", targetField: "complaintId", transformation: "direct" },
           { sourceField: "id", targetField: "complaintId", transformation: "direct" },
           { sourceField: "device_code", targetField: "deviceCode", transformation: "direct" },
-          { sourceField: "product_code", targetField: "deviceCode", transformation: "direct" }
+          { sourceField: "product_code", targetField: "deviceCode", transformation: "direct" },
         ],
       },
     ],
     autoExtract: true,
     requiresReview: true,
   },
+
+  // ── Category 3: Vigilance (Serious Incidents) ──
+  {
+    id: "source_vigilance",
+    name: "Vigilance",
+    description: "Serious incident records, investigations, and vigilance submission logs",
+    sourceType: "vigilance",
+    acceptedFormats: ["excel", "csv", "json", "pdf"],
+    primaryEvidenceTypes: ["serious_incident_record", "serious_incident_investigation", "vigilance_submission_log"],
+    secondaryEvidenceTypes: ["imdrf_classification_incidents", "serious_incident_metrics"],
+    evidenceTypeMappings: [
+      {
+        evidenceType: "serious_incident_record",
+        enabled: true,
+        confidence: 0.9,
+        fieldMappings: [
+          { sourceField: "incident_id", targetField: "incidentId", transformation: "direct" },
+          { sourceField: "id", targetField: "incidentId", transformation: "direct" },
+          { sourceField: "date", targetField: "incidentDate", transformation: "date" },
+          { sourceField: "incident_date", targetField: "incidentDate", transformation: "date" },
+          { sourceField: "description", targetField: "description", transformation: "direct" },
+          { sourceField: "outcome", targetField: "patientOutcome", transformation: "direct" },
+          { sourceField: "imdrf_code", targetField: "imdrfCode", transformation: "direct" },
+          { sourceField: "device_code", targetField: "deviceCode", transformation: "direct" },
+          { sourceField: "country", targetField: "country", transformation: "direct" },
+        ],
+      },
+    ],
+    autoExtract: true,
+    requiresReview: true,
+  },
+
+  // ── Category 4: Sales & Distribution ──
+  {
+    id: "source_sales",
+    name: "Sales",
+    description: "Sales transactions, distribution data, and market history",
+    sourceType: "sales",
+    acceptedFormats: ["excel", "csv"],
+    primaryEvidenceTypes: ["sales_transactions", "market_history"],
+    secondaryEvidenceTypes: ["sales_aggregated", "population_exposure"],
+    evidenceTypeMappings: [
+      {
+        evidenceType: "sales_transactions",
+        enabled: true,
+        confidence: 0.9,
+        fieldMappings: [
+          { sourceField: "region", targetField: "region", transformation: "direct" },
+          { sourceField: "country", targetField: "country", transformation: "direct" },
+          { sourceField: "quantity", targetField: "quantity", transformation: "number" },
+          { sourceField: "units", targetField: "quantity", transformation: "number" },
+          { sourceField: "sold", targetField: "quantity", transformation: "number" },
+          { sourceField: "volume", targetField: "quantity", transformation: "number" },
+          { sourceField: "date", targetField: "saleDate", transformation: "date" },
+          { sourceField: "period_start", targetField: "periodStart", transformation: "date" },
+          { sourceField: "period_end", targetField: "periodEnd", transformation: "date" },
+          { sourceField: "device_code", targetField: "deviceCode", transformation: "direct" },
+          { sourceField: "sku", targetField: "deviceCode", transformation: "direct" },
+          { sourceField: "product_code", targetField: "deviceCode", transformation: "direct" },
+          { sourceField: "part_number", targetField: "deviceCode", transformation: "direct" },
+        ],
+      },
+    ],
+    autoExtract: true,
+    requiresReview: false,
+  },
+
+  // ── Category 5: FSCA ──
   {
     id: "source_fsca",
-    name: "Field Actions and Recalls",
-    description: "Field Safety Corrective Actions (FSCA) and Recalls",
+    name: "FSCA",
+    description: "Field Safety Corrective Actions and effectiveness verification",
     sourceType: "fsca",
-    acceptedFormats: ["excel", "json", "csv", "docx"],
-    primaryEvidenceTypes: ["fsca_record"],
-    secondaryEvidenceTypes: ["fsca_summary", "recall_record"],
+    acceptedFormats: ["excel", "csv", "docx"],
+    primaryEvidenceTypes: ["fsca_record", "fsca_effectiveness"],
+    secondaryEvidenceTypes: ["fsca_metrics"],
     evidenceTypeMappings: [
       {
         evidenceType: "fsca_record",
@@ -235,67 +225,23 @@ export const DEFAULT_SOURCE_CONFIGS: SourceConfig[] = [
           { sourceField: "initiation_date", targetField: "initiationDate", transformation: "date" },
           { sourceField: "status", targetField: "status", transformation: "direct" },
           { sourceField: "affected_units", targetField: "affected_units", transformation: "number" },
-          { sourceField: "device_code", targetField: "deviceCode", transformation: "direct" }
+          { sourceField: "device_code", targetField: "deviceCode", transformation: "direct" },
         ],
       },
     ],
     autoExtract: true,
     requiresReview: false,
   },
-  {
-    id: "source_pmcf",
-    name: "PMCF",
-    description: "Post-Market Clinical Follow-up studies and reports",
-    sourceType: "pmcf",
-    acceptedFormats: ["docx", "pdf", "excel"],
-    primaryEvidenceTypes: ["pmcf_result"],
-    secondaryEvidenceTypes: ["pmcf_activity_record", "pmcf_report_extract", "pmcf_summary"],
-    evidenceTypeMappings: [
-      {
-        evidenceType: "pmcf_result",
-        enabled: true,
-        confidence: 0.8,
-        fieldMappings: [
-          { sourceField: "status", targetField: "status", transformation: "direct" },
-          { sourceField: "findings", targetField: "key_findings", transformation: "direct" },
-        ],
-      },
-    ],
-    autoExtract: true,
-    requiresReview: true,
-  },
-  {
-    id: "source_risk",
-    name: "Risk Docs",
-    description: "Risk Management Files (RMF) and Benefit-Risk Analysis",
-    sourceType: "risk",
-    acceptedFormats: ["excel", "docx", "pdf"],
-    primaryEvidenceTypes: ["benefit_risk_assessment", "risk_assessment"],
-    secondaryEvidenceTypes: ["rmf_extract", "rmf_change_log", "hazard_analysis"],
-    evidenceTypeMappings: [
-      {
-        evidenceType: "benefit_risk_assessment",
-        enabled: true,
-        confidence: 0.85,
-        fieldMappings: [
-          { sourceField: "conclusion", targetField: "conclusion", transformation: "direct" },
-          { sourceField: "assessment", targetField: "assessment", transformation: "direct" },
-          { sourceField: "benefits", targetField: "benefits", transformation: "direct" },
-          { sourceField: "risks", targetField: "risks", transformation: "direct" },
-        ],
-      },
-    ],
-    autoExtract: true,
-    requiresReview: true,
-  },
+
+  // ── Category 6: CAPA ──
   {
     id: "source_capa",
     name: "CAPA",
-    description: "Corrective and Preventive Actions records",
+    description: "Corrective and Preventive Actions, Non-Conformance Reports",
     sourceType: "capa",
-    acceptedFormats: ["excel", "json", "docx", "csv"],
-    primaryEvidenceTypes: ["capa_record"],
-    secondaryEvidenceTypes: ["ncr_record", "capa_summary"],
+    acceptedFormats: ["excel", "csv", "docx"],
+    primaryEvidenceTypes: ["capa_record", "ncr_record"],
+    secondaryEvidenceTypes: ["capa_metrics"],
     evidenceTypeMappings: [
       {
         evidenceType: "capa_record",
@@ -313,29 +259,154 @@ export const DEFAULT_SOURCE_CONFIGS: SourceConfig[] = [
     autoExtract: true,
     requiresReview: false,
   },
+
+  // ── Category 7: CER (Extracted) ──
   {
-    id: "source_admin",
-    name: "Administrative Data",
-    description: "Manufacturer, Device Registry, and Regulatory/Other docs",
-    sourceType: "admin",
-    acceptedFormats: ["excel", "csv", "json", "pdf"],
-    primaryEvidenceTypes: ["device_registry_record", "manufacturer_profile", "regulatory_certificate_record"],
-    secondaryEvidenceTypes: ["pms_plan_extract", "pms_activity_log", "data_source_register", "change_control_record", "previous_psur_extract", "external_db_summary", "external_db_query_log"],
+    id: "source_cer",
+    name: "CER",
+    description: "Clinical Evaluation Report - document extracts for clinical benefits, risks, literature, state of art",
+    sourceType: "cer",
+    acceptedFormats: ["docx", "pdf"],
+    primaryEvidenceTypes: ["cer_metadata", "cer_intended_use", "cer_clinical_benefits", "cer_clinical_risks", "cer_literature_summary", "cer_pmcf_summary", "cer_equivalence", "cer_state_of_art", "cer_conclusions", "cer_change_log"],
+    secondaryEvidenceTypes: [],
     evidenceTypeMappings: [
       {
-        evidenceType: "device_registry_record",
+        evidenceType: "cer_metadata",
         enabled: true,
         confidence: 0.8,
         fieldMappings: [
-          { sourceField: "device_name", targetField: "device_name", transformation: "direct" },
-          { sourceField: "model", targetField: "model", transformation: "direct" },
-          { sourceField: "udi", targetField: "udi_di", transformation: "direct" },
+          { sourceField: "content", targetField: "content", transformation: "direct" },
+          { sourceField: "section", targetField: "section", transformation: "direct" },
         ],
-      }
+      },
     ],
     autoExtract: true,
     requiresReview: true,
-  }
+  },
+
+  // ── Category 8: RMF (Extracted) ──
+  {
+    id: "source_rmf",
+    name: "Risk Management File",
+    description: "Risk Management File - hazard analysis, risk assessments, benefit-risk analysis",
+    sourceType: "rmf",
+    acceptedFormats: ["excel", "docx", "pdf"],
+    primaryEvidenceTypes: ["rmf_metadata", "rmf_hazard_analysis", "rmf_risk_assessment_pre", "rmf_risk_controls", "rmf_risk_assessment_post", "rmf_acceptability", "rmf_benefit_risk", "rmf_change_log"],
+    secondaryEvidenceTypes: [],
+    evidenceTypeMappings: [
+      {
+        evidenceType: "rmf_hazard_analysis",
+        enabled: true,
+        confidence: 0.85,
+        fieldMappings: [
+          { sourceField: "conclusion", targetField: "conclusion", transformation: "direct" },
+          { sourceField: "benefits", targetField: "benefits", transformation: "direct" },
+          { sourceField: "risks", targetField: "risks", transformation: "direct" },
+        ],
+      },
+    ],
+    autoExtract: true,
+    requiresReview: true,
+  },
+
+  // ── Category 9: PMCF ──
+  {
+    id: "source_pmcf",
+    name: "PMCF",
+    description: "Post-Market Clinical Follow-up activities, results, and evaluation",
+    sourceType: "pmcf",
+    acceptedFormats: ["docx", "pdf", "excel"],
+    primaryEvidenceTypes: ["pmcf_activity_record", "pmcf_results"],
+    secondaryEvidenceTypes: ["pmcf_plan_extract", "pmcf_evaluation_summary"],
+    evidenceTypeMappings: [
+      {
+        evidenceType: "pmcf_results",
+        enabled: true,
+        confidence: 0.8,
+        fieldMappings: [
+          { sourceField: "status", targetField: "status", transformation: "direct" },
+          { sourceField: "findings", targetField: "key_findings", transformation: "direct" },
+        ],
+      },
+    ],
+    autoExtract: true,
+    requiresReview: true,
+  },
+
+  // ── Category 10: Literature & External Databases ──
+  {
+    id: "source_literature",
+    name: "Literature & Databases",
+    description: "Literature search protocols, screening results, external database queries and findings",
+    sourceType: "literature",
+    acceptedFormats: ["excel", "csv", "pdf"],
+    primaryEvidenceTypes: ["literature_search_protocol", "literature_screening_results", "external_db_query_log", "external_db_findings"],
+    secondaryEvidenceTypes: ["literature_findings", "literature_synthesis"],
+    evidenceTypeMappings: [
+      {
+        evidenceType: "literature_findings",
+        enabled: true,
+        confidence: 0.7,
+        fieldMappings: [
+          { sourceField: "citation", targetField: "citation", transformation: "direct" },
+          { sourceField: "title", targetField: "title", transformation: "direct" },
+          { sourceField: "authors", targetField: "authors", transformation: "direct" },
+          { sourceField: "findings", targetField: "findings", transformation: "direct" },
+        ],
+      },
+    ],
+    autoExtract: true,
+    requiresReview: true,
+  },
+
+  // ── Category 11: PMS Plan & Activity Log ──
+  {
+    id: "source_pms",
+    name: "PMS Plan & Activities",
+    description: "PMS Plan document extracts and surveillance activity logs",
+    sourceType: "pms",
+    acceptedFormats: ["docx", "pdf", "excel"],
+    primaryEvidenceTypes: ["pms_activity_log"],
+    secondaryEvidenceTypes: ["pms_plan_extract"],
+    evidenceTypeMappings: [
+      {
+        evidenceType: "pms_activity_log",
+        enabled: true,
+        confidence: 0.8,
+        fieldMappings: [
+          { sourceField: "activity_id", targetField: "activityId", transformation: "direct" },
+          { sourceField: "activity_type", targetField: "activityType", transformation: "direct" },
+          { sourceField: "status", targetField: "status", transformation: "direct" },
+          { sourceField: "date", targetField: "plannedDate", transformation: "date" },
+        ],
+      },
+    ],
+    autoExtract: true,
+    requiresReview: true,
+  },
+
+  // ── Category 12: Previous PSUR ──
+  {
+    id: "source_previous_psur",
+    name: "Previous PSUR",
+    description: "Previous PSUR document for continuity, trending, and action status tracking",
+    sourceType: "previous_psur",
+    acceptedFormats: ["docx", "pdf"],
+    primaryEvidenceTypes: ["previous_psur_action_status"],
+    secondaryEvidenceTypes: ["previous_psur_metadata", "previous_psur_conclusions", "previous_psur_metrics", "previous_psur_actions"],
+    evidenceTypeMappings: [
+      {
+        evidenceType: "previous_psur_metadata",
+        enabled: true,
+        confidence: 0.8,
+        fieldMappings: [
+          { sourceField: "content", targetField: "content", transformation: "direct" },
+        ],
+      },
+    ],
+    autoExtract: true,
+    requiresReview: true,
+  },
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════════

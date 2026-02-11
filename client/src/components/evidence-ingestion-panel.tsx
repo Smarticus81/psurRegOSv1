@@ -31,7 +31,12 @@ import {
   Database,
   ArrowRight,
   Check,
-  Loader2
+  Loader2,
+  ShieldAlert,
+  Shield,
+  BookOpen,
+  ClipboardList,
+  History,
 } from "lucide-react";
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -119,14 +124,18 @@ interface Props {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const sourceTypeIcons: Record<string, React.ReactNode> = {
-  cer: <FileType className="w-5 h-5 text-pink-500" />,
-  sales: <FileSpreadsheet className="w-5 h-5 text-emerald-500" />,
+  device_master: <Database className="w-5 h-5 text-cyan-500" />,
   complaints: <AlertCircle className="w-5 h-5 text-amber-500" />,
+  vigilance: <ShieldAlert className="w-5 h-5 text-red-600" />,
+  sales: <FileSpreadsheet className="w-5 h-5 text-emerald-500" />,
   fsca: <Zap className="w-5 h-5 text-red-500" />,
-  pmcf: <FileText className="w-5 h-5 text-purple-500" />,
-  risk: <AlertCircle className="w-5 h-5 text-orange-500" />,
   capa: <FileCheck className="w-5 h-5 text-blue-500" />,
-  admin: <Database className="w-5 h-5 text-cyan-500" />,
+  cer: <FileType className="w-5 h-5 text-pink-500" />,
+  rmf: <Shield className="w-5 h-5 text-orange-500" />,
+  pmcf: <FileText className="w-5 h-5 text-purple-500" />,
+  literature: <BookOpen className="w-5 h-5 text-indigo-500" />,
+  pms: <ClipboardList className="w-5 h-5 text-teal-500" />,
+  previous_psur: <History className="w-5 h-5 text-slate-500" />,
 };
 
 const formatIcons: Record<string, React.ReactNode> = {

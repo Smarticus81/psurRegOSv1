@@ -36,6 +36,22 @@ export interface ComplaintEvidenceAtom {
   rootCause?: string;
   imdrfProblemCode?: string;
   country?: string;
+  /** Whether the complaint was confirmed as a product defect ("yes"/"no") */
+  complaintConfirmed?: string;
+  /** Investigation findings narrative */
+  investigationFindings?: string;
+  /** Corrective actions taken */
+  correctiveActions?: string;
+  /** Product/catalog number */
+  productNumber?: string;
+  /** Manufacturing lot/batch number */
+  lotNumber?: string;
+  /** Patient additional medical attention required */
+  additionalMedicalAttention?: string;
+  /** Patient involvement flag */
+  patientInvolvement?: string;
+  /** Symptom code (internal taxonomy) */
+  symptomCode?: string;
 }
 
 export type HarmLevel = 
@@ -65,27 +81,54 @@ export interface ReportingPeriod {
 export interface ComplaintAnalysisResult {
   success: boolean;
   errors: string[];
-  
+
   // Tables (STRICT output)
   complaintsByCategory: PSURTable;
   complaintsByHarm: PSURTable;
   complaintRates: PSURTable;
   complaintTrends: PSURTable;
   uclAnalysis: PSURTable;
-  
+  confirmedUnconfirmedBreakdown: PSURTable;
+
   // Metrics
   metrics: ComplaintMetrics;
-  
+
+  // Confirmed / Unconfirmed Tiered Rates
+  confirmedMetrics: ConfirmedComplaintMetrics;
+
   // Trend Analysis
   trendAnalysis: TrendAnalysisResult;
-  
+
   // Article 88 Determination
   article88Required: boolean;
   article88Justification: string;
-  
+
   // Trace
   allEvidenceAtomIds: string[];
   calculationLog: CalculationLogEntry[];
+}
+
+export interface ConfirmedComplaintMetrics {
+  /** Complaints confirmed as product defects via investigation */
+  confirmedComplaints: number;
+  /** Confirmed complaint rate (per 1,000 units) */
+  confirmedRate: number;
+  /** Complaints where investigation was inconclusive */
+  unconfirmedComplaints: number;
+  /** Unconfirmed complaint rate (per 1,000 units) */
+  unconfirmedRate: number;
+  /** Complaints attributed to external causes (shipping damage, user error) */
+  externalCauseComplaints: number;
+  /** External cause complaint rate (per 1,000 units) */
+  externalCauseRate: number;
+  /** Combined rate for regulatory comparison (all complaints / units) */
+  combinedRate: number;
+  /** Percentage of total that are confirmed */
+  confirmedPercentage: number;
+  /** Percentage of total that are unconfirmed */
+  unconfirmedPercentage: number;
+  /** Percentage of total that are external cause */
+  externalCausePercentage: number;
 }
 
 export interface ComplaintMetrics {
@@ -342,6 +385,50 @@ export function computeComplaintAnalysis(
   }
   
   // -------------------------------------------------------------------------
+  // CALCULATION 8: Confirmed / Unconfirmed Tiered Rates
+  // -------------------------------------------------------------------------
+  const confirmed = complaintsInPeriod.filter(c =>
+    c.complaintConfirmed?.toLowerCase() === "yes"
+  );
+  const externalCause = complaintsInPeriod.filter(c => isExternalCause(c));
+  const unconfirmed = complaintsInPeriod.filter(c =>
+    c.complaintConfirmed?.toLowerCase() !== "yes" && !isExternalCause(c)
+  );
+
+  const confirmedRate = unitsSoldInPeriod > 0
+    ? (confirmed.length / unitsSoldInPeriod) * 1000
+    : 0;
+  const unconfirmedRate = unitsSoldInPeriod > 0
+    ? (unconfirmed.length / unitsSoldInPeriod) * 1000
+    : 0;
+  const externalCauseRate = unitsSoldInPeriod > 0
+    ? (externalCause.length / unitsSoldInPeriod) * 1000
+    : 0;
+
+  calculationLog.push({
+    calculationId: "CALC_CONFIRMED_RATE",
+    formula: "(confirmed_complaints / units_sold) × 1000",
+    inputs: { confirmed_complaints: confirmed.length, units_sold: unitsSoldInPeriod },
+    output: confirmedRate,
+    outputUnit: "per_1000_units",
+    evidenceAtomIds: confirmed.map(c => c.atomId),
+    timestamp: new Date().toISOString(),
+  });
+
+  const confirmedMetrics: ConfirmedComplaintMetrics = {
+    confirmedComplaints: confirmed.length,
+    confirmedRate,
+    unconfirmedComplaints: unconfirmed.length,
+    unconfirmedRate,
+    externalCauseComplaints: externalCause.length,
+    externalCauseRate,
+    combinedRate: complaintRate,
+    confirmedPercentage: totalComplaints > 0 ? (confirmed.length / totalComplaints) * 100 : 0,
+    unconfirmedPercentage: totalComplaints > 0 ? (unconfirmed.length / totalComplaints) * 100 : 0,
+    externalCausePercentage: totalComplaints > 0 ? (externalCause.length / totalComplaints) * 100 : 0,
+  };
+
+  // -------------------------------------------------------------------------
   // BUILD OUTPUT TABLES
   // -------------------------------------------------------------------------
   const complaintsByCategory = buildComplaintsByCategoryTable(byCategory, allEvidenceAtomIds);
@@ -355,7 +442,8 @@ export function computeComplaintAnalysis(
   );
   const complaintTrends = buildComplaintTrendsTable(trendAnalysis, allEvidenceAtomIds);
   const uclAnalysisTable = buildUCLAnalysisTable(trendAnalysis, excursions, allEvidenceAtomIds);
-  
+  const confirmedTable = buildConfirmedUnconfirmedTable(confirmedMetrics, unitsSoldInPeriod, allEvidenceAtomIds);
+
   return {
     success: errors.length === 0,
     errors,
@@ -364,6 +452,7 @@ export function computeComplaintAnalysis(
     complaintRates: complaintRatesTable,
     complaintTrends,
     uclAnalysis: uclAnalysisTable,
+    confirmedUnconfirmedBreakdown: confirmedTable,
     metrics: {
       totalComplaints,
       totalDeviceRelated,
@@ -374,6 +463,7 @@ export function computeComplaintAnalysis(
       byHarm,
       bySeverity,
     },
+    confirmedMetrics,
     trendAnalysis,
     article88Required,
     article88Justification,
@@ -825,26 +915,131 @@ function buildUCLAnalysisTable(
 }
 
 // ============================================================================
+// CONFIRMED / UNCONFIRMED HELPERS
+// ============================================================================
+
+function isExternalCause(complaint: ComplaintEvidenceAtom): boolean {
+  const findings = (complaint.investigationFindings || "").toLowerCase();
+  const corrective = (complaint.correctiveActions || "").toLowerCase();
+  const rootCause = (complaint.rootCause || "").toLowerCase();
+
+  return (
+    findings.includes("damage incurred in transit") ||
+    findings.includes("shipping damage") ||
+    findings.includes("damaged during shipping") ||
+    corrective.includes("user error") ||
+    corrective.includes("handling error") ||
+    rootCause.includes("shipping") ||
+    rootCause.includes("user error") ||
+    rootCause.includes("external cause")
+  );
+}
+
+function buildConfirmedUnconfirmedTable(
+  cm: ConfirmedComplaintMetrics,
+  unitsSold: number,
+  evidenceAtomIds: string[]
+): PSURTable {
+  const traceRef = createTraceReference("table_confirmed_unconfirmed", evidenceAtomIds, {
+    calculationId: "CALC_CONFIRMED_RATE",
+  });
+  const total = cm.confirmedComplaints + cm.unconfirmedComplaints + cm.externalCauseComplaints;
+
+  return {
+    tableId: "TABLE_CONFIRMED_UNCONFIRMED_BREAKDOWN",
+    title: "Complaint Confirmation Status Breakdown",
+    columns: ["Classification", "Count", "Percentage", "Rate (per 1,000 units)"],
+    rows: [
+      {
+        rowId: "header",
+        isHeader: true,
+        cells: [
+          { value: "Classification", format: "text" },
+          { value: "Count", format: "number" },
+          { value: "Percentage", format: "percentage" },
+          { value: "Rate (per 1,000 units)", format: "number" },
+        ],
+      },
+      {
+        rowId: "confirmed",
+        cells: [
+          { value: "Confirmed Product Defects", format: "text" },
+          { value: cm.confirmedComplaints, format: "number" },
+          { value: cm.confirmedPercentage, format: "percentage", precision: 1 },
+          { value: cm.confirmedRate, format: "number", precision: 4 },
+        ],
+      },
+      {
+        rowId: "unconfirmed",
+        cells: [
+          { value: "Unconfirmed (Inconclusive Investigation)", format: "text" },
+          { value: cm.unconfirmedComplaints, format: "number" },
+          { value: cm.unconfirmedPercentage, format: "percentage", precision: 1 },
+          { value: cm.unconfirmedRate, format: "number", precision: 4 },
+        ],
+      },
+      {
+        rowId: "external_cause",
+        cells: [
+          { value: "External Cause (Shipping/User Error)", format: "text" },
+          { value: cm.externalCauseComplaints, format: "number" },
+          { value: cm.externalCausePercentage, format: "percentage", precision: 1 },
+          { value: cm.externalCauseRate, format: "number", precision: 4 },
+        ],
+      },
+      {
+        rowId: "total",
+        isTotal: true,
+        cells: [
+          { value: "TOTAL (Combined)", format: "text" },
+          { value: total, format: "number" },
+          { value: 100, format: "percentage" },
+          { value: cm.combinedRate, format: "number", precision: 4 },
+        ],
+      },
+    ],
+    footnotes: [
+      "Confirmed = investigation verified product defect",
+      "Unconfirmed = product not returned or unable to replicate",
+      "External = shipping damage, user error, or other non-product cause",
+      `Denominator: ${unitsSold.toLocaleString()} units sold in period`,
+    ],
+    traceRef,
+  };
+}
+
+// ============================================================================
 // NARRATIVE GENERATION
 // ============================================================================
 
 export function getComplaintNarrativeBlocks(result: ComplaintAnalysisResult): string[] {
   const blocks: string[] = [];
-  
+
   if (result.metrics.totalComplaints === 0) {
     blocks.push("No complaints were received during the reporting period.");
     return blocks;
   }
-  
+
   blocks.push(
     `During the reporting period, ${result.metrics.totalComplaints} complaints were received, ` +
-    `of which ${result.metrics.totalDeviceRelated} (${((result.metrics.totalDeviceRelated / result.metrics.totalComplaints) * 100).toFixed(1)}%) were determined to be device-related.`
+    `of which ${result.metrics.totalDeviceRelated} (${((result.metrics.totalDeviceRelated / result.metrics.totalComplaints) * 100).toFixed(1)}%) were determined to be device-related. ` +
+    `The combined complaint rate is ${result.metrics.complaintRate.toFixed(2)} per 1,000 units sold.`
   );
-  
-  blocks.push(
-    `The overall complaint rate is ${result.metrics.complaintRate.toFixed(2)} per 1,000 units sold.`
-  );
-  
+
+  // Confirmed/unconfirmed breakdown
+  const cm = result.confirmedMetrics;
+  if (cm.confirmedComplaints > 0 || cm.unconfirmedComplaints > 0) {
+    blocks.push(
+      `Of these, ${cm.confirmedComplaints} (${cm.confirmedPercentage.toFixed(1)}%) were CONFIRMED as product defects ` +
+      `through investigation, yielding a confirmed product defect rate of ${cm.confirmedRate.toFixed(4)} per 1,000 units. ` +
+      `The remaining ${cm.unconfirmedComplaints + cm.externalCauseComplaints} complaints (${(cm.unconfirmedPercentage + cm.externalCausePercentage).toFixed(1)}%) ` +
+      `could not be verified as product-related issues` +
+      (cm.externalCauseComplaints > 0
+        ? `, including ${cm.externalCauseComplaints} attributed to external causes (shipping damage or user error).`
+        : ".")
+    );
+  }
+
   if (result.metrics.byCategory.length > 0) {
     const topCategory = result.metrics.byCategory[0];
     blocks.push(
@@ -852,7 +1047,7 @@ export function getComplaintNarrativeBlocks(result: ComplaintAnalysisResult): st
       `(${topCategory.percentage.toFixed(1)}% of total).`
     );
   }
-  
+
   if (result.trendAnalysis.isStatisticallySignificant) {
     blocks.push(
       `A statistically significant ${result.trendAnalysis.isIncreasing ? "increasing" : "decreasing"} trend ` +
@@ -861,8 +1056,8 @@ export function getComplaintNarrativeBlocks(result: ComplaintAnalysisResult): st
   } else {
     blocks.push("No statistically significant trends have been identified in complaint rates.");
   }
-  
+
   blocks.push(result.article88Justification);
-  
+
   return blocks;
 }

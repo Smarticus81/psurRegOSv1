@@ -72,17 +72,17 @@ export interface ExtractionDecisionTrace {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const EVIDENCE_TYPES: EvidenceType[] = [
-  // Sales & Distribution (Canonical: sales_volume)
+  // ── Category 1: Device Master Data ──
   {
-    type: "sales_volume",
-    category: "Sales",
-    description: "Sales volume, distribution, and usage data",
-    requiredFields: ["quantity", "period_start"],
-    optionalFields: ["region", "country", "period_end", "device_code", "model", "market_share"],
-    indicators: ["sales", "sold", "units", "volume", "revenue", "distribution", "region", "country", "market", "shipped", "usage"],
+    type: "device_identification",
+    category: "Device",
+    description: "Device identification, UDI-DI, GMDN codes, models",
+    requiredFields: ["device_name"],
+    optionalFields: ["model", "udi_di", "risk_class", "manufacturer", "intended_purpose", "gmdn", "srn"],
+    indicators: ["device", "model", "udi", "catalog", "product", "registry", "registration", "manufacturer", "gmdn"],
   },
 
-  // Complaints & Incidents (Canonical: complaint_record, serious_incident_record)
+  // ── Category 2: Complaints (Non-Serious) ──
   {
     type: "complaint_record",
     category: "Complaints",
@@ -92,15 +92,59 @@ export const EVIDENCE_TYPES: EvidenceType[] = [
     indicators: ["complaint", "feedback", "issue", "problem", "concern", "reported", "customer", "allegation"],
   },
   {
+    type: "complaint_investigation",
+    category: "Complaints",
+    description: "Complaint investigation findings and root cause analysis",
+    requiredFields: [],
+    optionalFields: ["complaint_id", "investigation_date", "findings", "root_cause", "confirmed", "corrective_action"],
+    indicators: ["investigation", "root cause", "confirmed", "findings", "determination", "analysis result"],
+  },
+
+  // ── Category 3: Vigilance (Serious Incidents) ──
+  {
     type: "serious_incident_record",
-    category: "Incidents",
+    category: "Vigilance",
     description: "Serious incident report",
     requiredFields: ["incident_date"],
     optionalFields: ["incident_id", "description", "outcome", "device_code", "imdrf_code", "competent_authority"],
     indicators: ["serious", "incident", "adverse event", "mdr", "vigilance", "death", "injury", "imdrf"],
   },
+  {
+    type: "serious_incident_investigation",
+    category: "Vigilance",
+    description: "Serious incident investigation and root cause analysis",
+    requiredFields: [],
+    optionalFields: ["incident_id", "investigation_date", "root_cause_analysis", "actions_taken", "outcome"],
+    indicators: ["investigation", "root cause", "analysis", "actions taken", "incident investigation"],
+  },
+  {
+    type: "vigilance_submission_log",
+    category: "Vigilance",
+    description: "Regulatory submission log for vigilance reports",
+    requiredFields: [],
+    optionalFields: ["submission_date", "incident_id", "competent_authority", "eudamed_id", "report_status", "timeline_compliance"],
+    indicators: ["submission", "eudamed", "competent authority", "timeline", "regulatory report", "notification"],
+  },
 
-  // FSCA & CAPA (Canonical: fsca_record, capa_record - assuming capa_record is canonical based on usage)
+  // ── Category 4: Sales & Distribution ──
+  {
+    type: "sales_transactions",
+    category: "Sales",
+    description: "Sales transactions, distribution, and usage data",
+    requiredFields: ["quantity", "period_start"],
+    optionalFields: ["region", "country", "period_end", "device_code", "model", "market_share", "customer"],
+    indicators: ["sales", "sold", "units", "volume", "revenue", "distribution", "region", "country", "market", "shipped", "usage", "transaction"],
+  },
+  {
+    type: "market_history",
+    category: "Sales",
+    description: "Market history and first-sold dates",
+    requiredFields: [],
+    optionalFields: ["date_first_sold", "markets_entered", "markets_exited", "volume_trend"],
+    indicators: ["market history", "first sold", "markets entered", "markets exited", "launch date"],
+  },
+
+  // ── Category 5: FSCA ──
   {
     type: "fsca_record",
     category: "FSCA",
@@ -110,57 +154,61 @@ export const EVIDENCE_TYPES: EvidenceType[] = [
     indicators: ["fsca", "field safety", "corrective action", "recall", "advisory", "notice"],
   },
   {
+    type: "fsca_effectiveness",
+    category: "FSCA",
+    description: "FSCA effectiveness verification and completion tracking",
+    requiredFields: [],
+    optionalFields: ["fsca_id", "completion_percent", "devices_retrieved", "effectiveness_verified"],
+    indicators: ["effectiveness", "completion", "retrieved", "verification", "fsca effectiveness"],
+  },
+
+  // ── Category 6: CAPA ──
+  {
     type: "capa_record",
     category: "CAPA",
     description: "Corrective and Preventive Action record",
     requiredFields: ["capa_id"],
     optionalFields: ["description", "initiation_date", "status", "effectiveness", "root_cause", "action_plan"],
-    indicators: ["capa", "corrective", "preventive", "action", "improvement", "non-conformance", "ncr"],
+    indicators: ["capa", "corrective", "preventive", "action", "improvement"],
+  },
+  {
+    type: "ncr_record",
+    category: "CAPA",
+    description: "Non-conformance report",
+    requiredFields: [],
+    optionalFields: ["ncr_id", "description", "open_date", "status", "linked_capa_id"],
+    indicators: ["non-conformance", "ncr", "deviation", "nonconformity", "non-conformity"],
   },
 
-  // Literature (Canonical: literature_result)
+  // ── Category 9: PMCF ──
   {
-    type: "literature_result",
-    category: "Literature",
-    description: "Literature review finding or search result",
-    requiredFields: ["citation"], // citation or source usually required
-    optionalFields: ["database", "search_terms", "summary", "analysis", "favorable", "device_related", "date"],
-    indicators: ["literature", "review", "publication", "article", "search", "pubmed", "embase", "abstract", "citation"],
-  },
-
-  // PMCF (Canonical: pmcf_result)
-  {
-    type: "pmcf_result",
+    type: "pmcf_results",
     category: "PMCF",
     description: "Post-Market Clinical Follow-up result",
-    requiredFields: ["finding"],
-    optionalFields: ["study_id", "patient_count", "outcome", "status", "conclusion", "activity_type"],
+    requiredFields: [],
+    optionalFields: ["study_id", "patient_count", "outcome", "status", "conclusion", "activity_type", "findings"],
     indicators: ["pmcf", "post-market", "clinical follow-up", "registry", "study", "survey", "cohort"],
   },
 
-  // External Databases (Canonical mapping? Treating as 'registry' or specific type if defined, else generic)
-  // Re-mapping to relevant canonicals or keeping if they support specific flows not yet strictly canonicalized in input but needed for processing
-  // NOTE: Based on user request, we stick to high level inputs. But extractor needs to map to ATOMS.
-  // Using device_registry_record for admin data
+  // ── Category 10: Literature ──
   {
-    type: "device_registry_record",
-    category: "Device",
-    description: "Device registry and manufacturer information",
-    requiredFields: ["device_name"],
-    optionalFields: ["model", "udi_di", "risk_class", "manufacturer", "intended_purpose", "gmdn"],
-    indicators: ["device", "model", "udi", "catalog", "product", "registry", "registration", "manufacturer"],
+    type: "literature_findings",
+    category: "Literature",
+    description: "Literature review finding or search result",
+    requiredFields: [],
+    optionalFields: ["citation", "database", "search_terms", "summary", "analysis", "favorable", "device_related", "date", "title", "authors"],
+    indicators: ["literature", "review", "publication", "article", "search", "pubmed", "embase", "abstract", "citation"],
   },
-  
-  // Risk (Canonical: benefit_risk_assessment? or separate atoms?)
-  // Keeping specific risk types if they map to canonical atoms or are used by risk agent
+
+  // ── Category 11: PMS ──
   {
-    type: "benefit_risk_assessment",
-    category: "Risk",
-    description: "Benefit-risk analysis",
-    requiredFields: ["conclusion"],
-    optionalFields: ["benefits", "risks", "ratio", "evaluation", "date"],
-    indicators: ["benefit", "risk", "assessment", "conclusion", "favorable", "bra", "residual"],
-  }
+    type: "pms_activity_log",
+    category: "PMS",
+    description: "PMS surveillance activity log",
+    requiredFields: [],
+    optionalFields: ["activity_id", "activity_type", "planned_date", "actual_date", "status", "findings"],
+    indicators: ["pms", "surveillance", "activity", "monitoring", "post-market surveillance"],
+  },
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════════

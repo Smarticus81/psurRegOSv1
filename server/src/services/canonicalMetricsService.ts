@@ -673,7 +673,7 @@ export class CanonicalMetricsService {
   private isIncidentType(type: string): boolean {
     const lower = type.toLowerCase();
     return lower.includes("incident") || lower.includes("adverse") || lower.includes("event") ||
-           type === CANONICAL_EVIDENCE_TYPES.INCIDENT;
+           type === CANONICAL_EVIDENCE_TYPES.SERIOUS_INCIDENT;
   }
   
   private isFscaType(type: string): boolean {

@@ -57,7 +57,7 @@ export const SOTA_EVIDENCE_REGISTRY: EvidenceTypeDefinition[] = [
     type: CANONICAL_EVIDENCE_TYPES.SALES,
     category: "Sales & Distribution",
     description: "Individual sales transaction or distribution record showing units sold/shipped",
-    mdcgSections: ["Section B - Sales Volume", "Section B - Exposure Estimates"],
+    mdcgSections: ["Section C - Sales Volume", "Section C - Exposure Estimates"],
     fields: [
       {
         name: "quantity",
@@ -162,51 +162,44 @@ export const SOTA_EVIDENCE_REGISTRY: EvidenceTypeDefinition[] = [
   },
 
   {
-    type: CANONICAL_EVIDENCE_TYPES.SALES_SUMMARY,
+    type: CANONICAL_EVIDENCE_TYPES.MARKET_HISTORY,
     category: "Sales & Distribution",
-    description: "Aggregated sales summary with totals and statistics",
-    mdcgSections: ["Section B - Sales Volume"],
+    description: "Market history with dates of first sale, markets entered/exited, volume trends",
+    mdcgSections: ["Section C - Sales Volume"],
     fields: [
       {
-        name: "totalUnits",
-        description: "Total units sold across all regions",
-        semanticHints: ["total units", "total sold", "grand total", "total quantity", "aggregate units"],
-        dataType: "number",
-        required: true,
-      },
-      {
-        name: "periodStart",
-        description: "Start of summary period",
-        semanticHints: ["period start", "from", "start date"],
+        name: "dateFirstSold",
+        description: "Date the device was first placed on market",
+        semanticHints: ["date first sold", "first sale", "launch date", "market entry date"],
         dataType: "date",
-        required: true,
-      },
-      {
-        name: "periodEnd",
-        description: "End of summary period",
-        semanticHints: ["period end", "to", "end date"],
-        dataType: "date",
-        required: true,
-      },
-      {
-        name: "regionBreakdown",
-        description: "Units by region",
-        semanticHints: ["by region", "regional breakdown", "region distribution"],
-        dataType: "object",
         required: false,
       },
       {
-        name: "growthRate",
-        description: "Year-over-year or period-over-period growth rate",
-        semanticHints: ["growth", "growth rate", "yoy", "change", "trend"],
-        dataType: "number",
+        name: "marketsEntered",
+        description: "Markets/countries entered during period",
+        semanticHints: ["markets entered", "new markets", "countries entered"],
+        dataType: "string",
         required: false,
-      }
+      },
+      {
+        name: "marketsExited",
+        description: "Markets/countries exited during period",
+        semanticHints: ["markets exited", "withdrawn", "countries exited"],
+        dataType: "string",
+        required: false,
+      },
+      {
+        name: "volumeTrend",
+        description: "Volume trend direction or description",
+        semanticHints: ["volume trend", "trend", "growth", "decline"],
+        dataType: "string",
+        required: false,
+      },
     ],
     documentIndicators: [
-      "sales summary", "total sales", "aggregate sales", "sales overview", "distribution summary"
+      "market history", "first sold", "launch date", "market entry"
     ],
-    tableIndicators: ["total", "summary", "aggregate", "grand total"],
+    tableIndicators: ["first sold", "market entry", "launch"],
     minimumConfidenceThreshold: 0.7
   },
 
@@ -350,65 +343,58 @@ export const SOTA_EVIDENCE_REGISTRY: EvidenceTypeDefinition[] = [
   },
 
   {
-    type: CANONICAL_EVIDENCE_TYPES.COMPLAINT_SUMMARY,
+    type: CANONICAL_EVIDENCE_TYPES.COMPLAINT_INVESTIGATION,
     category: "Complaints",
-    description: "Aggregated complaint summary with statistics and trends",
+    description: "Complaint investigation findings, root cause, and corrective action determination",
     mdcgSections: ["Section D - Complaints", "Section E - Trend Analysis"],
     fields: [
       {
-        name: "totalComplaints",
-        description: "Total number of complaints in period",
-        semanticHints: ["total complaints", "total count", "complaint count", "number of complaints"],
-        dataType: "number",
-        required: true,
-      },
-      {
-        name: "complaintRate",
-        description: "Complaint rate per 1000 units",
-        semanticHints: ["complaint rate", "rate", "per 1000", "rate per"],
-        dataType: "number",
+        name: "complaintId",
+        description: "Complaint ID being investigated",
+        semanticHints: ["complaint id", "complaint number", "reference", "case number"],
+        dataType: "string",
         required: false,
       },
       {
-        name: "seriousCount",
-        description: "Number of serious complaints",
-        semanticHints: ["serious", "serious count", "serious complaints", "reportable"],
-        dataType: "number",
-        required: false,
-      },
-      {
-        name: "periodStart",
-        description: "Start of summary period",
-        semanticHints: ["from", "start", "period start"],
+        name: "investigationDate",
+        description: "Date investigation was completed",
+        semanticHints: ["investigation date", "completed date", "date investigated"],
         dataType: "date",
-        required: true,
-      },
-      {
-        name: "periodEnd",
-        description: "End of summary period",
-        semanticHints: ["to", "end", "period end"],
-        dataType: "date",
-        required: true,
-      },
-      {
-        name: "severityBreakdown",
-        description: "Complaints by severity level",
-        semanticHints: ["by severity", "severity breakdown", "severity distribution"],
-        dataType: "object",
         required: false,
       },
       {
-        name: "categoryBreakdown",
-        description: "Complaints by category",
-        semanticHints: ["by category", "category breakdown", "by type"],
-        dataType: "object",
+        name: "findings",
+        description: "Investigation findings",
+        semanticHints: ["findings", "investigation findings", "results", "determination"],
+        dataType: "string",
+        required: true,
+      },
+      {
+        name: "rootCause",
+        description: "Determined root cause",
+        semanticHints: ["root cause", "cause", "reason", "root cause analysis"],
+        dataType: "string",
         required: false,
-      }
+      },
+      {
+        name: "confirmed",
+        description: "Whether complaint was confirmed as valid",
+        semanticHints: ["confirmed", "valid", "substantiated", "verified"],
+        dataType: "boolean",
+        required: false,
+      },
+      {
+        name: "correctiveAction",
+        description: "Corrective action taken",
+        semanticHints: ["corrective action", "action taken", "resolution", "response"],
+        dataType: "string",
+        required: false,
+      },
     ],
     documentIndicators: [
-      "complaint summary", "complaints overview", "complaint statistics", "complaint trend"
+      "complaint investigation", "investigation findings", "root cause determination"
     ],
-    tableIndicators: ["total", "summary", "rate", "count"],
+    tableIndicators: ["investigation", "root cause", "confirmed", "findings"],
     minimumConfidenceThreshold: 0.7
   },
 
@@ -537,6 +523,112 @@ export const SOTA_EVIDENCE_REGISTRY: EvidenceTypeDefinition[] = [
     minimumConfidenceThreshold: 0.8  // Higher threshold for safety-critical data
   },
 
+  {
+    type: CANONICAL_EVIDENCE_TYPES.SERIOUS_INCIDENT_INVESTIGATION,
+    category: "Vigilance",
+    description: "Serious incident investigation with root cause analysis and actions taken",
+    mdcgSections: ["Section C - Serious Incidents"],
+    fields: [
+      {
+        name: "incidentId",
+        description: "Incident ID being investigated",
+        semanticHints: ["incident id", "incident number", "case number", "reference"],
+        dataType: "string",
+        required: false,
+      },
+      {
+        name: "investigationDate",
+        description: "Date investigation was completed",
+        semanticHints: ["investigation date", "completed date", "date investigated"],
+        dataType: "date",
+        required: false,
+      },
+      {
+        name: "rootCauseAnalysis",
+        description: "Root cause analysis findings",
+        semanticHints: ["root cause analysis", "rca", "root cause", "cause analysis"],
+        dataType: "string",
+        required: true,
+      },
+      {
+        name: "actionsTaken",
+        description: "Actions taken in response to the incident",
+        semanticHints: ["actions taken", "corrective actions", "response", "measures"],
+        dataType: "string",
+        required: false,
+      },
+      {
+        name: "outcome",
+        description: "Investigation outcome/conclusion",
+        semanticHints: ["outcome", "conclusion", "result", "determination"],
+        dataType: "string",
+        required: false,
+      },
+    ],
+    documentIndicators: [
+      "incident investigation", "root cause analysis", "investigation report"
+    ],
+    tableIndicators: ["investigation", "root cause", "actions taken", "rca"],
+    minimumConfidenceThreshold: 0.8
+  },
+
+  {
+    type: CANONICAL_EVIDENCE_TYPES.VIGILANCE_SUBMISSION_LOG,
+    category: "Vigilance",
+    description: "Log of regulatory submissions for vigilance reports (EUDAMED, Competent Authorities)",
+    mdcgSections: ["Section C - Serious Incidents"],
+    fields: [
+      {
+        name: "submissionDate",
+        description: "Date of submission to authority",
+        semanticHints: ["submission date", "reported date", "notification date", "date submitted"],
+        dataType: "date",
+        required: true,
+      },
+      {
+        name: "incidentId",
+        description: "Related incident identifier",
+        semanticHints: ["incident id", "incident number", "case number"],
+        dataType: "string",
+        required: false,
+      },
+      {
+        name: "competentAuthority",
+        description: "Competent authority notified",
+        semanticHints: ["competent authority", "authority", "regulator", "ca", "notified body"],
+        dataType: "string",
+        required: false,
+      },
+      {
+        name: "eudamedId",
+        description: "EUDAMED incident report identifier",
+        semanticHints: ["eudamed id", "eudamed", "eudamed reference", "eudamed number"],
+        dataType: "string",
+        required: false,
+      },
+      {
+        name: "reportStatus",
+        description: "Status of the regulatory report",
+        semanticHints: ["report status", "status", "submission status"],
+        dataType: "enum",
+        enumValues: ["Initial", "Follow-up", "Final", "Closed"],
+        required: false,
+      },
+      {
+        name: "timelineCompliance",
+        description: "Whether submission met regulatory timeline requirements",
+        semanticHints: ["timeline compliance", "on time", "within deadline", "compliant"],
+        dataType: "boolean",
+        required: false,
+      },
+    ],
+    documentIndicators: [
+      "vigilance submission", "regulatory report", "eudamed", "competent authority notification"
+    ],
+    tableIndicators: ["submission", "eudamed", "competent authority", "timeline"],
+    minimumConfidenceThreshold: 0.7
+  },
+
   // ═══════════════════════════════════════════════════════════════════════════
   // FSCA (Field Safety Corrective Actions)
   // ═══════════════════════════════════════════════════════════════════════════
@@ -648,6 +740,49 @@ export const SOTA_EVIDENCE_REGISTRY: EvidenceTypeDefinition[] = [
     minimumConfidenceThreshold: 0.8
   },
 
+  {
+    type: CANONICAL_EVIDENCE_TYPES.FSCA_EFFECTIVENESS,
+    category: "FSCA",
+    description: "FSCA effectiveness verification and completion tracking",
+    mdcgSections: ["Section H - FSCAs"],
+    fields: [
+      {
+        name: "fscaId",
+        description: "FSCA identifier",
+        semanticHints: ["fsca id", "fsca number", "reference"],
+        dataType: "string",
+        required: true,
+      },
+      {
+        name: "completionPercent",
+        description: "Percentage of FSCA completion",
+        semanticHints: ["completion percent", "completion %", "progress", "percent complete"],
+        dataType: "number",
+        required: false,
+        validation: { minValue: 0, maxValue: 100 },
+      },
+      {
+        name: "devicesRetrieved",
+        description: "Number of devices retrieved/corrected",
+        semanticHints: ["devices retrieved", "units retrieved", "corrected", "returned"],
+        dataType: "number",
+        required: false,
+      },
+      {
+        name: "effectivenessVerified",
+        description: "Whether effectiveness has been verified",
+        semanticHints: ["effectiveness verified", "verified", "effective", "verification complete"],
+        dataType: "boolean",
+        required: false,
+      },
+    ],
+    documentIndicators: [
+      "fsca effectiveness", "effectiveness check", "fsca completion", "retrieval status"
+    ],
+    tableIndicators: ["effectiveness", "completion", "retrieved", "verified"],
+    minimumConfidenceThreshold: 0.7
+  },
+
   // ═══════════════════════════════════════════════════════════════════════════
   // CAPA (Corrective and Preventive Actions)
   // ═══════════════════════════════════════════════════════════════════════════
@@ -754,11 +889,61 @@ export const SOTA_EVIDENCE_REGISTRY: EvidenceTypeDefinition[] = [
     minimumConfidenceThreshold: 0.7
   },
 
+  {
+    type: CANONICAL_EVIDENCE_TYPES.NCR,
+    category: "CAPA",
+    description: "Non-conformance report that may trigger CAPAs",
+    mdcgSections: ["Section I - CAPAs"],
+    fields: [
+      {
+        name: "ncrId",
+        description: "NCR identifier",
+        semanticHints: ["ncr id", "ncr number", "non-conformance id", "deviation id"],
+        dataType: "string",
+        required: true,
+      },
+      {
+        name: "description",
+        description: "Description of the non-conformance",
+        semanticHints: ["description", "non-conformance", "deviation", "issue"],
+        dataType: "string",
+        required: true,
+      },
+      {
+        name: "openDate",
+        description: "Date NCR was opened",
+        semanticHints: ["open date", "opened", "date opened", "created"],
+        dataType: "date",
+        required: false,
+      },
+      {
+        name: "status",
+        description: "Current NCR status",
+        semanticHints: ["status", "state", "current status"],
+        dataType: "enum",
+        enumValues: ["Open", "In Progress", "Closed", "Cancelled"],
+        required: false,
+      },
+      {
+        name: "linkedCapaId",
+        description: "CAPA ID linked to this NCR",
+        semanticHints: ["capa id", "linked capa", "capa reference", "related capa"],
+        dataType: "string",
+        required: false,
+      },
+    ],
+    documentIndicators: [
+      "non-conformance", "ncr", "deviation", "nonconformity"
+    ],
+    tableIndicators: ["ncr", "non-conformance", "deviation"],
+    minimumConfidenceThreshold: 0.7
+  },
+
   // ═══════════════════════════════════════════════════════════════════════════
   // PMCF (Post-Market Clinical Follow-up)
   // ═══════════════════════════════════════════════════════════════════════════
   {
-    type: CANONICAL_EVIDENCE_TYPES.PMCF,
+    type: CANONICAL_EVIDENCE_TYPES.PMCF_RESULTS,
     category: "PMCF",
     description: "Post-Market Clinical Follow-up result or activity",
     mdcgSections: ["Section J - PMCF", "Section K - Literature Review"],
@@ -850,10 +1035,10 @@ export const SOTA_EVIDENCE_REGISTRY: EvidenceTypeDefinition[] = [
   // LITERATURE
   // ═══════════════════════════════════════════════════════════════════════════
   {
-    type: CANONICAL_EVIDENCE_TYPES.LITERATURE,
+    type: CANONICAL_EVIDENCE_TYPES.LITERATURE_FINDINGS,
     category: "Literature",
     description: "Scientific literature search result or review finding",
-    mdcgSections: ["Section K - Literature Review"],
+    mdcgSections: ["Section J - Literature Review"],
     fields: [
       {
         name: "citation",
@@ -948,8 +1133,8 @@ export const SOTA_EVIDENCE_REGISTRY: EvidenceTypeDefinition[] = [
   // DEVICE REGISTRY / ADMINISTRATIVE
   // ═══════════════════════════════════════════════════════════════════════════
   {
-    type: CANONICAL_EVIDENCE_TYPES.DEVICE_REGISTRY,
-    category: "Administrative",
+    type: CANONICAL_EVIDENCE_TYPES.DEVICE_IDENTIFICATION,
+    category: "Device Master Data",
     description: "Device registration and identification information",
     mdcgSections: ["Section A - Device Identification"],
     fields: [
@@ -1046,7 +1231,7 @@ export const SOTA_EVIDENCE_REGISTRY: EvidenceTypeDefinition[] = [
   // BENEFIT-RISK
   // ═══════════════════════════════════════════════════════════════════════════
   {
-    type: CANONICAL_EVIDENCE_TYPES.BENEFIT_RISK_ASSESSMENT,
+    type: CANONICAL_EVIDENCE_TYPES.BENEFIT_RISK_QUANTIFICATION,
     category: "Risk",
     description: "Benefit-risk assessment or determination",
     mdcgSections: ["Section M - Conclusions", "Section M - Benefit-Risk"],
@@ -1131,7 +1316,7 @@ export const SOTA_EVIDENCE_REGISTRY: EvidenceTypeDefinition[] = [
   // TREND ANALYSIS
   // ═══════════════════════════════════════════════════════════════════════════
   {
-    type: CANONICAL_EVIDENCE_TYPES.TREND_ANALYSIS,
+    type: CANONICAL_EVIDENCE_TYPES.STATISTICAL_TRENDING,
     category: "Analysis",
     description: "Statistical trend analysis result",
     mdcgSections: ["Section E - Trend Analysis", "Section G - Signal Detection"],
@@ -1216,7 +1401,120 @@ export const SOTA_EVIDENCE_REGISTRY: EvidenceTypeDefinition[] = [
       "trend", "baseline", "current", "threshold", "signal"
     ],
     minimumConfidenceThreshold: 0.7
-  }
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PMS ACTIVITY LOG
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    type: CANONICAL_EVIDENCE_TYPES.PMS_ACTIVITY_LOG,
+    category: "PMS",
+    description: "PMS surveillance activity log with planned and actual dates",
+    mdcgSections: ["Section C - PMS Activities", "Section M - Actions Taken"],
+    fields: [
+      {
+        name: "activityId",
+        description: "Activity identifier",
+        semanticHints: ["activity id", "activity number", "id", "reference"],
+        dataType: "string",
+        required: false,
+      },
+      {
+        name: "activityType",
+        description: "Type of PMS activity",
+        semanticHints: ["activity type", "type", "surveillance type"],
+        dataType: "string",
+        required: true,
+      },
+      {
+        name: "plannedDate",
+        description: "Planned date for the activity",
+        semanticHints: ["planned date", "scheduled", "due date", "planned"],
+        dataType: "date",
+        required: false,
+      },
+      {
+        name: "actualDate",
+        description: "Actual date the activity was performed",
+        semanticHints: ["actual date", "performed", "completed date", "actual"],
+        dataType: "date",
+        required: false,
+      },
+      {
+        name: "status",
+        description: "Activity status",
+        semanticHints: ["status", "state", "progress"],
+        dataType: "enum",
+        enumValues: ["Planned", "In Progress", "Completed", "Overdue", "Cancelled"],
+        required: false,
+      },
+      {
+        name: "findings",
+        description: "Activity findings or results",
+        semanticHints: ["findings", "results", "outcome", "observations"],
+        dataType: "string",
+        required: false,
+      },
+    ],
+    documentIndicators: [
+      "pms activity", "surveillance activity", "post-market surveillance", "pms plan"
+    ],
+    tableIndicators: ["pms", "activity", "surveillance", "planned", "actual"],
+    minimumConfidenceThreshold: 0.7
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PREVIOUS PSUR ACTION STATUS
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    type: CANONICAL_EVIDENCE_TYPES.PREVIOUS_PSUR_ACTION_STATUS,
+    category: "Previous PSUR",
+    description: "Status of actions from previous PSUR (completed, ongoing, effectiveness verified)",
+    mdcgSections: ["Section A - Product Info", "Section M - Conclusions"],
+    fields: [
+      {
+        name: "actionId",
+        description: "Action identifier from previous PSUR",
+        semanticHints: ["action id", "action number", "reference", "id"],
+        dataType: "string",
+        required: false,
+      },
+      {
+        name: "description",
+        description: "Description of the action",
+        semanticHints: ["description", "action description", "action", "summary"],
+        dataType: "string",
+        required: true,
+      },
+      {
+        name: "status",
+        description: "Current status of the action",
+        semanticHints: ["status", "state", "progress", "current status"],
+        dataType: "enum",
+        enumValues: ["Completed", "Ongoing", "Overdue", "Cancelled"],
+        required: false,
+      },
+      {
+        name: "completionDate",
+        description: "Date the action was completed",
+        semanticHints: ["completion date", "completed", "closed", "date completed"],
+        dataType: "date",
+        required: false,
+      },
+      {
+        name: "effectivenessVerified",
+        description: "Whether effectiveness has been verified",
+        semanticHints: ["effectiveness", "verified", "effective", "verification"],
+        dataType: "boolean",
+        required: false,
+      },
+    ],
+    documentIndicators: [
+      "previous psur", "prior psur", "action status", "follow-up actions"
+    ],
+    tableIndicators: ["action", "status", "previous", "follow-up"],
+    minimumConfidenceThreshold: 0.7
+  },
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════════

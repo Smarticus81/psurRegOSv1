@@ -440,6 +440,14 @@ export const insertEvidenceUploadSchema = createInsertSchema(evidenceUploads).om
 export type EvidenceUpload = typeof evidenceUploads.$inferSelect;
 export type InsertEvidenceUpload = z.infer<typeof insertEvidenceUploadSchema>;
 
+// ============== EVIDENCE TIER ==============
+export const EVIDENCE_TIER = {
+  PRIMARY: "primary",
+  CALCULATED: "calculated",
+  EXTRACTED: "extracted",
+} as const;
+export type EvidenceTier = typeof EVIDENCE_TIER[keyof typeof EVIDENCE_TIER];
+
 // ============== EVIDENCE DEFINITIONS REGISTRY ==============
 // Single source of truth for all evidence types - consumed by UI, parser, storage, and queue-builder
 export interface EvidenceDefinition {
@@ -447,28 +455,47 @@ export interface EvidenceDefinition {
   label: string;
   description: string;
   sections: string[];  // PSUR sections this evidence feeds into
-  tier: number;        // Processing priority tier (0=admin, 1=sales/pop, 2=safety, 3=external, 4=conclusions)
+  processingPriority: number;  // Processing priority tier (0=device, 1=sales, 2=safety, 3=external)
+  evidenceTier: EvidenceTier;  // PRIMARY/CALCULATED/EXTRACTED
   isAggregated: boolean;  // true for summary/aggregated data, false for raw records
   requiredFields: string[];  // Required fields for validation
   parserType: "dedicated" | "generic";  // Parser handling
 }
 
 export const EVIDENCE_DEFINITIONS: EvidenceDefinition[] = [
-  { type: "manufacturer_master_data", label: "Manufacturer Master Data", description: "Legal entity name, address, contact info", sections: ["A"], tier: 0, isAggregated: false, requiredFields: [], parserType: "generic" },
-  { type: "device_master_data", label: "Device Master Data", description: "UDI-DI, device identifiers, classification", sections: ["A"], tier: 0, isAggregated: false, requiredFields: [], parserType: "generic" },
-  { type: "psur_case_record", label: "PSUR Case Record", description: "Reporting period, reference numbers, scope", sections: ["A", "M"], tier: 0, isAggregated: false, requiredFields: [], parserType: "generic" },
-  { type: "sales_volume", label: "Sales Volume", description: "Unit sales and distribution data by period", sections: ["C"], tier: 1, isAggregated: false, requiredFields: ["deviceCode", "quantity", "periodStart", "periodEnd"], parserType: "dedicated" },
-  { type: "population_estimate", label: "Population Estimate", description: "Patient/user population calculations", sections: ["C"], tier: 1, isAggregated: true, requiredFields: [], parserType: "generic" },
-  { type: "exposure_model", label: "Exposure Model", description: "Device exposure methodology and data", sections: ["C", "G"], tier: 1, isAggregated: true, requiredFields: [], parserType: "generic" },
-  { type: "serious_incident_record", label: "Incident Records", description: "Serious and non-serious incident reports", sections: ["D", "E", "G", "M"], tier: 2, isAggregated: false, requiredFields: ["incidentId", "deviceCode", "incidentDate", "description"], parserType: "dedicated" },
-  { type: "incidents", label: "Incidents (Aggregated)", description: "Aggregated incident data and trends", sections: ["D", "E", "G", "M"], tier: 2, isAggregated: true, requiredFields: [], parserType: "dedicated" },
-  { type: "complaint_record", label: "Complaint Records", description: "Customer complaints and investigations", sections: ["F", "G", "M"], tier: 2, isAggregated: false, requiredFields: ["complaintId", "deviceCode", "complaintDate", "description"], parserType: "dedicated" },
-  { type: "complaints", label: "Complaints (Aggregated)", description: "Aggregated complaint data and analysis", sections: ["F", "G", "M"], tier: 2, isAggregated: true, requiredFields: [], parserType: "dedicated" },
-  { type: "fsca_record", label: "FSCA Records", description: "Field safety corrective actions", sections: ["H"], tier: 2, isAggregated: false, requiredFields: ["fscaId", "deviceCode", "actionType", "initiationDate"], parserType: "dedicated" },
-  { type: "capa", label: "CAPA Records", description: "Corrective and preventive actions", sections: ["I"], tier: 2, isAggregated: false, requiredFields: ["capaId", "description"], parserType: "dedicated" },
-  { type: "literature_result", label: "Literature Evidence", description: "Published literature review data", sections: ["J", "M"], tier: 3, isAggregated: false, requiredFields: [], parserType: "dedicated" },
-  { type: "registry", label: "Registry/Database Data", description: "External database and registry queries", sections: ["K"], tier: 3, isAggregated: true, requiredFields: ["registryName"], parserType: "dedicated" },
-  { type: "pmcf_result", label: "PMCF Study Data", description: "Post-market clinical follow-up results", sections: ["L", "M"], tier: 3, isAggregated: true, requiredFields: [], parserType: "dedicated" },
+  // ── Tier 0: Device Master Data ──
+  { type: "device_identification", label: "Device Identification", description: "UDI-DI, GMDN/EMDN codes, device name, models, SRN", sections: ["A"], processingPriority: 0, evidenceTier: "primary", isAggregated: false, requiredFields: ["deviceName"], parserType: "generic" },
+  { type: "device_classification", label: "Device Classification", description: "Risk class, classification rule, device group", sections: ["A"], processingPriority: 0, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "generic" },
+  { type: "device_intended_use", label: "Device Intended Use", description: "Intended purpose, indications, contraindications, target population", sections: ["A"], processingPriority: 0, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "generic" },
+  { type: "device_technical_specs", label: "Device Technical Specs", description: "Physical characteristics, sterility, shelf life", sections: ["A"], processingPriority: 0, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "generic" },
+  { type: "manufacturer_details", label: "Manufacturer Details", description: "Legal name, address, SRN, Authorized Rep, Notified Body", sections: ["A"], processingPriority: 0, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "generic" },
+  { type: "regulatory_certificates", label: "Regulatory Certificates", description: "CE certificate number, UKCA, FDA clearance, expiry dates", sections: ["A"], processingPriority: 0, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "generic" },
+
+  // ── Tier 1: Sales & Distribution ──
+  { type: "sales_transactions", label: "Sales Transactions", description: "Product number, quantity sold, ship date, region/country", sections: ["C"], processingPriority: 1, evidenceTier: "primary", isAggregated: false, requiredFields: ["quantity", "periodStart"], parserType: "dedicated" },
+  { type: "market_history", label: "Market History", description: "Date first sold, markets entered/exited, volume trends", sections: ["C"], processingPriority: 1, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "generic" },
+
+  // ── Tier 2: Safety ──
+  { type: "complaint_record", label: "Complaint Records", description: "Complaint ID, date, description, product, lot, region, severity", sections: ["D", "E", "G", "M"], processingPriority: 2, evidenceTier: "primary", isAggregated: false, requiredFields: ["complaintDate", "description"], parserType: "dedicated" },
+  { type: "complaint_investigation", label: "Complaint Investigation", description: "Investigation findings, root cause, confirmed, corrective action", sections: ["D", "E"], processingPriority: 2, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
+  { type: "serious_incident_record", label: "Serious Incident Records", description: "Incident ID, date, description, severity, product, lot, region", sections: ["D", "E", "G", "M"], processingPriority: 2, evidenceTier: "primary", isAggregated: false, requiredFields: ["incidentDate", "description"], parserType: "dedicated" },
+  { type: "serious_incident_investigation", label: "Serious Incident Investigation", description: "Root cause analysis, actions taken, outcome", sections: ["D", "E"], processingPriority: 2, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
+  { type: "vigilance_submission_log", label: "Vigilance Submission Log", description: "Submission dates to EUDAMED, competent authorities, timeline compliance", sections: ["D"], processingPriority: 2, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
+  { type: "fsca_record", label: "FSCA Records", description: "FSCA ID, type, reason, date initiated, scope, regions, status", sections: ["H"], processingPriority: 2, evidenceTier: "primary", isAggregated: false, requiredFields: ["fscaId", "actionType", "initiationDate"], parserType: "dedicated" },
+  { type: "fsca_effectiveness", label: "FSCA Effectiveness", description: "Completion %, devices retrieved/corrected, effectiveness verification", sections: ["H"], processingPriority: 2, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
+  { type: "capa_record", label: "CAPA Records", description: "CAPA ID, trigger, problem statement, root cause, corrective/preventive actions", sections: ["I"], processingPriority: 2, evidenceTier: "primary", isAggregated: false, requiredFields: ["capaId", "description"], parserType: "dedicated" },
+  { type: "ncr_record", label: "NCR Records", description: "Non-conformance reports that may trigger CAPAs", sections: ["I"], processingPriority: 2, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
+
+  // ── Tier 3: External / Document-Extract ──
+  { type: "pmcf_activity_record", label: "PMCF Activity Record", description: "Individual study/activity ID, type, status", sections: ["L", "M"], processingPriority: 3, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
+  { type: "pmcf_results", label: "PMCF Results", description: "Study outcomes, safety/performance findings", sections: ["L", "M"], processingPriority: 3, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
+  { type: "literature_search_protocol", label: "Literature Search Protocol", description: "Databases searched, keywords, date range, criteria", sections: ["J"], processingPriority: 3, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
+  { type: "literature_screening_results", label: "Literature Screening Results", description: "Studies identified, screened, included, excluded", sections: ["J"], processingPriority: 3, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
+  { type: "literature_findings", label: "Literature Findings", description: "Individual study results, safety signals, performance benchmarks", sections: ["J", "M"], processingPriority: 3, evidenceTier: "extracted", isAggregated: false, requiredFields: [], parserType: "dedicated" },
+  { type: "external_db_query_log", label: "External DB Query Log", description: "Database, search terms, dates, hit count", sections: ["K"], processingPriority: 3, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
+  { type: "external_db_findings", label: "External DB Findings", description: "Relevant incidents on similar devices from external databases", sections: ["K"], processingPriority: 3, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
+  { type: "pms_activity_log", label: "PMS Activity Log", description: "Activity ID, type, planned/actual date, status, findings", sections: ["C", "M"], processingPriority: 3, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
+  { type: "previous_psur_action_status", label: "Previous PSUR Action Status", description: "Status of actions from previous PSUR", sections: ["A", "M"], processingPriority: 3, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "generic" },
 ];
 
 // Derive enum from registry for backwards compatibility
@@ -477,11 +504,22 @@ export type EvidenceType = typeof EVIDENCE_DEFINITIONS[number]["type"];
 
 // Raw → Aggregated mapping: when raw records exist, they contribute to aggregated type requirements
 export const RAW_TO_AGGREGATED_MAP: Record<string, string> = {
-  "serious_incident_record": "incidents",
-  "complaint_record": "complaints",
+  "complaint_record": "complaint_metrics",
+  "serious_incident_record": "serious_incident_metrics",
+  "sales_transactions": "sales_aggregated",
+  "fsca_record": "fsca_metrics",
+  "capa_record": "capa_metrics",
+  // Backward compat aliases
+  "sales_volume": "sales_aggregated",
 };
 
 export const AGGREGATED_TO_RAW_MAP: Record<string, string> = {
+  "complaint_metrics": "complaint_record",
+  "serious_incident_metrics": "serious_incident_record",
+  "sales_aggregated": "sales_transactions",
+  "fsca_metrics": "fsca_record",
+  "capa_metrics": "capa_record",
+  // Backward compat aliases
   "incidents": "serious_incident_record",
   "complaints": "complaint_record",
 };
@@ -495,8 +533,8 @@ export function getEvidenceTypesForSection(section: string): EvidenceDefinition[
   return EVIDENCE_DEFINITIONS.filter(d => d.sections.includes(section));
 }
 
-export function getEvidenceTypesByTier(tier: number): EvidenceDefinition[] {
-  return EVIDENCE_DEFINITIONS.filter(d => d.tier === tier);
+export function getEvidenceTypesByTier(processingPriority: number): EvidenceDefinition[] {
+  return EVIDENCE_DEFINITIONS.filter(d => d.processingPriority === processingPriority);
 }
 
 // Get all evidence types that satisfy a slot requirement (including raw→aggregated mappings)
@@ -1218,62 +1256,138 @@ export type ColumnMappingProfile = typeof columnMappingProfiles.$inferSelect;
 export type InsertColumnMappingProfile = z.infer<typeof insertColumnMappingProfileSchema>;
 
 // ============== CANONICAL EVIDENCE TYPES ==============
-// Single source of truth for evidence types across the entire system
+// Single source of truth for evidence types across the entire system (12-category taxonomy)
 export const CANONICAL_EVIDENCE_TYPES = {
-  // Raw data inputs
-  SALES: "sales_volume",
+  // ── Category 1: Device Master Data ──
+  DEVICE_IDENTIFICATION: "device_identification",
+  DEVICE_CLASSIFICATION: "device_classification",
+  DEVICE_INTENDED_USE: "device_intended_use",
+  DEVICE_TECHNICAL_SPECS: "device_technical_specs",
+  MANUFACTURER_DETAILS: "manufacturer_details",
+  REGULATORY_CERTIFICATES: "regulatory_certificates",
+
+  // ── Category 2: Complaints (Non-Serious) ──
   COMPLAINT: "complaint_record",
+  COMPLAINT_INVESTIGATION: "complaint_investigation",
+  COMPLAINT_METRICS: "complaint_metrics",
+  IMDRF_CLASSIFICATION_COMPLAINTS: "imdrf_classification_complaints",
+  COMPLAINT_CONTROL_CHART: "complaint_control_chart",
+  COMPLAINT_SEGMENTATION: "complaint_segmentation",
+  ROOT_CAUSE_CLUSTERS: "root_cause_clusters",
+
+  // ── Category 3: Vigilance (Serious Incidents) ──
   SERIOUS_INCIDENT: "serious_incident_record",
+  SERIOUS_INCIDENT_INVESTIGATION: "serious_incident_investigation",
+  IMDRF_CLASSIFICATION_INCIDENTS: "imdrf_classification_incidents",
+  VIGILANCE_SUBMISSION_LOG: "vigilance_submission_log",
+  SERIOUS_INCIDENT_METRICS: "serious_incident_metrics",
+
+  // ── Category 4: Sales & Distribution ──
+  SALES: "sales_transactions",
+  SALES_AGGREGATED: "sales_aggregated",
+  POPULATION_EXPOSURE: "population_exposure",
+  MARKET_HISTORY: "market_history",
+
+  // ── Category 5: FSCA ──
   FSCA: "fsca_record",
-  PMCF: "pmcf_result",
-  LITERATURE: "literature_result",
+  FSCA_EFFECTIVENESS: "fsca_effectiveness",
+  FSCA_METRICS: "fsca_metrics",
+
+  // ── Category 6: CAPA ──
   CAPA: "capa_record",
   NCR: "ncr_record",
-  RECALL: "recall_record",
+  CAPA_METRICS: "capa_metrics",
 
-  // Administrative records
-  DEVICE_REGISTRY: "device_registry_record",
-  MANUFACTURER_PROFILE: "manufacturer_profile",
-  REGULATORY_CERTIFICATE: "regulatory_certificate_record",
-  CHANGE_CONTROL: "change_control_record",
-  DATA_SOURCE_REGISTER: "data_source_register",
+  // ── Category 7: CER (Extracted) ──
+  CER_METADATA: "cer_metadata",
+  CER_INTENDED_USE: "cer_intended_use",
+  CER_CLINICAL_BENEFITS: "cer_clinical_benefits",
+  CER_CLINICAL_RISKS: "cer_clinical_risks",
+  CER_LITERATURE_SUMMARY: "cer_literature_summary",
+  CER_PMCF_SUMMARY: "cer_pmcf_summary",
+  CER_EQUIVALENCE: "cer_equivalence",
+  CER_STATE_OF_ART: "cer_state_of_art",
+  CER_CONCLUSIONS: "cer_conclusions",
+  CER_CHANGE_LOG: "cer_change_log",
+
+  // ── Category 8: RMF (Extracted) ──
+  RMF_METADATA: "rmf_metadata",
+  RMF_HAZARD_ANALYSIS: "rmf_hazard_analysis",
+  RMF_RISK_ASSESSMENT_PRE: "rmf_risk_assessment_pre",
+  RMF_RISK_CONTROLS: "rmf_risk_controls",
+  RMF_RISK_ASSESSMENT_POST: "rmf_risk_assessment_post",
+  RMF_ACCEPTABILITY: "rmf_acceptability",
+  RMF_BENEFIT_RISK: "rmf_benefit_risk",
+  RMF_CHANGE_LOG: "rmf_change_log",
+
+  // ── Category 9: PMCF ──
+  PMCF_PLAN_EXTRACT: "pmcf_plan_extract",
+  PMCF_ACTIVITY_RECORD: "pmcf_activity_record",
+  PMCF_RESULTS: "pmcf_results",
+  PMCF_EVALUATION_SUMMARY: "pmcf_evaluation_summary",
+
+  // ── Category 10: Literature & External Databases ──
+  LITERATURE_SEARCH_PROTOCOL: "literature_search_protocol",
+  LITERATURE_SCREENING_RESULTS: "literature_screening_results",
+  LITERATURE_FINDINGS: "literature_findings",
+  LITERATURE_SYNTHESIS: "literature_synthesis",
+  EXTERNAL_DB_QUERY_LOG: "external_db_query_log",
+  EXTERNAL_DB_FINDINGS: "external_db_findings",
+
+  // ── Category 11: PMS Plan & Activity Log ──
+  PMS_PLAN_EXTRACT: "pms_plan_extract",
   PMS_ACTIVITY_LOG: "pms_activity_log",
 
-  // Document extracts
-  CER_EXTRACT: "cer_extract",
-  RMF_EXTRACT: "rmf_extract",
-  IFU_EXTRACT: "ifu_extract",
-  CLINICAL_EVALUATION_EXTRACT: "clinical_evaluation_extract",
-  PMS_PLAN_EXTRACT: "pms_plan_extract",
-  PREVIOUS_PSUR_EXTRACT: "previous_psur_extract",
-  PMCF_REPORT_EXTRACT: "pmcf_report_extract",
-  PMCF_ACTIVITY_RECORD: "pmcf_activity_record",
+  // ── Category 12: Previous PSUR ──
+  PREVIOUS_PSUR_METADATA: "previous_psur_metadata",
+  PREVIOUS_PSUR_CONCLUSIONS: "previous_psur_conclusions",
+  PREVIOUS_PSUR_METRICS: "previous_psur_metrics",
+  PREVIOUS_PSUR_ACTIONS: "previous_psur_actions",
+  PREVIOUS_PSUR_ACTION_STATUS: "previous_psur_action_status",
 
-  // Summaries (derived from raw data)
-  SALES_SUMMARY: "sales_summary",
-  SALES_BY_REGION: "sales_by_region",
-  DISTRIBUTION_SUMMARY: "distribution_summary",
-  USAGE_ESTIMATE: "usage_estimate",
-  COMPLAINT_SUMMARY: "complaint_summary",
-  COMPLAINTS_BY_REGION: "complaints_by_region",
-  SERIOUS_INCIDENT_SUMMARY: "serious_incident_summary",
-  SERIOUS_INCIDENT_IMDRF: "serious_incident_records_imdrf",
-  TREND_ANALYSIS: "trend_analysis",
-  SIGNAL_LOG: "signal_log",
-  FSCA_SUMMARY: "fsca_summary",
-  CAPA_SUMMARY: "capa_summary",
-  PMCF_SUMMARY: "pmcf_summary",
-  LITERATURE_REVIEW_SUMMARY: "literature_review_summary",
-  LITERATURE_SEARCH_STRATEGY: "literature_search_strategy",
-  EXTERNAL_DB_SUMMARY: "external_db_summary",
-  EXTERNAL_DB_QUERY_LOG: "external_db_query_log",
-  VIGILANCE_REPORT: "vigilance_report",
-  BENEFIT_RISK_ASSESSMENT: "benefit_risk_assessment",
-  RISK_ASSESSMENT: "risk_assessment",
+  // ── Calculated Evidence (engine-generated, not uploaded) ──
+  COMPLAINT_RATE_ANALYSIS: "complaint_rate_analysis",
+  STATISTICAL_TRENDING: "statistical_trending",
+  CONTROL_CHART_DATA: "control_chart_data",
+  SEGMENTATION_ANALYSIS: "segmentation_analysis",
+  BENEFIT_RISK_QUANTIFICATION: "benefit_risk_quantification",
+  RISK_REASSESSMENT: "risk_reassessment",
 
-  // Change logs
-  CER_CHANGE_LOG: "cer_change_log",
-  RMF_CHANGE_LOG: "rmf_change_log",
+  // ── Backward Compatibility Aliases ──
+  // These map old keys to new canonical values for code that references old enum keys
+  SALES_SUMMARY: "sales_aggregated",
+  SALES_BY_REGION: "sales_aggregated",
+  DISTRIBUTION_SUMMARY: "sales_aggregated",
+  USAGE_ESTIMATE: "population_exposure",
+  COMPLAINT_SUMMARY: "complaint_metrics",
+  COMPLAINTS_BY_REGION: "complaint_metrics",
+  SERIOUS_INCIDENT_SUMMARY: "serious_incident_metrics",
+  SERIOUS_INCIDENT_IMDRF: "imdrf_classification_incidents",
+  TREND_ANALYSIS: "statistical_trending",
+  SIGNAL_LOG: "statistical_trending",
+  FSCA_SUMMARY: "fsca_metrics",
+  CAPA_SUMMARY: "capa_metrics",
+  PMCF_SUMMARY: "pmcf_evaluation_summary",
+  LITERATURE_REVIEW_SUMMARY: "literature_synthesis",
+  LITERATURE_SEARCH_STRATEGY: "literature_search_protocol",
+  EXTERNAL_DB_SUMMARY: "external_db_findings",
+  VIGILANCE_REPORT: "serious_incident_metrics",
+  BENEFIT_RISK_ASSESSMENT: "benefit_risk_quantification",
+  RISK_ASSESSMENT: "risk_reassessment",
+  RECALL: "fsca_record",
+  DEVICE_REGISTRY: "device_identification",
+  MANUFACTURER_PROFILE: "manufacturer_details",
+  REGULATORY_CERTIFICATE: "regulatory_certificates",
+  CHANGE_CONTROL: "pms_activity_log",
+  DATA_SOURCE_REGISTER: "pms_activity_log",
+  CER_EXTRACT: "cer_metadata",
+  RMF_EXTRACT: "rmf_metadata",
+  IFU_EXTRACT: "device_intended_use",
+  CLINICAL_EVALUATION_EXTRACT: "cer_conclusions",
+  PREVIOUS_PSUR_EXTRACT: "previous_psur_metadata",
+  PMCF_REPORT_EXTRACT: "pmcf_evaluation_summary",
+  PMCF: "pmcf_results",
+  LITERATURE: "literature_findings",
 } as const;
 
 export type CanonicalEvidenceType = typeof CANONICAL_EVIDENCE_TYPES[keyof typeof CANONICAL_EVIDENCE_TYPES];

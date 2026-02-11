@@ -2,14 +2,7 @@ import { z } from "zod";
 
 export const EvidenceAtomZ = z.object({
   atomId: z.string().min(5),
-  type: z.enum([
-    "sales_volume",
-    "complaint_record",
-    "incident_record",
-    "fsca_record",
-    "pmcf_result",
-    "literature_result",
-  ]),
+  type: z.string().min(3),  // Flexible validation — 60+ canonical types across 12 categories
   version: z.number().int().min(1).default(1),
   contentHash: z.string().min(16),
 

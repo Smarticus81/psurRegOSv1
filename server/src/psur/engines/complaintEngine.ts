@@ -35,6 +35,14 @@ export interface ComplaintEvidenceAtom {
   investigationStatus?: string;
   rootCause?: string;
   imdrfProblemCode?: string;
+  /** IMDRF Annex A Medical Device Problem code (from classification engine) */
+  imdrfMdpCode?: string;
+  /** IMDRF Annex A MDP term */
+  imdrfMdpTerm?: string;
+  /** IMDRF Annex E Health Effect code (null = no harm) */
+  imdrfHarmCode?: string | null;
+  /** IMDRF Annex E Health Effect term */
+  imdrfHarmTerm?: string;
   country?: string;
   /** Whether the complaint was confirmed as a product defect ("yes"/"no") */
   complaintConfirmed?: string;

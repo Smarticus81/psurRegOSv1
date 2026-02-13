@@ -464,43 +464,187 @@ export interface EvidenceDefinition {
 
 export const EVIDENCE_DEFINITIONS: EvidenceDefinition[] = [
   // ── Tier 0: Device Master Data ──
-  { type: "device_identification", label: "Device Identification", description: "UDI-DI, GMDN/EMDN codes, device name, models, SRN", sections: ["A"], processingPriority: 0, evidenceTier: "primary", isAggregated: false, requiredFields: ["deviceName"], parserType: "generic" },
-  { type: "device_classification", label: "Device Classification", description: "Risk class, classification rule, device group", sections: ["A"], processingPriority: 0, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "generic" },
-  { type: "device_intended_use", label: "Device Intended Use", description: "Intended purpose, indications, contraindications, target population", sections: ["A"], processingPriority: 0, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "generic" },
-  { type: "device_technical_specs", label: "Device Technical Specs", description: "Physical characteristics, sterility, shelf life", sections: ["A"], processingPriority: 0, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "generic" },
-  { type: "manufacturer_details", label: "Manufacturer Details", description: "Legal name, address, SRN, Authorized Rep, Notified Body", sections: ["A"], processingPriority: 0, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "generic" },
-  { type: "regulatory_certificates", label: "Regulatory Certificates", description: "CE certificate number, UKCA, FDA clearance, expiry dates", sections: ["A"], processingPriority: 0, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "generic" },
+  // Source: Device registry, technical file, EUDAMED, EU DoC
+  { type: "device_identification", label: "Device Identification", description: "UDI-DI, GMDN/EMDN codes, device name, models, SRN — from device registry or technical file", sections: ["A", "B"], processingPriority: 0, evidenceTier: "primary", isAggregated: false, requiredFields: ["deviceName"], parserType: "generic" },
+  { type: "device_classification", label: "Device Classification", description: "Risk class (I/IIa/IIb/III), classification rule, device group — from technical file or EUDAMED", sections: ["A"], processingPriority: 0, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "generic" },
+  { type: "device_intended_use", label: "Device Intended Use", description: "Intended purpose, indications, contraindications, target population — from IFU or technical file", sections: ["A", "B"], processingPriority: 0, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "generic" },
+  { type: "device_technical_specs", label: "Device Technical Specs", description: "Physical characteristics, materials, sterility, shelf life — from technical file", sections: ["B"], processingPriority: 0, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "generic" },
+  { type: "manufacturer_details", label: "Manufacturer Details", description: "Legal manufacturer name, address, SRN, Authorized Rep, Notified Body — from EU DoC or EUDAMED", sections: ["A"], processingPriority: 0, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "generic" },
+  { type: "regulatory_certificates", label: "Regulatory Certificates", description: "CE certificate number, UKCA, FDA clearance numbers, expiry dates — from certificate copies", sections: ["A"], processingPriority: 0, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "generic" },
 
   // ── Tier 1: Sales & Distribution ──
-  { type: "sales_transactions", label: "Sales Transactions", description: "Product number, quantity sold, ship date, region/country", sections: ["C"], processingPriority: 1, evidenceTier: "primary", isAggregated: false, requiredFields: ["quantity", "periodStart"], parserType: "dedicated" },
-  { type: "market_history", label: "Market History", description: "Date first sold, markets entered/exited, volume trends", sections: ["C"], processingPriority: 1, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "generic" },
+  // Source: ERP system (SAP, D365, Oracle), distribution records
+  { type: "sales_transactions", label: "Sales / Distribution Data", description: "Raw sales or shipment line items (order date, quantity, product, region) — from ERP or distribution system export. The system aggregates into units sold by product, region, and period.", sections: ["C"], processingPriority: 1, evidenceTier: "primary", isAggregated: false, requiredFields: ["quantity"], parserType: "dedicated" },
+  { type: "market_history", label: "Market History", description: "Date first placed on market, markets entered/exited, volume trends — from regulatory or commercial records", sections: ["C"], processingPriority: 1, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "generic" },
 
-  // ── Tier 2: Safety ──
-  { type: "complaint_record", label: "Complaint Records", description: "Complaint ID, date, description, product, lot, region, severity", sections: ["D", "E", "G", "M"], processingPriority: 2, evidenceTier: "primary", isAggregated: false, requiredFields: ["complaintDate", "description"], parserType: "dedicated" },
-  { type: "complaint_investigation", label: "Complaint Investigation", description: "Investigation findings, root cause, confirmed, corrective action", sections: ["D", "E"], processingPriority: 2, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
-  { type: "serious_incident_record", label: "Serious Incident Records", description: "Incident ID, date, description, severity, product, lot, region", sections: ["D", "E", "G", "M"], processingPriority: 2, evidenceTier: "primary", isAggregated: false, requiredFields: ["incidentDate", "description"], parserType: "dedicated" },
-  { type: "serious_incident_investigation", label: "Serious Incident Investigation", description: "Root cause analysis, actions taken, outcome", sections: ["D", "E"], processingPriority: 2, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
-  { type: "vigilance_submission_log", label: "Vigilance Submission Log", description: "Submission dates to EUDAMED, competent authorities, timeline compliance", sections: ["D"], processingPriority: 2, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
-  { type: "fsca_record", label: "FSCA Records", description: "FSCA ID, type, reason, date initiated, scope, regions, status", sections: ["H"], processingPriority: 2, evidenceTier: "primary", isAggregated: false, requiredFields: ["fscaId", "actionType", "initiationDate"], parserType: "dedicated" },
-  { type: "fsca_effectiveness", label: "FSCA Effectiveness", description: "Completion %, devices retrieved/corrected, effectiveness verification", sections: ["H"], processingPriority: 2, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
-  { type: "capa_record", label: "CAPA Records", description: "CAPA ID, trigger, problem statement, root cause, corrective/preventive actions", sections: ["I"], processingPriority: 2, evidenceTier: "primary", isAggregated: false, requiredFields: ["capaId", "description"], parserType: "dedicated" },
-  { type: "ncr_record", label: "NCR Records", description: "Non-conformance reports that may trigger CAPAs", sections: ["I"], processingPriority: 2, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
+  // ── Tier 2: Safety (Complaints, Incidents, FSCA, CAPA) ──
+  // Source: QMS (TrackWise, Greenlight, MasterControl), vigilance system
+  { type: "complaint_record", label: "Complaint Records", description: "Complaint ID, date, description, severity, product, lot, region, investigation — from QMS complaint database export", sections: ["D", "E"], processingPriority: 2, evidenceTier: "primary", isAggregated: false, requiredFields: ["complaintDate", "description"], parserType: "dedicated" },
+  { type: "complaint_investigation", label: "Complaint Investigation", description: "Investigation findings, root cause, confirmed/unconfirmed, corrective action — from QMS (if separate from complaint export)", sections: ["D", "E"], processingPriority: 2, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
+  { type: "serious_incident_record", label: "Serious Incident Records", description: "Incident ID, date, description, outcome (death/injury/malfunction), product, lot — from vigilance system export", sections: ["F", "H"], processingPriority: 2, evidenceTier: "primary", isAggregated: false, requiredFields: ["incidentDate", "description"], parserType: "dedicated" },
+  { type: "serious_incident_investigation", label: "Serious Incident Investigation", description: "Root cause analysis, IMDRF codes, actions taken, outcome — from vigilance system (if separate from incident export)", sections: ["F", "H"], processingPriority: 2, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
+  { type: "vigilance_submission_log", label: "Vigilance Submission Log", description: "Dates reported to EUDAMED and competent authorities, timeline compliance — from regulatory affairs records", sections: ["F"], processingPriority: 2, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
+  { type: "fsca_record", label: "FSCA Records", description: "FSCA ID, type (recall/advisory/correction), reason, date, scope, regions, status — from FSCA tracking system", sections: ["G"], processingPriority: 2, evidenceTier: "primary", isAggregated: false, requiredFields: ["fscaId", "actionType", "initiationDate"], parserType: "dedicated" },
+  { type: "fsca_effectiveness", label: "FSCA Effectiveness", description: "Completion %, devices retrieved/corrected, effectiveness verification — from FSCA tracking system", sections: ["G"], processingPriority: 2, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
+  { type: "capa_record", label: "CAPA Records", description: "CAPA ID, trigger, root cause, corrective/preventive actions, effectiveness — from QMS CAPA module", sections: ["H"], processingPriority: 2, evidenceTier: "primary", isAggregated: false, requiredFields: ["capaId", "description"], parserType: "dedicated" },
+  { type: "ncr_record", label: "NCR Records", description: "Non-conformance reports that may trigger CAPAs — from QMS NCR module", sections: ["H"], processingPriority: 2, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
 
-  // ── Tier 3: External / Document-Extract ──
-  { type: "pmcf_activity_record", label: "PMCF Activity Record", description: "Individual study/activity ID, type, status", sections: ["L", "M"], processingPriority: 3, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
-  { type: "pmcf_results", label: "PMCF Results", description: "Study outcomes, safety/performance findings", sections: ["L", "M"], processingPriority: 3, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
-  { type: "literature_search_protocol", label: "Literature Search Protocol", description: "Databases searched, keywords, date range, criteria", sections: ["J"], processingPriority: 3, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
-  { type: "literature_screening_results", label: "Literature Screening Results", description: "Studies identified, screened, included, excluded", sections: ["J"], processingPriority: 3, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
-  { type: "literature_findings", label: "Literature Findings", description: "Individual study results, safety signals, performance benchmarks", sections: ["J", "M"], processingPriority: 3, evidenceTier: "extracted", isAggregated: false, requiredFields: [], parserType: "dedicated" },
-  { type: "external_db_query_log", label: "External DB Query Log", description: "Database, search terms, dates, hit count", sections: ["K"], processingPriority: 3, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
-  { type: "external_db_findings", label: "External DB Findings", description: "Relevant incidents on similar devices from external databases", sections: ["K"], processingPriority: 3, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
-  { type: "pms_activity_log", label: "PMS Activity Log", description: "Activity ID, type, planned/actual date, status, findings", sections: ["C", "M"], processingPriority: 3, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
-  { type: "previous_psur_action_status", label: "Previous PSUR Action Status", description: "Status of actions from previous PSUR", sections: ["A", "M"], processingPriority: 3, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "generic" },
+  // ── Tier 3: Literature & External Databases ──
+  // Source: Literature search reports, external database exports
+  { type: "literature_search_protocol", label: "Literature Search Protocol", description: "Databases searched, keywords, date range, inclusion/exclusion criteria — from literature review report", sections: ["I"], processingPriority: 3, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
+  { type: "literature_screening_results", label: "Literature Screening Results", description: "Studies identified, screened, included, excluded with reasons (PRISMA) — from literature review report", sections: ["I"], processingPriority: 3, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
+  { type: "literature_findings", label: "Literature Findings", description: "Individual study results, safety signals, performance data — from literature review or CER", sections: ["I", "L"], processingPriority: 3, evidenceTier: "extracted", isAggregated: false, requiredFields: [], parserType: "dedicated" },
+  { type: "external_db_query_log", label: "External DB Search Log", description: "Database (MAUDE/MHRA/TGA), search terms, dates, hit count — from external database search records", sections: ["J"], processingPriority: 3, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
+  { type: "external_db_findings", label: "External DB Findings", description: "Relevant incidents on similar devices from MAUDE, MHRA, TGA, etc. — from external database search results", sections: ["J"], processingPriority: 3, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
+
+  // ── Tier 3: PMCF ──
+  // Source: PMCF plan, PMCF evaluation report, clinical study reports
+  { type: "pmcf_activity_record", label: "PMCF Activity Record", description: "Study/activity ID, type (registry/survey/trial), status, timelines — from PMCF plan or evaluation report", sections: ["K"], processingPriority: 3, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
+  { type: "pmcf_results", label: "PMCF Results", description: "Study outcomes, safety/performance findings, adverse events — from PMCF evaluation report or study reports", sections: ["K", "L"], processingPriority: 3, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
+
+  // ── Tier 3: Clinical Evaluation & Risk Management (document extracts) ──
+  // Source: CER, Risk Management File (RMF/RACT)
+  { type: "benefit_risk_assessment", label: "Benefit-Risk Assessment", description: "Clinical benefits, known risks, benefit-risk determination, acceptability conclusion — from CER or standalone B/R document", sections: ["L"], processingPriority: 3, evidenceTier: "extracted", isAggregated: false, requiredFields: [], parserType: "generic" },
+  { type: "risk_management_summary", label: "Risk Management Summary", description: "Identified hazards, risk controls, residual risk levels, acceptability criteria — from Risk Management File or RACT", sections: ["H", "L"], processingPriority: 3, evidenceTier: "extracted", isAggregated: false, requiredFields: [], parserType: "generic" },
+  { type: "clinical_evaluation_summary", label: "Clinical Evaluation Summary", description: "CER conclusions, equivalence claims, clinical data sufficiency, state of the art — from Clinical Evaluation Report", sections: ["I", "K", "L"], processingPriority: 3, evidenceTier: "extracted", isAggregated: false, requiredFields: [], parserType: "generic" },
+
+  // ── Tier 3: PMS & Previous PSUR ──
+  // Source: PMS plan, previous PSUR document
+  { type: "pms_activity_log", label: "PMS Activity Log", description: "Surveillance activities performed, planned vs actual dates, findings — from PMS plan or activity tracker", sections: ["C", "M"], processingPriority: 3, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "dedicated" },
+  { type: "previous_psur_action_status", label: "Previous PSUR Action Status", description: "Status of actions/commitments from previous PSUR (completed/ongoing/overdue) — from previous PSUR document", sections: ["A", "M"], processingPriority: 3, evidenceTier: "primary", isAggregated: false, requiredFields: [], parserType: "generic" },
 ];
 
 // Derive enum from registry for backwards compatibility
 export const evidenceTypeEnum = EVIDENCE_DEFINITIONS.map(d => d.type) as unknown as readonly string[];
 export type EvidenceType = typeof EVIDENCE_DEFINITIONS[number]["type"];
+
+// ============== ENGINE TARGET FIELDS REGISTRY ==============
+// Maps evidence types to the target fields expected by PSUR engines (derived from atomAdapters.ts).
+// Used by the Evidence Mapping page UI and the suggest-mappings endpoint.
+export interface EngineTargetField {
+  field: string;
+  label: string;
+  required: boolean;
+  type: "string" | "number" | "boolean" | "date";
+}
+
+export const ENGINE_TARGET_FIELDS: Record<string, EngineTargetField[]> = {
+  complaint_record: [
+    { field: "complaintId", label: "Complaint ID", required: true, type: "string" },
+    { field: "deviceCode", label: "Device Code", required: false, type: "string" },
+    { field: "complaintDate", label: "Complaint Date", required: true, type: "date" },
+    { field: "description", label: "Description", required: true, type: "string" },
+    { field: "category", label: "Category", required: false, type: "string" },
+    { field: "severity", label: "Severity", required: false, type: "string" },
+    { field: "harmLevel", label: "Harm Level", required: false, type: "string" },
+    { field: "deviceRelated", label: "Device Related", required: false, type: "boolean" },
+    { field: "patientInjury", label: "Patient Injury", required: false, type: "boolean" },
+    { field: "investigationStatus", label: "Investigation Status", required: false, type: "string" },
+    { field: "rootCause", label: "Root Cause", required: false, type: "string" },
+    { field: "imdrfProblemCode", label: "IMDRF Problem Code", required: false, type: "string" },
+    { field: "imdrfMdpCode", label: "IMDRF MDP Code", required: false, type: "string" },
+    { field: "imdrfMdpTerm", label: "IMDRF MDP Term", required: false, type: "string" },
+    { field: "imdrfHarmCode", label: "IMDRF Harm Code", required: false, type: "string" },
+    { field: "imdrfHarmTerm", label: "IMDRF Harm Term", required: false, type: "string" },
+    { field: "country", label: "Country", required: false, type: "string" },
+    { field: "complaintConfirmed", label: "Complaint Confirmed", required: false, type: "string" },
+    { field: "investigationFindings", label: "Investigation Findings", required: false, type: "string" },
+    { field: "correctiveActions", label: "Corrective Actions", required: false, type: "string" },
+    { field: "productNumber", label: "Product Number", required: false, type: "string" },
+    { field: "lotNumber", label: "Lot Number", required: false, type: "string" },
+  ],
+  complaint_investigation: [
+    { field: "complaintId", label: "Complaint ID", required: true, type: "string" },
+    { field: "investigationFindings", label: "Investigation Findings", required: false, type: "string" },
+    { field: "rootCause", label: "Root Cause", required: false, type: "string" },
+    { field: "complaintConfirmed", label: "Confirmed", required: false, type: "string" },
+    { field: "correctiveActions", label: "Corrective Actions", required: false, type: "string" },
+  ],
+  sales_transactions: [
+    { field: "quantity", label: "Quantity / Units", required: true, type: "number" },
+    { field: "saleDate", label: "Order / Ship Date", required: true, type: "date" },
+    { field: "productName", label: "Product Name / SKU", required: false, type: "string" },
+    { field: "deviceCode", label: "Device / Catalog Code", required: false, type: "string" },
+    { field: "region", label: "Region / Market", required: false, type: "string" },
+    { field: "country", label: "Country", required: false, type: "string" },
+    { field: "lotNumber", label: "Lot / Batch Number", required: false, type: "string" },
+    { field: "orderNumber", label: "Order / Invoice Number", required: false, type: "string" },
+    { field: "customer", label: "Customer / Ship-to", required: false, type: "string" },
+  ],
+  serious_incident_record: [
+    { field: "incidentId", label: "Incident ID", required: true, type: "string" },
+    { field: "deviceCode", label: "Device Code", required: false, type: "string" },
+    { field: "incidentDate", label: "Incident Date", required: true, type: "date" },
+    { field: "reportDate", label: "Report Date", required: false, type: "date" },
+    { field: "description", label: "Description", required: true, type: "string" },
+    { field: "outcome", label: "Outcome", required: false, type: "string" },
+    { field: "severity", label: "Severity", required: false, type: "string" },
+    { field: "reportedToAuthority", label: "Reported to Authority", required: false, type: "boolean" },
+    { field: "authorityReference", label: "Authority Reference", required: false, type: "string" },
+    { field: "country", label: "Country", required: false, type: "string" },
+    { field: "imdrfAnnexACode", label: "IMDRF Annex A Code", required: false, type: "string" },
+    { field: "imdrfAnnexCCode", label: "IMDRF Annex C Code", required: false, type: "string" },
+    { field: "imdrfAnnexFCode", label: "IMDRF Annex F Code", required: false, type: "string" },
+    { field: "relatedCapa", label: "Related CAPA", required: false, type: "string" },
+    { field: "relatedFsca", label: "Related FSCA", required: false, type: "string" },
+    { field: "riskFileReference", label: "Risk File Reference", required: false, type: "string" },
+  ],
+  fsca_record: [
+    { field: "fscaId", label: "FSCA ID", required: true, type: "string" },
+    { field: "deviceCode", label: "Device Code", required: false, type: "string" },
+    { field: "actionType", label: "Action Type", required: true, type: "string" },
+    { field: "initiationDate", label: "Initiation Date", required: true, type: "date" },
+    { field: "completionDate", label: "Completion Date", required: false, type: "date" },
+    { field: "status", label: "Status", required: false, type: "string" },
+    { field: "description", label: "Description", required: true, type: "string" },
+    { field: "affectedUnits", label: "Affected Units", required: false, type: "number" },
+    { field: "fsnReference", label: "FSN Reference", required: false, type: "string" },
+    { field: "countries", label: "Countries", required: false, type: "string" },
+    { field: "capaReference", label: "CAPA Reference", required: false, type: "string" },
+  ],
+  capa_record: [
+    { field: "capaId", label: "CAPA ID", required: true, type: "string" },
+    { field: "type", label: "Type (Corrective/Preventive)", required: false, type: "string" },
+    { field: "status", label: "Status", required: false, type: "string" },
+    { field: "openDate", label: "Open Date", required: true, type: "date" },
+    { field: "closeDate", label: "Close Date", required: false, type: "date" },
+    { field: "description", label: "Description", required: true, type: "string" },
+    { field: "effectiveness", label: "Effectiveness", required: false, type: "string" },
+    { field: "riskFileReference", label: "Risk File Reference", required: false, type: "string" },
+  ],
+  literature_findings: [
+    { field: "referenceId", label: "Reference ID", required: true, type: "string" },
+    { field: "title", label: "Title", required: true, type: "string" },
+    { field: "authors", label: "Authors", required: false, type: "string" },
+    { field: "publicationDate", label: "Publication Date", required: false, type: "date" },
+    { field: "journal", label: "Journal", required: false, type: "string" },
+    { field: "abstract", label: "Abstract", required: false, type: "string" },
+    { field: "relevance", label: "Relevance", required: false, type: "string" },
+    { field: "deviceRelated", label: "Device Related", required: false, type: "boolean" },
+    { field: "safetySignal", label: "Safety Signal", required: false, type: "boolean" },
+    { field: "safetySignalDescription", label: "Safety Signal Description", required: false, type: "string" },
+    { field: "newRiskIdentified", label: "New Risk Identified", required: false, type: "boolean" },
+    { field: "riskDescription", label: "Risk Description", required: false, type: "string" },
+    { field: "stateOfArtRelevant", label: "State of Art Relevant", required: false, type: "boolean" },
+    { field: "stateOfArtFindings", label: "State of Art Findings", required: false, type: "string" },
+    { field: "searchDatabase", label: "Search Database", required: false, type: "string" },
+    { field: "searchDate", label: "Search Date", required: false, type: "date" },
+  ],
+  pmcf_results: [
+    { field: "studyId", label: "Study ID", required: true, type: "string" },
+    { field: "studyName", label: "Study Name", required: false, type: "string" },
+    { field: "studyType", label: "Study Type", required: false, type: "string" },
+    { field: "status", label: "Status", required: false, type: "string" },
+    { field: "enrolledSubjects", label: "Enrolled Subjects", required: false, type: "number" },
+    { field: "startDate", label: "Start Date", required: false, type: "date" },
+    { field: "endDate", label: "End Date", required: false, type: "date" },
+    { field: "findings", label: "Findings", required: false, type: "string" },
+    { field: "adverseEvents", label: "Adverse Events", required: false, type: "number" },
+    { field: "deviceFailures", label: "Device Failures", required: false, type: "number" },
+    { field: "clinicalEndpointsReached", label: "Clinical Endpoints Reached", required: false, type: "boolean" },
+    { field: "deviceCode", label: "Device Code", required: false, type: "string" },
+  ],
+};
 
 // Raw → Aggregated mapping: when raw records exist, they contribute to aggregated type requirements
 export const RAW_TO_AGGREGATED_MAP: Record<string, string> = {
@@ -1240,6 +1384,9 @@ export const columnMappingProfiles = pgTable("column_mapping_profiles", {
   evidenceType: text("evidence_type").notNull(),
   sourceSystemHint: text("source_system_hint"),
   columnMappings: jsonb("column_mappings").notNull(),
+  defaultValues: jsonb("default_values"),
+  isActive: boolean("is_active").default(true).notNull(),
+  filePatterns: jsonb("file_patterns"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
   updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
   usageCount: integer("usage_count").default(0).notNull(),
@@ -1254,6 +1401,34 @@ export const insertColumnMappingProfileSchema = createInsertSchema(columnMapping
 
 export type ColumnMappingProfile = typeof columnMappingProfiles.$inferSelect;
 export type InsertColumnMappingProfile = z.infer<typeof insertColumnMappingProfileSchema>;
+
+// ============== EVIDENCE SOURCE CONFIGS ==============
+// Pre-configures which source document contains each evidence type.
+// Tells ingestion agents exactly where to look, eliminating guesswork.
+export const evidenceSourceConfigs = pgTable("evidence_source_configs", {
+  id: serial("id").primaryKey(),
+  evidenceType: text("evidence_type").notNull(),
+  sourceDocumentName: text("source_document_name").notNull(),
+  sourceLocation: jsonb("source_location").$type<{
+    sheet?: string;         // Excel sheet name
+    section?: string;       // Document section heading
+    pageRange?: string;     // e.g. "1-5" or "12"
+    tableIndex?: number;    // Which table in the document
+  }>(),
+  columnMappings: jsonb("column_mappings").$type<Record<string, string>>(), // source col → target field
+  notes: text("notes"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const insertEvidenceSourceConfigSchema = createInsertSchema(evidenceSourceConfigs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type EvidenceSourceConfig = typeof evidenceSourceConfigs.$inferSelect;
+export type InsertEvidenceSourceConfig = z.infer<typeof insertEvidenceSourceConfigSchema>;
 
 // ============== CANONICAL EVIDENCE TYPES ==============
 // Single source of truth for evidence types across the entire system (12-category taxonomy)

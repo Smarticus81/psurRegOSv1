@@ -392,8 +392,16 @@ export function EvidenceIngestionPanel({
         const formData = new FormData();
         formData.append("file", file);
         formData.append("sourceType", sourceType);
+        formData.append("psurCaseId", String(psurCaseId));
+        formData.append("deviceCode", deviceCode);
+        formData.append("periodStart", periodStart);
+        formData.append("periodEnd", periodEnd);
+        // Only enable SOTA for tabular files (csv/xlsx) - DOCX/PDF tables are template scaffolding
+        const ext = file.name.split(".").pop()?.toLowerCase() || "";
+        const isTabular = ["csv", "xlsx", "xls", "tsv"].includes(ext);
+        formData.append("useSOTA", String(isTabular));
         
-        console.log(`[Extract] Single extraction for ${file.name} with sourceType: ${sourceType}`);
+        console.log(`[Extract] Single extraction for ${file.name} with sourceType: ${sourceType}, SOTA: ${isTabular}`);
         
         const res = await fetch("/api/ingest/extract", {
           method: "POST",

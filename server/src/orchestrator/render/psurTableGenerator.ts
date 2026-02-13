@@ -82,7 +82,7 @@ function isValidRegion(value: string | null | undefined): boolean {
 
 export function generateSalesTable(atoms: EvidenceAtomData[]): TableResult {
   const salesAtoms = atoms.filter(a => 
-    ["sales_summary", "sales_by_region", "sales_volume", "distribution_summary"].includes(a.evidenceType)
+    ["sales_transactions", "sales_summary", "sales_by_region", "sales_volume", "distribution_summary"].includes(a.evidenceType)
   );
   
   const atomIds = salesAtoms.map(a => a.atomId);

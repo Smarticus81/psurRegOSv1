@@ -561,7 +561,7 @@ Respond with ONLY valid JSON:
         provider: "openai",
         model: "gpt-5.2",
         temperature: 0.1,
-        maxTokens: 4000
+        maxTokens: 8000  // Increased from 4000 to handle tables with 50+ columns
       },
       responseFormat: "json",
       agentId: "sota-schema-discovery",

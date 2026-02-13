@@ -39,12 +39,13 @@ export class SafetyNarrativeAgent extends BaseNarrativeAgent {
       gaps.push("No complaint data - confirm if zero complaints or data gap");
     }
 
-    // Check for IMDRF coding
+    // Check for IMDRF coding (from atoms or from classification engine)
     const hasIMDRF = input.evidenceAtoms.some(a =>
       a.normalizedData.imdrf_code ||
+      a.normalizedData.imdrf_mdp_code ||
       a.normalizedData.event_code ||
       a.normalizedData.problem_code
-    );
+    ) || (input.analyticsContext?.imdrfSummary && input.analyticsContext.imdrfSummary.totalClassified > 0);
     if (!hasIMDRF && (evidenceTypes.has("complaint_record") || evidenceTypes.has("serious_incident_record"))) {
       gaps.push("No IMDRF coding available for incidents/complaints");
     }
@@ -164,6 +165,31 @@ NOTE: Use confirmed defect rate for safety assessment. Combined rate is for regu
       }
     }
 
+    // IMDRF classification summary
+    let imdrfSection = "";
+    const imdrfData = analytics?.imdrfSummary;
+    if (imdrfData && imdrfData.totalClassified > 0) {
+      imdrfSection = `
+## IMDRF CLASSIFICATION (Engine-Computed):
+All complaints have been classified using IMDRF Annex A (Medical Device Problem) and Annex E (Health Effect) codes.
+- Total Classified: ${imdrfData.totalClassified}`;
+
+      if (imdrfData.byMdpCode.length > 0) {
+        imdrfSection += "\n\n### Medical Device Problems (Annex A):";
+        for (const mdp of imdrfData.byMdpCode) {
+          imdrfSection += `\n- ${mdp.code} ${mdp.term}: ${mdp.count} (${mdp.percentage.toFixed(1)}%) [${mdp.confirmedCount} confirmed]`;
+        }
+      }
+
+      if (imdrfData.byHarmCode.length > 0) {
+        imdrfSection += "\n\n### Health Effects (Annex E):";
+        for (const harm of imdrfData.byHarmCode) {
+          imdrfSection += `\n- ${harm.code} ${harm.term}: ${harm.count} (${harm.percentage.toFixed(1)}%)`;
+        }
+      }
+      imdrfSection += "\n\nUse these IMDRF codes when describing complaint categories in the narrative.";
+    }
+
     // Segmentation analysis
     let segmentationSection = "";
     const seg = analytics?.segmentationAnalysis;
@@ -238,6 +264,8 @@ ${harmBreakdownSection}
 ${vigilanceSection}
 
 ${complaintNarrativeSection}
+
+${imdrfSection}
 
 ${segmentationSection}
 

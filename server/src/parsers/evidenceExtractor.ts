@@ -89,7 +89,7 @@ export const EVIDENCE_TYPES: EvidenceType[] = [
     description: "Individual complaint record or feedback",
     requiredFields: ["complaint_date"],
     optionalFields: ["complaint_id", "description", "region", "severity", "status", "device_code", "category"],
-    indicators: ["complaint", "feedback", "issue", "problem", "concern", "reported", "customer", "allegation"],
+    indicators: ["complaint", "feedback", "issue", "problem", "concern", "reported", "customer", "allegation", "nonconformity", "symptom", "mdr", "corrective action"],
   },
   {
     type: "complaint_investigation",
@@ -209,6 +209,50 @@ export const EVIDENCE_TYPES: EvidenceType[] = [
     optionalFields: ["activity_id", "activity_type", "planned_date", "actual_date", "status", "findings"],
     indicators: ["pms", "surveillance", "activity", "monitoring", "post-market surveillance"],
   },
+
+  // ── Category 12: CER (Clinical Evaluation Report) ──
+  {
+    type: "cer_conclusions",
+    category: "CER",
+    description: "Clinical Evaluation Report conclusions and overall findings",
+    requiredFields: [],
+    optionalFields: ["content", "section", "overall_conclusion", "benefit_risk_conclusion", "update_requirements"],
+    indicators: ["clinical evaluation", "overall conclusion", "benefit-risk", "clinical benefit", "cer conclusion", "evaluation conclusion", "review and update", "clinical evaluation report"],
+  },
+  {
+    type: "cer_metadata",
+    category: "CER",
+    description: "CER document metadata, scope, and evaluation plan",
+    requiredFields: [],
+    optionalFields: ["content", "section", "cer_version", "evaluation_scope", "evaluators"],
+    indicators: ["qualification of evaluators", "scope", "evaluation plan", "clinical evaluation report", "cer revision", "executive summary"],
+  },
+  {
+    type: "cer_state_of_art",
+    category: "CER",
+    description: "State of the art analysis in clinical evaluation",
+    requiredFields: [],
+    optionalFields: ["content", "section", "treatment_options", "clinical_guidelines", "benchmark_devices"],
+    indicators: ["state of the art", "current state", "benchmark", "gold standard", "alternative treatment", "treatment option", "clinical guideline"],
+  },
+
+  // ── Category 13: Previous PSUR ──
+  {
+    type: "previous_psur_metadata",
+    category: "Previous PSUR",
+    description: "Previous PSUR document metadata and overview",
+    requiredFields: [],
+    optionalFields: ["content", "section", "psur_reference", "reporting_period", "version"],
+    indicators: ["previous psur", "prior psur", "psur reference", "reporting period", "periodic safety"],
+  },
+  {
+    type: "previous_psur_conclusions",
+    category: "Previous PSUR",
+    description: "Conclusions and recommendations from previous PSUR",
+    requiredFields: [],
+    optionalFields: ["content", "section", "conclusions", "recommendations", "actions_identified"],
+    indicators: ["psur conclusion", "previous conclusion", "prior findings", "previous report findings", "recommendations from previous"],
+  },
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -243,8 +287,11 @@ export async function extractEvidence(
     decisionTrace: [],
   };
 
-  // Check if SOTA extraction should be used (default: true for tabular data)
-  const useSOTA = context?.useSOTA !== false && document.tables.length > 0;
+  // Check if SOTA extraction should be used
+  // Only auto-enable for genuinely tabular file formats (excel, csv)
+  // DOCX/PDF tables are often template scaffolding, not evidence data
+  const isTabularFormat = document.documentType === "excel" || document.documentType === "csv";
+  const useSOTA = context?.useSOTA === true || (context?.useSOTA !== false && isTabularFormat && document.tables.length > 0);
   
   if (useSOTA && document.tables.length > 0) {
     console.log(`[Evidence Extractor] Using SOTA extraction pipeline for ${document.filename}`);

@@ -375,7 +375,7 @@ function renderNarrativeSlot(
   // Executive Summary - Generate comprehensive regulatory summary
   if (slotId.includes("EXEC_SUMMARY")) {
     // Calculate statistics from all atoms
-    const allSalesAtoms = atoms.filter(a => ["sales_summary", "sales_volume", "sales_by_region"].includes(a.evidenceType));
+    const allSalesAtoms = atoms.filter(a => ["sales_transactions", "sales_summary", "sales_volume", "sales_by_region"].includes(a.evidenceType));
     const allComplaintAtoms = atoms.filter(a => a.evidenceType === "complaint_record" && !a.normalizedData?.isNegativeEvidence);
     const allIncidentAtoms = atoms.filter(a => ["serious_incident_records_imdrf", "vigilance_report", "serious_incident_summary"].includes(a.evidenceType) && !a.normalizedData?.isNegativeEvidence);
     const allFscaAtoms = atoms.filter(a => ["fsca_record", "recall_record"].includes(a.evidenceType) && !a.normalizedData?.isNegativeEvidence);
@@ -572,7 +572,7 @@ function renderNarrativeSlot(
   // PSUR Obligation Status
   else if (slotId.includes("OBLIGATION_STATUS")) {
     const lifetimeAtom = relevantAtoms.find(a => a.evidenceType === "device_lifetime_record");
-    const salesAtom = relevantAtoms.find(a => a.evidenceType === "sales_summary");
+    const salesAtom = relevantAtoms.find(a => a.evidenceType === "sales_summary" || a.evidenceType === "sales_transactions");
     
     lines.push("**PSUR Obligation:** This device is subject to periodic safety update reporting requirements under EU MDR Article 86 and UK MDR Regulation 44ZM.");
     lines.push("");
@@ -667,7 +667,7 @@ function renderNarrativeSlot(
   else if (slotId.includes("COMPLAINTS") && !slotId.includes("TABLE") && !slotId.includes("BY_REGION")) {
     const complaintAtoms = getAtomsForTypes(atoms, ["complaint_record", "complaint_summary"]);
     const realComplaints = complaintAtoms.filter(a => !a.normalizedData?.isNegativeEvidence);
-    const salesAtoms = getAtomsForTypes(atoms, ["sales_volume", "sales_summary"]);
+    const salesAtoms = getAtomsForTypes(atoms, ["sales_transactions", "sales_volume", "sales_summary"]);
     
     // Calculate total sales for rate
     let totalSales = 0;

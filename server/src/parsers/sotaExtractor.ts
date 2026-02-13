@@ -350,7 +350,22 @@ async function extractFromTable(
     const hasData = Object.values(normalizedData).some(v => 
       v !== null && v !== undefined && v !== ""
     );
-    if (!hasData) continue;
+    
+    // If no columns were mapped but we have raw row data, use snake_case original keys
+    // so SOTA never returns 0 atoms for a table with actual rows
+    const hasRawData = Object.values(originalRow).some(v =>
+      v !== null && v !== undefined && v !== ""
+    );
+    if (!hasData && hasRawData) {
+      for (const [key, val] of Object.entries(originalRow)) {
+        if (val !== null && val !== undefined && val !== "") {
+          const fieldName = key.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+          normalizedData[fieldName] = val;
+          fieldConfidence[fieldName] = 0.3; // low confidence — unmapped columns
+        }
+      }
+    }
+    if (!hasData && !hasRawData) continue;
 
     // Generate atom ID and content hash
     const contentHash = createHash("sha256")

@@ -215,14 +215,14 @@ export const SOTA_EVIDENCE_REGISTRY: EvidenceTypeDefinition[] = [
       {
         name: "complaintId",
         description: "Unique complaint identifier or reference number",
-        semanticHints: ["complaint id", "complaint number", "reference", "case number", "ticket", "id", "complaint ref", "case id"],
+        semanticHints: ["complaint id", "complaint number", "reference", "case number", "ticket", "id", "complaint ref", "case id", "csi number", "rma number", "record number"],
         dataType: "string",
         required: false,
       },
       {
         name: "complaintDate",
         description: "Date the complaint was received or reported",
-        semanticHints: ["complaint date", "date received", "reported date", "date", "received date", "report date", "occurrence date", "event date"],
+        semanticHints: ["complaint date", "date received", "reported date", "date", "received date", "report date", "occurrence date", "event date", "csi notification date", "date entered", "notification date", "date opened"],
         dataType: "date",
         required: true,
         mdcgReference: "D - Date of complaint"
@@ -261,7 +261,7 @@ export const SOTA_EVIDENCE_REGISTRY: EvidenceTypeDefinition[] = [
       {
         name: "deviceCode",
         description: "Product identifier related to complaint",
-        semanticHints: ["device code", "product code", "sku", "model", "part number", "product"],
+        semanticHints: ["device code", "product code", "sku", "model", "part number", "product", "product number", "catalog number", "item number"],
         dataType: "string",
         required: false,
       },
@@ -282,21 +282,21 @@ export const SOTA_EVIDENCE_REGISTRY: EvidenceTypeDefinition[] = [
       {
         name: "complaintCategory",
         description: "Category or type of complaint",
-        semanticHints: ["category", "type", "complaint type", "complaint category", "classification", "failure mode"],
+        semanticHints: ["category", "type", "complaint type", "complaint category", "classification", "failure mode", "symptom code", "fault code", "failure code", "nonconformity", "product sales category"],
         dataType: "string",
         required: false,
       },
       {
         name: "rootCause",
         description: "Determined root cause of the complaint",
-        semanticHints: ["root cause", "cause", "reason", "determination", "investigation result"],
+        semanticHints: ["root cause", "cause", "reason", "determination", "investigation result", "investigation findings", "findings"],
         dataType: "string",
         required: false,
       },
       {
         name: "correctiveAction",
         description: "Corrective action taken in response",
-        semanticHints: ["corrective action", "action taken", "response", "resolution", "action"],
+        semanticHints: ["corrective action", "action taken", "response", "resolution", "action", "corrective actions", "corrective action level"],
         dataType: "string",
         required: false,
       },

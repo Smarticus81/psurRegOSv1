@@ -16,6 +16,7 @@ import {
   type AuditBundle, type InsertAuditBundle,
   type CoverageSlotQueue, type InsertCoverageSlotQueue,
   type ColumnMappingProfile, type InsertColumnMappingProfile,
+  type EvidenceSourceConfig, type InsertEvidenceSourceConfig,
   type QualificationReport,
   users,
   companies,
@@ -34,6 +35,7 @@ import {
   auditBundles,
   coverageSlotQueues,
   columnMappingProfiles,
+  evidenceSourceConfigs,
   slotDefinitions,
   qualificationReports,
 } from "@shared/schema";
@@ -507,10 +509,17 @@ export class DatabaseStorage implements IStorage {
     return newQueue;
   }
 
-  async getColumnMappingProfiles(evidenceType?: string): Promise<ColumnMappingProfile[]> {
+  async getColumnMappingProfiles(evidenceType?: string, activeOnly?: boolean): Promise<ColumnMappingProfile[]> {
+    const conditions = [];
     if (evidenceType) {
+      conditions.push(eq(columnMappingProfiles.evidenceType, evidenceType));
+    }
+    if (activeOnly) {
+      conditions.push(eq(columnMappingProfiles.isActive, true));
+    }
+    if (conditions.length > 0) {
       return db.select().from(columnMappingProfiles)
-        .where(eq(columnMappingProfiles.evidenceType, evidenceType))
+        .where(and(...conditions))
         .orderBy(desc(columnMappingProfiles.usageCount));
     }
     return db.select().from(columnMappingProfiles).orderBy(desc(columnMappingProfiles.usageCount));
@@ -541,9 +550,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async findMatchingMappingProfile(evidenceType: string, sourceColumns: string[]): Promise<ColumnMappingProfile | undefined> {
-    // Get all profiles for this evidence type ordered by usage
+    // Get all active profiles for this evidence type ordered by usage
     const profiles = await db.select().from(columnMappingProfiles)
-      .where(eq(columnMappingProfiles.evidenceType, evidenceType))
+      .where(and(eq(columnMappingProfiles.evidenceType, evidenceType), eq(columnMappingProfiles.isActive, true)))
       .orderBy(desc(columnMappingProfiles.usageCount));
     
     // Calculate signature for input columns (sorted, lowercased, normalized)
@@ -577,6 +586,43 @@ export class DatabaseStorage implements IStorage {
   async deleteColumnMappingProfile(id: number): Promise<boolean> {
     const result = await db.delete(columnMappingProfiles)
       .where(eq(columnMappingProfiles.id, id))
+      .returning();
+    return result.length > 0;
+  }
+
+  // ── Evidence Source Configs ──
+
+  async getEvidenceSourceConfigs(): Promise<EvidenceSourceConfig[]> {
+    return db.select().from(evidenceSourceConfigs).orderBy(evidenceSourceConfigs.evidenceType);
+  }
+
+  async getEvidenceSourceConfig(id: number): Promise<EvidenceSourceConfig | undefined> {
+    const [config] = await db.select().from(evidenceSourceConfigs).where(eq(evidenceSourceConfigs.id, id));
+    return config;
+  }
+
+  async getEvidenceSourceConfigByType(evidenceType: string): Promise<EvidenceSourceConfig | undefined> {
+    const [config] = await db.select().from(evidenceSourceConfigs)
+      .where(eq(evidenceSourceConfigs.evidenceType, evidenceType));
+    return config;
+  }
+
+  async createEvidenceSourceConfig(config: InsertEvidenceSourceConfig): Promise<EvidenceSourceConfig> {
+    const [created] = await db.insert(evidenceSourceConfigs).values(config).returning();
+    return created;
+  }
+
+  async updateEvidenceSourceConfig(id: number, config: Partial<InsertEvidenceSourceConfig>): Promise<EvidenceSourceConfig | undefined> {
+    const [updated] = await db.update(evidenceSourceConfigs)
+      .set({ ...config, updatedAt: new Date() })
+      .where(eq(evidenceSourceConfigs.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteEvidenceSourceConfig(id: number): Promise<boolean> {
+    const result = await db.delete(evidenceSourceConfigs)
+      .where(eq(evidenceSourceConfigs.id, id))
       .returning();
     return result.length > 0;
   }

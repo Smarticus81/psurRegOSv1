@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run check:*)",
+      "Bash(npx tsc:*)",
+      "Bash(grep:*)",
+      "Bash(git add:*)",
+      "Bash(git status:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nRationalize evidence taxonomy to 12 categories and add PSUR enhancement engines\n\nConsolidates 4+ overlapping evidence type registries into a clean 12-category\ntaxonomy \\(PRIMARY/CALCULATED/EXTRACTED tiers\\) and implements data pipeline\nenhancements for deeper PSUR analytics.\n\nEvidence taxonomy rationalization \\(9 files\\):\n- Rewrite CANONICAL_EVIDENCE_TYPES with 12 categories + backward compat aliases\n- Expand EVIDENCE_DEFINITIONS from 15 to 27 entries with evidenceTier field\n- Rewrite source configs from 8 to 12 types \\(add vigilance, rmf, literature, pms, previous_psur\\)\n- Update evidence extractor, SOTA registry, document analyzer, atom adapters\n- Expand Zod schema to support 60+ evidence types\n- Update client with 12 source category icons\n\nNew engines and agents:\n- Confirmed/unconfirmed complaint tiered rates in complaint engine\n- Segmentation engine for regional/product/lot/quarter analysis with alerts\n- Root cause clustering agent \\(LLM-powered NLP pattern detection\\)\n- Quantitative benefit-risk engine with weighted condition checks and B/R ratio\n- Wire all new engines into PSURAnalyticsContext with prompt injection\n\nEnhanced narrative agents:\n- SafetyNarrativeAgent uses tiered rates, segmentation alerts, root cause clusters\n- BenefitRiskNarrativeAgent uses quantitative B/R engine for data-driven narratives\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm run db:push:*)"
+    ]
+  }
+}

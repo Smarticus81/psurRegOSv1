@@ -108,7 +108,7 @@ export const DEFAULT_SOURCE_CONFIGS: SourceConfig[] = [
     sourceType: "complaints",
     acceptedFormats: ["excel", "csv", "json"],
     primaryEvidenceTypes: ["complaint_record", "complaint_investigation"],
-    secondaryEvidenceTypes: ["complaint_metrics", "imdrf_classification_complaints", "complaint_control_chart", "complaint_segmentation", "root_cause_clusters"],
+    secondaryEvidenceTypes: ["complaint_metrics", "imdrf_classification_complaints", "complaint_control_chart", "complaint_segmentation", "root_cause_clusters", "statistical_trending", "complaint_rate_analysis"],
     evidenceTypeMappings: [
       {
         evidenceType: "complaint_record",
@@ -341,7 +341,7 @@ export const DEFAULT_SOURCE_CONFIGS: SourceConfig[] = [
     sourceType: "literature",
     acceptedFormats: ["excel", "csv", "pdf"],
     primaryEvidenceTypes: ["literature_search_protocol", "literature_screening_results", "external_db_query_log", "external_db_findings"],
-    secondaryEvidenceTypes: ["literature_findings", "literature_synthesis"],
+    secondaryEvidenceTypes: ["literature_findings", "literature_synthesis", "cer_conclusions", "cer_metadata"],
     evidenceTypeMappings: [
       {
         evidenceType: "literature_findings",
@@ -367,7 +367,7 @@ export const DEFAULT_SOURCE_CONFIGS: SourceConfig[] = [
     sourceType: "pms",
     acceptedFormats: ["docx", "pdf", "excel"],
     primaryEvidenceTypes: ["pms_activity_log"],
-    secondaryEvidenceTypes: ["pms_plan_extract"],
+    secondaryEvidenceTypes: ["pms_plan_extract", "benefit_risk_quantification", "risk_reassessment", "previous_psur_metadata", "previous_psur_conclusions"],
     evidenceTypeMappings: [
       {
         evidenceType: "pms_activity_log",

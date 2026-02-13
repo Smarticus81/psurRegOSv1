@@ -2397,20 +2397,21 @@ Execute according to your persona instructions.`
       // Check if this is a form-based template
       if (isTemplateFormBased(templateId)) {
         // Form-based templates use a predefined section-to-evidence mapping
+        // ALL types MUST use canonical names from CANONICAL_EVIDENCE_TYPES (shared/schema.ts)
         const FORM_SECTION_EVIDENCE_MAP: Record<string, string[]> = {
-          "A_executive_summary": ["benefit_risk_assessment", "previous_psur_extract"],
-          "B_scope_and_device_description": ["device_registry_record", "regulatory_certificate_record", "manufacturer_profile", "ifu_extract"],
-          "C_volume_of_sales_and_population_exposure": ["sales_volume", "sales_summary", "sales_by_region", "distribution_summary", "usage_estimate"],
-          "D_information_on_serious_incidents": ["serious_incident_record", "serious_incident_summary", "serious_incident_records_imdrf", "vigilance_report"],
-          "E_customer_feedback": ["customer_feedback_summary", "trend_analysis"],
-          "F_product_complaint_types_counts_and_rates": ["complaint_record", "complaint_summary", "complaints_by_region", "signal_log"],
-          "G_information_from_trend_reporting": ["trend_analysis", "signal_log"],
-          "H_information_from_fsca": ["fsca_record", "fsca_summary", "recall_record"],
-          "I_corrective_and_preventive_actions": ["capa_record", "capa_summary", "ncr_record"],
-          "J_scientific_literature_review": ["literature_review_summary", "literature_search_strategy", "literature_result"],
-          "K_review_of_external_databases_and_registries": ["external_db_summary", "external_db_query_log"],
-          "L_pmcf": ["pmcf_summary", "pmcf_result", "pmcf_activity_record", "pmcf_report_extract"],
-          "M_findings_and_conclusions": ["benefit_risk_assessment", "clinical_evaluation_extract", "cer_extract", "risk_assessment"],
+          "A_executive_summary": ["benefit_risk_quantification", "previous_psur_metadata", "previous_psur_conclusions"],
+          "B_scope_and_device_description": ["device_identification", "device_classification", "device_intended_use", "regulatory_certificates", "manufacturer_details"],
+          "C_volume_of_sales_and_population_exposure": ["sales_transactions", "sales_aggregated", "population_exposure", "market_history"],
+          "D_information_on_serious_incidents": ["serious_incident_record", "serious_incident_investigation", "serious_incident_metrics", "imdrf_classification_incidents", "vigilance_submission_log"],
+          "E_customer_feedback": ["complaint_metrics", "statistical_trending"],
+          "F_product_complaint_types_counts_and_rates": ["complaint_record", "complaint_investigation", "complaint_metrics", "complaint_segmentation", "root_cause_clusters"],
+          "G_information_from_trend_reporting": ["statistical_trending", "complaint_control_chart", "complaint_rate_analysis"],
+          "H_information_from_fsca": ["fsca_record", "fsca_effectiveness", "fsca_metrics"],
+          "I_corrective_and_preventive_actions": ["capa_record", "capa_metrics", "ncr_record"],
+          "J_scientific_literature_review": ["literature_findings", "literature_search_protocol", "literature_screening_results", "literature_synthesis"],
+          "K_review_of_external_databases_and_registries": ["external_db_findings", "external_db_query_log"],
+          "L_pmcf": ["pmcf_results", "pmcf_activity_record", "pmcf_plan_extract", "pmcf_evaluation_summary"],
+          "M_findings_and_conclusions": ["benefit_risk_quantification", "cer_conclusions", "cer_metadata", "risk_reassessment"],
         };
 
         // Collect all unique evidence types from all sections
@@ -2430,7 +2431,11 @@ Execute according to your persona instructions.`
       const template = await loadTemplate(templateId);
 
       // Extract all required evidence types from the template's slots
-      const requiredTypes = getAllRequiredEvidenceTypes(template);
+      // Coerce legacy type names to canonical types for coverage matching
+      const rawTypes = getAllRequiredEvidenceTypes(template);
+      const requiredTypes = Array.from(new Set(rawTypes.map(t => {
+        try { return coerceEvType(t); } catch { return t; }
+      })));
 
       console.log(`[TemplateRequirements] Template '${templateId}' requires ${requiredTypes.length} evidence types:`, requiredTypes);
 
@@ -3418,10 +3423,85 @@ Execute according to your persona instructions.`
     }
   });
 
+  // ── Evidence Source Configs (document-to-evidence-type routing) ──
+
+  app.get("/api/evidence-mapping/target-fields", async (_req, res) => {
+    try {
+      const { ENGINE_TARGET_FIELDS } = await import("@shared/schema");
+      res.json(ENGINE_TARGET_FIELDS);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch target fields" });
+    }
+  });
+
+  app.get("/api/evidence-source-configs", async (_req, res) => {
+    try {
+      const configs = await storage.getEvidenceSourceConfigs();
+      res.json(configs);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch evidence source configs" });
+    }
+  });
+
+  app.post("/api/evidence-source-configs", async (req, res) => {
+    try {
+      const { evidenceType, sourceDocumentName, sourceLocation, columnMappings, notes } = req.body;
+      if (!evidenceType || !sourceDocumentName) {
+        return res.status(400).json({ error: "evidenceType and sourceDocumentName are required" });
+      }
+      const config = await storage.createEvidenceSourceConfig({
+        evidenceType,
+        sourceDocumentName,
+        sourceLocation: sourceLocation || null,
+        columnMappings: columnMappings || null,
+        notes: notes || null,
+      });
+      res.status(201).json(config);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create evidence source config" });
+    }
+  });
+
+  app.put("/api/evidence-source-configs/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { evidenceType, sourceDocumentName, sourceLocation, columnMappings, notes } = req.body;
+      const updateData: Record<string, unknown> = {};
+      if (evidenceType !== undefined) updateData.evidenceType = evidenceType;
+      if (sourceDocumentName !== undefined) updateData.sourceDocumentName = sourceDocumentName;
+      if (sourceLocation !== undefined) updateData.sourceLocation = sourceLocation;
+      if (columnMappings !== undefined) updateData.columnMappings = columnMappings;
+      if (notes !== undefined) updateData.notes = notes;
+      const updated = await storage.updateEvidenceSourceConfig(id, updateData as any);
+      if (updated) {
+        res.json(updated);
+      } else {
+        res.status(404).json({ error: "Config not found" });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update evidence source config" });
+    }
+  });
+
+  app.delete("/api/evidence-source-configs/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const deleted = await storage.deleteEvidenceSourceConfig(id);
+      if (deleted) {
+        res.json({ success: true });
+      } else {
+        res.status(404).json({ error: "Config not found" });
+      }
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete evidence source config" });
+    }
+  });
+
   app.get("/api/column-mapping-profiles", async (req, res) => {
     try {
       const evidenceType = req.query.evidenceType as string | undefined;
-      const profiles = await storage.getColumnMappingProfiles(evidenceType);
+      const activeOnly = req.query.activeOnly === "true";
+      const profiles = await storage.getColumnMappingProfiles(evidenceType, activeOnly || undefined);
       res.json(profiles);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch column mapping profiles" });
@@ -3430,7 +3510,7 @@ Execute according to your persona instructions.`
 
   app.post("/api/column-mapping-profiles", async (req, res) => {
     try {
-      const { name, evidenceType, sourceSystemHint, columnMappings } = req.body;
+      const { name, evidenceType, sourceSystemHint, columnMappings, defaultValues, isActive, filePatterns } = req.body;
       if (!name || !evidenceType || !columnMappings) {
         return res.status(400).json({ error: "name, evidenceType, and columnMappings are required" });
       }
@@ -3439,6 +3519,9 @@ Execute according to your persona instructions.`
         evidenceType,
         sourceSystemHint: sourceSystemHint || null,
         columnMappings,
+        defaultValues: defaultValues || null,
+        isActive: isActive !== undefined ? isActive : true,
+        filePatterns: filePatterns || null,
       });
       res.status(201).json(profile);
     } catch (error) {
@@ -3481,13 +3564,17 @@ Execute according to your persona instructions.`
   app.put("/api/column-mapping-profiles/:id", async (req, res) => {
     try {
       const profileId = parseInt(req.params.id);
-      const { name, columnMappings, sourceSystemHint } = req.body;
+      const { name, columnMappings, sourceSystemHint, defaultValues, isActive, filePatterns } = req.body;
 
-      const updated = await storage.updateColumnMappingProfile(profileId, {
-        name,
-        columnMappings,
-        sourceSystemHint,
-      });
+      const updateData: Record<string, unknown> = {};
+      if (name !== undefined) updateData.name = name;
+      if (columnMappings !== undefined) updateData.columnMappings = columnMappings;
+      if (sourceSystemHint !== undefined) updateData.sourceSystemHint = sourceSystemHint;
+      if (defaultValues !== undefined) updateData.defaultValues = defaultValues;
+      if (isActive !== undefined) updateData.isActive = isActive;
+      if (filePatterns !== undefined) updateData.filePatterns = filePatterns;
+
+      const updated = await storage.updateColumnMappingProfile(profileId, updateData as any);
 
       if (updated) {
         res.json(updated);
@@ -3520,9 +3607,20 @@ Execute according to your persona instructions.`
       // ═══════════════════════════════════════════════════════════════════════
       // REQUIRED FIELD VALIDATION (Industry-ready: all uploads must be linked to a case)
       // ═══════════════════════════════════════════════════════════════════════
-      const evidenceType = req.body?.evidence_type || req.body?.evidenceType;
-      if (!evidenceType) {
+      const rawEvidenceType = req.body?.evidence_type || req.body?.evidenceType;
+      if (!rawEvidenceType) {
         return badRequest(res, "MISSING_EVIDENCE_TYPE", "evidence_type is required.");
+      }
+
+      // Coerce/alias evidence types (supports legacy names like sales_volume)
+      let evidenceType: string;
+      try {
+        evidenceType = coerceEvType(rawEvidenceType);
+      } catch (e: any) {
+        return badRequest(res, "UNSUPPORTED_EVIDENCE_TYPE",
+          `Unsupported evidence_type: ${rawEvidenceType}. Supported types: ${Object.values(CANONICAL_EVIDENCE_TYPES).join(", ")}`,
+          { providedType: rawEvidenceType }
+        );
       }
 
       if (!req.file) {
@@ -3555,8 +3653,8 @@ Execute according to your persona instructions.`
 
       if (!hasSchemaFor(evidenceType)) {
         return badRequest(res, "UNSUPPORTED_EVIDENCE_TYPE",
-          `Unsupported evidence_type: ${evidenceType}. Supported types: ${Object.values(CANONICAL_EVIDENCE_TYPES).join(", ")}`,
-          { providedType: evidenceType }
+          `Unsupported evidence_type: ${rawEvidenceType}. Supported types: ${Object.values(CANONICAL_EVIDENCE_TYPES).join(", ")}`,
+          { providedType: rawEvidenceType, coercedTo: evidenceType }
         );
       }
 
@@ -6437,7 +6535,17 @@ Execute according to your persona instructions.`
         ...schema.optionalFields.map(f => ({ fieldName: f, displayName: f.replace(/_/g, " "), type: "string", required: false })),
       ];
 
-      // Run the mapping agent
+      // Check for a pre-configured mapping profile to bypass LLM calls
+      const sourceColumnNames = sourceColumns.map((c: any) => c.name);
+      const matchingProfile = await storage.findMatchingMappingProfile(evidenceType, sourceColumnNames);
+
+      let hints: Record<string, string> | undefined;
+      if (matchingProfile) {
+        hints = matchingProfile.columnMappings as Record<string, string>;
+        await storage.incrementMappingProfileUsage(matchingProfile.id);
+      }
+
+      // Run the mapping agent (hints bypass LLM when all columns are covered)
       const { FieldMappingAgent } = await import("./src/agents/ingestion/fieldMappingAgent");
       const { startTrace } = await import("./src/services/decisionTraceService");
 
@@ -6445,7 +6553,7 @@ Execute according to your persona instructions.`
       const traceCtx = await startTrace(0); // No case yet
 
       const result = await agent.run(
-        { sourceColumns, targetSchema, evidenceType },
+        { sourceColumns, targetSchema, evidenceType, hints },
         { psurCaseId: 0, traceCtx }
       );
 
@@ -6456,6 +6564,7 @@ Execute according to your persona instructions.`
         targetSchema,
         overallConfidence: result.data?.overallConfidence || 0,
         suggestedActions: result.data?.suggestedActions || [],
+        profileUsed: matchingProfile ? { id: matchingProfile.id, name: matchingProfile.name } : null,
       });
     } catch (error: any) {
       console.error("[POST /api/agents/suggest-mappings] Error:", error);

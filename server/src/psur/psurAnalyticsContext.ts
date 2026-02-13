@@ -17,6 +17,7 @@ import type { PMCFDecisionResult } from "./engines/pmcfEngine";
 import type { SegmentedComplaintAnalysis } from "./engines/segmentationEngine";
 import type { BenefitRiskAnalysisResult } from "./engines/benefitRiskEngine";
 import type { RootCauseClusteringOutput } from "../agents/analysis/rootCauseClusteringAgent";
+import type { IMDRFSummary } from "./engines/imdrfClassification";
 import type { CanonicalMetrics } from "../services/canonicalMetricsService";
 import type { NarrativeConstraint } from "./psurContract";
 import type { CalculationRule, ObligationDefinition, ObligationId } from "./mappings/mdcg2022AnnexI";
@@ -28,6 +29,10 @@ import { computeLiteratureAnalysis, getLiteratureNarrativeBlocks } from "./engin
 import { computePMCFDecision, getPMCFNarrativeBlocks } from "./engines/pmcfEngine";
 import { computeSegmentationAnalysis } from "./engines/segmentationEngine";
 import { computeBenefitRiskAnalysis } from "./engines/benefitRiskEngine";
+import { classifyComplaintsBatch, getComplaintsNeedingAdjudication, generateIMDRFSummary } from "./engines/imdrfClassification";
+import { IMDRFClassificationAgent } from "../agents/analysis/imdrfClassificationAgent";
+import type { AdjudicationCase } from "../agents/analysis/imdrfClassificationAgent";
+import { lookupIMDRFMapping } from "./engines/imdrfClassification";
 import { RootCauseClusteringAgent } from "../agents/analysis/rootCauseClusteringAgent";
 import { getCanonicalMetrics } from "../services/canonicalMetricsService";
 import {
@@ -66,6 +71,9 @@ export interface PSURAnalyticsContext {
 
   /** Quantitative benefit-risk engine results */
   benefitRiskAnalysis: BenefitRiskAnalysisResult | null;
+
+  /** IMDRF classification summary (Annex A MDP + Annex E harm codes) */
+  imdrfSummary: IMDRFSummary | null;
 
   /** Root cause clustering (LLM-based pattern detection) */
   rootCauseClusters: RootCauseClusteringOutput | null;
@@ -260,6 +268,66 @@ export async function buildPSURAnalyticsContext(
     warnings.push(`Segmentation engine failed: ${e.message || String(e)}`);
   }
 
+  // IMDRF Classification (Stage 1 deterministic + Stage 2 LLM adjudication)
+  let imdrfSummary: IMDRFSummary | null = null;
+  try {
+    if (complaintAtoms.length > 0) {
+      // Stage 1: Deterministic classification
+      const classifications = classifyComplaintsBatch(complaintAtoms);
+
+      // Stage 2: LLM adjudication for context-dependent cases
+      const needsAdjudication = getComplaintsNeedingAdjudication(complaintAtoms, classifications);
+      if (needsAdjudication.length > 0) {
+        try {
+          const adjudicationCases: AdjudicationCase[] = needsAdjudication.map(c => {
+            const defaultMapping = lookupIMDRFMapping(c.symptomCode || c.category || "");
+            const deterministicResult = classifications.get(c.atomId)!;
+            return {
+              complaint: c,
+              defaultMapping: defaultMapping || {
+                symptomCode: c.symptomCode || "",
+                mdpCode: "2999",
+                mdpTerm: "Other Device Problem",
+                harmCode: null,
+                harmTerm: "No Health Effect",
+                severityDefault: "non-serious" as const,
+                requiresAdjudication: false,
+              },
+              deterministicResult,
+            };
+          });
+
+          const adjAgent = new IMDRFClassificationAgent();
+          const adjResult = await adjAgent.run(
+            { complaints: adjudicationCases },
+            {
+              psurCaseId: input.psurCaseId,
+              traceCtx: {
+                traceId: `analytics-imdrf-${input.psurCaseId}-${Date.now()}`,
+                psurCaseId: input.psurCaseId,
+                currentSequence: 0,
+                previousHash: null,
+              },
+            }
+          );
+
+          if (adjResult.success && adjResult.data) {
+            for (const adjRes of adjResult.data.results) {
+              classifications.set(adjRes.atomId, adjRes.classification);
+            }
+          }
+        } catch (adjErr: any) {
+          warnings.push(`IMDRF adjudication failed (deterministic results used): ${adjErr.message || String(adjErr)}`);
+        }
+      }
+
+      // Generate summary from final classifications
+      imdrfSummary = generateIMDRFSummary(complaintAtoms, classifications);
+    }
+  } catch (e: any) {
+    warnings.push(`IMDRF classification failed: ${e.message || String(e)}`);
+  }
+
   // Root Cause Clustering (LLM-based, runs only with sufficient complaints)
   let rootCauseClusters: RootCauseClusteringOutput | null = null;
   try {
@@ -342,6 +410,7 @@ export async function buildPSURAnalyticsContext(
     `literature=${literature ? "OK" : "FAIL"}, ` +
     `pmcf=${pmcf ? "OK" : "FAIL"}, ` +
     `segmentation=${segmentation ? "OK" : "FAIL"}, ` +
+    `imdrf=${imdrfSummary ? "OK" : "SKIP"}, ` +
     `benefitRisk=${benefitRisk ? "OK" : "FAIL"}, ` +
     `rootCause=${rootCauseClusters ? "OK" : "SKIP"}`
   );
@@ -353,6 +422,7 @@ export async function buildPSURAnalyticsContext(
     literatureAnalysis: literature,
     pmcfDecision: pmcf,
     segmentationAnalysis: segmentation,
+    imdrfSummary,
     benefitRiskAnalysis: benefitRisk,
     rootCauseClusters,
     canonicalMetrics,
@@ -526,6 +596,31 @@ export function formatAnalyticsForSlot(
     sections.push(`- External Cause: ${cm.externalCauseComplaints} (${cm.externalCausePercentage.toFixed(1)}%)`);
     sections.push(`- Combined Rate: ${cm.combinedRate.toFixed(4)} per 1,000 units`);
     sections.push("NOTE: Confirmed defect rate is the primary safety metric. Combined rate is for regulatory comparison only.");
+    sections.push("");
+  }
+
+  // Include IMDRF classification summary for complaint sections
+  if (ctx.imdrfSummary && (
+    id.includes("complaint") || id.includes("safety") || id.includes("section_e") ||
+    id.includes("incident") || id.includes("section_d")
+  )) {
+    const imdrf = ctx.imdrfSummary;
+    sections.push("### IMDRF Classification Summary (Engine-Computed)");
+    sections.push(`- Total Classified: ${imdrf.totalClassified}`);
+    sections.push(`- Adjudicated by LLM: ${imdrf.totalAdjudicated}`);
+    sections.push(`- Default Fallback: ${imdrf.totalDefaultFallback}`);
+    if (imdrf.byMdpCode.length > 0) {
+      sections.push("- Medical Device Problems (Annex A):");
+      for (const mdp of imdrf.byMdpCode) {
+        sections.push(`  - ${mdp.code} ${mdp.term}: ${mdp.count} (${mdp.percentage.toFixed(1)}%) [${mdp.confirmedCount} confirmed]`);
+      }
+    }
+    if (imdrf.byHarmCode.length > 0) {
+      sections.push("- Health Effects (Annex E):");
+      for (const harm of imdrf.byHarmCode) {
+        sections.push(`  - ${harm.code} ${harm.term}: ${harm.count} (${harm.percentage.toFixed(1)}%)`);
+      }
+    }
     sections.push("");
   }
 

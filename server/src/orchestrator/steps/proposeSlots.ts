@@ -262,7 +262,7 @@ async function proposeSlotsFromDatabase(
 const FORM_SECTION_EVIDENCE_MAP: Record<string, string[]> = {
   "A_executive_summary": ["benefit_risk_assessment", "previous_psur_extract"],
   "B_scope_and_device_description": ["device_registry_record", "regulatory_certificate_record", "manufacturer_profile", "ifu_extract"],
-  "C_volume_of_sales_and_population_exposure": ["sales_volume", "sales_summary", "sales_by_region", "distribution_summary", "usage_estimate"],
+  "C_volume_of_sales_and_population_exposure": ["sales_transactions", "sales_volume", "sales_summary", "sales_by_region", "distribution_summary", "usage_estimate"],
   "D_information_on_serious_incidents": ["serious_incident_record", "serious_incident_summary", "serious_incident_records_imdrf", "vigilance_report"],
   "E_customer_feedback": ["customer_feedback_summary", "trend_analysis"],
   "F_product_complaint_types_counts_and_rates": ["complaint_record", "complaint_summary", "complaints_by_region", "signal_log"],

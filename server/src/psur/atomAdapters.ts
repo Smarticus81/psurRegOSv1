@@ -86,6 +86,10 @@ export function toComplaintAtoms(atoms: GenericAtom[]): ComplaintEvidenceAtom[] 
         investigationStatus: str(d.investigation_status || d.status || undefined) || undefined,
         rootCause: str(d.root_cause || d.rootCause || undefined) || undefined,
         imdrfProblemCode: str(d.imdrf_code || d.imdrfCode || d.problem_code || undefined) || undefined,
+        imdrfMdpCode: str(d.imdrf_mdp_code || d.imdrfMdpCode || undefined) || undefined,
+        imdrfMdpTerm: str(d.imdrf_mdp_term || d.imdrfMdpTerm || undefined) || undefined,
+        imdrfHarmCode: str(d.imdrf_harm_code || d.imdrfHarmCode || undefined) || undefined,
+        imdrfHarmTerm: str(d.imdrf_harm_term || d.imdrfHarmTerm || undefined) || undefined,
         country: str(d.country || d.region || undefined) || undefined,
         // Confirmed/unconfirmed fields
         complaintConfirmed: str(d.complaint_confirmed || d.complaintConfirmed || d.confirmed || undefined) || undefined,
@@ -132,17 +136,30 @@ export function toSalesAtoms(atoms: GenericAtom[]): SalesEvidenceAtom[] {
     })
     .map(a => {
       const d = a.normalizedData;
+      const saleDate = str(d.sale_date || d.saleDate || d.order_date || d.orderDate || d.ship_date || d.shipDate || d.date || undefined) || undefined;
+
+      // Derive periodStart/periodEnd from saleDate if not explicitly provided
+      let periodStart = str(d.period_start || d.periodStart || d.start_date || "");
+      let periodEnd = str(d.period_end || d.periodEnd || d.end_date || "");
+      if (!periodStart && saleDate) {
+        const dt = new Date(saleDate);
+        if (!isNaN(dt.getTime())) {
+          periodStart = new Date(dt.getFullYear(), dt.getMonth(), 1).toISOString().slice(0, 10);
+          periodEnd = periodEnd || new Date(dt.getFullYear(), dt.getMonth() + 1, 0).toISOString().slice(0, 10);
+        }
+      }
+
       return {
         atomId: a.atomId,
         evidenceType: "sales_volume" as const,
-        deviceCode: str(d.device_code || d.deviceCode || d.device || ""),
-        quantity: num(d.quantity || d.units_sold || d.units || d.count || d.volume || 0),
+        deviceCode: str(d.device_code || d.deviceCode || d.device || d.catalog_number || d.catalogNumber || ""),
+        quantity: num(d.quantity || d.units_sold || d.units || d.count || d.volume || d.qty || 0),
         region: str(d.region || d.geography || d.territory || d.market || "Global"),
         country: str(d.country || d.nation || undefined) || undefined,
-        saleDate: str(d.sale_date || d.saleDate || undefined) || undefined,
-        periodStart: str(d.period_start || d.periodStart || d.start_date || ""),
-        periodEnd: str(d.period_end || d.periodEnd || d.end_date || ""),
-        productName: str(d.product_name || d.productName || d.device_name || undefined) || undefined,
+        saleDate,
+        periodStart,
+        periodEnd,
+        productName: str(d.product_name || d.productName || d.device_name || d.sku || d.item || undefined) || undefined,
       };
     });
 }

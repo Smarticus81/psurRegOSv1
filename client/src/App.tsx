@@ -16,6 +16,7 @@ import SystemInstructions from "@/pages/system-instructions";
 import ContentTraces from "@/pages/content-traces";
 import TemplatePipeline from "@/pages/template-pipeline";
 import DeviceDossiers from "@/pages/device-dossiers";
+import EvidenceMapping from "@/pages/evidence-mapping";
 import { Navigation } from "@/components/navigation";
 
 function Router() {
@@ -34,6 +35,7 @@ function Router() {
         <Route path="/prompts" component={SystemInstructions} />
         <Route path="/regulatory" component={GrkbView} />
         <Route path="/dossiers" component={DeviceDossiers} />
+        <Route path="/evidence-mapping" component={EvidenceMapping} />
 
         {/* SYSTEM */}
         <Route path="/guide" component={Instructions} />
